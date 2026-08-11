@@ -35,14 +35,14 @@ type Severity = "critical" | "warning" | "info";
 type SensorState = "normal" | "warning" | "critical";
 
 const sensors = [
-  { id: "T01", label: "Barra L1", zone: "Barras principales", value: "68.4", unit: "°C", type: "Temperatura", state: "warning" as SensorState, trend: "+1.8 °C/h" },
-  { id: "T02", label: "Barra L2", zone: "Barras principales", value: "54.1", unit: "°C", type: "Temperatura", state: "normal" as SensorState, trend: "+0.2 °C/h" },
-  { id: "T03", label: "Barra L3", zone: "Barras principales", value: "52.8", unit: "°C", type: "Temperatura", state: "normal" as SensorState, trend: "+0.1 °C/h" },
-  { id: "T04", label: "Contacto superior", zone: "Interruptor", value: "47.2", unit: "°C", type: "Temperatura", state: "normal" as SensorState, trend: "Estable" },
-  { id: "T05", label: "Contacto inferior", zone: "Interruptor", value: "49.5", unit: "°C", type: "Temperatura", state: "normal" as SensorState, trend: "+0.3 °C/h" },
-  { id: "PD1", label: "Canal UHF 01", zone: "Compartimiento cable", value: "72", unit: "idx", type: "Descarga parcial", state: "critical" as SensorState, trend: "Acelerando" },
-  { id: "PD2", label: "Canal UHF 02", zone: "Barras principales", value: "18", unit: "idx", type: "Descarga parcial", state: "normal" as SensorState, trend: "Estable" },
-  { id: "H01", label: "Ambiente cabina", zone: "Baja tensión", value: "78", unit: "%RH", type: "Humedad", state: "warning" as SensorState, trend: "+4% / 24h" },
+  { id: "T01", label: "Barra fase L1", zone: "Barras principales", value: "68.4", unit: "°C", type: "Temperatura", state: "warning" as SensorState, trend: "+1.8 °C/h", threshold: "65 °C", register: "HR 40001", quality: "Válida" },
+  { id: "T02", label: "Barra fase L2", zone: "Barras principales", value: "54.1", unit: "°C", type: "Temperatura", state: "normal" as SensorState, trend: "+0.2 °C/h", threshold: "65 °C", register: "HR 40002", quality: "Válida" },
+  { id: "T03", label: "Barra fase L3", zone: "Barras principales", value: "52.8", unit: "°C", type: "Temperatura", state: "normal" as SensorState, trend: "+0.1 °C/h", threshold: "65 °C", register: "HR 40003", quality: "Válida" },
+  { id: "T04", label: "Contacto superior", zone: "Interruptor", value: "47.2", unit: "°C", type: "Temperatura", state: "normal" as SensorState, trend: "Estable", threshold: "70 °C", register: "HR 40004", quality: "Válida" },
+  { id: "T05", label: "Contacto inferior", zone: "Interruptor", value: "49.5", unit: "°C", type: "Temperatura", state: "normal" as SensorState, trend: "+0.3 °C/h", threshold: "70 °C", register: "HR 40005", quality: "Válida" },
+  { id: "PD1", label: "Canal UHF 01", zone: "Compartimiento de cables", value: "72", unit: "idx", type: "Descarga parcial", state: "critical" as SensorState, trend: "Acelerando · Φ 2.8×", threshold: "60 idx", register: "HR 40121", quality: "Válida" },
+  { id: "PD2", label: "Canal UHF 02", zone: "Barras principales", value: "18", unit: "idx", type: "Descarga parcial", state: "normal" as SensorState, trend: "Estable", threshold: "60 idx", register: "HR 40122", quality: "Válida" },
+  { id: "H01", label: "Ambiente de cabina", zone: "Compartimiento de cables", value: "78", unit: "%RH", type: "Humedad", state: "warning" as SensorState, trend: "+4 % / 24h", threshold: "75 %RH", register: "HR 40201", quality: "Válida" },
 ];
 
 const initialAlarms = [
@@ -64,7 +64,7 @@ const navGroups = [
     label: "Supervisión",
     items: [
       { id: "overview" as View, label: "Resumen operativo", description: "Condición general", icon: LayoutDashboard },
-      { id: "cabinet" as View, label: "Sinóptico CAM5", description: "Sensores y cabina", icon: CircuitBoard },
+      { id: "cabinet" as View, label: "Mapa de condición", description: "Sensores y cabina", icon: CircuitBoard },
     ],
   },
   {
@@ -79,7 +79,7 @@ const navGroups = [
 
 const viewTitles: Record<View, { title: string; description: string }> = {
   overview: { title: "Resumen de condición", description: "Estado predictivo de activos críticos en tiempo real." },
-  cabinet: { title: "Sinóptico CAM5", description: "Ubicación física y condición de cada punto instrumentado." },
+  cabinet: { title: "Mapa de condición", description: "Ubicación, lectura y estado de cada canal instrumentado." },
   trends: { title: "Tendencias", description: "Evolución térmica, descarga parcial y humedad ambiental." },
   alarms: { title: "Centro de alertas", description: "Triage operativo, reconocimiento y trazabilidad de eventos." },
 };
@@ -115,31 +115,47 @@ function MetricCard({
   );
 }
 
-function CabinetDiagram({ detailed = false }: { detailed?: boolean }) {
+function SensorMarker({ id, className, selectedId, onSelect }: { id: string; className: string; selectedId?: string; onSelect?: (id: string) => void }) {
+  const sensor = sensors.find((item) => item.id === id)!;
   return (
-    <div className={`cabinet-visual ${detailed ? "cabinet-detailed" : ""}`} aria-label="Sinóptico de la cabina MCC-01">
-      <div className="cabinet-label"><span>MCC-01</span><small>13.8 kV · Alimentador Norte</small></div>
+    <button
+      type="button"
+      className={`sensor-marker marker-${sensor.state} ${className} ${selectedId === id ? "selected" : ""}`}
+      aria-label={`${sensor.id}, ${sensor.label}, ${sensor.value} ${sensor.unit}, ${sensor.state}`}
+      aria-pressed={selectedId === id}
+      onClick={() => onSelect?.(id)}
+    >
+      <span className="sensor-marker-id">{sensor.id}</span>
+      <span className="sensor-marker-value">{sensor.value} {sensor.unit}</span>
+    </button>
+  );
+}
+
+function CabinetDiagram({ detailed = false, selectedId, onSelect }: { detailed?: boolean; selectedId?: string; onSelect?: (id: string) => void }) {
+  return (
+    <div className={`cabinet-visual ${detailed ? "cabinet-detailed" : ""}`} aria-label="Mapa de condición de la cabina MCC-01">
+      <div className="cabinet-label"><span>MCC-01</span><small>13.8 kV · Alimentador Norte</small><b>CAM5-01</b></div>
       <div className="cabinet-section bus-section">
-        <div className="section-caption">Barras principales</div>
-        <div className="bus-lines"><i /><i /><i /></div>
-        <button className="sensor-marker marker-warning marker-t01" aria-label="Sensor T01, advertencia">T01</button>
-        <button className="sensor-marker marker-normal marker-t02" aria-label="Sensor T02, normal">T02</button>
-        <button className="sensor-marker marker-normal marker-t03" aria-label="Sensor T03, normal">T03</button>
-        <button className="sensor-marker marker-normal marker-pd2" aria-label="Sensor PD2, normal">PD2</button>
+        <div className="section-caption"><strong>01 · Barras principales</strong><small>Temperatura por fase y actividad UHF</small></div>
+        <div className="bus-lines"><span><b>L1</b><i /></span><span><b>L2</b><i /></span><span><b>L3</b><i /></span></div>
+        <SensorMarker id="T01" className="marker-t01" selectedId={selectedId} onSelect={onSelect} />
+        <SensorMarker id="T02" className="marker-t02" selectedId={selectedId} onSelect={onSelect} />
+        <SensorMarker id="T03" className="marker-t03" selectedId={selectedId} onSelect={onSelect} />
+        <SensorMarker id="PD2" className="marker-pd2" selectedId={selectedId} onSelect={onSelect} />
       </div>
       <div className="cabinet-section breaker-section">
-        <div className="section-caption">Interruptor</div>
-        <div className="breaker-symbol"><span /><b>52</b><span /></div>
-        <button className="sensor-marker marker-normal marker-t04" aria-label="Sensor T04, normal">T04</button>
-        <button className="sensor-marker marker-normal marker-t05" aria-label="Sensor T05, normal">T05</button>
+        <div className="section-caption"><strong>02 · Interruptor de potencia</strong><small>Temperatura de contactos superior e inferior</small></div>
+        <div className="breaker-symbol"><span /><b>52</b><span /><small>Interruptor CA</small></div>
+        <SensorMarker id="T04" className="marker-t04" selectedId={selectedId} onSelect={onSelect} />
+        <SensorMarker id="T05" className="marker-t05" selectedId={selectedId} onSelect={onSelect} />
       </div>
       <div className="cabinet-section cable-section">
-        <div className="section-caption">Compartimiento de cables</div>
-        <div className="cable-lines"><i /><i /><i /></div>
-        <button className="sensor-marker marker-critical marker-pd1" aria-label="Sensor PD1, crítico">PD1</button>
-        <button className="sensor-marker marker-warning marker-h01" aria-label="Sensor H01, advertencia">H01</button>
+        <div className="section-caption"><strong>03 · Compartimiento de cables</strong><small>Descarga parcial y humedad ambiental</small></div>
+        <div className="cable-lines"><span><b>L1</b><i /></span><span><b>L2</b><i /></span><span><b>L3</b><i /></span></div>
+        <SensorMarker id="PD1" className="marker-pd1" selectedId={selectedId} onSelect={onSelect} />
+        <SensorMarker id="H01" className="marker-h01" selectedId={selectedId} onSelect={onSelect} />
       </div>
-      <div className="cabinet-footer"><Wifi size={15} /><span>CAM5-GW-01</span><StatusPill state="online">En línea</StatusPill></div>
+      <div className="cabinet-footer"><Wifi size={15} /><span><strong>CAM5-GW-01</strong><small>Último dato hace 2 s</small></span><StatusPill state="online">En línea</StatusPill></div>
     </div>
   );
 }
@@ -162,7 +178,7 @@ function Overview({ onNavigate, onAcknowledge, acknowledged }: { onNavigate: (vi
             <StatusPill state="warning">En advertencia</StatusPill>
           </div>
           <CabinetDiagram />
-          <button className="text-action" onClick={() => onNavigate("cabinet")}>Abrir sinóptico detallado <span>→</span></button>
+          <button className="text-action" onClick={() => onNavigate("cabinet")}>Abrir mapa de condición <span>→</span></button>
         </article>
 
         <article className="panel alarms-panel">
@@ -203,22 +219,34 @@ function Overview({ onNavigate, onAcknowledge, acknowledged }: { onNavigate: (vi
 }
 
 function CabinetView() {
+  const [selectedId, setSelectedId] = useState("PD1");
+  const selected = sensors.find((sensor) => sensor.id === selectedId)!;
+  const SelectedIcon = selected.type === "Temperatura" ? Thermometer : selected.type === "Humedad" ? Droplets : Activity;
+  const selectedStateLabel = selected.state === "critical" ? "Crítico" : selected.state === "warning" ? "Advertencia" : "Normal";
+
   return (
     <section className="cabinet-view-grid">
       <article className="panel cabinet-full-panel">
-        <div className="panel-header"><div><span className="eyebrow">Cabina instrumentada</span><h2>MCC-01 · Alimentador Norte</h2><p>8 de 24 canales configurados</p></div><StatusPill state="warning">2 advertencias · 1 crítico</StatusPill></div>
-        <CabinetDiagram detailed />
-        <div className="diagram-legend"><span><i className="dot-normal" />Normal</span><span><i className="dot-warning" />Advertencia</span><span><i className="dot-critical" />Crítico</span><span><i className="dot-disabled" />No configurado</span></div>
+        <div className="panel-header"><div><span className="eyebrow">Mapa de condición de la cabina</span><h2>MCC-01 · Alimentador Norte</h2><p>8 canales activos · 16 disponibles</p></div><StatusPill state="warning">2 advertencias · 1 crítico</StatusPill></div>
+        <CabinetDiagram detailed selectedId={selectedId} onSelect={setSelectedId} />
+        <div className="diagram-legend"><span><i className="dot-normal" />Normal</span><span><i className="dot-warning" />Advertencia</span><span><i className="dot-critical" />Crítico</span><span><i className="dot-disabled" />No configurado</span><small>Selecciona un canal para revisar su lectura.</small></div>
       </article>
       <article className="panel sensor-panel">
-        <div className="panel-header compact"><div><span className="eyebrow">Canales</span><h2>Matriz de sensores</h2></div><span className="data-fresh"><Wifi size={14} /> Hace 2 s</span></div>
+        <div className={`selected-sensor-card selected-${selected.state}`}>
+          <div className="selected-sensor-head"><span className="selected-sensor-icon"><SelectedIcon size={21} /></span><div><small>Canal seleccionado</small><strong>{selected.id} · {selected.type}</strong></div><StatusPill state={selected.state}>{selectedStateLabel}</StatusPill></div>
+          <div className="selected-sensor-value">{selected.value}<span>{selected.unit}</span></div>
+          <p>{selected.label} · {selected.zone}</p>
+          <dl><div><dt>Tendencia</dt><dd>{selected.trend}</dd></div><div><dt>Umbral</dt><dd>{selected.threshold}</dd></div><div><dt>Registro asumido</dt><dd>{selected.register}</dd></div><div><dt>Calidad</dt><dd>{selected.quality}</dd></div></dl>
+          <button type="button">Abrir tendencia del canal <TrendingUp size={16} /></button>
+        </div>
+        <div className="panel-header compact sensor-list-header"><div><span className="eyebrow">Canales configurados</span><h2>Matriz de sensores</h2></div><span className="data-fresh"><Wifi size={14} /> Hace 2 s</span></div>
         <div className="sensor-list">
           {sensors.map((sensor) => (
-            <div className="sensor-row" key={sensor.id}>
+            <button type="button" className={`sensor-row ${selectedId === sensor.id ? "selected" : ""}`} key={sensor.id} onClick={() => setSelectedId(sensor.id)}>
               <span className={`sensor-code sensor-${sensor.state}`}>{sensor.id}</span>
               <div><strong>{sensor.label}</strong><small>{sensor.zone}</small></div>
               <div className="sensor-reading"><strong>{sensor.value}<small>{sensor.unit}</small></strong><span>{sensor.trend}</span></div>
-            </div>
+            </button>
           ))}
         </div>
       </article>
