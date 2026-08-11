@@ -2,34 +2,33 @@
 
 import { useMemo, useState } from "react";
 import type { ComponentType } from "react";
-
-type IconProps = { size?: number; strokeWidth?: number; className?: string; fill?: string };
-const makeIcon = (glyph: string) => function InterfaceIcon({ size = 18, className = "" }: IconProps) {
-  return <span className={`ui-icon ${className}`} style={{ fontSize: size }} aria-hidden="true">{glyph}</span>;
-};
-const Activity = makeIcon("∿");
-const AlertTriangle = makeIcon("▲");
-const BellRing = makeIcon("●");
-const Building2 = makeIcon("▦");
-const CheckCircle2 = makeIcon("✓");
-const ChevronDown = makeIcon("⌄");
-const CircuitBoard = makeIcon("▤");
-const Clock3 = makeIcon("◷");
-const Download = makeIcon("↓");
-const Droplets = makeIcon("◆");
-const Gauge = makeIcon("◒");
-const History = makeIcon("↺");
-const LayoutDashboard = makeIcon("▦");
-const Menu = makeIcon("☰");
-const Radio = makeIcon("◉");
-const Search = makeIcon("⌕");
-const Server = makeIcon("▥");
-const ShieldCheck = makeIcon("✓");
-const Thermometer = makeIcon("♨");
-const TrendingUp = makeIcon("↗");
-const Wifi = makeIcon("⌁");
-const X = makeIcon("×");
-const Zap = makeIcon("ϟ");
+import {
+  IconActivity as Activity,
+  IconAlertTriangle as AlertTriangle,
+  IconBellRinging as BellRing,
+  IconBolt as Zap,
+  IconBuilding as Building2,
+  IconChevronDown as ChevronDown,
+  IconChevronRight as ChevronRight,
+  IconCircleCheck as CheckCircle2,
+  IconCircuitCell as CircuitBoard,
+  IconClock as Clock3,
+  IconDotsVertical as DotsVertical,
+  IconDownload as Download,
+  IconDroplet as Droplets,
+  IconGauge as Gauge,
+  IconHistory as History,
+  IconLayoutDashboard as LayoutDashboard,
+  IconMenu2 as Menu,
+  IconRadio as Radio,
+  IconSearch as Search,
+  IconServer as Server,
+  IconShieldCheck as ShieldCheck,
+  IconTemperature as Thermometer,
+  IconTrendingUp as TrendingUp,
+  IconWifi as Wifi,
+  IconX as X,
+} from "@tabler/icons-react";
 
 type View = "overview" | "cabinet" | "trends" | "alarms";
 type Severity = "critical" | "warning" | "info";
@@ -61,17 +60,19 @@ const chartData = [
 
 const navGroups = [
   {
-    label: "Operación",
+    index: "01",
+    label: "Supervisión",
     items: [
-      { id: "overview" as View, label: "Resumen de condición", icon: LayoutDashboard },
-      { id: "cabinet" as View, label: "Sinóptico CAM5", icon: CircuitBoard },
+      { id: "overview" as View, label: "Resumen operativo", description: "Condición general", icon: LayoutDashboard },
+      { id: "cabinet" as View, label: "Sinóptico CAM5", description: "Sensores y cabina", icon: CircuitBoard },
     ],
   },
   {
-    label: "Análisis",
+    index: "02",
+    label: "Diagnóstico",
     items: [
-      { id: "trends" as View, label: "Tendencias", icon: History },
-      { id: "alarms" as View, label: "Centro de alertas", icon: BellRing, badge: "3" },
+      { id: "trends" as View, label: "Tendencias", description: "Históricos y correlación", icon: History },
+      { id: "alarms" as View, label: "Centro de alertas", description: "Triage y seguimiento", icon: BellRing, badge: "3" },
     ],
   },
 ];
@@ -305,12 +306,45 @@ export default function Home() {
     <div className="app-shell">
       {menuOpen && <button className="mobile-scrim" aria-label="Cerrar navegación" onClick={() => setMenuOpen(false)} />}
       <aside className={`sidebar ${menuOpen ? "open" : ""}`}>
-        <div className="brand-block"><span className="brand-mark"><Zap size={21} fill="currentColor" /></span><div><strong>CAM5</strong><span>CORE</span></div><button className="sidebar-close" aria-label="Cerrar menú" onClick={() => setMenuOpen(false)}><X size={19} /></button></div>
+        <div className="brand-block">
+          <span className="brand-mark"><Zap size={22} strokeWidth={2.3} /></span>
+          <div className="brand-copy"><span className="brand-name"><strong>CAM5</strong><b>CORE</b></span><small>Critical asset intelligence</small></div>
+          <button className="sidebar-close" aria-label="Cerrar menú" onClick={() => setMenuOpen(false)}><X size={20} /></button>
+        </div>
+
+        <div className="sidebar-context">
+          <div className="context-heading"><span>Contexto activo</span><button aria-label="Cambiar contexto"><DotsVertical size={16} /></button></div>
+          <div className="context-card">
+            <span className="context-icon"><Building2 size={18} /></span>
+            <div><strong>Subestación Norte</strong><small>MCC-01 · 13.8 kV</small></div>
+            <span className="context-state" title="Atención requerida" />
+          </div>
+        </div>
+
         <nav className="sidebar-nav" aria-label="Navegación principal">
-          {navGroups.map((group) => <div className="nav-group" key={group.label}><p>{group.label}</p>{group.items.map((item) => { const Icon = item.icon; return <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)}><Icon size={18} /><span>{item.label}</span>{item.badge && <b>{Math.max(0, Number(item.badge) - acknowledged.length)}</b>}</button>; })}</div>)}
-          <div className="nav-group"><p>Sistema</p><button onClick={() => navigate("cabinet")}><Server size={18} /><span>Dispositivos</span><em>9/10</em></button><button onClick={() => navigate("alarms")}><ShieldCheck size={18} /><span>Auditoría y RBAC</span></button></div>
+          {navGroups.map((group) => (
+            <div className="nav-group" key={group.label}>
+              <div className="nav-group-heading"><span>{group.index}</span><p>{group.label}</p><i /></div>
+              <div className="nav-items">
+                {group.items.map((item) => {
+                  const Icon = item.icon;
+                  const badgeCount = item.badge ? Math.max(0, Number(item.badge) - acknowledged.length) : null;
+                  return (
+                    <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)} aria-current={view === item.id ? "page" : undefined}>
+                      <span className="nav-item-icon"><Icon size={19} strokeWidth={1.8} /></span>
+                      <span className="nav-item-copy"><strong>{item.label}</strong><small>{item.description}</small></span>
+                      {badgeCount !== null && badgeCount > 0 ? <b>{badgeCount}</b> : <ChevronRight className="nav-chevron" size={16} />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </nav>
-        <div className="sidebar-status"><div className="gateway-badge"><Radio size={17} /><span><strong>Gateway operativo</strong><small>CAM5-GW-01 · 42 ms</small></span><i /></div><div className="user-card"><span>EA</span><div><strong>Emerson Allende</strong><small>Administrador OT</small></div></div></div>
+        <div className="sidebar-status">
+          <div className="gateway-badge"><span className="gateway-icon"><Server size={17} /></span><span><strong>Gateway operativo</strong><small>CAM5-GW-01 · 42 ms</small></span><i /></div>
+          <button className="user-card"><span className="user-avatar">EA</span><span className="user-copy"><strong>Emerson Allende</strong><small>Administrador OT</small></span><ChevronRight size={16} /></button>
+        </div>
       </aside>
 
       <main className="main-shell">
