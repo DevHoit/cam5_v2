@@ -534,6 +534,111 @@ button.module-table-row { width: 100%; }
 .delivery-table { min-width: 820px; }
 .delivery-table .module-table-head, .delivery-table .module-table-row { grid-template-columns: 115px minmax(230px, 1fr) 130px 150px 105px; }
 
+/* Operational legibility scale: compact without relying on sub-10px copy. */
+.brand-copy small, .nav-group-heading > span, .nav-group-heading p { font-size: 9px; }
+.nav-item-copy small, .gateway-badge strong, .user-copy strong, .demo-pill { font-size: 10px; }
+.gateway-badge small, .user-copy small { font-size: 9px; }
+.nav-items > button b { font-size: 10px; }
+.eyebrow { font-size: 11px; }
+.metric-note, .panel-header p { font-size: 12px; }
+.text-action { font-size: 11px; }
+
+.finding-heading > div > span, .finding-evidence span { font-size: 10px; }
+.finding-heading p, .finding-evidence strong, .finding-action p { font-size: 11px; }
+.finding-heading > strong small { font-size: 10px; }
+.online-mini { font-size: 9px; }
+.condition-counts span { font-size: 10px; }
+.secondary-findings p strong { font-size: 11px; }
+.secondary-findings p small, .secondary-findings > div > b,
+.asset-summary-footer > span, .asset-summary-footer button { font-size: 10px; }
+
+.condition-map-header > div small { font-size: 11px; }
+.condition-map-header > b, .zone-index, .phase-tag { font-size: 10px; }
+.zone-header h3 { font-size: 13px; }
+.zone-header p { font-size: 11px; }
+.zone-status, .aux-channel > span { font-size: 9px; }
+.sensor-marker-id { font-size: 11px; }
+.sensor-marker-state, .sensor-marker-label { font-size: 9px; }
+.sensor-marker-value small { font-size: 10px; }
+.breaker-device span, .cable-device b, .cable-device small { font-size: 9px; }
+.condition-map-footer strong, .condition-map-footer small { font-size: 10px; }
+
+.alarm-copy strong { font-size: 12px; }
+.alarm-copy span { font-size: 11px; }
+.alarm-copy small { font-size: 10px; }
+.alarm-side b, .alarm-side button { font-size: 11px; }
+.chart-legend { font-size: 10px; }
+.chart-legend button { font-size: 11px; }
+.connection-score span, .connection-stats dt, .connection-stats dd { font-size: 11px; }
+
+.selected-sensor-head small, .selected-sensor-card dt { font-size: 10px; }
+.selected-sensor-card > p, .selected-sensor-card dd,
+.selected-sensor-card > button { font-size: 12px; }
+.sensor-code { font-size: 11px; }
+.sensor-row > div strong { font-size: 12px; }
+.sensor-row > div small { font-size: 11px; }
+.sensor-reading strong small, .sensor-reading span { font-size: 10px; }
+.channel-select small { font-size: 9px; }
+.channel-select select { font-size: 12px; }
+.segmented button { font-size: 11px; }
+.chart-scale, .chart-axis { font-size: 10px; }
+.threshold-line span { font-size: 9px; }
+.insight-panel strong { font-size: 12px; }
+.insight-panel p, .insight-panel button { font-size: 11px; }
+
+.module-summary-grid article small, .module-summary-grid article div > span { font-size: 10px; }
+.module-tabs button { font-size: 11px; }
+.history-filters label span { font-size: 9px; }
+.history-filters select { font-size: 11px; }
+.module-table-head { font-size: 10px; }
+.module-table-row { font-size: 11px; }
+.history-channel > span strong { font-size: 12px; }
+.history-channel > span small, .mono-cell,
+.module-footer > span, .module-footer small { font-size: 10px; }
+
+.save-config-button, .invite-form button { font-size: 11px; }
+.settings-section-head p, .configuration-note p { font-size: 11px; }
+.form-grid label > span, .invite-form label > span { font-size: 10px; }
+.form-grid input, .form-grid select, .invite-form input, .invite-form select { font-size: 12px; }
+.input-unit b { font-size: 10px; }
+.channel-config-head { font-size: 10px; }
+.compact-input input { font-size: 11px; }
+.compact-input b { font-size: 9px; }
+.channel-toggle { font-size: 10px; }
+.connection-test-card p, .connection-test-card button { font-size: 11px; }
+.connection-test-card dt, .connection-test-card dd { font-size: 10px; }
+.user-identity > b { font-size: 11px; }
+.user-identity strong { font-size: 12px; }
+.user-identity small, .user-status { font-size: 10px; }
+.users-table select { font-size: 11px; }
+.role-matrix-grid strong { font-size: 11px; }
+.role-matrix-grid small { font-size: 10px; }
+
+.summary-tile > span { font-size: 11px; }
+.status-filter span { font-size: 9px; }
+.status-filter select { font-size: 11px; }
+.search-field input { font-size: 12px; }
+.alarm-table-head { font-size: 10px; }
+.alarm-table-row { font-size: 11px; }
+.event-cell strong { font-size: 12px; }
+.event-cell small { font-size: 10px; }
+.ack-button, .ghost-button, .workflow-badge { font-size: 10px; }
+.event-detail-header p { font-size: 11px; }
+.event-facts dt { font-size: 9px; }
+.event-facts dd { font-size: 11px; }
+.event-timeline h3 { font-size: 12px; }
+.event-timeline p strong, .event-timeline p small { font-size: 10px; }
+.event-note-form input { font-size: 11px; }
+.event-note-form button { font-size: 10px; }
+
+.autosave-state { font-size: 10px; }
+.notification-channel-card > p { font-size: 11px; }
+.notification-channel-card dt, .notification-channel-card dd { font-size: 10px; }
+.test-notification-button { font-size: 11px; }
+.notification-rule-head { font-size: 10px; }
+.notification-rule-row, .notification-rule-row select { font-size: 11px; }
+.notification-rule-row strong { font-size: 12px; }
+
 .mobile-scrim { display: none; }
 
 @media (max-width: 1120px) {
@@ -575,12 +680,12 @@ button.module-table-row { width: 100%; }
   .topbar-left { flex: 1; gap: 8px; }
   .site-selector { height: 40px; padding: 4px 9px; }
   .site-selector > svg, .site-selector > div > span { display: none; }
-  .site-selector select { font-size: 10px; text-overflow: ellipsis; }
+  .site-selector select { font-size: 11px; text-overflow: ellipsis; }
   .topbar-right { display: none; }
   .page-content { padding: 22px 14px 40px; }
   .page-heading { margin-bottom: 18px; display: block; }
   .page-heading h1 { font-size: 28px; }
-  .page-heading p { max-width: 94%; font-size: 11px; line-height: 1.45; }
+  .page-heading p { max-width: 94%; font-size: 13px; line-height: 1.45; }
   .heading-actions { margin-top: 16px; }
   .heading-actions .secondary-button { flex: 0 0 40px; padding: 0; }
   .heading-actions .secondary-button span { display: none; }
