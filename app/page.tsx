@@ -37,7 +37,7 @@ import {
   IconX as X,
 } from "@tabler/icons-react";
 
-type View = "overview" | "cabinet" | "trends" | "alarms" | "history" | "settings" | "users";
+type View = "overview" | "cabinet" | "trends" | "alarms" | "history" | "settings" | "users" | "notifications";
 type Severity = "critical" | "warning" | "info";
 type SensorState = "normal" | "warning" | "critical";
 type HistoryTab = "measurements" | "alarms" | "audit";
@@ -106,6 +106,7 @@ const navGroups = [
     items: [
       { id: "settings" as View, label: "Configuración", description: "Activo, canales y gateway", icon: Settings },
       { id: "users" as View, label: "Usuarios y roles", description: "Acceso y permisos", icon: Users },
+      { id: "notifications" as View, label: "Notificaciones", description: "Canales y escalamiento", icon: Mail },
     ],
   },
 ];
@@ -118,6 +119,7 @@ const viewTitles: Record<View, { title: string; description: string }> = {
   history: { title: "Histórico", description: "Mediciones, alarmas y cambios administrativos en una sola trazabilidad." },
   settings: { title: "Configuración", description: "Parámetros del activo, canales de adquisición y comunicaciones." },
   users: { title: "Usuarios y roles", description: "Control de acceso y permisos para la operación OT." },
+  notifications: { title: "Notificaciones", description: "Canales de entrega, reglas de escalamiento y trazabilidad." },
 };
 
 function StatusPill({ state, children }: { state: SensorState | Severity | "online"; children: React.ReactNode }) {
@@ -385,33 +387,59 @@ function TrendsView({ period, setPeriod, selectedId, onSelectChannel, onBackToMa
 
 function AlarmsView({ acknowledged, onAcknowledge }: { acknowledged: string[]; onAcknowledge: (id: string) => void }) {
   const [severity, setSeverity] = useState<"all" | Severity>("all");
+  const [workflowStatus, setWorkflowStatus] = useState<"all" | "open" | "acknowledged" | "closed">("all");
   const [query, setQuery] = useState("");
-  const filtered = useMemo(() => initialAlarms.filter((alarm) => (severity === "all" || alarm.severity === severity) && `${alarm.title} ${alarm.detail}`.toLowerCase().includes(query.toLowerCase())), [severity, query]);
+  const [selectedId, setSelectedId] = useState(initialAlarms[0].id);
+  const [closedIds, setClosedIds] = useState<string[]>([]);
+  const [assignees, setAssignees] = useState<Record<string, string>>({ [initialAlarms[0].id]: "Paula Rojas" });
+  const [notes, setNotes] = useState<Record<string, string[]>>({});
+  const [noteInput, setNoteInput] = useState("");
+  const getWorkflowStatus = (alarm: (typeof initialAlarms)[number]) => closedIds.includes(alarm.id) ? "closed" : alarm.acknowledged || acknowledged.includes(alarm.id) ? "acknowledged" : "open";
+  const filtered = useMemo(() => initialAlarms.filter((alarm) => (severity === "all" || alarm.severity === severity) && (workflowStatus === "all" || getWorkflowStatus(alarm) === workflowStatus) && `${alarm.title} ${alarm.detail}`.toLowerCase().includes(query.toLowerCase())), [severity, workflowStatus, query, acknowledged, closedIds]);
+  const selected = initialAlarms.find((alarm) => alarm.id === selectedId) ?? initialAlarms[0];
+  const selectedStatus = getWorkflowStatus(selected);
+  const selectedNotes = notes[selected.id] ?? [];
+  const addNote = (event: React.FormEvent) => { event.preventDefault(); if (!noteInput.trim()) return; setNotes((current) => ({ ...current, [selected.id]: [...(current[selected.id] ?? []), noteInput.trim()] })); setNoteInput(""); };
+  const closeEvent = () => { if (selectedStatus === "open") onAcknowledge(selected.id); setClosedIds((current) => current.includes(selected.id) ? current : [...current, selected.id]); };
+  const reopenEvent = () => setClosedIds((current) => current.filter((id) => id !== selected.id));
+  const openCritical = initialAlarms.filter((alarm) => alarm.severity === "critical" && !closedIds.includes(alarm.id)).length;
+  const openWarnings = initialAlarms.filter((alarm) => alarm.severity === "warning" && !closedIds.includes(alarm.id)).length;
   return (
     <>
       <section className="alarm-summary">
-        <div className="summary-tile critical"><span>Críticas</span><strong>1</strong><AlertTriangle size={24} /></div>
-        <div className="summary-tile warning"><span>Advertencias</span><strong>2</strong><BellRing size={24} /></div>
+        <div className="summary-tile critical"><span>Críticas abiertas</span><strong>{openCritical}</strong><AlertTriangle size={24} /></div>
+        <div className="summary-tile warning"><span>Advertencias abiertas</span><strong>{openWarnings}</strong><BellRing size={24} /></div>
         <div className="summary-tile normal"><span>MTTA promedio</span><strong>8.5<small> min</small></strong><Clock3 size={24} /></div>
       </section>
       <article className="panel alarm-table-panel">
         <div className="alarm-toolbar">
           <label className="search-field"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filtrar mensaje, sensor o zona…" /></label>
-          <div className="segmented">{(["all", "critical", "warning", "info"] as const).map((item) => <button key={item} className={severity === item ? "active" : ""} onClick={() => setSeverity(item)}>{item === "all" ? "Todas" : item === "critical" ? "Críticas" : item === "warning" ? "Advertencias" : "Info"}</button>)}</div>
+          <div className="alarm-filters"><label className="status-filter"><span>Estado</span><select value={workflowStatus} onChange={(event) => setWorkflowStatus(event.target.value as typeof workflowStatus)}><option value="all">Todos</option><option value="open">Abiertas</option><option value="acknowledged">Reconocidas</option><option value="closed">Cerradas</option></select><ChevronDown size={13} /></label><div className="segmented">{(["all", "critical", "warning", "info"] as const).map((item) => <button key={item} className={severity === item ? "active" : ""} onClick={() => setSeverity(item)}>{item === "all" ? "Todas" : item === "critical" ? "Críticas" : item === "warning" ? "Advertencias" : "Info"}</button>)}</div></div>
         </div>
-        <div className="alarm-table">
+        <div className="alarm-table-wrap"><div className="alarm-table">
           <div className="alarm-table-head"><span>Severidad</span><span>Evento / activo</span><span>Tiempo activo</span><span>Valor</span><span>Estado</span><span>Acción</span></div>
           {filtered.map((alarm) => {
-            const isAck = alarm.acknowledged || acknowledged.includes(alarm.id);
-            return <div className="alarm-table-row" key={alarm.id}>
+            const status = getWorkflowStatus(alarm);
+            return <div className={`alarm-table-row ${selected.id === alarm.id ? "selected" : ""}`} key={alarm.id}>
               <span><StatusPill state={alarm.severity}>{alarm.severity === "critical" ? "Crítica" : alarm.severity === "warning" ? "Advertencia" : "Informativa"}</StatusPill></span>
               <span className="event-cell"><strong>{alarm.title}</strong><small>{alarm.detail} · {alarm.id}</small></span>
               <span>{alarm.since}</span><span><strong>{alarm.value}</strong></span>
-              <span>{isAck ? <span className="ack-state"><CheckCircle2 size={15} /> Reconocida</span> : <span className="unack-state"><Clock3 size={15} /> Sin reconocer</span>}</span>
-              <span>{isAck ? <button className="ghost-button">Ver detalle</button> : <button className="ack-button" onClick={() => onAcknowledge(alarm.id)}>Reconocer</button>}</span>
+              <span>{status === "closed" ? <span className="closed-state"><CheckCircle2 size={15} /> Cerrada</span> : status === "acknowledged" ? <span className="ack-state"><CheckCircle2 size={15} /> Reconocida</span> : <span className="unack-state"><Clock3 size={15} /> Sin reconocer</span>}</span>
+              <span><button className={selected.id === alarm.id ? "ack-button" : "ghost-button"} onClick={() => setSelectedId(alarm.id)}>Gestionar</button></span>
             </div>;
           })}
-        </div>
+        </div></div>
+        <section className={`event-detail-panel event-${selected.severity}`}>
+          <div className="event-detail-header"><span className="event-detail-icon"><AlertTriangle size={20} /></span><div><span className="eyebrow">Evento seleccionado · {selected.id}</span><h2>{selected.title}</h2><p>{selected.detail}</p></div><span className={`workflow-badge workflow-${selectedStatus}`}>{selectedStatus === "closed" ? "Cerrada" : selectedStatus === "acknowledged" ? "Reconocida" : "Abierta"}</span></div>
+          <div className="event-workspace">
+            <div className="event-management">
+              <dl className="event-facts"><div><dt>Valor detectado</dt><dd>{selected.value}</dd></div><div><dt>Inicio</dt><dd>{selected.since}</dd></div><div><dt>Responsable</dt><dd><select value={assignees[selected.id] ?? "Sin asignar"} onChange={(event) => setAssignees((current) => ({ ...current, [selected.id]: event.target.value }))}><option>Sin asignar</option><option>Emerson Allende</option><option>Paula Rojas</option><option>Felipe Soto</option></select></dd></div></dl>
+              <div className="event-actions">{selectedStatus === "open" && <button className="primary-button" onClick={() => onAcknowledge(selected.id)}><CheckCircle2 size={15} /> Reconocer evento</button>}{selectedStatus === "closed" ? <button className="secondary-button" onClick={reopenEvent}>Reabrir evento</button> : <button className="secondary-button" onClick={closeEvent}><ShieldCheck size={15} /> Cerrar evento</button>}</div>
+            </div>
+            <div className="event-timeline"><h3>Línea de tiempo</h3><div><span className="timeline-dot critical" /><p><strong>Evento detectado</strong><small>{selected.since} · Motor de reglas CAM5</small></p></div>{selectedStatus !== "open" && <div><span className="timeline-dot normal" /><p><strong>Evento reconocido</strong><small>Emerson Allende · Portal web</small></p></div>}{selectedNotes.map((note, index) => <div key={`${selected.id}-${index}`}><span className="timeline-dot info" /><p><strong>Nota operativa</strong><small>{note}</small></p></div>)}{selectedStatus === "closed" && <div><span className="timeline-dot normal" /><p><strong>Evento cerrado</strong><small>Condición revisada por el operador</small></p></div>}</div>
+          </div>
+          <form className="event-note-form" onSubmit={addNote}><input value={noteInput} onChange={(event) => setNoteInput(event.target.value)} placeholder="Agregar una nota de seguimiento…" /><button type="submit">Agregar nota</button></form>
+        </section>
       </article>
     </>
   );
@@ -518,6 +546,46 @@ function UsersView() {
   );
 }
 
+function NotificationsView() {
+  const [tab, setTab] = useState<"channels" | "rules" | "delivery">("channels");
+  const [testedChannel, setTestedChannel] = useState<string | null>(null);
+  const [channels, setChannels] = useState([
+    { id: "email", name: "Correo OT", detail: "Alertas a responsables y turnos", destination: "operaciones@cam5.local", enabled: true, status: "Verificado" },
+    { id: "teams", name: "Microsoft Teams", detail: "Canal del equipo de mantenimiento", destination: "Equipo · Mantenimiento eléctrico", enabled: true, status: "Conectado" },
+    { id: "webhook", name: "Webhook CMMS", detail: "Creación de avisos externos", destination: "https://cmms.local/cam5/events", enabled: false, status: "Sin configurar" },
+  ]);
+  const [rules, setRules] = useState([
+    { id: 1, event: "Evento crítico", scope: "Todos los activos", delay: "Inmediato", recipients: "Administrador + Ingeniero", enabled: true },
+    { id: 2, event: "Advertencia persistente", scope: "Más de 5 minutos", delay: "5 minutos", recipients: "Ingeniero + Operador", enabled: true },
+    { id: 3, event: "Pérdida de comunicación", scope: "Gateway sin datos", delay: "10 minutos", recipients: "Administrador", enabled: true },
+    { id: 4, event: "Recuperación del activo", scope: "Retorno a normal", delay: "Inmediato", recipients: "Operador", enabled: false },
+  ]);
+  const deliveries = [
+    { time: "Hoy 11:48:04", event: "AL-260811-031 · Descarga parcial", channel: "Correo OT", recipient: "2 destinatarios", state: "Entregada" },
+    { time: "Hoy 11:48:05", event: "AL-260811-031 · Descarga parcial", channel: "Microsoft Teams", recipient: "Mantenimiento eléctrico", state: "Entregada" },
+    { time: "Hoy 09:22:18", event: "AL-260811-028 · Diferencial térmico", channel: "Correo OT", recipient: "3 destinatarios", state: "Entregada" },
+    { time: "Ayer 18:43:11", event: "Recuperación de gateway", channel: "Correo OT", recipient: "1 destinatario", state: "Entregada" },
+  ];
+  const testChannel = (id: string) => { setTestedChannel(id); window.setTimeout(() => setTestedChannel(null), 2200); };
+  const toggleChannel = (id: string) => setChannels((current) => current.map((channel) => channel.id === id ? { ...channel, enabled: !channel.enabled } : channel));
+  const updateRule = (id: number, field: "delay" | "recipients" | "enabled", value: string | boolean) => setRules((current) => current.map((rule) => rule.id === id ? { ...rule, [field]: value } : rule));
+
+  return (
+    <>
+      <section className="module-summary-grid notification-summary"><article><span className="module-summary-icon green"><Mail size={19} /></span><div><small>Canales activos</small><strong>{channels.filter((channel) => channel.enabled).length}</strong><span>de {channels.length} configurados</span></div></article><article><span className="module-summary-icon blue"><BellRing size={19} /></span><div><small>Reglas habilitadas</small><strong>{rules.filter((rule) => rule.enabled).length}</strong><span>Escalamiento automático</span></div></article><article><span className="module-summary-icon amber"><CheckCircle2 size={19} /></span><div><small>Entrega últimas 24 h</small><strong>100%</strong><span>4 de 4 entregadas</span></div></article></section>
+      <article className="panel module-panel notification-module">
+        <div className="module-toolbar"><div className="module-tabs" role="tablist" aria-label="Secciones de notificaciones"><button className={tab === "channels" ? "active" : ""} onClick={() => setTab("channels")}><Mail size={16} /> Canales</button><button className={tab === "rules" ? "active" : ""} onClick={() => setTab("rules")}><BellRing size={16} /> Escalamiento</button><button className={tab === "delivery" ? "active" : ""} onClick={() => setTab("delivery")}><Timeline size={16} /> Entregas</button></div><span className="autosave-state"><CheckCircle2 size={14} /> Cambios locales guardados</span></div>
+
+        {tab === "channels" && <div className="notification-content"><div className="settings-section-head"><span className="settings-icon"><Mail size={20} /></span><div><h2>Canales de notificación</h2><p>Define cómo se informa un evento a los equipos responsables.</p></div></div><div className="notification-channel-grid">{channels.map((channel) => <article className={`notification-channel-card ${channel.enabled ? "enabled" : ""}`} key={channel.id}><div className="notification-channel-head"><span className="notification-channel-icon">{channel.id === "email" ? <Mail size={20} /> : channel.id === "teams" ? <Users size={20} /> : <PlugConnected size={20} />}</span><button className={`switch-control ${channel.enabled ? "on" : ""}`} onClick={() => toggleChannel(channel.id)} aria-label={`${channel.enabled ? "Desactivar" : "Activar"} ${channel.name}`}><i /></button></div><h3>{channel.name}</h3><p>{channel.detail}</p><dl><div><dt>Destino</dt><dd>{channel.destination}</dd></div><div><dt>Estado</dt><dd className={channel.enabled ? "quality-ok" : "muted-state"}>{channel.status}</dd></div></dl><button className="test-notification-button" onClick={() => testChannel(channel.id)} disabled={!channel.enabled}>{testedChannel === channel.id ? <><CheckCircle2 size={15} /> Prueba enviada</> : <><BellRing size={15} /> Enviar prueba</>}</button></article>)}</div></div>}
+
+        {tab === "rules" && <div className="notification-content notification-rules"><div className="settings-section-head"><span className="settings-icon"><BellRing size={20} /></span><div><h2>Reglas de escalamiento</h2><p>Relaciona severidad, espera y destinatarios responsables.</p></div></div><div className="notification-rule-table"><div className="notification-rule-head"><span>Condición</span><span>Alcance</span><span>Espera</span><span>Destinatarios</span><span>Estado</span></div>{rules.map((rule) => <div className="notification-rule-row" key={rule.id}><span><strong>{rule.event}</strong></span><span>{rule.scope}</span><span><select value={rule.delay} onChange={(event) => updateRule(rule.id, "delay", event.target.value)}><option>Inmediato</option><option>5 minutos</option><option>10 minutos</option><option>30 minutos</option></select></span><span><select value={rule.recipients} onChange={(event) => updateRule(rule.id, "recipients", event.target.value)}><option>Administrador</option><option>Administrador + Ingeniero</option><option>Ingeniero + Operador</option><option>Operador</option></select></span><span><button className={`channel-toggle ${rule.enabled ? "on" : ""}`} onClick={() => updateRule(rule.id, "enabled", !rule.enabled)}><i />{rule.enabled ? "Activa" : "Inactiva"}</button></span></div>)}</div><div className="configuration-note"><ShieldCheck size={17} /><p>Las reglas críticas se envían de inmediato. Las esperas solo se aplican cuando la condición permanece activa durante el periodo configurado.</p></div></div>}
+
+        {tab === "delivery" && <div className="notification-content delivery-content"><div className="settings-section-head"><span className="settings-icon"><Timeline size={20} /></span><div><h2>Registro de entregas</h2><p>Trazabilidad de mensajes emitidos por el motor de notificaciones.</p></div></div><div className="module-table-wrap"><div className="delivery-table"><div className="module-table-head"><span>Fecha</span><span>Evento</span><span>Canal</span><span>Destino</span><span>Resultado</span></div>{deliveries.map((delivery) => <div className="module-table-row" key={`${delivery.time}-${delivery.channel}`}><span className="mono-cell">{delivery.time}</span><span>{delivery.event}</span><span>{delivery.channel}</span><span>{delivery.recipient}</span><span className="quality-ok"><CheckCircle2 size={14} /> {delivery.state}</span></div>)}</div></div></div>}
+      </article>
+    </>
+  );
+}
+
 export default function Home() {
   const [view, setView] = useState<View>("overview");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -579,7 +647,7 @@ export default function Home() {
 
         <div className="content-scroll">
           <div className="page-content">
-            <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> Gestión de activos críticos</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{view !== "settings" && view !== "users" && <button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button>}<button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{3 - acknowledged.length} alertas abiertas</button></div></section>
+            <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> Gestión de activos críticos</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{view !== "settings" && view !== "users" && view !== "notifications" && <button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button>}<button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{3 - acknowledged.length} alertas abiertas</button></div></section>
             {view === "overview" && <Overview onNavigate={navigate} onAcknowledge={acknowledge} acknowledged={acknowledged} />}
             {view === "cabinet" && <CabinetView onOpenTrend={openChannelTrend} />}
             {view === "trends" && <TrendsView period={period} setPeriod={setPeriod} selectedId={trendSensorId} onSelectChannel={setTrendSensorId} onBackToMap={() => navigate("cabinet")} />}
@@ -587,6 +655,7 @@ export default function Home() {
             {view === "history" && <HistoryView />}
             {view === "settings" && <SettingsView />}
             {view === "users" && <UsersView />}
+            {view === "notifications" && <NotificationsView />}
           </div>
         </div>
       </main>
