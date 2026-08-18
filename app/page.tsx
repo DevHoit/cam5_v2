@@ -13,7 +13,6 @@ import {
   IconCircleCheck as CheckCircle2,
   IconCircuitCell as CircuitBoard,
   IconClock as Clock3,
-  IconDotsVertical as DotsVertical,
   IconDownload as Download,
   IconDroplet as Droplets,
   IconGauge as Gauge,
@@ -264,7 +263,7 @@ function Overview({ onNavigate, onAcknowledge, acknowledged }: { onNavigate: (vi
   );
 }
 
-function CabinetView() {
+function CabinetView({ onOpenTrend }: { onOpenTrend: (id: string) => void }) {
   const [selectedId, setSelectedId] = useState("PD1");
   const selected = sensors.find((sensor) => sensor.id === selectedId)!;
   const SelectedIcon = selected.type === "Temperatura" ? Thermometer : selected.type === "Humedad" ? Droplets : Activity;
@@ -283,7 +282,7 @@ function CabinetView() {
           <div className="selected-sensor-value">{selected.value}<span>{selected.unit}</span></div>
           <p>{selected.label} · {selected.zone}</p>
           <dl><div><dt>Tendencia</dt><dd>{selected.trend}</dd></div><div><dt>Umbral</dt><dd>{selected.threshold}</dd></div><div><dt>Registro asumido</dt><dd>{selected.register}</dd></div><div><dt>Calidad</dt><dd>{selected.quality}</dd></div></dl>
-          <button type="button">Abrir tendencia del canal <TrendingUp size={16} /></button>
+          <button type="button" onClick={() => onOpenTrend(selected.id)}>Abrir tendencia del canal <TrendingUp size={16} /></button>
         </div>
         <div className="panel-header compact sensor-list-header"><div><span className="eyebrow">Canales configurados</span><h2>Matriz de sensores</h2></div><span className="data-fresh"><Wifi size={14} /> Hace 2 s</span></div>
         <div className="sensor-list">
@@ -300,29 +299,50 @@ function CabinetView() {
   );
 }
 
-function TrendsView({ period, setPeriod, onExport }: { period: string; setPeriod: (period: string) => void; onExport: () => void }) {
+function TrendsView({ period, setPeriod, onExport, selectedId, onSelectChannel, onBackToMap }: { period: string; setPeriod: (period: string) => void; onExport: () => void; selectedId: string; onSelectChannel: (id: string) => void; onBackToMap: () => void }) {
+  const selected = sensors.find((sensor) => sensor.id === selectedId) ?? sensors[0];
+  const currentValue = Number(selected.value);
+  const thresholdValue = Number.parseFloat(selected.threshold);
+  const amplitude = selected.type === "Descarga parcial" ? (selected.state === "critical" ? 48 : 8) : selected.type === "Humedad" ? 14 : selected.state === "warning" ? 17 : 5;
+  const profile = [-1, -.96, -.98, -.9, -.84, -.87, -.78, -.73, -.68, -.7, -.62, -.56, -.5, -.45, -.38, -.4, -.3, -.25, -.27, -.18, -.12, -.08, -.05, 0];
+  const series = profile.map((point) => Math.max(0, Number((currentValue + point * amplitude).toFixed(1))));
+  const chartMax = Math.ceil(Math.max(currentValue, thresholdValue, ...series) * 1.15 / 10) * 10;
+  const variation = currentValue - series[0];
+  const stateLabel = selected.state === "critical" ? "Crítico" : selected.state === "warning" ? "Advertencia" : "Normal";
+  const stateTone = selected.state === "critical" ? "red" : selected.state === "warning" ? "amber" : "green";
+  const SelectedIcon = selected.type === "Temperatura" ? Thermometer : selected.type === "Humedad" ? Droplets : Activity;
+  const insight = selected.state === "critical"
+    ? `${selected.id} mantiene crecimiento sostenido y supera el umbral configurado. Se recomienda inspección prioritaria de ${selected.zone.toLowerCase()}.`
+    : selected.state === "warning"
+      ? `${selected.id} se encuentra sobre el umbral operativo y presenta una tendencia ascendente. Conviene verificar el activo durante el próximo ciclo de carga.`
+      : `${selected.id} permanece dentro del rango esperado y sin cambios relevantes durante el periodo seleccionado.`;
+
   return (
     <>
       <section className="toolbar-row">
-        <div className="segmented" aria-label="Rango temporal">{["24 h", "7 días", "30 días"].map((item) => <button key={item} className={period === item ? "active" : ""} onClick={() => setPeriod(item)}>{item}</button>)}</div>
+        <div className="trend-toolbar-controls">
+          <label className="channel-select"><Activity size={16} /><span><small>Canal</small><select value={selected.id} onChange={(event) => onSelectChannel(event.target.value)} aria-label="Seleccionar canal de tendencia">{sensors.map((sensor) => <option key={sensor.id} value={sensor.id}>{sensor.id} · {sensor.label}</option>)}</select></span><ChevronDown size={14} /></label>
+          <div className="segmented" aria-label="Rango temporal">{["24 h", "7 días", "30 días"].map((item) => <button key={item} className={period === item ? "active" : ""} onClick={() => setPeriod(item)}>{item}</button>)}</div>
+        </div>
         <button className="secondary-button" onClick={onExport}><Download size={16} /> Exportar CSV</button>
       </section>
       <section className="metrics-grid compact-metrics">
-        <MetricCard label="Máxima T01" value="68.4" unit="°C" note="A las 11:42" tone="amber" icon={Thermometer} />
-        <MetricCard label="Promedio térmico" value="51.8" unit="°C" note="+3.2 °C vs. periodo anterior" tone="blue" icon={Gauge} />
-        <MetricCard label="Máximo PD1" value="74" unit="idx" note="SNR 18.2 dB" tone="red" icon={Activity} />
-        <MetricCard label="Variación humedad" value="+8" unit="%" note="Rango 66–78 %RH" tone="green" icon={Droplets} />
+        <MetricCard label="Lectura actual" value={selected.value} unit={selected.unit} note={`${selected.id} · ${selected.label}`} tone={stateTone} icon={SelectedIcon} />
+        <MetricCard label="Umbral configurado" value={String(thresholdValue)} unit={selected.unit} note={currentValue > thresholdValue ? "Umbral superado" : "Dentro del rango"} tone={currentValue > thresholdValue ? "amber" : "green"} icon={Gauge} />
+        <MetricCard label="Variación del periodo" value={`+${variation.toFixed(selected.type === "Descarga parcial" ? 0 : 1)}`} unit={selected.unit} note={selected.trend} tone="blue" icon={TrendingUp} />
+        <MetricCard label="Calidad del dato" value="100" unit="%" note={`${selected.quality} · actualizado hace 2 s`} tone="green" icon={ShieldCheck} />
       </section>
       <article className="panel chart-panel">
-        <div className="panel-header"><div><span className="eyebrow">Resolución 1 hora · {period}</span><h2>Temperatura vs. descarga parcial</h2><p>La correlación aumenta durante los periodos de mayor carga.</p></div><StatusPill state="warning">Correlación 0.78</StatusPill></div>
-        <div className="chart-scale"><span>100</span><span>75</span><span>50</span><span>25</span><span>0</span></div>
-        <div className="large-chart">
-          {chartData.map(([temp, pd], index) => <span key={index} title={`${index}:00 · T ${temp} · PD ${pd}`}><i style={{ height: `${temp}%` }} /><b style={{ height: `${pd}%` }} /></span>)}
+        <div className="panel-header"><div><span className="eyebrow">{selected.id} · Resolución 1 hora · {period}</span><h2>{selected.label}</h2><p>{selected.zone} · {selected.type}</p></div><StatusPill state={selected.state}>{stateLabel}</StatusPill></div>
+        <div className="chart-scale"><span>{chartMax}</span><span>{Math.round(chartMax * .75)}</span><span>{Math.round(chartMax * .5)}</span><span>{Math.round(chartMax * .25)}</span><span>0</span></div>
+        <div className={`large-chart channel-chart chart-${selected.state}`}>
+          <div className="threshold-line" style={{ bottom: `${Math.min(100, thresholdValue / chartMax * 100)}%` }}><span>Umbral {selected.threshold}</span></div>
+          {series.map((value, index) => <span key={index} title={`${String(index).padStart(2, "0")}:00 · ${value} ${selected.unit}`}><i style={{ height: `${Math.max(3, value / chartMax * 100)}%` }} /></span>)}
         </div>
         <div className="chart-axis"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>23:00</span></div>
-        <div className="chart-legend centered"><span><i className="legend-temp" />Temperatura T01 (°C)</span><span><i className="legend-pd" />Índice PD1</span></div>
+        <div className="chart-legend centered"><span><i className={`legend-channel legend-${selected.state}`} />{selected.id} · {selected.unit}</span><span><i className="legend-threshold" />Umbral {selected.threshold}</span></div>
       </article>
-      <article className="panel insight-panel"><span className="insight-icon"><TrendingUp size={20} /></span><div><strong>Hallazgo operativo</strong><p>PD1 supera el patrón base desde las 16:00 y acelera junto con el diferencial térmico de L1. Se recomienda inspección prioritaria del compartimiento de cables.</p></div><button>Crear orden de inspección</button></article>
+      <article className={`panel insight-panel insight-${selected.state}`}><span className="insight-icon"><TrendingUp size={20} /></span><div><strong>Interpretación del canal</strong><p>{insight}</p></div><button onClick={onBackToMap}><CircuitBoard size={15} /> Volver al mapa</button></article>
     </>
   );
 }
@@ -365,10 +385,12 @@ export default function Home() {
   const [view, setView] = useState<View>("overview");
   const [menuOpen, setMenuOpen] = useState(false);
   const [period, setPeriod] = useState("24 h");
+  const [trendSensorId, setTrendSensorId] = useState("T01");
   const [acknowledged, setAcknowledged] = useState<string[]>([]);
   const [asset, setAsset] = useState("MCC-01 · Alimentador Norte");
 
   const navigate = (next: View) => { setView(next); setMenuOpen(false); };
+  const openChannelTrend = (id: string) => { setTrendSensorId(id); navigate("trends"); };
   const acknowledge = (id: string) => setAcknowledged((current) => current.includes(id) ? current : [...current, id]);
   const exportCsv = () => {
     const rows = ["canal,tipo,ubicacion,valor,unidad,estado", ...sensors.map((sensor) => [sensor.id, sensor.type, sensor.zone, sensor.value, sensor.unit, sensor.state].join(","))];
@@ -384,15 +406,6 @@ export default function Home() {
           <span className="brand-mark"><Zap size={22} strokeWidth={2.3} /></span>
           <div className="brand-copy"><span className="brand-name"><strong>CAM5</strong><b>CORE</b></span><small>Critical asset intelligence</small></div>
           <button className="sidebar-close" aria-label="Cerrar menú" onClick={() => setMenuOpen(false)}><X size={20} /></button>
-        </div>
-
-        <div className="sidebar-context">
-          <div className="context-heading"><span>Contexto activo</span><button aria-label="Cambiar contexto"><DotsVertical size={16} /></button></div>
-          <div className="context-card">
-            <span className="context-icon"><Building2 size={18} /></span>
-            <div><strong>Subestación Norte</strong><small>MCC-01 · 13.8 kV</small></div>
-            <span className="context-state" title="Atención requerida" />
-          </div>
         </div>
 
         <nav className="sidebar-nav" aria-label="Navegación principal">
@@ -431,8 +444,8 @@ export default function Home() {
           <div className="page-content">
             <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> Gestión de activos críticos</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions"><button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button><button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{3 - acknowledged.length} alertas abiertas</button></div></section>
             {view === "overview" && <Overview onNavigate={navigate} onAcknowledge={acknowledge} acknowledged={acknowledged} />}
-            {view === "cabinet" && <CabinetView />}
-            {view === "trends" && <TrendsView period={period} setPeriod={setPeriod} onExport={exportCsv} />}
+            {view === "cabinet" && <CabinetView onOpenTrend={openChannelTrend} />}
+            {view === "trends" && <TrendsView period={period} setPeriod={setPeriod} onExport={exportCsv} selectedId={trendSensorId} onSelectChannel={setTrendSensorId} onBackToMap={() => navigate("cabinet")} />}
             {view === "alarms" && <AlarmsView acknowledged={acknowledged} onAcknowledge={acknowledge} />}
           </div>
         </div>
