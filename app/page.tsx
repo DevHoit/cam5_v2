@@ -13,25 +13,36 @@ import {
   IconCircleCheck as CheckCircle2,
   IconCircuitCell as CircuitBoard,
   IconClock as Clock3,
+  IconDatabase as Database,
+  IconDeviceFloppy as Save,
   IconDownload as Download,
   IconDroplet as Droplets,
   IconGauge as Gauge,
   IconHistory as History,
   IconLayoutDashboard as LayoutDashboard,
+  IconMail as Mail,
   IconMenu2 as Menu,
+  IconPlugConnected as PlugConnected,
   IconRadio as Radio,
   IconSearch as Search,
   IconServer as Server,
+  IconSettings as Settings,
   IconShieldCheck as ShieldCheck,
   IconTemperature as Thermometer,
+  IconTimeline as Timeline,
   IconTrendingUp as TrendingUp,
+  IconUserPlus as UserPlus,
+  IconUsers as Users,
   IconWifi as Wifi,
   IconX as X,
 } from "@tabler/icons-react";
 
-type View = "overview" | "cabinet" | "trends" | "alarms";
+type View = "overview" | "cabinet" | "trends" | "alarms" | "history" | "settings" | "users";
 type Severity = "critical" | "warning" | "info";
 type SensorState = "normal" | "warning" | "critical";
+type HistoryTab = "measurements" | "alarms" | "audit";
+type SettingsTab = "asset" | "channels" | "gateway";
+type UserRole = "Administrador" | "Ingeniero" | "Operador" | "Solo lectura";
 
 const sensors = [
   { id: "T01", label: "Barra fase L1", zone: "Barras principales", value: "68.4", unit: "°C", type: "Temperatura", state: "warning" as SensorState, trend: "+1.8 °C/h", threshold: "65 °C", register: "HR 40001", quality: "Válida" },
@@ -57,6 +68,20 @@ const chartData = [
   [63, 55], [65, 59], [64, 61], [66, 66], [67, 70], [68, 72], [67, 71], [68, 74],
 ];
 
+const auditEntries = [
+  { time: "Hoy 11:48", user: "Emerson Allende", action: "Umbral crítico actualizado", target: "PD1 · 65 → 60 idx", origin: "Portal web" },
+  { time: "Hoy 09:22", user: "Paula Rojas", action: "Alarma reconocida", target: "AL-260811-028 · T01", origin: "Portal web" },
+  { time: "Ayer 18:43", user: "Sistema", action: "Gateway reconectado", target: "CAM5-GW-01", origin: "Servicio OT" },
+  { time: "Ayer 16:15", user: "Emerson Allende", action: "Registro Modbus modificado", target: "H01 · HR 40201", origin: "Portal web" },
+  { time: "10 ago 14:06", user: "Felipe Soto", action: "Informe exportado", target: "MCC-01 · 30 días", origin: "Portal web" },
+];
+
+const closedAlarms = [
+  ...initialAlarms,
+  { id: "AL-260809-087", severity: "warning" as Severity, title: "Latencia de gateway elevada", detail: "CAM5-GW-01 · Comunicaciones", since: "9 ago 13:22", value: "218 ms", acknowledged: true },
+  { id: "AL-260807-044", severity: "info" as Severity, title: "Reinicio programado", detail: "CAM5-GW-01 · Firmware", since: "7 ago 02:00", value: "Completado", acknowledged: true },
+];
+
 const navGroups = [
   {
     index: "01",
@@ -70,8 +95,17 @@ const navGroups = [
     index: "02",
     label: "Diagnóstico",
     items: [
-      { id: "trends" as View, label: "Tendencias", description: "Históricos y correlación", icon: History },
+      { id: "trends" as View, label: "Tendencias", description: "Evolución por canal", icon: History },
       { id: "alarms" as View, label: "Centro de alertas", description: "Triage y seguimiento", icon: BellRing, badge: "3" },
+      { id: "history" as View, label: "Histórico", description: "Mediciones y trazabilidad", icon: Database },
+    ],
+  },
+  {
+    index: "03",
+    label: "Administración",
+    items: [
+      { id: "settings" as View, label: "Configuración", description: "Activo, canales y gateway", icon: Settings },
+      { id: "users" as View, label: "Usuarios y roles", description: "Acceso y permisos", icon: Users },
     ],
   },
 ];
@@ -81,6 +115,9 @@ const viewTitles: Record<View, { title: string; description: string }> = {
   cabinet: { title: "Mapa de condición", description: "Ubicación, lectura y estado de cada canal instrumentado." },
   trends: { title: "Tendencias", description: "Evolución térmica, descarga parcial y humedad ambiental." },
   alarms: { title: "Centro de alertas", description: "Triage operativo, reconocimiento y trazabilidad de eventos." },
+  history: { title: "Histórico", description: "Mediciones, alarmas y cambios administrativos en una sola trazabilidad." },
+  settings: { title: "Configuración", description: "Parámetros del activo, canales de adquisición y comunicaciones." },
+  users: { title: "Usuarios y roles", description: "Control de acceso y permisos para la operación OT." },
 };
 
 function StatusPill({ state, children }: { state: SensorState | Severity | "online"; children: React.ReactNode }) {
@@ -380,6 +417,107 @@ function AlarmsView({ acknowledged, onAcknowledge }: { acknowledged: string[]; o
   );
 }
 
+function HistoryView() {
+  const [tab, setTab] = useState<HistoryTab>("measurements");
+  const [range, setRange] = useState("24 h");
+  const [channel, setChannel] = useState("all");
+  const visibleSensors = channel === "all" ? sensors : sensors.filter((sensor) => sensor.id === channel);
+
+  return (
+    <>
+      <section className="module-summary-grid">
+        <article><span className="module-summary-icon blue"><Database size={19} /></span><div><small>Registros del periodo</small><strong>345,600</strong><span>8 canales · {range}</span></div></article>
+        <article><span className="module-summary-icon green"><ShieldCheck size={19} /></span><div><small>Integridad de datos</small><strong>99.98%</strong><span>69 muestras estimadas</span></div></article>
+        <article><span className="module-summary-icon amber"><BellRing size={19} /></span><div><small>Eventos registrados</small><strong>6</strong><span>1 crítico · 3 advertencias</span></div></article>
+      </section>
+
+      <article className="panel module-panel">
+        <div className="module-toolbar">
+          <div className="module-tabs" role="tablist" aria-label="Tipo de histórico">
+            <button className={tab === "measurements" ? "active" : ""} onClick={() => setTab("measurements")}><Timeline size={16} /> Mediciones</button>
+            <button className={tab === "alarms" ? "active" : ""} onClick={() => setTab("alarms")}><BellRing size={16} /> Alarmas</button>
+            <button className={tab === "audit" ? "active" : ""} onClick={() => setTab("audit")}><ShieldCheck size={16} /> Auditoría</button>
+          </div>
+          <div className="history-filters">
+            {tab === "measurements" && <label><span>Canal</span><select value={channel} onChange={(event) => setChannel(event.target.value)}><option value="all">Todos los canales</option>{sensors.map((sensor) => <option key={sensor.id} value={sensor.id}>{sensor.id} · {sensor.label}</option>)}</select><ChevronDown size={13} /></label>}
+            <label><span>Periodo</span><select value={range} onChange={(event) => setRange(event.target.value)}><option>24 h</option><option>7 días</option><option>30 días</option><option>90 días</option></select><ChevronDown size={13} /></label>
+          </div>
+        </div>
+
+        {tab === "measurements" && <div className="module-table-wrap"><div className="history-table measurement-history"><div className="module-table-head"><span>Canal</span><span>Última lectura</span><span>Promedio</span><span>Mínimo</span><span>Máximo</span><span>Calidad</span></div>{visibleSensors.map((sensor) => {
+          const value = Number(sensor.value);
+          const spread = sensor.type === "Descarga parcial" ? 8 : sensor.type === "Humedad" ? 5 : 4;
+          return <div className="module-table-row" key={sensor.id}><span className="history-channel"><b className={`sensor-code sensor-${sensor.state}`}>{sensor.id}</b><span><strong>{sensor.label}</strong><small>{sensor.zone}</small></span></span><span className="mono-cell">{sensor.value} {sensor.unit}</span><span className="mono-cell">{(value - spread * .35).toFixed(1)} {sensor.unit}</span><span className="mono-cell">{(value - spread).toFixed(1)} {sensor.unit}</span><span className="mono-cell">{(value + (sensor.state === "normal" ? 1.2 : 2.4)).toFixed(1)} {sensor.unit}</span><span className="quality-ok"><CheckCircle2 size={14} /> Válida</span></div>;
+        })}</div></div>}
+
+        {tab === "alarms" && <div className="module-table-wrap"><div className="history-table alarm-history"><div className="module-table-head"><span>Fecha</span><span>Severidad</span><span>Evento</span><span>Valor</span><span>Estado</span></div>{closedAlarms.map((alarm, index) => <div className="module-table-row" key={alarm.id}><span>{index < 3 ? alarm.since : alarm.since}</span><span><StatusPill state={alarm.severity}>{alarm.severity === "critical" ? "Crítica" : alarm.severity === "warning" ? "Advertencia" : "Info"}</StatusPill></span><span className="event-cell"><strong>{alarm.title}</strong><small>{alarm.detail} · {alarm.id}</small></span><span className="mono-cell">{alarm.value}</span><span className={alarm.acknowledged ? "quality-ok" : "unack-state"}>{alarm.acknowledged ? <><CheckCircle2 size={14} /> Cerrada</> : <><Clock3 size={14} /> Abierta</>}</span></div>)}</div></div>}
+
+        {tab === "audit" && <div className="module-table-wrap"><div className="history-table audit-history"><div className="module-table-head"><span>Fecha</span><span>Usuario</span><span>Acción</span><span>Detalle</span><span>Origen</span></div>{auditEntries.map((entry) => <div className="module-table-row" key={`${entry.time}-${entry.action}`}><span>{entry.time}</span><span><strong>{entry.user}</strong></span><span>{entry.action}</span><span className="mono-cell">{entry.target}</span><span>{entry.origin}</span></div>)}</div></div>}
+
+        <div className="module-footer"><span><Database size={14} /> Retención configurada: 24 meses</span><small>Datos demostrativos · la persistencia se conectará al historiador.</small></div>
+      </article>
+    </>
+  );
+}
+
+function SettingsView() {
+  const [tab, setTab] = useState<SettingsTab>("asset");
+  const [saved, setSaved] = useState(false);
+  const [connection, setConnection] = useState<"idle" | "testing" | "success">("idle");
+  const [assetConfig, setAssetConfig] = useState({ name: "MCC-01", description: "Alimentador Norte", voltage: "13.8", location: "Subestación Norte", timezone: "America/Santiago" });
+  const [gatewayConfig, setGatewayConfig] = useState({ name: "CAM5-GW-01", protocol: "Modbus TCP", ip: "192.168.10.42", port: "502", unit: "1", polling: "2" });
+  const [channels, setChannels] = useState(sensors.map((sensor) => ({ ...sensor, enabled: true, warning: sensor.id === "PD1" ? "40" : sensor.id === "PD2" ? "40" : sensor.id === "H01" ? "75" : sensor.threshold.split(" ")[0], critical: sensor.id.startsWith("PD") ? "60" : sensor.id === "H01" ? "85" : String(Number(sensor.threshold.split(" ")[0]) + 10) })));
+  const saveChanges = () => { setSaved(true); window.setTimeout(() => setSaved(false), 2400); };
+  const testConnection = () => { setConnection("testing"); window.setTimeout(() => setConnection("success"), 900); };
+  const updateChannel = (id: string, field: "enabled" | "warning" | "critical", value: boolean | string) => setChannels((current) => current.map((item) => item.id === id ? { ...item, [field]: value } : item));
+
+  return (
+    <article className="panel module-panel settings-module">
+      <div className="module-toolbar">
+        <div className="module-tabs" role="tablist" aria-label="Secciones de configuración">
+          <button className={tab === "asset" ? "active" : ""} onClick={() => setTab("asset")}><Building2 size={16} /> Activo</button>
+          <button className={tab === "channels" ? "active" : ""} onClick={() => setTab("channels")}><Activity size={16} /> Canales y umbrales</button>
+          <button className={tab === "gateway" ? "active" : ""} onClick={() => setTab("gateway")}><PlugConnected size={16} /> Gateway</button>
+        </div>
+        <button className={`save-config-button ${saved ? "saved" : ""}`} onClick={saveChanges}>{saved ? <CheckCircle2 size={16} /> : <Save size={16} />}{saved ? "Cambios guardados" : "Guardar cambios"}</button>
+      </div>
+
+      {tab === "asset" && <div className="settings-content"><div className="settings-section-head"><span className="settings-icon"><Building2 size={20} /></span><div><h2>Identificación del activo</h2><p>Datos utilizados en navegación, reportes y trazabilidad.</p></div></div><div className="form-grid"><label><span>Código del activo</span><input value={assetConfig.name} onChange={(event) => setAssetConfig({ ...assetConfig, name: event.target.value })} /></label><label><span>Descripción</span><input value={assetConfig.description} onChange={(event) => setAssetConfig({ ...assetConfig, description: event.target.value })} /></label><label><span>Tensión nominal</span><div className="input-unit"><input value={assetConfig.voltage} onChange={(event) => setAssetConfig({ ...assetConfig, voltage: event.target.value })} /><b>kV</b></div></label><label><span>Ubicación</span><input value={assetConfig.location} onChange={(event) => setAssetConfig({ ...assetConfig, location: event.target.value })} /></label><label className="form-span-2"><span>Zona horaria</span><select value={assetConfig.timezone} onChange={(event) => setAssetConfig({ ...assetConfig, timezone: event.target.value })}><option>America/Santiago</option><option>UTC</option></select></label></div><div className="configuration-note"><ShieldCheck size={17} /><p><strong>Control de cambios activo.</strong> Las modificaciones quedarán registradas en el histórico de auditoría cuando exista persistencia.</p></div></div>}
+
+      {tab === "channels" && <div className="settings-content channels-settings"><div className="settings-section-head"><span className="settings-icon"><Activity size={20} /></span><div><h2>Canales y umbrales</h2><p>Habilita señales y define niveles operativos de alarma.</p></div></div><div className="channel-config-table"><div className="channel-config-head"><span>Canal</span><span>Registro</span><span>Advertencia</span><span>Crítico</span><span>Estado</span></div>{channels.map((channel) => <div className="channel-config-row" key={channel.id}><span className="history-channel"><b className={`sensor-code sensor-${channel.state}`}>{channel.id}</b><span><strong>{channel.label}</strong><small>{channel.type}</small></span></span><span className="mono-cell">{channel.register}</span><label className="compact-input"><input value={channel.warning} onChange={(event) => updateChannel(channel.id, "warning", event.target.value)} /><b>{channel.unit}</b></label><label className="compact-input"><input value={channel.critical} onChange={(event) => updateChannel(channel.id, "critical", event.target.value)} /><b>{channel.unit}</b></label><button className={`channel-toggle ${channel.enabled ? "on" : ""}`} onClick={() => updateChannel(channel.id, "enabled", !channel.enabled)}><i />{channel.enabled ? "Activo" : "Inactivo"}</button></div>)}</div></div>}
+
+      {tab === "gateway" && <div className="settings-content"><div className="settings-section-head"><span className="settings-icon"><PlugConnected size={20} /></span><div><h2>Comunicaciones del gateway</h2><p>Parámetros asumidos para la conexión con CAM5.</p></div></div><div className="gateway-layout"><div className="form-grid"><label><span>Nombre</span><input value={gatewayConfig.name} onChange={(event) => setGatewayConfig({ ...gatewayConfig, name: event.target.value })} /></label><label><span>Protocolo</span><select value={gatewayConfig.protocol} onChange={(event) => setGatewayConfig({ ...gatewayConfig, protocol: event.target.value })}><option>Modbus TCP</option><option>Modbus RTU</option></select></label><label><span>Dirección IP</span><input value={gatewayConfig.ip} onChange={(event) => setGatewayConfig({ ...gatewayConfig, ip: event.target.value })} /></label><label><span>Puerto</span><input value={gatewayConfig.port} onChange={(event) => setGatewayConfig({ ...gatewayConfig, port: event.target.value })} /></label><label><span>Unit ID</span><input value={gatewayConfig.unit} onChange={(event) => setGatewayConfig({ ...gatewayConfig, unit: event.target.value })} /></label><label><span>Intervalo de lectura</span><div className="input-unit"><input value={gatewayConfig.polling} onChange={(event) => setGatewayConfig({ ...gatewayConfig, polling: event.target.value })} /><b>s</b></div></label></div><aside className="connection-test-card"><span className={`connection-test-icon ${connection}`}><Radio size={24} /></span><h3>Prueba de conectividad</h3><p>Valida acceso, puerto y respuesta Modbus sin guardar los cambios.</p><dl><div><dt>Destino</dt><dd>{gatewayConfig.ip}:{gatewayConfig.port}</dd></div><div><dt>Timeout</dt><dd>3 segundos</dd></div></dl><button onClick={testConnection} disabled={connection === "testing"}>{connection === "testing" ? "Probando…" : connection === "success" ? <><CheckCircle2 size={15} /> Conexión correcta</> : <><PlugConnected size={15} /> Probar conexión</>}</button></aside></div></div>}
+    </article>
+  );
+}
+
+function UsersView() {
+  const [users, setUsers] = useState<Array<{ id: number; name: string; email: string; role: UserRole; status: "Activo" | "Suspendido" | "Invitado"; lastAccess: string }>>([
+    { id: 1, name: "Emerson Allende", email: "emerson@cam5.local", role: "Administrador", status: "Activo", lastAccess: "Ahora" },
+    { id: 2, name: "Paula Rojas", email: "paula.rojas@cam5.local", role: "Ingeniero", status: "Activo", lastAccess: "Hace 18 min" },
+    { id: 3, name: "Felipe Soto", email: "felipe.soto@cam5.local", role: "Operador", status: "Activo", lastAccess: "Hace 2 h" },
+    { id: 4, name: "Camila Díaz", email: "camila.diaz@cam5.local", role: "Solo lectura", status: "Invitado", lastAccess: "Pendiente" },
+  ]);
+  const [showInvite, setShowInvite] = useState(false);
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState<UserRole>("Operador");
+  const inviteUser = (event: React.FormEvent) => { event.preventDefault(); if (!email.trim()) return; const base = email.split("@")[0].replace(/[._-]+/g, " "); const name = base.replace(/\b\w/g, (letter) => letter.toUpperCase()); setUsers((current) => [...current, { id: Date.now(), name, email, role, status: "Invitado", lastAccess: "Pendiente" }]); setEmail(""); setShowInvite(false); };
+  const updateRole = (id: number, nextRole: UserRole) => setUsers((current) => current.map((user) => user.id === id ? { ...user, role: nextRole } : user));
+  const toggleUser = (id: number) => setUsers((current) => current.map((user) => user.id === id ? { ...user, status: user.status === "Activo" ? "Suspendido" : "Activo" } : user));
+
+  return (
+    <>
+      <section className="module-summary-grid user-summary-grid"><article><span className="module-summary-icon blue"><Users size={19} /></span><div><small>Usuarios registrados</small><strong>{users.length}</strong><span>{users.filter((user) => user.status === "Activo").length} activos</span></div></article><article><span className="module-summary-icon green"><ShieldCheck size={19} /></span><div><small>Administradores</small><strong>{users.filter((user) => user.role === "Administrador").length}</strong><span>Acceso total</span></div></article><article><span className="module-summary-icon amber"><Mail size={19} /></span><div><small>Invitaciones pendientes</small><strong>{users.filter((user) => user.status === "Invitado").length}</strong><span>Sin primer acceso</span></div></article></section>
+      <article className="panel module-panel users-module">
+        <div className="module-toolbar"><div><span className="eyebrow">Control de acceso</span><h2>Equipo con acceso al portal</h2></div><button className="primary-button" onClick={() => setShowInvite((current) => !current)}><UserPlus size={16} />{showInvite ? "Cancelar" : "Invitar usuario"}</button></div>
+        {showInvite && <form className="invite-form" onSubmit={inviteUser}><label><span>Correo electrónico</span><input type="email" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="nombre@empresa.cl" /></label><label><span>Rol inicial</span><select value={role} onChange={(event) => setRole(event.target.value as UserRole)}>{["Administrador", "Ingeniero", "Operador", "Solo lectura"].map((item) => <option key={item}>{item}</option>)}</select></label><button type="submit"><Mail size={15} /> Enviar invitación</button></form>}
+        <div className="module-table-wrap"><div className="users-table"><div className="module-table-head"><span>Usuario</span><span>Rol</span><span>Estado</span><span>Último acceso</span><span>Acción</span></div>{users.map((user) => <div className="module-table-row" key={user.id}><span className="user-identity"><b>{user.name.split(" ").map((part) => part[0]).slice(0, 2).join("")}</b><span><strong>{user.name}</strong><small>{user.email}</small></span></span><span><select value={user.role} onChange={(event) => updateRole(user.id, event.target.value as UserRole)}>{["Administrador", "Ingeniero", "Operador", "Solo lectura"].map((item) => <option key={item}>{item}</option>)}</select></span><span><i className={`user-status status-${user.status.toLowerCase()}`}>{user.status}</i></span><span>{user.lastAccess}</span><span><button className="ghost-button" disabled={user.id === 1} onClick={() => toggleUser(user.id)}>{user.status === "Activo" ? "Suspender" : "Activar"}</button></span></div>)}</div></div>
+        <div className="role-matrix"><div><span className="eyebrow">Matriz de permisos</span><h3>Alcance de cada rol</h3></div><div className="role-matrix-grid"><span><strong>Administrador</strong><small>Configuración, usuarios y operación completa</small></span><span><strong>Ingeniero</strong><small>Diagnóstico, umbrales y reportes</small></span><span><strong>Operador</strong><small>Supervisión y reconocimiento de alarmas</small></span><span><strong>Solo lectura</strong><small>Consulta sin capacidad de modificación</small></span></div></div>
+      </article>
+    </>
+  );
+}
+
 export default function Home() {
   const [view, setView] = useState<View>("overview");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -441,11 +579,14 @@ export default function Home() {
 
         <div className="content-scroll">
           <div className="page-content">
-            <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> Gestión de activos críticos</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions"><button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button><button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{3 - acknowledged.length} alertas abiertas</button></div></section>
+            <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> Gestión de activos críticos</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{view !== "settings" && view !== "users" && <button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button>}<button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{3 - acknowledged.length} alertas abiertas</button></div></section>
             {view === "overview" && <Overview onNavigate={navigate} onAcknowledge={acknowledge} acknowledged={acknowledged} />}
             {view === "cabinet" && <CabinetView onOpenTrend={openChannelTrend} />}
             {view === "trends" && <TrendsView period={period} setPeriod={setPeriod} selectedId={trendSensorId} onSelectChannel={setTrendSensorId} onBackToMap={() => navigate("cabinet")} />}
             {view === "alarms" && <AlarmsView acknowledged={acknowledged} onAcknowledge={acknowledge} />}
+            {view === "history" && <HistoryView />}
+            {view === "settings" && <SettingsView />}
+            {view === "users" && <UsersView />}
           </div>
         </div>
       </main>
