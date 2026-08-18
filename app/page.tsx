@@ -299,7 +299,7 @@ function CabinetView({ onOpenTrend }: { onOpenTrend: (id: string) => void }) {
   );
 }
 
-function TrendsView({ period, setPeriod, onExport, selectedId, onSelectChannel, onBackToMap }: { period: string; setPeriod: (period: string) => void; onExport: () => void; selectedId: string; onSelectChannel: (id: string) => void; onBackToMap: () => void }) {
+function TrendsView({ period, setPeriod, selectedId, onSelectChannel, onBackToMap }: { period: string; setPeriod: (period: string) => void; selectedId: string; onSelectChannel: (id: string) => void; onBackToMap: () => void }) {
   const selected = sensors.find((sensor) => sensor.id === selectedId) ?? sensors[0];
   const currentValue = Number(selected.value);
   const thresholdValue = Number.parseFloat(selected.threshold);
@@ -324,7 +324,6 @@ function TrendsView({ period, setPeriod, onExport, selectedId, onSelectChannel, 
           <label className="channel-select"><Activity size={16} /><span><small>Canal</small><select value={selected.id} onChange={(event) => onSelectChannel(event.target.value)} aria-label="Seleccionar canal de tendencia">{sensors.map((sensor) => <option key={sensor.id} value={sensor.id}>{sensor.id} · {sensor.label}</option>)}</select></span><ChevronDown size={14} /></label>
           <div className="segmented" aria-label="Rango temporal">{["24 h", "7 días", "30 días"].map((item) => <button key={item} className={period === item ? "active" : ""} onClick={() => setPeriod(item)}>{item}</button>)}</div>
         </div>
-        <button className="secondary-button" onClick={onExport}><Download size={16} /> Exportar CSV</button>
       </section>
       <section className="metrics-grid compact-metrics">
         <MetricCard label="Lectura actual" value={selected.value} unit={selected.unit} note={`${selected.id} · ${selected.label}`} tone={stateTone} icon={SelectedIcon} />
@@ -445,7 +444,7 @@ export default function Home() {
             <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> Gestión de activos críticos</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions"><button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button><button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{3 - acknowledged.length} alertas abiertas</button></div></section>
             {view === "overview" && <Overview onNavigate={navigate} onAcknowledge={acknowledge} acknowledged={acknowledged} />}
             {view === "cabinet" && <CabinetView onOpenTrend={openChannelTrend} />}
-            {view === "trends" && <TrendsView period={period} setPeriod={setPeriod} onExport={exportCsv} selectedId={trendSensorId} onSelectChannel={setTrendSensorId} onBackToMap={() => navigate("cabinet")} />}
+            {view === "trends" && <TrendsView period={period} setPeriod={setPeriod} selectedId={trendSensorId} onSelectChannel={setTrendSensorId} onBackToMap={() => navigate("cabinet")} />}
             {view === "alarms" && <AlarmsView acknowledged={acknowledged} onAcknowledge={acknowledge} />}
           </div>
         </div>
