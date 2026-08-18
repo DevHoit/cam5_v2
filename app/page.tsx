@@ -12,17 +12,22 @@ import {
   IconChevronRight as ChevronRight,
   IconCircleCheck as CheckCircle2,
   IconCircuitCell as CircuitBoard,
+  IconClipboardCheck as ClipboardCheck,
   IconClock as Clock3,
+  IconCalendarEvent as CalendarEvent,
   IconDatabase as Database,
   IconDeviceFloppy as Save,
   IconDownload as Download,
   IconDroplet as Droplets,
+  IconFileReport as FileReport,
+  IconFileTypePdf as FileTypePdf,
   IconGauge as Gauge,
   IconHistory as History,
   IconLayoutDashboard as LayoutDashboard,
   IconMail as Mail,
   IconMenu2 as Menu,
   IconPlugConnected as PlugConnected,
+  IconPlus as Plus,
   IconRadio as Radio,
   IconSearch as Search,
   IconServer as Server,
@@ -30,6 +35,7 @@ import {
   IconShieldCheck as ShieldCheck,
   IconTemperature as Thermometer,
   IconTimeline as Timeline,
+  IconTool as Tool,
   IconTrendingUp as TrendingUp,
   IconUserPlus as UserPlus,
   IconUsers as Users,
@@ -37,7 +43,7 @@ import {
   IconX as X,
 } from "@tabler/icons-react";
 
-type View = "overview" | "cabinet" | "trends" | "alarms" | "history" | "settings" | "users" | "notifications";
+type View = "overview" | "cabinet" | "trends" | "alarms" | "history" | "reports" | "maintenance" | "settings" | "users" | "notifications";
 type Severity = "critical" | "warning" | "info";
 type SensorState = "normal" | "warning" | "critical";
 type HistoryTab = "measurements" | "alarms" | "audit";
@@ -102,6 +108,14 @@ const navGroups = [
   },
   {
     index: "03",
+    label: "Gestión",
+    items: [
+      { id: "reports" as View, label: "Reportes", description: "Informes y programación", icon: FileReport },
+      { id: "maintenance" as View, label: "Mantenimiento", description: "Planes y órdenes", icon: Tool },
+    ],
+  },
+  {
+    index: "04",
     label: "Administración",
     items: [
       { id: "settings" as View, label: "Configuración", description: "Activo, canales y gateway", icon: Settings },
@@ -117,6 +131,8 @@ const viewTitles: Record<View, { title: string; description: string }> = {
   trends: { title: "Tendencias", description: "Evolución térmica, descarga parcial y humedad ambiental." },
   alarms: { title: "Centro de alertas", description: "Triage operativo, reconocimiento y trazabilidad de eventos." },
   history: { title: "Histórico", description: "Mediciones, alarmas y cambios administrativos en una sola trazabilidad." },
+  reports: { title: "Reportes", description: "Informes de condición, eventos y cumplimiento para operación y mantenimiento." },
+  maintenance: { title: "Mantenimiento", description: "Plan preventivo y órdenes de trabajo priorizadas por condición." },
   settings: { title: "Configuración", description: "Parámetros del activo, canales de adquisición y comunicaciones." },
   users: { title: "Usuarios y roles", description: "Control de acceso y permisos para la operación OT." },
   notifications: { title: "Notificaciones", description: "Canales de entrega, reglas de escalamiento y trazabilidad." },
@@ -488,6 +504,117 @@ function HistoryView() {
   );
 }
 
+function ReportsView() {
+  const templates = [
+    { id: "condition", name: "Condición del activo", detail: "Salud general, hallazgos y recomendación técnica", icon: "condition", accent: "blue" },
+    { id: "events", name: "Eventos y alarmas", detail: "Tiempos de atención, causas y trazabilidad operativa", icon: "events", accent: "amber" },
+    { id: "executive", name: "Resumen ejecutivo", detail: "Indicadores consolidados para jefatura y confiabilidad", icon: "executive", accent: "green" },
+  ];
+  const [templateId, setTemplateId] = useState("condition");
+  const [period, setPeriod] = useState("30 días");
+  const [format, setFormat] = useState("PDF");
+  const [automatic, setAutomatic] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const [reports, setReports] = useState([
+    { id: "RPT-260811-012", name: "Condición mensual MCC-01", period: "12 jul – 11 ago", created: "Hoy 11:50", format: "PDF", owner: "Emerson Allende" },
+    { id: "RPT-260804-011", name: "Eventos críticos · Semana 32", period: "29 jul – 4 ago", created: "4 ago 18:10", format: "PDF", owner: "Sistema" },
+    { id: "RPT-260801-010", name: "Resumen ejecutivo · Julio", period: "1 – 31 jul", created: "1 ago 08:00", format: "XLSX", owner: "Sistema" },
+  ]);
+  const selectedTemplate = templates.find((template) => template.id === templateId) ?? templates[0];
+  const generateReport = () => {
+    setGenerating(true);
+    window.setTimeout(() => {
+      setReports((current) => [{ id: `RPT-${Date.now().toString().slice(-9)}`, name: `${selectedTemplate.name} · MCC-01`, period, created: "Ahora", format, owner: "Emerson Allende" }, ...current]);
+      setGenerating(false);
+    }, 850);
+  };
+  const downloadReportData = (name: string) => {
+    const rows = ["reporte,activo,canal,valor,unidad,estado", ...sensors.map((sensor) => [name, "MCC-01", sensor.id, sensor.value, sensor.unit, sensor.state].join(","))];
+    const url = URL.createObjectURL(new Blob([rows.join("\n")], { type: "text/csv;charset=utf-8" }));
+    const anchor = document.createElement("a"); anchor.href = url; anchor.download = "cam5-datos-reporte.csv"; anchor.click(); URL.revokeObjectURL(url);
+  };
+
+  return (
+    <>
+      <section className="module-summary-grid report-summary-grid">
+        <article><span className="module-summary-icon blue"><FileReport size={19} /></span><div><small>Informes disponibles</small><strong>{reports.length}</strong><span>Últimos 90 días</span></div></article>
+        <article><span className="module-summary-icon green"><CalendarEvent size={19} /></span><div><small>Programaciones activas</small><strong>{automatic ? 3 : 2}</strong><span>Próximo: lunes 08:00</span></div></article>
+        <article><span className="module-summary-icon amber"><Database size={19} /></span><div><small>Cobertura de datos</small><strong>99.98%</strong><span>8 canales incluidos</span></div></article>
+      </section>
+
+      <article className="panel module-panel report-module">
+        <div className="module-toolbar"><div><span className="eyebrow">Constructor de informes</span><h2>Crear un reporte operacional</h2></div><span className="autosave-state"><ShieldCheck size={14} /> Trazabilidad habilitada</span></div>
+        <div className="report-builder">
+          <section className="report-template-section">
+            <div className="settings-section-head"><span className="settings-icon"><FileReport size={20} /></span><div><h2>Tipo de informe</h2><p>Selecciona la estructura según la audiencia y el objetivo.</p></div></div>
+            <div className="report-template-list">{templates.map((template) => <button key={template.id} className={`report-template-card ${templateId === template.id ? "selected" : ""}`} onClick={() => setTemplateId(template.id)}><span className={`report-template-icon ${template.accent}`}>{template.icon === "events" ? <BellRing size={19} /> : template.icon === "executive" ? <Gauge size={19} /> : <CircuitBoard size={19} />}</span><span><strong>{template.name}</strong><small>{template.detail}</small></span><i>{templateId === template.id && <CheckCircle2 size={16} />}</i></button>)}</div>
+          </section>
+          <aside className="report-config-card">
+            <span className="eyebrow">Parámetros del reporte</span>
+            <h3>{selectedTemplate.name}</h3>
+            <p>El informe se genera para MCC-01 · Alimentador Norte con los canales activos.</p>
+            <div className="report-config-fields"><label><span>Periodo</span><select value={period} onChange={(event) => setPeriod(event.target.value)}><option>24 horas</option><option>7 días</option><option>30 días</option><option>90 días</option></select></label><label><span>Formato</span><select value={format} onChange={(event) => setFormat(event.target.value)}><option>PDF</option><option>XLSX</option></select></label></div>
+            <button className={`report-schedule ${automatic ? "active" : ""}`} onClick={() => setAutomatic((current) => !current)}><span><CalendarEvent size={17} /><span><strong>Programación automática</strong><small>Primer lunes de cada mes · 08:00</small></span></span><i>{automatic ? "Activa" : "Inactiva"}</i></button>
+            <button className="generate-report-button" onClick={generateReport} disabled={generating}>{generating ? <><Timeline size={17} /> Generando informe…</> : <><FileTypePdf size={17} /> Generar informe</>}</button>
+            <small className="report-disclaimer">Vista funcional con datos demostrativos. El documento definitivo se conectará al servicio de reportes.</small>
+          </aside>
+        </div>
+
+        <div className="report-library-head"><div><span className="eyebrow">Biblioteca</span><h2>Informes recientes</h2></div><span>{reports.length} documentos</span></div>
+        <div className="module-table-wrap"><div className="report-table"><div className="module-table-head"><span>Informe</span><span>Periodo</span><span>Generado</span><span>Formato</span><span>Responsable</span><span>Datos</span></div>{reports.map((report) => <div className="module-table-row" key={report.id}><span className="report-name-cell"><b><FileReport size={16} /></b><span><strong>{report.name}</strong><small>{report.id}</small></span></span><span>{report.period}</span><span>{report.created}</span><span><i className="report-format">{report.format}</i></span><span>{report.owner}</span><span><button className="ghost-button" onClick={() => downloadReportData(report.name)}><Download size={14} /> Descargar datos</button></span></div>)}</div></div>
+      </article>
+    </>
+  );
+}
+
+function MaintenanceView() {
+  type WorkStatus = "Pendiente" | "En curso" | "Completada";
+  const [tab, setTab] = useState<"plan" | "orders">("plan");
+  const [showCreate, setShowCreate] = useState(false);
+  const [form, setForm] = useState({ title: "", priority: "Alta", assignee: "Paula Rojas" });
+  const [orders, setOrders] = useState<Array<{ id: string; title: string; source: string; due: string; priority: "Crítica" | "Alta" | "Normal"; assignee: string; status: WorkStatus }>>([
+    { id: "OT-260811-018", title: "Diagnóstico de descarga parcial", source: "PD1 · Evento AL-260811-031", due: "Hoy · 16:00", priority: "Crítica", assignee: "Emerson Allende", status: "En curso" },
+    { id: "OT-260811-017", title: "Inspección termográfica dirigida", source: "T01 · Diferencial +15.6 °C", due: "21 ago 2026", priority: "Alta", assignee: "Paula Rojas", status: "Pendiente" },
+    { id: "OT-260810-014", title: "Control de humedad en cabina", source: "H01 · 78 %RH", due: "22 ago 2026", priority: "Alta", assignee: "Felipe Soto", status: "Pendiente" },
+    { id: "OT-260731-009", title: "Verificación mensual de gateway", source: "Plan preventivo PM-04", due: "31 jul 2026", priority: "Normal", assignee: "Felipe Soto", status: "Completada" },
+  ]);
+  const plans = [
+    { code: "PM-01", name: "Inspección termográfica", frequency: "Mensual", next: "21 ago 2026", progress: 82, state: "Próxima" },
+    { code: "PM-02", name: "Diagnóstico UHF de descarga parcial", frequency: "Trimestral", next: "Hoy", progress: 100, state: "Vencida" },
+    { code: "PM-03", name: "Limpieza y control ambiental", frequency: "Trimestral", next: "22 ago 2026", progress: 78, state: "Próxima" },
+    { code: "PM-04", name: "Verificación de gateway y registros", frequency: "Mensual", next: "31 ago 2026", progress: 36, state: "En plazo" },
+  ];
+  const openOrders = orders.filter((order) => order.status !== "Completada").length;
+  const createOrder = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!form.title.trim()) return;
+    setOrders((current) => [{ id: `OT-${Date.now().toString().slice(-9)}`, title: form.title.trim(), source: "Creación manual · Portal web", due: "Sin programar", priority: form.priority as "Alta" | "Normal", assignee: form.assignee, status: "Pendiente" }, ...current]);
+    setForm({ title: "", priority: "Alta", assignee: "Paula Rojas" }); setShowCreate(false); setTab("orders");
+  };
+  const updateOrder = (id: string, status: WorkStatus) => setOrders((current) => current.map((order) => order.id === id ? { ...order, status } : order));
+
+  return (
+    <>
+      <section className="module-summary-grid maintenance-summary-grid">
+        <article><span className="module-summary-icon green"><ClipboardCheck size={19} /></span><div><small>Cumplimiento preventivo</small><strong>87%</strong><span>Meta mensual: 90%</span></div></article>
+        <article><span className="module-summary-icon amber"><CalendarEvent size={19} /></span><div><small>Tareas próximas</small><strong>3</strong><span>1 requiere atención hoy</span></div></article>
+        <article><span className="module-summary-icon blue"><Tool size={19} /></span><div><small>Órdenes abiertas</small><strong>{openOrders}</strong><span>1 crítica · 2 altas</span></div></article>
+      </section>
+
+      <article className="panel module-panel maintenance-module">
+        <div className="module-toolbar"><div className="module-tabs" role="tablist" aria-label="Secciones de mantenimiento"><button className={tab === "plan" ? "active" : ""} onClick={() => setTab("plan")}><CalendarEvent size={16} /> Plan preventivo</button><button className={tab === "orders" ? "active" : ""} onClick={() => setTab("orders")}><ClipboardCheck size={16} /> Órdenes de trabajo</button></div><button className="primary-button" onClick={() => setShowCreate((current) => !current)}><Plus size={16} /> {showCreate ? "Cancelar" : "Nueva orden"}</button></div>
+
+        {showCreate && <form className="work-order-form" onSubmit={createOrder}><label><span>Trabajo requerido</span><input required value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} placeholder="Ej.: Revisar conexión del sensor T02" /></label><label><span>Prioridad</span><select value={form.priority} onChange={(event) => setForm({ ...form, priority: event.target.value })}><option>Alta</option><option>Normal</option></select></label><label><span>Responsable</span><select value={form.assignee} onChange={(event) => setForm({ ...form, assignee: event.target.value })}><option>Paula Rojas</option><option>Emerson Allende</option><option>Felipe Soto</option></select></label><button type="submit"><ClipboardCheck size={15} /> Crear orden</button></form>}
+
+        {tab === "plan" && <div className="maintenance-plan-content"><div className="settings-section-head"><span className="settings-icon"><CalendarEvent size={20} /></span><div><h2>Plan basado en condición</h2><p>La frecuencia se complementa con los hallazgos de telemetría y eventos activos.</p></div></div><div className="maintenance-plan-grid">{plans.map((plan) => <article className={`maintenance-plan-card plan-${plan.state.toLowerCase().replace(" ", "-")}`} key={plan.code}><div className="maintenance-plan-head"><span>{plan.code}</span><i>{plan.state}</i></div><h3>{plan.name}</h3><dl><div><dt>Frecuencia</dt><dd>{plan.frequency}</dd></div><div><dt>Próxima ejecución</dt><dd>{plan.next}</dd></div></dl><div className="maintenance-progress"><span><i style={{ width: `${plan.progress}%` }} /></span><small>{plan.progress}% del intervalo consumido</small></div><button onClick={() => { setForm({ title: plan.name, priority: plan.state === "Vencida" ? "Alta" : "Normal", assignee: "Paula Rojas" }); setShowCreate(true); }}><Plus size={14} /> Crear orden desde el plan</button></article>)}</div><div className="maintenance-recommendation"><AlertTriangle size={19} /><div><strong>Recomendación prioritaria</strong><p>Adelantar el diagnóstico UHF de PD1 y coordinar una ventana de inspección antes de cualquier intervención invasiva.</p></div><button onClick={() => setTab("orders")}>Revisar órdenes <ChevronRight size={15} /></button></div></div>}
+
+        {tab === "orders" && <div className="maintenance-orders"><div className="report-library-head"><div><span className="eyebrow">Ejecución</span><h2>Órdenes de trabajo</h2></div><span>{openOrders} abiertas</span></div><div className="module-table-wrap"><div className="work-order-table"><div className="module-table-head"><span>Orden / trabajo</span><span>Origen</span><span>Vencimiento</span><span>Prioridad</span><span>Responsable</span><span>Estado</span></div>{orders.map((order) => <div className="module-table-row" key={order.id}><span className="event-cell"><strong>{order.title}</strong><small>{order.id}</small></span><span>{order.source}</span><span>{order.due}</span><span><i className={`maintenance-priority priority-${order.priority.toLowerCase()}`}>{order.priority}</i></span><span>{order.assignee}</span><span><select className={`work-status status-${order.status.toLowerCase().replace(" ", "-")}`} value={order.status} onChange={(event) => updateOrder(order.id, event.target.value as WorkStatus)}><option>Pendiente</option><option>En curso</option><option>Completada</option></select></span></div>)}</div></div></div>}
+        <div className="module-footer"><span><ShieldCheck size={14} /> Toda modificación queda asociada al usuario y al activo.</span><small>Flujo demostrativo · pendiente de integración con CMMS.</small></div>
+      </article>
+    </>
+  );
+}
+
 function SettingsView() {
   const [tab, setTab] = useState<SettingsTab>("asset");
   const [saved, setSaved] = useState(false);
@@ -647,12 +774,14 @@ export default function Home() {
 
         <div className="content-scroll">
           <div className="page-content">
-            <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> Gestión de activos críticos</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{view !== "settings" && view !== "users" && view !== "notifications" && <button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button>}<button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{3 - acknowledged.length} alertas abiertas</button></div></section>
+            <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> Gestión de activos críticos</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{view !== "settings" && view !== "users" && view !== "notifications" && view !== "reports" && view !== "maintenance" && <button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button>}<button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{3 - acknowledged.length} alertas abiertas</button></div></section>
             {view === "overview" && <Overview onNavigate={navigate} onAcknowledge={acknowledge} acknowledged={acknowledged} />}
             {view === "cabinet" && <CabinetView onOpenTrend={openChannelTrend} />}
             {view === "trends" && <TrendsView period={period} setPeriod={setPeriod} selectedId={trendSensorId} onSelectChannel={setTrendSensorId} onBackToMap={() => navigate("cabinet")} />}
             {view === "alarms" && <AlarmsView acknowledged={acknowledged} onAcknowledge={acknowledge} />}
             {view === "history" && <HistoryView />}
+            {view === "reports" && <ReportsView />}
+            {view === "maintenance" && <MaintenanceView />}
             {view === "settings" && <SettingsView />}
             {view === "users" && <UsersView />}
             {view === "notifications" && <NotificationsView />}
