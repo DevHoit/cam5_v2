@@ -172,13 +172,42 @@ function Overview({ onNavigate, onAcknowledge, acknowledged }: { onNavigate: (vi
       </section>
 
       <section className="overview-grid">
-        <article className="panel cabinet-panel">
-          <div className="panel-header">
-            <div><span className="eyebrow">Activo principal</span><h2>Cabina MCC-01</h2><p>Condición general: atención requerida</p></div>
-            <StatusPill state="warning">En advertencia</StatusPill>
+        <article className="panel asset-summary-panel">
+          <div className="panel-header asset-summary-header">
+            <div><span className="eyebrow">Activo prioritario</span><h2>MCC-01 · Alimentador Norte</h2><p>Cabina de 13.8 kV · evaluación actualizada hace 2 s</p></div>
+            <StatusPill state="critical">Atención prioritaria</StatusPill>
           </div>
-          <CabinetDiagram />
-          <button className="text-action" onClick={() => onNavigate("cabinet")}>Abrir mapa de condición <span>→</span></button>
+
+          <div className="asset-summary-body">
+            <section className="primary-finding" aria-label="Hallazgo de mayor prioridad">
+              <div className="finding-heading">
+                <span className="finding-icon"><AlertTriangle size={20} /></span>
+                <div><span>Evento de mayor prioridad</span><h3>Descarga parcial en aceleración</h3><p>PD1 · Compartimiento de cables · activo hace 12 min</p></div>
+                <strong>72<small>idx</small></strong>
+              </div>
+              <div className="finding-evidence">
+                <div><span>Aceleración</span><strong>Φ 2.8×</strong></div>
+                <div><span>Umbral configurado</span><strong>60 idx</strong></div>
+                <div><span>Prioridad sugerida</span><strong>Inspección en terreno</strong></div>
+              </div>
+              <div className="finding-action"><ShieldCheck size={17} /><p><strong>Acción recomendada:</strong> revisar terminaciones y cableado del compartimiento antes del próximo ciclo de carga.</p></div>
+            </section>
+
+            <aside className="condition-summary" aria-label="Resumen de canales">
+              <div className="condition-summary-title"><div><span className="eyebrow">Estado actual</span><h3>8 canales supervisados</h3></div><span className="online-mini"><i />Todos comunicando</span></div>
+              <div className="condition-counts">
+                <div className="count-critical"><strong>1</strong><span>Crítico</span></div>
+                <div className="count-warning"><strong>2</strong><span>Advertencia</span></div>
+                <div className="count-normal"><strong>5</strong><span>Normal</span></div>
+              </div>
+              <div className="secondary-findings">
+                <div><span className="sensor-code sensor-warning">T01</span><p><strong>68.4 °C</strong><small>Barra L1 · sobre umbral</small></p><b>+1.8 °C/h</b></div>
+                <div><span className="sensor-code sensor-warning">H01</span><p><strong>78 %RH</strong><small>Humedad de cabina elevada</small></p><b>+4 % / 24h</b></div>
+              </div>
+            </aside>
+          </div>
+
+          <div className="asset-summary-footer"><span><Wifi size={15} /> CAM5-GW-01 · 42 ms</span><button onClick={() => onNavigate("cabinet")}>Revisar condición del activo <ChevronRight size={16} /></button></div>
         </article>
 
         <article className="panel alarms-panel">
