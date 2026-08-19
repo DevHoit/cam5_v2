@@ -52,6 +52,9 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(page, /function AssetsView\(\)/);
   assert.match(page, /function MaintenanceView\(\)/);
   assert.match(page, /function IntegrationsView\(\)/);
+  assert.match(page, /function DiagnosticsView\(\)/);
+  assert.match(page, /Diagnóstico OT/);
+  assert.match(page, /Comprobación de extremo a extremo/);
   assert.match(page, /CAM5-CTRL-01/);
   assert.match(page, /CAM5-GW-01/);
   assert.match(page, /Subestación Norte/);
@@ -66,6 +69,7 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(css, /\.maintenance-plan-grid/);
   assert.match(css, /\.integration-card-grid/);
   assert.match(css, /\.register-map-table/);
+  assert.match(css, /\.diagnostic-chain/);
   assert.doesNotMatch(page, /SkeletonPreview|codex-preview/);
   assert.doesNotMatch(layout, /SkeletonPreview|codex-preview/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);

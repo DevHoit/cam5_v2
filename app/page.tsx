@@ -51,7 +51,7 @@ import {
   IconX as X,
 } from "@tabler/icons-react";
 
-type View = "overview" | "cabinet" | "trends" | "alarms" | "history" | "assets" | "reports" | "maintenance" | "settings" | "integrations" | "users" | "notifications";
+type View = "overview" | "cabinet" | "diagnostics" | "trends" | "alarms" | "history" | "assets" | "reports" | "maintenance" | "settings" | "integrations" | "users" | "notifications";
 type Severity = "critical" | "warning" | "info";
 type SensorState = "normal" | "warning" | "critical";
 type HistoryTab = "measurements" | "alarms" | "audit";
@@ -111,6 +111,7 @@ const navGroups = [
     index: "02",
     label: "Diagnóstico",
     items: [
+      { id: "diagnostics" as View, label: "Diagnóstico OT", description: "Controlador y gateway", icon: Radio },
       { id: "trends" as View, label: "Tendencias", description: "Evolución por canal", icon: History },
       { id: "alarms" as View, label: "Centro de alertas", description: "Triage y seguimiento", icon: BellRing, badge: "3" },
       { id: "history" as View, label: "Histórico", description: "Mediciones y trazabilidad", icon: Database },
@@ -140,6 +141,7 @@ const navGroups = [
 const viewTitles: Record<View, { title: string; description: string }> = {
   overview: { title: "Resumen de condición", description: "Estado predictivo de activos críticos en tiempo real." },
   cabinet: { title: "Mapa de condición", description: "Ubicación, lectura y estado de cada canal instrumentado." },
+  diagnostics: { title: "Diagnóstico OT", description: "Puesta en marcha y comprobación de la cadena Controlador → Gateway → CORE." },
   trends: { title: "Tendencias", description: "Evolución térmica, descarga parcial y humedad ambiental." },
   alarms: { title: "Centro de alertas", description: "Triage operativo, reconocimiento y trazabilidad de eventos." },
   history: { title: "Histórico", description: "Mediciones, alarmas y cambios administrativos en una sola trazabilidad." },
@@ -682,6 +684,54 @@ function MaintenanceView() {
   );
 }
 
+function DiagnosticsView() {
+  const [diagnosticState, setDiagnosticState] = useState<"idle" | "running" | "success">("idle");
+  const [lastRun, setLastRun] = useState("No ejecutado en esta sesión");
+  const transactions = [
+    { time: "11:52:08", request: "FC 03", range: "40001–40005", result: "5 registros", latency: "42 ms" },
+    { time: "11:52:06", request: "FC 03", range: "40121–40122", result: "2 registros", latency: "38 ms" },
+    { time: "11:52:04", request: "FC 03", range: "40201", result: "1 registro", latency: "31 ms" },
+  ];
+  const runDiagnostic = () => {
+    setDiagnosticState("running");
+    setLastRun("Comprobación en curso…");
+    window.setTimeout(() => { setDiagnosticState("success"); setLastRun("Ahora · 4 de 4 etapas correctas"); }, 1200);
+  };
+  const stateClass = diagnosticState === "running" ? "testing" : diagnosticState === "success" ? "passed" : "ready";
+
+  return (
+    <>
+      <section className="module-summary-grid diagnostic-summary-grid">
+        <article><span className="module-summary-icon green"><Radio size={19} /></span><div><small>Cadena OT</small><strong>Operativa</strong><span>Controlador + gateway + CORE</span></div></article>
+        <article><span className="module-summary-icon blue"><Refresh size={19} /></span><div><small>Ciclo de sondeo</small><strong>2.0 s</strong><span>8 registros por ciclo</span></div></article>
+        <article><span className="module-summary-icon green"><CheckCircle2 size={19} /></span><div><small>Éxito últimas 24 h</small><strong>99.98%</strong><span>0 excepciones Modbus</span></div></article>
+      </section>
+
+      <article className="panel module-panel diagnostics-module">
+        <div className="diagnostics-toolbar"><div><span className="eyebrow">Puesta en marcha</span><h2>Comprobación de extremo a extremo</h2><p>Verifica cada etapa de la adquisición antes de habilitar datos reales.</p></div><button className={`diagnostic-run-button ${diagnosticState}`} onClick={runDiagnostic} disabled={diagnosticState === "running"}>{diagnosticState === "running" ? <><Refresh size={16} /> Comprobando…</> : diagnosticState === "success" ? <><CheckCircle2 size={16} /> Repetir diagnóstico</> : <><Activity size={16} /> Ejecutar diagnóstico</>}</button></div>
+
+        <div className={`diagnostic-chain ${stateClass}`} aria-live="polite">
+          <article><span><CircuitBoard size={21} /></span><small>Etapa 01</small><strong>CAM5-CTRL-01</strong><p>192.168.10.42:502</p><i>{diagnosticState === "running" ? "Probando" : "Disponible"}</i></article>
+          <b><ChevronRight size={19} /></b>
+          <article><span><Radio size={21} /></span><small>Etapa 02</small><strong>Modbus TCP</strong><p>FC 03 · Unit ID 1</p><i>{diagnosticState === "running" ? "Leyendo" : "8/8 registros"}</i></article>
+          <b><ChevronRight size={19} /></b>
+          <article><span><Server size={21} /></span><small>Etapa 03</small><strong>CAM5-GW-01</strong><p>LAN 192.168.10.40</p><i>{diagnosticState === "running" ? "Enviando" : "En línea"}</i></article>
+          <b><ChevronRight size={19} /></b>
+          <article><span><Zap size={21} /></span><small>Etapa 04</small><strong>CAM5 CORE</strong><p>Ingesta y reglas</p><i>{diagnosticState === "running" ? "Validando" : "Actualizado hace 2 s"}</i></article>
+        </div>
+
+        <div className="diagnostics-result-bar"><span className={stateClass}>{diagnosticState === "running" ? <Refresh size={16} /> : <CheckCircle2 size={16} />}</span><div><strong>{diagnosticState === "running" ? "Comprobando la cadena OT" : diagnosticState === "success" ? "Diagnóstico completado sin hallazgos" : "Cadena preparada para comprobar"}</strong><p>{lastRun}</p></div><small>Tiempo objetivo ≤ 3 s</small></div>
+
+        <div className="diagnostics-grid">
+          <section className="diagnostic-health-card"><div className="report-library-head"><div><span className="eyebrow">Salud de comunicación</span><h2>Indicadores actuales</h2></div><StatusPill state="online">En línea</StatusPill></div><dl><div><dt>Latencia controlador</dt><dd>42 ms <small>Normal</small></dd></div><div><dt>Latencia hacia CORE</dt><dd>86 ms <small>Normal</small></dd></div><div><dt>Última respuesta válida</dt><dd>Hace 2 s <small>FC 03</small></dd></div><div><dt>Reintentos / 24 h</dt><dd>2 <small>0.01%</small></dd></div><div><dt>Excepciones Modbus</dt><dd>0 <small>Sin errores</small></dd></div><div><dt>Calidad de datos</dt><dd>8 / 8 <small>Válidos</small></dd></div></dl></section>
+          <section className="diagnostic-transactions"><div className="report-library-head"><div><span className="eyebrow">Tráfico reciente</span><h2>Últimas lecturas Modbus</h2></div><span>FC 03</span></div><div className="module-table-wrap"><div className="diagnostic-transaction-table"><div className="module-table-head"><span>Hora</span><span>Solicitud</span><span>Rango</span><span>Resultado</span><span>Tiempo</span></div>{transactions.map((transaction) => <div className="module-table-row" key={`${transaction.time}-${transaction.range}`}><span className="mono-cell">{transaction.time}</span><span className="mono-cell">{transaction.request}</span><span className="mono-cell">{transaction.range}</span><span className="quality-ok"><CheckCircle2 size={14} /> {transaction.result}</span><span className="mono-cell">{transaction.latency}</span></div>)}</div></div></section>
+        </div>
+        <div className="configuration-note diagnostics-note"><ShieldCheck size={17} /><p><strong>Diagnóstico demostrativo.</strong> Los estados y tiempos representan el comportamiento esperado. Al incorporar el servicio de adquisición, esta misma vista consumirá respuestas reales del gateway y excepciones Modbus del controlador.</p></div>
+      </article>
+    </>
+  );
+}
+
 function IntegrationsView() {
   const [tab, setTab] = useState<"connections" | "flow" | "api">("connections");
   const [testingId, setTestingId] = useState<string | null>(null);
@@ -930,9 +980,10 @@ export default function Home() {
 
         <div className="content-scroll">
           <div className="page-content">
-            <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> Gestión de activos críticos</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{view !== "assets" && view !== "settings" && view !== "integrations" && view !== "users" && view !== "notifications" && view !== "reports" && view !== "maintenance" && <button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button>}<button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{3 - acknowledged.length} alertas abiertas</button></div></section>
+            <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> Gestión de activos críticos</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{view !== "assets" && view !== "settings" && view !== "integrations" && view !== "users" && view !== "notifications" && view !== "reports" && view !== "maintenance" && view !== "diagnostics" && <button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button>}<button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{3 - acknowledged.length} alertas abiertas</button></div></section>
             {view === "overview" && <Overview onNavigate={navigate} onAcknowledge={acknowledge} acknowledged={acknowledged} />}
             {view === "cabinet" && <CabinetView onOpenTrend={openChannelTrend} />}
+            {view === "diagnostics" && <DiagnosticsView />}
             {view === "trends" && <TrendsView period={period} setPeriod={setPeriod} selectedId={trendSensorId} onSelectChannel={setTrendSensorId} onBackToMap={() => navigate("cabinet")} />}
             {view === "alarms" && <AlarmsView acknowledged={acknowledged} onAcknowledge={acknowledge} />}
             {view === "history" && <HistoryView />}
