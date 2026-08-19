@@ -13,6 +13,7 @@ import {
   IconCircleCheck as CheckCircle2,
   IconCircuitCell as CircuitBoard,
   IconClipboardCheck as ClipboardCheck,
+  IconCopy as Copy,
   IconClock as Clock3,
   IconCalendarEvent as CalendarEvent,
   IconDatabase as Database,
@@ -23,12 +24,14 @@ import {
   IconFileTypePdf as FileTypePdf,
   IconGauge as Gauge,
   IconHistory as History,
+  IconKey as Key,
   IconLayoutDashboard as LayoutDashboard,
   IconMail as Mail,
   IconMenu2 as Menu,
   IconPlugConnected as PlugConnected,
   IconPlus as Plus,
   IconRadio as Radio,
+  IconRefresh as Refresh,
   IconSearch as Search,
   IconServer as Server,
   IconSettings as Settings,
@@ -40,10 +43,11 @@ import {
   IconUserPlus as UserPlus,
   IconUsers as Users,
   IconWifi as Wifi,
+  IconWebhook as Webhook,
   IconX as X,
 } from "@tabler/icons-react";
 
-type View = "overview" | "cabinet" | "trends" | "alarms" | "history" | "reports" | "maintenance" | "settings" | "users" | "notifications";
+type View = "overview" | "cabinet" | "trends" | "alarms" | "history" | "reports" | "maintenance" | "settings" | "integrations" | "users" | "notifications";
 type Severity = "critical" | "warning" | "info";
 type SensorState = "normal" | "warning" | "critical";
 type HistoryTab = "measurements" | "alarms" | "audit";
@@ -119,6 +123,7 @@ const navGroups = [
     label: "Administración",
     items: [
       { id: "settings" as View, label: "Configuración", description: "Activo, canales y gateway", icon: Settings },
+      { id: "integrations" as View, label: "Integraciones", description: "Datos y sistemas externos", icon: PlugConnected },
       { id: "users" as View, label: "Usuarios y roles", description: "Acceso y permisos", icon: Users },
       { id: "notifications" as View, label: "Notificaciones", description: "Canales y escalamiento", icon: Mail },
     ],
@@ -134,6 +139,7 @@ const viewTitles: Record<View, { title: string; description: string }> = {
   reports: { title: "Reportes", description: "Informes de condición, eventos y cumplimiento para operación y mantenimiento." },
   maintenance: { title: "Mantenimiento", description: "Plan preventivo y órdenes de trabajo priorizadas por condición." },
   settings: { title: "Configuración", description: "Parámetros del activo, canales de adquisición y comunicaciones." },
+  integrations: { title: "Integraciones", description: "Conexiones, flujo de datos y acceso seguro para sistemas externos." },
   users: { title: "Usuarios y roles", description: "Control de acceso y permisos para la operación OT." },
   notifications: { title: "Notificaciones", description: "Canales de entrega, reglas de escalamiento y trazabilidad." },
 };
@@ -615,6 +621,69 @@ function MaintenanceView() {
   );
 }
 
+function IntegrationsView() {
+  const [tab, setTab] = useState<"connections" | "flow" | "api">("connections");
+  const [testingId, setTestingId] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [showApiForm, setShowApiForm] = useState(false);
+  const [apiForm, setApiForm] = useState({ name: "", scope: "Solo lectura" });
+  const [newApiKey, setNewApiKey] = useState<string | null>(null);
+  const [connections, setConnections] = useState([
+    { id: "gateway", name: "Gateway CAM5-GW-01", role: "Fuente principal", protocol: "Modbus TCP", endpoint: "192.168.10.42:502", enabled: true, status: "Operativa", freshness: "Hace 2 s" },
+    { id: "historian", name: "Historiador OT", role: "Destino de mediciones", protocol: "OPC UA", endpoint: "opc.tcp://10.20.4.15:4840", enabled: true, status: "Operativa", freshness: "Hace 8 s" },
+    { id: "cmms", name: "CMMS de mantenimiento", role: "Destino de órdenes", protocol: "REST / Webhook", endpoint: "https://cmms.local/api/cam5", enabled: false, status: "Pendiente", freshness: "Sin sincronizar" },
+  ]);
+  const [apiKeys, setApiKeys] = useState([
+    { id: 1, name: "Historiador OT", token: "cam5_live_••••••••7K2P", scope: "Telemetría · lectura", created: "4 ago 2026", lastUse: "Hace 8 s", active: true },
+    { id: 2, name: "CMMS mantenimiento", token: "cam5_live_••••••••9M4R", scope: "Eventos · escritura", created: "1 ago 2026", lastUse: "Nunca", active: false },
+  ]);
+  const activeConnections = connections.filter((connection) => connection.enabled).length;
+  const testConnection = (id: string) => {
+    setTestingId(id);
+    setConnections((current) => current.map((connection) => connection.id === id ? { ...connection, status: "Probando…" } : connection));
+    window.setTimeout(() => {
+      setConnections((current) => current.map((connection) => connection.id === id ? { ...connection, status: "Operativa", freshness: "Ahora" } : connection));
+      setTestingId(null);
+    }, 900);
+  };
+  const toggleConnection = (id: string) => setConnections((current) => current.map((connection) => connection.id === id ? { ...connection, enabled: !connection.enabled, status: connection.enabled ? "Desactivada" : "Operativa", freshness: connection.enabled ? "Sin sincronizar" : "Ahora" } : connection));
+  const createApiKey = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!apiForm.name.trim()) return;
+    const rawKey = `cam5_live_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+    setApiKeys((current) => [{ id: Date.now(), name: apiForm.name.trim(), token: `${rawKey.slice(0, 10)}••••••••${rawKey.slice(-4).toUpperCase()}`, scope: apiForm.scope, created: "Ahora", lastUse: "Nunca", active: true }, ...current]);
+    setNewApiKey(rawKey); setApiForm({ name: "", scope: "Solo lectura" }); setShowApiForm(false);
+  };
+  const revokeApiKey = (id: number) => setApiKeys((current) => current.map((key) => key.id === id ? { ...key, active: !key.active } : key));
+  const copyApiKey = async () => { if (!newApiKey) return; await navigator.clipboard?.writeText(newApiKey); setCopied(true); window.setTimeout(() => setCopied(false), 1800); };
+  const syncLog = [
+    { time: "11:52:08", system: "Gateway CAM5-GW-01", action: "Lectura Modbus completada", detail: "8 canales · 42 ms", state: "Correcta" },
+    { time: "11:52:02", system: "Historiador OT", action: "Lote de mediciones entregado", detail: "24 muestras", state: "Correcta" },
+    { time: "11:48:04", system: "Motor de eventos", action: "Evento crítico publicado", detail: "AL-260811-031", state: "Correcta" },
+    { time: "10:15:31", system: "CMMS mantenimiento", action: "Orden pendiente de sincronización", detail: "OT-260811-018", state: "En espera" },
+  ];
+
+  return (
+    <>
+      <section className="module-summary-grid integration-summary-grid">
+        <article><span className="module-summary-icon green"><PlugConnected size={19} /></span><div><small>Conexiones activas</small><strong>{activeConnections}</strong><span>de {connections.length} configuradas</span></div></article>
+        <article><span className="module-summary-icon blue"><Refresh size={19} /></span><div><small>Sincronización</small><strong>99.98%</strong><span>Últimas 24 horas</span></div></article>
+        <article><span className="module-summary-icon amber"><Webhook size={19} /></span><div><small>Cola de salida</small><strong>1</strong><span>Orden CMMS pendiente</span></div></article>
+      </section>
+
+      <article className="panel module-panel integration-module">
+        <div className="module-toolbar"><div className="module-tabs" role="tablist" aria-label="Secciones de integraciones"><button className={tab === "connections" ? "active" : ""} onClick={() => setTab("connections")}><PlugConnected size={16} /> Conexiones</button><button className={tab === "flow" ? "active" : ""} onClick={() => setTab("flow")}><Timeline size={16} /> Flujo de datos</button><button className={tab === "api" ? "active" : ""} onClick={() => setTab("api")}><Key size={16} /> Acceso API</button></div><span className="autosave-state"><ShieldCheck size={14} /> Configuración local protegida</span></div>
+
+        {tab === "connections" && <div className="integration-content"><div className="settings-section-head"><span className="settings-icon"><PlugConnected size={20} /></span><div><h2>Conectores de plataforma</h2><p>Administra el ingreso de telemetría y la salida hacia sistemas corporativos.</p></div></div><div className="integration-card-grid">{connections.map((connection) => <article className={`integration-card ${connection.enabled ? "enabled" : "disabled"}`} key={connection.id}><div className="integration-card-head"><span className="integration-card-icon">{connection.id === "gateway" ? <Radio size={21} /> : connection.id === "historian" ? <Database size={21} /> : <Tool size={21} />}</span><button className={`switch-control ${connection.enabled ? "on" : ""}`} onClick={() => toggleConnection(connection.id)} aria-label={`${connection.enabled ? "Desactivar" : "Activar"} ${connection.name}`}><i /></button></div><span className="eyebrow">{connection.role}</span><h3>{connection.name}</h3><dl><div><dt>Protocolo</dt><dd>{connection.protocol}</dd></div><div><dt>Destino</dt><dd title={connection.endpoint}>{connection.endpoint}</dd></div><div><dt>Última actividad</dt><dd>{connection.freshness}</dd></div></dl><div className="integration-card-footer"><span className={connection.enabled && connection.status === "Operativa" ? "quality-ok" : connection.status === "Probando…" ? "integration-testing" : "muted-state"}>{connection.status === "Operativa" && <CheckCircle2 size={14} />}{connection.status}</span><button onClick={() => testConnection(connection.id)} disabled={!connection.enabled || testingId === connection.id}>{testingId === connection.id ? "Probando…" : "Probar conexión"}</button></div></article>)}</div><div className="configuration-note"><ShieldCheck size={17} /><p><strong>Separación OT/IT.</strong> Los destinos externos se presentan como configuración de interfaz. La conexión real deberá usar certificados, secretos protegidos y reglas de red autorizadas.</p></div></div>}
+
+        {tab === "flow" && <div className="integration-content flow-content"><div className="settings-section-head"><span className="settings-icon"><Timeline size={20} /></span><div><h2>Ruta operacional de los datos</h2><p>Desde la adquisición en terreno hasta los consumidores internos y externos.</p></div></div><div className="data-flow"><article><span><Activity size={21} /></span><small>Origen</small><strong>8 canales CAM5</strong><p>Temperatura, UHF y humedad</p></article><i><ChevronRight size={19} /></i><article><span><Radio size={21} /></span><small>Adquisición</small><strong>CAM5-GW-01</strong><p>Modbus TCP · cada 2 s</p></article><i><ChevronRight size={19} /></i><article className="flow-core"><span><Zap size={21} /></span><small>Procesamiento</small><strong>CAM5 CORE</strong><p>Reglas, eventos e histórico</p></article><i><ChevronRight size={19} /></i><article><span><Database size={21} /></span><small>Consumo</small><strong>OT + CMMS</strong><p>Historiador, órdenes y API</p></article></div><div className="flow-grid"><section><div className="report-library-head"><div><span className="eyebrow">Mapeo</span><h2>Señales publicadas</h2></div><span>8 activas</span></div><div className="module-table-wrap"><div className="integration-mapping-table"><div className="module-table-head"><span>Canal</span><span>Registro</span><span>Variable publicada</span><span>Destino</span><span>Calidad</span></div>{sensors.map((sensor) => <div className="module-table-row" key={sensor.id}><span><b className={`sensor-code sensor-${sensor.state}`}>{sensor.id}</b></span><span className="mono-cell">{sensor.register}</span><span className="mono-cell">cam5.mcc01.{sensor.id.toLowerCase()}</span><span>{sensor.id === "PD1" ? "Historiador + CMMS" : "Historiador OT"}</span><span className="quality-ok"><CheckCircle2 size={14} /> Válida</span></div>)}</div></div></section><aside className="sync-activity"><div className="report-library-head"><div><span className="eyebrow">Actividad</span><h2>Últimas sincronizaciones</h2></div></div><div>{syncLog.map((entry) => <article key={`${entry.time}-${entry.system}`}><span className={entry.state === "Correcta" ? "normal" : "warning"}><Refresh size={15} /></span><div><strong>{entry.action}</strong><small>{entry.system} · {entry.detail}</small></div><time>{entry.time}</time></article>)}</div></aside></div></div>}
+
+        {tab === "api" && <div className="integration-content api-content"><div className="api-section-head"><div className="settings-section-head"><span className="settings-icon"><Key size={20} /></span><div><h2>Credenciales de integración</h2><p>Claves para servicios que consumen o publican información en CAM5.</p></div></div><button className="primary-button" onClick={() => setShowApiForm((current) => !current)}><Plus size={16} /> {showApiForm ? "Cancelar" : "Nueva clave"}</button></div>{showApiForm && <form className="api-key-form" onSubmit={createApiKey}><label><span>Nombre de la integración</span><input required value={apiForm.name} onChange={(event) => setApiForm({ ...apiForm, name: event.target.value })} placeholder="Ej.: Panel de confiabilidad" /></label><label><span>Alcance</span><select value={apiForm.scope} onChange={(event) => setApiForm({ ...apiForm, scope: event.target.value })}><option>Solo lectura</option><option>Telemetría · lectura</option><option>Eventos · escritura</option></select></label><button type="submit"><Key size={15} /> Crear clave</button></form>}{newApiKey && <div className="api-key-reveal"><ShieldCheck size={19} /><div><strong>Copia la nueva clave ahora</strong><code>{newApiKey}</code><small>Por seguridad, no volverá a mostrarse completa.</small></div><button onClick={copyApiKey}>{copied ? <CheckCircle2 size={15} /> : <Copy size={15} />}{copied ? "Copiada" : "Copiar"}</button></div>}<div className="api-layout"><section className="api-key-list"><div className="report-library-head"><div><span className="eyebrow">Credenciales</span><h2>Claves registradas</h2></div><span>{apiKeys.filter((key) => key.active).length} activas</span></div>{apiKeys.map((key) => <article key={key.id}><span className={`api-key-icon ${key.active ? "active" : ""}`}><Key size={18} /></span><div><strong>{key.name}</strong><code>{key.token}</code><small>{key.scope} · Creada {key.created} · Uso: {key.lastUse}</small></div><button className="ghost-button" onClick={() => revokeApiKey(key.id)}>{key.active ? "Revocar" : "Reactivar"}</button></article>)}</section><aside className="api-endpoints"><span className="eyebrow">Endpoints disponibles</span><h3>API CAM5 v1</h3><p>Rutas propuestas para la futura integración con servicios autorizados.</p><dl><div><dt>GET</dt><dd>/api/v1/assets/mcc-01/readings</dd></div><div><dt>GET</dt><dd>/api/v1/assets/mcc-01/events</dd></div><div><dt>POST</dt><dd>/api/v1/work-orders</dd></div><div><dt>POST</dt><dd>/api/v1/webhooks/events</dd></div></dl><div className="configuration-note"><Webhook size={16} /><p>Los endpoints son parte del diseño del frontend; todavía no exponen información real.</p></div></aside></div></div>}
+      </article>
+    </>
+  );
+}
+
 function SettingsView() {
   const [tab, setTab] = useState<SettingsTab>("asset");
   const [saved, setSaved] = useState(false);
@@ -774,7 +843,7 @@ export default function Home() {
 
         <div className="content-scroll">
           <div className="page-content">
-            <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> Gestión de activos críticos</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{view !== "settings" && view !== "users" && view !== "notifications" && view !== "reports" && view !== "maintenance" && <button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button>}<button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{3 - acknowledged.length} alertas abiertas</button></div></section>
+            <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> Gestión de activos críticos</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{view !== "settings" && view !== "integrations" && view !== "users" && view !== "notifications" && view !== "reports" && view !== "maintenance" && <button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button>}<button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{3 - acknowledged.length} alertas abiertas</button></div></section>
             {view === "overview" && <Overview onNavigate={navigate} onAcknowledge={acknowledge} acknowledged={acknowledged} />}
             {view === "cabinet" && <CabinetView onOpenTrend={openChannelTrend} />}
             {view === "trends" && <TrendsView period={period} setPeriod={setPeriod} selectedId={trendSensorId} onSelectChannel={setTrendSensorId} onBackToMap={() => navigate("cabinet")} />}
@@ -783,6 +852,7 @@ export default function Home() {
             {view === "reports" && <ReportsView />}
             {view === "maintenance" && <MaintenanceView />}
             {view === "settings" && <SettingsView />}
+            {view === "integrations" && <IntegrationsView />}
             {view === "users" && <UsersView />}
             {view === "notifications" && <NotificationsView />}
           </div>

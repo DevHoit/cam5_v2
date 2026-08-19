@@ -35,6 +35,7 @@ test("server-renders the CAM5 operational portal", async () => {
   assert.match(html, /Centro de alertas/);
   assert.match(html, /Reportes/);
   assert.match(html, /Mantenimiento/);
+  assert.match(html, /Integraciones/);
   assert.match(html, /Configuración/);
 });
 
@@ -48,9 +49,11 @@ test("keeps the production portal free of starter preview code", async () => {
 
   assert.match(page, /function ReportsView\(\)/);
   assert.match(page, /function MaintenanceView\(\)/);
+  assert.match(page, /function IntegrationsView\(\)/);
   assert.match(layout, /CAM5 CORE \| Gestión de Activos Críticos/);
   assert.match(css, /\.report-builder/);
   assert.match(css, /\.maintenance-plan-grid/);
+  assert.match(css, /\.integration-card-grid/);
   assert.doesNotMatch(page, /SkeletonPreview|codex-preview/);
   assert.doesNotMatch(layout, /SkeletonPreview|codex-preview/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
