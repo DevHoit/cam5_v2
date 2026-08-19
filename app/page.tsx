@@ -427,14 +427,11 @@ function TrendsView({ period, setPeriod, selectedId, onSelectChannel, onBackToMa
   );
 }
 
-function AlarmsView({ acknowledged, onAcknowledge, workOrders, onOpenWorkOrder }: { acknowledged: string[]; onAcknowledge: (id: string) => void; workOrders: WorkOrder[]; onOpenWorkOrder: (alarm: (typeof initialAlarms)[number], assignee: string) => void }) {
+function AlarmsView({ acknowledged, onAcknowledge, workOrders, onOpenWorkOrder, closedIds, setClosedIds, assignees, setAssignees, notes, setNotes }: { acknowledged: string[]; onAcknowledge: (id: string) => void; workOrders: WorkOrder[]; onOpenWorkOrder: (alarm: (typeof initialAlarms)[number], assignee: string) => void; closedIds: string[]; setClosedIds: React.Dispatch<React.SetStateAction<string[]>>; assignees: Record<string, string>; setAssignees: React.Dispatch<React.SetStateAction<Record<string, string>>>; notes: Record<string, string[]>; setNotes: React.Dispatch<React.SetStateAction<Record<string, string[]>>> }) {
   const [severity, setSeverity] = useState<"all" | Severity>("all");
   const [workflowStatus, setWorkflowStatus] = useState<"all" | "open" | "acknowledged" | "closed">("all");
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState(initialAlarms[0].id);
-  const [closedIds, setClosedIds] = useState<string[]>([]);
-  const [assignees, setAssignees] = useState<Record<string, string>>({ [initialAlarms[0].id]: "Paula Rojas" });
-  const [notes, setNotes] = useState<Record<string, string[]>>({});
   const [noteInput, setNoteInput] = useState("");
   const getWorkflowStatus = (alarm: (typeof initialAlarms)[number]) => closedIds.includes(alarm.id) ? "closed" : alarm.acknowledged || acknowledged.includes(alarm.id) ? "acknowledged" : "open";
   const filtered = initialAlarms.filter((alarm) => (severity === "all" || alarm.severity === severity) && (workflowStatus === "all" || getWorkflowStatus(alarm) === workflowStatus) && `${alarm.title} ${alarm.detail}`.toLowerCase().includes(query.toLowerCase()));
@@ -442,6 +439,7 @@ function AlarmsView({ acknowledged, onAcknowledge, workOrders, onOpenWorkOrder }
   const selectedStatus = getWorkflowStatus(selected);
   const selectedNotes = notes[selected.id] ?? [];
   const linkedOrder = workOrders.find((order) => order.sourceAlarmId === selected.id);
+  const interventionComplete = linkedOrder?.status === "Completada";
   const addNote = (event: React.FormEvent) => { event.preventDefault(); if (!noteInput.trim()) return; setNotes((current) => ({ ...current, [selected.id]: [...(current[selected.id] ?? []), noteInput.trim()] })); setNoteInput(""); };
   const closeEvent = () => { if (selectedStatus === "open") onAcknowledge(selected.id); setClosedIds((current) => current.includes(selected.id) ? current : [...current, selected.id]); };
   const reopenEvent = () => setClosedIds((current) => current.filter((id) => id !== selected.id));
@@ -477,9 +475,10 @@ function AlarmsView({ acknowledged, onAcknowledge, workOrders, onOpenWorkOrder }
           <div className="event-workspace">
             <div className="event-management">
               <dl className="event-facts"><div><dt>Valor detectado</dt><dd>{selected.value}</dd></div><div><dt>Inicio</dt><dd>{selected.since}</dd></div><div><dt>Responsable</dt><dd><select value={assignees[selected.id] ?? "Sin asignar"} onChange={(event) => setAssignees((current) => ({ ...current, [selected.id]: event.target.value }))}><option>Sin asignar</option><option>Emerson Allende</option><option>Paula Rojas</option><option>Felipe Soto</option></select></dd></div></dl>
+              {interventionComplete && selectedStatus !== "closed" && <div className="event-remediation-state"><CheckCircle2 size={17} /><div><strong>Intervención completada</strong><p>{linkedOrder.id} finalizó. Verifica que la condición se haya normalizado antes de cerrar el evento.</p></div></div>}
               <div className="event-actions">{selectedStatus === "open" && <button className="primary-button" onClick={() => onAcknowledge(selected.id)}><CheckCircle2 size={15} /> Reconocer evento</button>}<button className={`work-order-action ${linkedOrder ? "linked" : ""}`} onClick={() => onOpenWorkOrder(selected, assignees[selected.id] ?? "Sin asignar")}><ClipboardCheck size={15} /> {linkedOrder ? `Abrir ${linkedOrder.id}` : "Crear orden de trabajo"}</button>{selectedStatus === "closed" ? <button className="secondary-button" onClick={reopenEvent}>Reabrir evento</button> : <button className="secondary-button" onClick={closeEvent}><ShieldCheck size={15} /> Cerrar evento</button>}</div>
             </div>
-            <div className="event-timeline"><h3>Línea de tiempo</h3><div><span className="timeline-dot critical" /><p><strong>Evento detectado</strong><small>{selected.since} · Motor de reglas CAM5</small></p></div>{selectedStatus !== "open" && <div><span className="timeline-dot normal" /><p><strong>Evento reconocido</strong><small>Emerson Allende · Portal web</small></p></div>}{linkedOrder && <div><span className="timeline-dot info" /><p><strong>Orden de trabajo vinculada</strong><small>{linkedOrder.id} · {linkedOrder.status}</small></p></div>}{selectedNotes.map((note, index) => <div key={`${selected.id}-${index}`}><span className="timeline-dot info" /><p><strong>Nota operativa</strong><small>{note}</small></p></div>)}{selectedStatus === "closed" && <div><span className="timeline-dot normal" /><p><strong>Evento cerrado</strong><small>Condición revisada por el operador</small></p></div>}</div>
+            <div className="event-timeline"><h3>Línea de tiempo</h3><div><span className="timeline-dot critical" /><p><strong>Evento detectado</strong><small>{selected.since} · Motor de reglas CAM5</small></p></div>{selectedStatus !== "open" && <div><span className="timeline-dot normal" /><p><strong>Evento reconocido</strong><small>Emerson Allende · Portal web</small></p></div>}{linkedOrder && <div><span className={`timeline-dot ${interventionComplete ? "normal" : "info"}`} /><p><strong>{interventionComplete ? "Orden de trabajo completada" : "Orden de trabajo vinculada"}</strong><small>{linkedOrder.id} · {linkedOrder.status}</small></p></div>}{selectedNotes.map((note, index) => <div key={`${selected.id}-${index}`}><span className="timeline-dot info" /><p><strong>Nota operativa</strong><small>{note}</small></p></div>)}{selectedStatus === "closed" && <div><span className="timeline-dot normal" /><p><strong>Evento cerrado</strong><small>Condición revisada por el operador</small></p></div>}</div>
           </div>
           <form className="event-note-form" onSubmit={addNote}><input value={noteInput} onChange={(event) => setNoteInput(event.target.value)} placeholder="Agregar una nota de seguimiento…" /><button type="submit">Agregar nota</button></form>
         </section>
@@ -932,6 +931,9 @@ export default function Home() {
   const [asset, setAsset] = useState("MCC-01 · Alimentador Norte");
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>(initialWorkOrders);
   const [focusOrderId, setFocusOrderId] = useState<string | null>(null);
+  const [closedAlarmIds, setClosedAlarmIds] = useState<string[]>([]);
+  const [alarmAssignees, setAlarmAssignees] = useState<Record<string, string>>({ "AL-260811-031": "Emerson Allende", "AL-260811-028": "Paula Rojas", "AL-260811-019": "Felipe Soto" });
+  const [alarmNotes, setAlarmNotes] = useState<Record<string, string[]>>({});
 
   const navigate = (next: View) => { setView(next); if (next !== "maintenance") setFocusOrderId(null); setMenuOpen(false); };
   const openChannelTrend = (id: string) => { setTrendSensorId(id); navigate("trends"); };
@@ -999,7 +1001,7 @@ export default function Home() {
             {view === "cabinet" && <CabinetView onOpenTrend={openChannelTrend} />}
             {view === "diagnostics" && <DiagnosticsView />}
             {view === "trends" && <TrendsView period={period} setPeriod={setPeriod} selectedId={trendSensorId} onSelectChannel={setTrendSensorId} onBackToMap={() => navigate("cabinet")} />}
-            {view === "alarms" && <AlarmsView acknowledged={acknowledged} onAcknowledge={acknowledge} workOrders={workOrders} onOpenWorkOrder={openWorkOrderFromAlarm} />}
+            {view === "alarms" && <AlarmsView acknowledged={acknowledged} onAcknowledge={acknowledge} workOrders={workOrders} onOpenWorkOrder={openWorkOrderFromAlarm} closedIds={closedAlarmIds} setClosedIds={setClosedAlarmIds} assignees={alarmAssignees} setAssignees={setAlarmAssignees} notes={alarmNotes} setNotes={setAlarmNotes} />}
             {view === "history" && <HistoryView />}
             {view === "assets" && <AssetsView />}
             {view === "reports" && <ReportsView />}
