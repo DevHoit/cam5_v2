@@ -64,6 +64,12 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(page, /usePersistentState/);
   assert.match(page, /portal-notice/);
   assert.match(page, /Piloto monositio/);
+  assert.match(page, /function useSensorData/);
+  assert.match(page, /URLSearchParams/);
+  assert.match(page, /report-preview/);
+  assert.match(page, /ConfirmContext/);
+  assert.match(page, /Datos atrasados/);
+  assert.match(page, /Vista por rol/);
   assert.match(page, /CAM5-CTRL-01/);
   assert.match(page, /CAM5-GW-01/);
   assert.match(page, /Subestación Norte/);
@@ -84,4 +90,17 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.doesNotMatch(page, /SkeletonPreview|codex-preview/);
   assert.doesNotMatch(layout, /SkeletonPreview|codex-preview/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
+});
+
+test("includes the backend handoff contract", async () => {
+  const [apiClient, openapi, handoff] = await Promise.all([
+    readFile(new URL("../app/cam5-api.ts", import.meta.url), "utf8"),
+    readFile(new URL("../handoff/CAM5-frontend-ready/openapi.yaml", import.meta.url), "utf8"),
+    readFile(new URL("../handoff/CAM5-frontend-ready/BACKEND_INTEGRATION.md", import.meta.url), "utf8"),
+  ]);
+  assert.match(apiClient, /export const cam5Api/);
+  assert.match(apiClient, /TelemetryReading/);
+  assert.match(openapi, /openapi: 3\.1\.0/);
+  assert.match(openapi, /\/assets\/\{assetId\}\/readings\/latest/);
+  assert.match(handoff, /cam5\.front\.channel-config/);
 });

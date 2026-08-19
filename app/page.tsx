@@ -35,6 +35,7 @@ import {
   IconMenu2 as Menu,
   IconPlugConnected as PlugConnected,
   IconPlus as Plus,
+  IconPrinter as Printer,
   IconRadio as Radio,
   IconRefresh as Refresh,
   IconSearch as Search,
@@ -64,9 +65,15 @@ type WorkStatus = "Pendiente" | "En curso" | "Completada";
 type WorkPriority = "Crítica" | "Alta" | "Normal";
 type WorkOrder = { id: string; title: string; source: string; sourceAlarmId?: string; due: string; priority: WorkPriority; assignee: string; status: WorkStatus };
 type NoticeTone = "success" | "info" | "warning";
+type SystemMode = "normal" | "loading" | "stale" | "offline";
+type ConfirmRequest = { title: string; detail: string; confirmLabel: string; tone?: "default" | "danger"; onConfirm: () => void };
 
 const FeedbackContext = createContext<(message: string, tone?: NoticeTone) => void>(() => undefined);
 const useFeedback = () => useContext(FeedbackContext);
+const ConfirmContext = createContext<(request: ConfirmRequest) => void>(() => undefined);
+const useConfirm = () => useContext(ConfirmContext);
+const RoleContext = createContext<UserRole>("Administrador");
+const useActiveRole = () => useContext(RoleContext);
 
 const sensors = [
   { id: "T01", label: "Barra fase L1", zone: "Barras principales", value: "68.4", unit: "°C", type: "Temperatura", state: "warning" as SensorState, trend: "+1.8 °C/h", threshold: "65 °C", register: "HR 40001", quality: "Válida" },
@@ -78,6 +85,31 @@ const sensors = [
   { id: "PD2", label: "Canal UHF 02", zone: "Barras principales", value: "18", unit: "idx", type: "Descarga parcial", state: "normal" as SensorState, trend: "Estable", threshold: "60 idx", register: "HR 40122", quality: "Válida" },
   { id: "H01", label: "Ambiente de cabina", zone: "Compartimiento de cables", value: "78", unit: "%RH", type: "Humedad", state: "warning" as SensorState, trend: "+4 % / 24h", threshold: "75 %RH", register: "HR 40201", quality: "Válida" },
 ];
+
+const defaultAssetConfig = { name: "MCC-01", description: "Alimentador Norte", voltage: "13.8", location: "Subestación Norte", timezone: "America/Santiago" };
+
+function defaultChannelConfiguration() {
+  return sensors.map((sensor) => ({
+    ...sensor,
+    enabled: true,
+    warning: sensor.id === "PD1" || sensor.id === "PD2" ? "40" : sensor.id === "H01" ? "75" : sensor.threshold.split(" ")[0],
+    critical: sensor.id.startsWith("PD") ? "60" : sensor.id === "H01" ? "85" : String(Number(sensor.threshold.split(" ")[0]) + 10),
+  }));
+}
+
+function useSensorData() {
+  const [configuration] = usePersistentState("cam5.front.channel-config", defaultChannelConfiguration());
+  return sensors.map((sensor) => {
+    const configured = configuration.find((item) => item.id === sensor.id);
+    const warning = Number(configured?.warning ?? sensor.threshold.split(" ")[0]);
+    const critical = Number(configured?.critical ?? warning + 10);
+    const reading = Number(sensor.value);
+    const state: SensorState = reading >= critical ? "critical" : reading >= warning ? "warning" : "normal";
+    const enabled = configured?.enabled ?? true;
+    const activeThreshold = state === "critical" ? critical : warning;
+    return { ...sensor, enabled, warning, critical, state, threshold: `${activeThreshold} ${sensor.unit}`, quality: enabled ? sensor.quality : "Deshabilitado" };
+  });
+}
 
 const initialAlarms = [
   { id: "AL-260811-031", severity: "critical" as Severity, title: "Aceleración de descarga parcial", detail: "PD1 · Compartimiento de cables", since: "Hace 12 min", value: "Φ 2.8×", acknowledged: false },
@@ -177,6 +209,10 @@ function TableEmptyState({ title, detail }: { title: string; detail: string }) {
   return <div className="table-empty-state"><Search size={21} /><div><strong>{title}</strong><p>{detail}</p></div></div>;
 }
 
+function PermissionState({ area }: { area: string }) {
+  return <section className="panel permission-state"><span><ShieldCheck size={26} /></span><div><span className="eyebrow">Acceso restringido</span><h2>Tu rol no puede administrar {area}</h2><p>Puedes consultar los módulos de supervisión. Un administrador debe realizar cambios en esta sección.</p></div></section>;
+}
+
 function MetricCard({
   label,
   value,
@@ -205,14 +241,16 @@ function MetricCard({
 }
 
 function SensorMarker({ id, selectedId, onSelect }: { id: string; selectedId?: string; onSelect?: (id: string) => void }) {
+  const sensors = useSensorData();
   const sensor = sensors.find((item) => item.id === id)!;
-  const stateLabel = sensor.state === "critical" ? "Crítico" : sensor.state === "warning" ? "Advertencia" : "Normal";
+  const stateLabel = !sensor.enabled ? "No configurado" : sensor.state === "critical" ? "Crítico" : sensor.state === "warning" ? "Advertencia" : "Normal";
   return (
     <button
       type="button"
-      className={`sensor-marker marker-${sensor.state} ${selectedId === id ? "selected" : ""}`}
+      className={`sensor-marker ${sensor.enabled ? `marker-${sensor.state}` : "marker-disabled"} ${selectedId === id ? "selected" : ""}`}
       aria-label={`${sensor.id}, ${sensor.label}, ${sensor.value} ${sensor.unit}, ${sensor.state}`}
       aria-pressed={selectedId === id}
+      disabled={!sensor.enabled}
       onClick={() => onSelect?.(id)}
     >
       <span className="sensor-marker-top"><span className="sensor-marker-id">{sensor.id}</span><span className="sensor-marker-state"><i />{stateLabel}</span></span>
@@ -267,20 +305,31 @@ function CabinetDiagram({ selectedId, onSelect }: { selectedId?: string; onSelec
 }
 
 function Overview({ onNavigate, onAcknowledge, acknowledged }: { onNavigate: (view: View) => void; onAcknowledge: (id: string) => void; acknowledged: string[] }) {
+  const sensors = useSensorData();
+  const [assetConfig] = usePersistentState("cam5.front.asset-config", defaultAssetConfig);
+  const activeSensors = sensors.filter((sensor) => sensor.enabled);
+  const temperature = activeSensors.filter((sensor) => sensor.type === "Temperatura").sort((a, b) => Number(b.value) - Number(a.value))[0];
+  const partialDischarge = activeSensors.find((sensor) => sensor.id === "PD1");
+  const humidity = activeSensors.find((sensor) => sensor.id === "H01");
+  const conditionCounts = {
+    critical: activeSensors.filter((sensor) => sensor.state === "critical").length,
+    warning: activeSensors.filter((sensor) => sensor.state === "warning").length,
+    normal: activeSensors.filter((sensor) => sensor.state === "normal").length,
+  };
   const activeAlarms = initialAlarms.filter((alarm) => !alarm.acknowledged && !acknowledged.includes(alarm.id));
   return (
     <>
       <section className="metrics-grid">
-        <MetricCard label="Temperatura máxima" value="68.4" unit="°C" note="T01 · +1.8 °C/h" tone="amber" icon={Thermometer} />
-        <MetricCard label="Descarga parcial" value="72" unit="idx" note="PD1 · aceleración 2.8×" tone="red" icon={Activity} />
-        <MetricCard label="Humedad relativa" value="78" unit="%" note="Sobre umbral operativo" tone="blue" icon={Droplets} />
-        <MetricCard label="Disponibilidad" value="9/10" note="1 lector con latencia alta" tone="green" icon={Server} />
+        <MetricCard label="Temperatura máxima" value={temperature?.value ?? "—"} unit={temperature?.unit} note={temperature ? `${temperature.id} · ${temperature.trend}` : "Sin canales activos"} tone={temperature?.state === "critical" ? "red" : temperature?.state === "warning" ? "amber" : "green"} icon={Thermometer} />
+        <MetricCard label="Descarga parcial" value={partialDischarge?.value ?? "—"} unit={partialDischarge?.unit} note={partialDischarge ? `${partialDischarge.id} · ${partialDischarge.trend}` : "Canal deshabilitado"} tone={partialDischarge?.state === "critical" ? "red" : partialDischarge?.state === "warning" ? "amber" : "green"} icon={Activity} />
+        <MetricCard label="Humedad relativa" value={humidity?.value ?? "—"} unit={humidity?.unit} note={humidity ? `${humidity.id} · ${humidity.trend}` : "Canal deshabilitado"} tone={humidity?.state === "critical" ? "red" : humidity?.state === "warning" ? "amber" : "blue"} icon={Droplets} />
+        <MetricCard label="Disponibilidad" value={`${activeSensors.length}/${sensors.length}`} note={`${sensors.length - activeSensors.length} canales deshabilitados`} tone="green" icon={Server} />
       </section>
 
       <section className="overview-grid">
         <article className="panel asset-summary-panel">
           <div className="panel-header asset-summary-header">
-            <div><span className="eyebrow">Activo prioritario</span><h2>MCC-01 · Alimentador Norte</h2><p>Cabina de 13.8 kV · evaluación actualizada hace 2 s</p></div>
+            <div><span className="eyebrow">Activo prioritario</span><h2>{assetConfig.name} · {assetConfig.description}</h2><p>Cabina de {assetConfig.voltage} kV · evaluación actualizada hace 2 s</p></div>
             <StatusPill state="critical">Atención prioritaria</StatusPill>
           </div>
 
@@ -300,11 +349,11 @@ function Overview({ onNavigate, onAcknowledge, acknowledged }: { onNavigate: (vi
             </section>
 
             <aside className="condition-summary" aria-label="Resumen de canales">
-              <div className="condition-summary-title"><div><span className="eyebrow">Estado actual</span><h3>8 canales supervisados</h3></div><span className="online-mini"><i />Todos comunicando</span></div>
+              <div className="condition-summary-title"><div><span className="eyebrow">Estado actual</span><h3>{activeSensors.length} canales supervisados</h3></div><span className="online-mini"><i />Datos sincronizados</span></div>
               <div className="condition-counts">
-                <div className="count-critical"><strong>1</strong><span>Crítico</span></div>
-                <div className="count-warning"><strong>2</strong><span>Advertencia</span></div>
-                <div className="count-normal"><strong>5</strong><span>Normal</span></div>
+                <div className="count-critical"><strong>{conditionCounts.critical}</strong><span>Crítico</span></div>
+                <div className="count-warning"><strong>{conditionCounts.warning}</strong><span>Advertencia</span></div>
+                <div className="count-normal"><strong>{conditionCounts.normal}</strong><span>Normal</span></div>
               </div>
               <div className="secondary-findings">
                 <div><span className="sensor-code sensor-warning">T01</span><p><strong>68.4 °C</strong><small>Barra L1 · sobre umbral</small></p><b>+1.8 °C/h</b></div>
@@ -354,15 +403,17 @@ function Overview({ onNavigate, onAcknowledge, acknowledged }: { onNavigate: (vi
 }
 
 function CabinetView({ onOpenTrend }: { onOpenTrend: (id: string) => void }) {
+  const sensors = useSensorData();
+  const activeSensors = sensors.filter((sensor) => sensor.enabled);
   const [selectedId, setSelectedId] = useState("PD1");
-  const selected = sensors.find((sensor) => sensor.id === selectedId)!;
+  const selected = sensors.find((sensor) => sensor.id === selectedId && sensor.enabled) ?? sensors.find((sensor) => sensor.enabled) ?? sensors[0];
   const SelectedIcon = selected.type === "Temperatura" ? Thermometer : selected.type === "Humedad" ? Droplets : Activity;
-  const selectedStateLabel = selected.state === "critical" ? "Crítico" : selected.state === "warning" ? "Advertencia" : "Normal";
+  const selectedStateLabel = !selected.enabled ? "No configurado" : selected.state === "critical" ? "Crítico" : selected.state === "warning" ? "Advertencia" : "Normal";
 
   return (
     <section className="cabinet-view-grid">
       <article className="panel cabinet-full-panel">
-        <div className="panel-header"><div><span className="eyebrow">Mapa de condición de la cabina</span><h2>MCC-01 · Alimentador Norte</h2><p>8 canales activos · 16 disponibles</p></div><StatusPill state="critical">1 crítico · 2 advertencias</StatusPill></div>
+        <div className="panel-header"><div><span className="eyebrow">Mapa de condición de la cabina</span><h2>MCC-01 · Alimentador Norte</h2><p>{activeSensors.length} canales activos · {24 - activeSensors.length} disponibles</p></div><StatusPill state="critical">{activeSensors.filter((sensor) => sensor.state === "critical").length} crítico · {activeSensors.filter((sensor) => sensor.state === "warning").length} advertencias</StatusPill></div>
         <CabinetDiagram selectedId={selectedId} onSelect={setSelectedId} />
         <div className="diagram-legend"><span><i className="dot-normal" />Normal</span><span><i className="dot-warning" />Advertencia</span><span><i className="dot-critical" />Crítico</span><span><i className="dot-disabled" />No configurado</span><small>Selecciona una tarjeta para revisar el canal.</small></div>
       </article>
@@ -377,7 +428,7 @@ function CabinetView({ onOpenTrend }: { onOpenTrend: (id: string) => void }) {
         <div className="panel-header compact sensor-list-header"><div><span className="eyebrow">Canales configurados</span><h2>Matriz de sensores</h2></div><span className="data-fresh"><Wifi size={14} /> Hace 2 s</span></div>
         <div className="sensor-list">
           {sensors.map((sensor) => (
-            <button type="button" className={`sensor-row ${selectedId === sensor.id ? "selected" : ""}`} key={sensor.id} onClick={() => setSelectedId(sensor.id)}>
+            <button type="button" className={`sensor-row ${!sensor.enabled ? "disabled" : ""} ${selectedId === sensor.id ? "selected" : ""}`} key={sensor.id} onClick={() => setSelectedId(sensor.id)} disabled={!sensor.enabled}>
               <span className={`sensor-code sensor-${sensor.state}`}>{sensor.id}</span>
               <div><strong>{sensor.label}</strong><small>{sensor.zone}</small></div>
               <div className="sensor-reading"><strong>{sensor.value}<small>{sensor.unit}</small></strong><span>{sensor.trend}</span></div>
@@ -390,7 +441,9 @@ function CabinetView({ onOpenTrend }: { onOpenTrend: (id: string) => void }) {
 }
 
 function TrendsView({ period, setPeriod, selectedId, onSelectChannel, onBackToMap }: { period: string; setPeriod: (period: string) => void; selectedId: string; onSelectChannel: (id: string) => void; onBackToMap: () => void }) {
-  const selected = sensors.find((sensor) => sensor.id === selectedId) ?? sensors[0];
+  const sensors = useSensorData();
+  const activeSensors = sensors.filter((sensor) => sensor.enabled);
+  const selected = activeSensors.find((sensor) => sensor.id === selectedId) ?? activeSensors[0] ?? sensors[0];
   const currentValue = Number(selected.value);
   const thresholdValue = Number.parseFloat(selected.threshold);
   const amplitude = selected.type === "Descarga parcial" ? (selected.state === "critical" ? 48 : 8) : selected.type === "Humedad" ? 14 : selected.state === "warning" ? 17 : 5;
@@ -411,7 +464,7 @@ function TrendsView({ period, setPeriod, selectedId, onSelectChannel, onBackToMa
     <>
       <section className="toolbar-row">
         <div className="trend-toolbar-controls">
-          <label className="channel-select"><Activity size={16} /><span><small>Canal</small><select value={selected.id} onChange={(event) => onSelectChannel(event.target.value)} aria-label="Seleccionar canal de tendencia">{sensors.map((sensor) => <option key={sensor.id} value={sensor.id}>{sensor.id} · {sensor.label}</option>)}</select></span><ChevronDown size={14} /></label>
+          <label className="channel-select"><Activity size={16} /><span><small>Canal</small><select value={selected.id} onChange={(event) => onSelectChannel(event.target.value)} aria-label="Seleccionar canal de tendencia">{activeSensors.map((sensor) => <option key={sensor.id} value={sensor.id}>{sensor.id} · {sensor.label}</option>)}</select></span><ChevronDown size={14} /></label>
           <div className="segmented" aria-label="Rango temporal">{["24 h", "7 días", "30 días"].map((item) => <button key={item} className={period === item ? "active" : ""} onClick={() => setPeriod(item)}>{item}</button>)}</div>
         </div>
       </section>
@@ -438,6 +491,8 @@ function TrendsView({ period, setPeriod, selectedId, onSelectChannel, onBackToMa
 
 function AlarmsView({ acknowledged, onAcknowledge, workOrders, onOpenWorkOrder, closedIds, setClosedIds, assignees, setAssignees, notes, setNotes }: { acknowledged: string[]; onAcknowledge: (id: string) => void; workOrders: WorkOrder[]; onOpenWorkOrder: (alarm: (typeof initialAlarms)[number], assignee: string) => void; closedIds: string[]; setClosedIds: React.Dispatch<React.SetStateAction<string[]>>; assignees: Record<string, string>; setAssignees: React.Dispatch<React.SetStateAction<Record<string, string>>>; notes: Record<string, string[]>; setNotes: React.Dispatch<React.SetStateAction<Record<string, string[]>>> }) {
   const notify = useFeedback();
+  const confirm = useConfirm();
+  const role = useActiveRole();
   const [severity, setSeverity] = useState<"all" | Severity>("all");
   const [workflowStatus, setWorkflowStatus] = useState<"all" | "open" | "acknowledged" | "closed">("all");
   const [query, setQuery] = useState("");
@@ -451,7 +506,7 @@ function AlarmsView({ acknowledged, onAcknowledge, workOrders, onOpenWorkOrder, 
   const linkedOrder = workOrders.find((order) => order.sourceAlarmId === selected.id);
   const interventionComplete = linkedOrder?.status === "Completada";
   const addNote = (event: React.FormEvent) => { event.preventDefault(); if (!noteInput.trim()) return; setNotes((current) => ({ ...current, [selected.id]: [...(current[selected.id] ?? []), noteInput.trim()] })); setNoteInput(""); };
-  const closeEvent = () => { if (selectedStatus === "open") onAcknowledge(selected.id); setClosedIds((current) => current.includes(selected.id) ? current : [...current, selected.id]); notify(`Evento ${selected.id} cerrado.`); };
+  const closeEvent = () => confirm({ title: `Cerrar ${selected.id}`, detail: "Confirma que la condición fue revisada y que no requiere seguimiento operativo adicional.", confirmLabel: "Cerrar evento", tone: "danger", onConfirm: () => { if (selectedStatus === "open") onAcknowledge(selected.id); setClosedIds((current) => current.includes(selected.id) ? current : [...current, selected.id]); notify(`Evento ${selected.id} cerrado.`); } });
   const reopenEvent = () => { setClosedIds((current) => current.filter((id) => id !== selected.id)); notify(`Evento ${selected.id} reabierto.`, "warning"); };
   const openCritical = initialAlarms.filter((alarm) => alarm.severity === "critical" && !closedIds.includes(alarm.id)).length;
   const openWarnings = initialAlarms.filter((alarm) => alarm.severity === "warning" && !closedIds.includes(alarm.id)).length;
@@ -462,7 +517,7 @@ function AlarmsView({ acknowledged, onAcknowledge, workOrders, onOpenWorkOrder, 
         <div className="summary-tile warning"><span>Advertencias abiertas</span><strong>{openWarnings}</strong><BellRing size={24} /></div>
         <div className="summary-tile normal"><span>MTTA promedio</span><strong>8.5<small> min</small></strong><Clock3 size={24} /></div>
       </section>
-      <article className="panel alarm-table-panel">
+      <article className={`panel alarm-table-panel ${role === "Solo lectura" ? "role-readonly" : ""}`}>
         <div className="alarm-toolbar">
           <label className="search-field"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filtrar mensaje, sensor o zona…" /></label>
           <div className="alarm-filters"><label className="status-filter"><span>Estado</span><select value={workflowStatus} onChange={(event) => setWorkflowStatus(event.target.value as typeof workflowStatus)}><option value="all">Todos</option><option value="open">Abiertas</option><option value="acknowledged">Reconocidas</option><option value="closed">Cerradas</option></select><ChevronDown size={13} /></label><div className="segmented">{(["all", "critical", "warning", "info"] as const).map((item) => <button key={item} className={severity === item ? "active" : ""} onClick={() => setSeverity(item)}>{item === "all" ? "Todas" : item === "critical" ? "Críticas" : item === "warning" ? "Advertencias" : "Info"}</button>)}</div></div>
@@ -499,15 +554,18 @@ function AlarmsView({ acknowledged, onAcknowledge, workOrders, onOpenWorkOrder, 
 }
 
 function HistoryView() {
+  const sensors = useSensorData();
   const [tab, setTab] = useState<HistoryTab>("measurements");
   const [range, setRange] = useState("24 h");
   const [channel, setChannel] = useState("all");
-  const visibleSensors = channel === "all" ? sensors : sensors.filter((sensor) => sensor.id === channel);
+  const activeSensors = sensors.filter((sensor) => sensor.enabled);
+  const estimatedRecords = activeSensors.length * (range === "24 h" ? 43200 : range === "7 días" ? 302400 : range === "30 días" ? 1296000 : 3888000);
+  const visibleSensors = channel === "all" ? activeSensors : activeSensors.filter((sensor) => sensor.id === channel);
 
   return (
     <>
       <section className="module-summary-grid">
-        <article><span className="module-summary-icon blue"><Database size={19} /></span><div><small>Registros del periodo</small><strong>345,600</strong><span>8 canales · {range}</span></div></article>
+        <article><span className="module-summary-icon blue"><Database size={19} /></span><div><small>Registros del periodo</small><strong>{estimatedRecords.toLocaleString("es-CL")}</strong><span>{activeSensors.length} canales · {range}</span></div></article>
         <article><span className="module-summary-icon green"><ShieldCheck size={19} /></span><div><small>Integridad de datos</small><strong>99.98%</strong><span>69 muestras estimadas</span></div></article>
         <article><span className="module-summary-icon amber"><BellRing size={19} /></span><div><small>Eventos registrados</small><strong>6</strong><span>1 crítico · 3 advertencias</span></div></article>
       </section>
@@ -520,7 +578,7 @@ function HistoryView() {
             <button className={tab === "audit" ? "active" : ""} onClick={() => setTab("audit")}><ShieldCheck size={16} /> Auditoría</button>
           </div>
           <div className="history-filters">
-            {tab === "measurements" && <label><span>Canal</span><select value={channel} onChange={(event) => setChannel(event.target.value)}><option value="all">Todos los canales</option>{sensors.map((sensor) => <option key={sensor.id} value={sensor.id}>{sensor.id} · {sensor.label}</option>)}</select><ChevronDown size={13} /></label>}
+            {tab === "measurements" && <label><span>Canal</span><select value={channel} onChange={(event) => setChannel(event.target.value)}><option value="all">Todos los canales</option>{activeSensors.map((sensor) => <option key={sensor.id} value={sensor.id}>{sensor.id} · {sensor.label}</option>)}</select><ChevronDown size={13} /></label>}
             <label><span>Periodo</span><select value={range} onChange={(event) => setRange(event.target.value)}><option>24 h</option><option>7 días</option><option>30 días</option><option>90 días</option></select><ChevronDown size={13} /></label>
           </div>
         </div>
@@ -535,7 +593,7 @@ function HistoryView() {
 
         {tab === "audit" && <div className="module-table-wrap"><div className="history-table audit-history"><div className="module-table-head"><span>Fecha</span><span>Usuario</span><span>Acción</span><span>Detalle</span><span>Origen</span></div>{auditEntries.map((entry) => <div className="module-table-row" key={`${entry.time}-${entry.action}`}><span>{entry.time}</span><span><strong>{entry.user}</strong></span><span>{entry.action}</span><span className="mono-cell">{entry.target}</span><span>{entry.origin}</span></div>)}</div></div>}
 
-        <div className="module-footer"><span><Database size={14} /> Retención configurada: 24 meses</span><small>Datos demostrativos · la persistencia se conectará al historiador.</small></div>
+        <div className="module-footer"><span><Database size={14} /> Retención configurada: 24 meses</span><small>Fuente actual: simulador local · fuente futura: historiador CAM5.</small></div>
       </article>
     </>
   );
@@ -545,6 +603,8 @@ function AssetsView({ onNavigate }: { onNavigate: (view: View) => void }) {
   type AssetState = "normal" | "warning" | "critical";
   type AssetRecord = { id: string; name: string; type: string; site: string; area: string; state: AssetState; configured: number; capacity: number; gateway: string; voltage: string; owner: string; updated: string };
   const notify = useFeedback();
+  const sensors = useSensorData();
+  const [assetConfig, setAssetConfig] = usePersistentState("cam5.front.asset-config", defaultAssetConfig);
   const [tab, setTab] = useState<"hierarchy" | "directory">("hierarchy");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | AssetState>("all");
@@ -557,21 +617,25 @@ function AssetsView({ onNavigate }: { onNavigate: (view: View) => void }) {
     { id: "MCC-02", name: "Banco de condensadores", type: "Centro de control de motores", site: "Subestación Norte", area: "Sala eléctrica A", state: "normal", configured: 6, capacity: 12, gateway: "CAM5-GW-01", voltage: "13.8 kV", owner: "Felipe Soto", updated: "Hace 5 s" },
     { id: "TR-01", name: "Transformador principal", type: "Transformador de potencia", site: "Subestación Norte", area: "Patio de transformación", state: "warning", configured: 12, capacity: 16, gateway: "CAM5-GW-01", voltage: "110 / 13.8 kV", owner: "Emerson Allende", updated: "Hace 4 s" },
   ]);
-  const selected = assets.find((asset) => asset.id === selectedId) ?? assets[0];
+  const activeSensorCount = sensors.filter((sensor) => sensor.enabled).length;
+  const storedSelected = assets.find((asset) => asset.id === selectedId) ?? assets[0];
+  const selected = storedSelected.id === "MCC-01" ? { ...storedSelected, configured: activeSensorCount } : storedSelected;
   const filtered = assets.filter((asset) => (statusFilter === "all" || asset.state === statusFilter) && `${asset.id} ${asset.name} ${asset.type} ${asset.site} ${asset.area}`.toLowerCase().includes(query.toLowerCase()));
   const locations = ["Subestación Norte"];
-  const totalConfigured = assets.reduce((sum, asset) => sum + asset.configured, 0);
+  const totalConfigured = assets.reduce((sum, asset) => sum + (asset.id === "MCC-01" ? activeSensorCount : asset.configured), 0);
   const totalCapacity = assets.reduce((sum, asset) => sum + asset.capacity, 0);
-  const coverage = selected.capacity ? Math.round((selected.configured / selected.capacity) * 100) : 0;
-  const selectedSensors = selected.id === "MCC-01" ? sensors : [];
+  const selectedConfigured = selected.id === "MCC-01" ? activeSensorCount : selected.configured;
+  const coverage = selected.capacity ? Math.round((selectedConfigured / selected.capacity) * 100) : 0;
+  const selectedSensors = selected.id === "MCC-01" ? sensors.filter((sensor) => sensor.enabled) : [];
   const stateLabel = (state: AssetState) => state === "critical" ? "Crítico" : state === "warning" ? "Advertencia" : "Normal";
   const createAsset = (event: React.FormEvent) => {
     event.preventDefault();
     if (!form.code.trim() || !form.name.trim()) return;
+    if (assets.some((asset) => asset.id === form.code.trim().toUpperCase())) { notify(`El código ${form.code.trim().toUpperCase()} ya está registrado.`, "warning"); return; }
     const next = { id: form.code.trim().toUpperCase(), name: form.name.trim(), type: form.type, site: "Subestación Norte", area: form.area, state: "normal" as AssetState, configured: 0, capacity: 0, gateway: "CAM5-GW-01", voltage: "Sin definir", owner: "Sin asignar", updated: "Nunca" };
     setAssets((current) => [next, ...current]); setSelectedId(next.id); setTab("hierarchy"); setShowCreate(false); setForm({ code: "", name: "", type: "Centro de control", site: "Subestación Norte", area: "Sala eléctrica A" }); notify(`Activo ${next.id} registrado en el inventario.`);
   };
-  const updateSelected = (field: "name" | "area" | "owner" | "voltage", value: string) => setAssets((current) => current.map((asset) => asset.id === selected.id ? { ...asset, [field]: value } : asset));
+  const updateSelected = (field: "name" | "area" | "owner" | "voltage", value: string) => { setAssets((current) => current.map((asset) => asset.id === selected.id ? { ...asset, [field]: value } : asset)); if (selected.id === "MCC-01" && field === "name") setAssetConfig({ ...assetConfig, description: value }); if (selected.id === "MCC-01" && field === "voltage") setAssetConfig({ ...assetConfig, voltage: value.replace(/\s*kV$/i, "") }); };
   const openAsset = (id: string) => {
     if (id === selectedId && tab === "hierarchy" && !editing) {
       onNavigate(id === "MCC-01" ? (selected.state === "normal" ? "cabinet" : "alarms") : "settings");
@@ -605,6 +669,8 @@ function AssetsView({ onNavigate }: { onNavigate: (view: View) => void }) {
 
 function ReportsView() {
   const notify = useFeedback();
+  const sensors = useSensorData();
+  const activeChannelCount = sensors.filter((sensor) => sensor.enabled).length;
   const templates = [
     { id: "condition", name: "Condición del activo", detail: "Salud general, hallazgos y recomendación técnica", icon: "condition", accent: "blue" },
     { id: "events", name: "Eventos y alarmas", detail: "Tiempos de atención, causas y trazabilidad operativa", icon: "events", accent: "amber" },
@@ -615,6 +681,7 @@ function ReportsView() {
   const [format, setFormat] = useState("PDF");
   const [automatic, setAutomatic] = usePersistentState("cam5.front.report-schedule", true);
   const [generating, setGenerating] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [reports, setReports] = usePersistentState("cam5.front.reports", [
     { id: "RPT-260811-012", name: "Condición mensual MCC-01", period: "12 jul – 11 ago", created: "Hoy 11:50", format: "PDF", owner: "Emerson Allende" },
     { id: "RPT-260804-011", name: "Eventos críticos · Semana 32", period: "29 jul – 4 ago", created: "4 ago 18:10", format: "PDF", owner: "Sistema" },
@@ -626,11 +693,12 @@ function ReportsView() {
     window.setTimeout(() => {
       setReports((current) => [{ id: `RPT-${Date.now().toString().slice(-9)}`, name: `${selectedTemplate.name} · MCC-01`, period, created: "Ahora", format, owner: "Emerson Allende" }, ...current]);
       setGenerating(false);
+      setPreviewOpen(true);
       notify(`${selectedTemplate.name} generado y agregado a la biblioteca.`);
     }, 850);
   };
   const downloadReportData = (name: string) => {
-    const rows = ["reporte,activo,canal,valor,unidad,estado", ...sensors.map((sensor) => [name, "MCC-01", sensor.id, sensor.value, sensor.unit, sensor.state].join(","))];
+    const rows = ["reporte,activo,canal,valor,unidad,estado", ...sensors.filter((sensor) => sensor.enabled).map((sensor) => [name, "MCC-01", sensor.id, sensor.value, sensor.unit, sensor.state].join(","))];
     const url = URL.createObjectURL(new Blob([rows.join("\n")], { type: "text/csv;charset=utf-8" }));
     const anchor = document.createElement("a"); anchor.href = url; anchor.download = "cam5-datos-reporte.csv"; anchor.click(); URL.revokeObjectURL(url);
     notify("Datos del reporte exportados correctamente.", "info");
@@ -641,7 +709,7 @@ function ReportsView() {
       <section className="module-summary-grid report-summary-grid">
         <article><span className="module-summary-icon blue"><FileReport size={19} /></span><div><small>Informes disponibles</small><strong>{reports.length}</strong><span>Últimos 90 días</span></div></article>
         <article><span className="module-summary-icon green"><CalendarEvent size={19} /></span><div><small>Programaciones activas</small><strong>{automatic ? 3 : 2}</strong><span>Próximo: lunes 08:00</span></div></article>
-        <article><span className="module-summary-icon amber"><Database size={19} /></span><div><small>Cobertura de datos</small><strong>99.98%</strong><span>8 canales incluidos</span></div></article>
+        <article><span className="module-summary-icon amber"><Database size={19} /></span><div><small>Cobertura de datos</small><strong>99.98%</strong><span>{activeChannelCount} canales incluidos</span></div></article>
       </section>
 
       <article className="panel module-panel report-module">
@@ -657,10 +725,13 @@ function ReportsView() {
             <p>El informe se genera para MCC-01 · Alimentador Norte con los canales activos.</p>
             <div className="report-config-fields"><label><span>Periodo</span><select value={period} onChange={(event) => setPeriod(event.target.value)}><option>24 horas</option><option>7 días</option><option>30 días</option><option>90 días</option></select></label><label><span>Formato</span><select value={format} onChange={(event) => setFormat(event.target.value)}><option>PDF</option><option>XLSX</option></select></label></div>
             <button className={`report-schedule ${automatic ? "active" : ""}`} onClick={() => setAutomatic((current) => !current)}><span><CalendarEvent size={17} /><span><strong>Programación automática</strong><small>Primer lunes de cada mes · 08:00</small></span></span><i>{automatic ? "Activa" : "Inactiva"}</i></button>
+            <button className="report-preview-button" onClick={() => setPreviewOpen(true)}><MonitorDot size={17} /> Vista previa</button>
             <button className="generate-report-button" onClick={generateReport} disabled={generating}>{generating ? <><Timeline size={17} /> Generando informe…</> : <><FileTypePdf size={17} /> Generar informe</>}</button>
-            <small className="report-disclaimer">Vista funcional con datos demostrativos. El documento definitivo se conectará al servicio de reportes.</small>
+            <small className="report-disclaimer">La vista previa utiliza el mismo contrato que consumirá el servicio definitivo de reportes.</small>
           </aside>
         </div>
+
+        {previewOpen && <section className="report-preview" aria-label="Vista previa del informe"><div className="report-preview-toolbar"><div><span className="eyebrow">Vista previa · {format}</span><h2>{selectedTemplate.name}</h2></div><div><button className="secondary-button" onClick={() => setPreviewOpen(false)}><X size={15} /> Cerrar</button><button className="primary-button" onClick={() => window.print()}><Printer size={15} /> Imprimir / guardar PDF</button></div></div><div className="report-sheet"><header><span className="brand-mark"><Zap size={21} /></span><div><strong>CAM5 CORE</strong><small>Informe de condición de activo crítico</small></div><time>Subestación Norte · MCC-01</time></header><section><span className="eyebrow">Resumen del periodo · {period}</span><h1>{selectedTemplate.name}</h1><p>Evaluación consolidada de temperatura, descarga parcial, humedad y disponibilidad de comunicaciones.</p></section><div className="report-kpi-row"><article><small>Condición</small><strong>Atención prioritaria</strong></article><article><small>Canales incluidos</small><strong>{sensors.filter((sensor) => sensor.enabled).length} de {sensors.length}</strong></article><article><small>Integridad</small><strong>99.98%</strong></article></div><section className="report-finding"><AlertTriangle size={20} /><div><strong>Hallazgo principal</strong><h2>Descarga parcial en aceleración · PD1</h2><p>El índice actual supera el umbral crítico configurado. Se recomienda inspección dirigida del compartimiento de cables.</p></div><b>72 idx</b></section><section className="report-channel-summary"><h2>Lecturas incluidas</h2><div>{sensors.filter((sensor) => sensor.enabled).map((sensor) => <span key={sensor.id}><b className={`sensor-code sensor-${sensor.state}`}>{sensor.id}</b><span><strong>{sensor.label}</strong><small>{sensor.zone}</small></span><em>{sensor.value} {sensor.unit}</em></span>)}</div></section><footer><ShieldCheck size={16} /><span>Documento generado desde datos simulados. La fuente definitiva será proporcionada por el historiador CAM5.</span></footer></div></section>}
 
         <div className="report-library-head"><div><span className="eyebrow">Biblioteca</span><h2>Informes recientes</h2></div><span>{reports.length} documentos</span></div>
         <div className="module-table-wrap"><div className="report-table"><div className="module-table-head"><span>Informe</span><span>Periodo</span><span>Generado</span><span>Formato</span><span>Responsable</span><span>Datos</span></div>{reports.map((report) => <div className="module-table-row" key={report.id}><span className="report-name-cell"><b><FileReport size={16} /></b><span><strong>{report.name}</strong><small>{report.id}</small></span></span><span>{report.period}</span><span>{report.created}</span><span><i className="report-format">{report.format}</i></span><span>{report.owner}</span><span><button className="ghost-button" onClick={() => downloadReportData(report.name)}><Download size={14} /> Descargar datos</button></span></div>)}</div></div>
@@ -671,6 +742,8 @@ function ReportsView() {
 
 function MaintenanceView({ orders, setOrders, focusOrderId }: { orders: WorkOrder[]; setOrders: React.Dispatch<React.SetStateAction<WorkOrder[]>>; focusOrderId: string | null }) {
   const notify = useFeedback();
+  const confirm = useConfirm();
+  const role = useActiveRole();
   const [tab, setTab] = useState<"plan" | "orders">(focusOrderId ? "orders" : "plan");
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ title: "", priority: "Alta", assignee: "Paula Rojas" });
@@ -689,7 +762,8 @@ function MaintenanceView({ orders, setOrders, focusOrderId }: { orders: WorkOrde
     notify(`Orden ${id} creada correctamente.`);
     setForm({ title: "", priority: "Alta", assignee: "Paula Rojas" }); setShowCreate(false); setTab("orders");
   };
-  const updateOrder = (id: string, status: WorkStatus) => { setOrders((current) => current.map((order) => order.id === id ? { ...order, status } : order)); notify(`${id} actualizada a “${status}”.`, "info"); };
+  const applyOrderStatus = (id: string, status: WorkStatus) => { setOrders((current) => current.map((order) => order.id === id ? { ...order, status } : order)); notify(`${id} actualizada a “${status}”.`, "info"); };
+  const updateOrder = (id: string, status: WorkStatus) => status === "Completada" ? confirm({ title: `Completar ${id}`, detail: "La orden quedará finalizada y el evento asociado podrá cerrarse desde el Centro de alertas.", confirmLabel: "Completar orden", onConfirm: () => applyOrderStatus(id, status) }) : applyOrderStatus(id, status);
 
   return (
     <>
@@ -699,7 +773,7 @@ function MaintenanceView({ orders, setOrders, focusOrderId }: { orders: WorkOrde
         <article><span className="module-summary-icon blue"><Tool size={19} /></span><div><small>Órdenes abiertas</small><strong>{openOrders}</strong><span>1 crítica · 2 altas</span></div></article>
       </section>
 
-      <article className="panel module-panel maintenance-module">
+      <article className={`panel module-panel maintenance-module ${role === "Solo lectura" ? "role-readonly" : ""}`}>
         <div className="module-toolbar"><div className="module-tabs" role="tablist" aria-label="Secciones de mantenimiento"><button className={tab === "plan" ? "active" : ""} onClick={() => setTab("plan")}><CalendarEvent size={16} /> Plan preventivo</button><button className={tab === "orders" ? "active" : ""} onClick={() => setTab("orders")}><ClipboardCheck size={16} /> Órdenes de trabajo</button></div><button className="primary-button" onClick={() => setShowCreate((current) => !current)}><Plus size={16} /> {showCreate ? "Cancelar" : "Nueva orden"}</button></div>
 
         {showCreate && <form className="work-order-form" onSubmit={createOrder}><label><span>Trabajo requerido</span><input required value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} placeholder="Ej.: Revisar conexión del sensor T02" /></label><label><span>Prioridad</span><select value={form.priority} onChange={(event) => setForm({ ...form, priority: event.target.value })}><option>Crítica</option><option>Alta</option><option>Normal</option></select></label><label><span>Responsable</span><select value={form.assignee} onChange={(event) => setForm({ ...form, assignee: event.target.value })}><option>Paula Rojas</option><option>Emerson Allende</option><option>Felipe Soto</option></select></label><button type="submit"><ClipboardCheck size={15} /> Crear orden</button></form>}
@@ -707,7 +781,7 @@ function MaintenanceView({ orders, setOrders, focusOrderId }: { orders: WorkOrde
         {tab === "plan" && <div className="maintenance-plan-content"><div className="settings-section-head"><span className="settings-icon"><CalendarEvent size={20} /></span><div><h2>Plan basado en condición</h2><p>La frecuencia se complementa con los hallazgos de telemetría y eventos activos.</p></div></div><div className="maintenance-plan-grid">{plans.map((plan) => <article className={`maintenance-plan-card plan-${plan.state.toLowerCase().replace(" ", "-")}`} key={plan.code}><div className="maintenance-plan-head"><span>{plan.code}</span><i>{plan.state}</i></div><h3>{plan.name}</h3><dl><div><dt>Frecuencia</dt><dd>{plan.frequency}</dd></div><div><dt>Próxima ejecución</dt><dd>{plan.next}</dd></div></dl><div className="maintenance-progress"><span><i style={{ width: `${plan.progress}%` }} /></span><small>{plan.progress}% del intervalo consumido</small></div><button onClick={() => { setForm({ title: plan.name, priority: plan.state === "Vencida" ? "Alta" : "Normal", assignee: "Paula Rojas" }); setShowCreate(true); }}><Plus size={14} /> Crear orden desde el plan</button></article>)}</div><div className="maintenance-recommendation"><AlertTriangle size={19} /><div><strong>Recomendación prioritaria</strong><p>Adelantar el diagnóstico UHF de PD1 y coordinar una ventana de inspección antes de cualquier intervención invasiva.</p></div><button onClick={() => setTab("orders")}>Revisar órdenes <ChevronRight size={15} /></button></div></div>}
 
         {tab === "orders" && <div className="maintenance-orders">{focusOrderId && <div className="work-order-focus-banner"><ClipboardCheck size={17} /><div><strong>Orden abierta desde el Centro de alertas</strong><p>{focusOrderId} quedó seleccionada para mantener la trazabilidad del evento.</p></div></div>}<div className="report-library-head"><div><span className="eyebrow">Ejecución</span><h2>Órdenes de trabajo</h2></div><span>{openOrders} abiertas</span></div><div className="module-table-wrap"><div className="work-order-table"><div className="module-table-head"><span>Orden / trabajo</span><span>Origen</span><span>Vencimiento</span><span>Prioridad</span><span>Responsable</span><span>Estado</span></div>{orders.map((order) => <div className={`module-table-row ${order.id === focusOrderId ? "focused-order" : ""}`} key={order.id}><span className="event-cell"><strong>{order.title}</strong><small>{order.id}</small></span><span>{order.source}</span><span>{order.due}</span><span><i className={`maintenance-priority priority-${order.priority.toLowerCase()}`}>{order.priority}</i></span><span>{order.assignee}</span><span><select className={`work-status status-${order.status.toLowerCase().replace(" ", "-")}`} value={order.status} onChange={(event) => updateOrder(order.id, event.target.value as WorkStatus)}><option>Pendiente</option><option>En curso</option><option>Completada</option></select></span></div>)}</div></div></div>}
-        <div className="module-footer"><span><ShieldCheck size={14} /> Toda modificación queda asociada al usuario y al activo.</span><small>Flujo demostrativo · pendiente de integración con CMMS.</small></div>
+        <div className="module-footer"><span><ShieldCheck size={14} /> Toda modificación queda asociada al usuario y al activo.</span><small>Estado local sincronizado · preparado para integración con CMMS.</small></div>
       </article>
     </>
   );
@@ -756,7 +830,7 @@ function DiagnosticsView() {
           <section className="diagnostic-health-card"><div className="report-library-head"><div><span className="eyebrow">Salud de comunicación</span><h2>Indicadores actuales</h2></div><StatusPill state="online">En línea</StatusPill></div><dl><div><dt>Latencia controlador</dt><dd>42 ms <small>Normal</small></dd></div><div><dt>Latencia hacia CORE</dt><dd>86 ms <small>Normal</small></dd></div><div><dt>Última respuesta válida</dt><dd>Hace 2 s <small>FC 03</small></dd></div><div><dt>Reintentos / 24 h</dt><dd>2 <small>0.01%</small></dd></div><div><dt>Excepciones Modbus</dt><dd>0 <small>Sin errores</small></dd></div><div><dt>Calidad de datos</dt><dd>8 / 8 <small>Válidos</small></dd></div></dl></section>
           <section className="diagnostic-transactions"><div className="report-library-head"><div><span className="eyebrow">Tráfico reciente</span><h2>Últimas lecturas Modbus</h2></div><span>FC 03</span></div><div className="module-table-wrap"><div className="diagnostic-transaction-table"><div className="module-table-head"><span>Hora</span><span>Solicitud</span><span>Rango</span><span>Resultado</span><span>Tiempo</span></div>{transactions.map((transaction) => <div className="module-table-row" key={`${transaction.time}-${transaction.range}`}><span className="mono-cell">{transaction.time}</span><span className="mono-cell">{transaction.request}</span><span className="mono-cell">{transaction.range}</span><span className="quality-ok"><CheckCircle2 size={14} /> {transaction.result}</span><span className="mono-cell">{transaction.latency}</span></div>)}</div></div></section>
         </div>
-        <div className="configuration-note diagnostics-note"><ShieldCheck size={17} /><p><strong>Diagnóstico demostrativo.</strong> Los estados y tiempos representan el comportamiento esperado. Al incorporar el servicio de adquisición, esta misma vista consumirá respuestas reales del gateway y excepciones Modbus del controlador.</p></div>
+        <div className="configuration-note diagnostics-note"><ShieldCheck size={17} /><p><strong>Modo de simulación activo.</strong> Al incorporar el servicio de adquisición, esta vista consumirá las respuestas reales del gateway y las excepciones Modbus del controlador.</p></div>
       </article>
     </>
   );
@@ -764,6 +838,10 @@ function DiagnosticsView() {
 
 function IntegrationsView() {
   const notify = useFeedback();
+  const confirm = useConfirm();
+  const role = useActiveRole();
+  const sensors = useSensorData();
+  const activeChannelCount = sensors.filter((sensor) => sensor.enabled).length;
   const [tab, setTab] = useState<"connections" | "flow" | "api">("connections");
   const [testingId, setTestingId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -797,12 +875,12 @@ function IntegrationsView() {
     setApiKeys((current) => [{ id: Date.now(), name: apiForm.name.trim(), token: `${rawKey.slice(0, 10)}••••••••${rawKey.slice(-4).toUpperCase()}`, scope: apiForm.scope, created: "Ahora", lastUse: "Nunca", active: true }, ...current]);
     setNewApiKey(rawKey); setApiForm({ name: "", scope: "Solo lectura" }); setShowApiForm(false); notify("Clave creada. Cópiala antes de abandonar esta sección.", "info");
   };
-  const revokeApiKey = (id: number) => { const key = apiKeys.find((item) => item.id === id); setApiKeys((current) => current.map((item) => item.id === id ? { ...item, active: !item.active } : item)); notify(`Clave ${key?.active ? "revocada" : "reactivada"}.`, key?.active ? "warning" : "success"); };
+  const revokeApiKey = (id: number) => { const key = apiKeys.find((item) => item.id === id); const apply = () => { setApiKeys((current) => current.map((item) => item.id === id ? { ...item, active: !item.active } : item)); notify(`Clave ${key?.active ? "revocada" : "reactivada"}.`, key?.active ? "warning" : "success"); }; if (key?.active) confirm({ title: `Revocar “${key.name}”`, detail: "Los servicios que utilicen esta credencial dejarán de acceder al sistema inmediatamente.", confirmLabel: "Revocar clave", tone: "danger", onConfirm: apply }); else apply(); };
   const copyApiKey = async () => { if (!newApiKey) return; await navigator.clipboard?.writeText(newApiKey); setCopied(true); notify("Clave copiada al portapapeles.", "info"); window.setTimeout(() => setCopied(false), 1800); };
   const syncLog = [
-    { time: "11:52:08", system: "CAM5-CTRL-01", action: "Lectura Modbus completada", detail: "8 canales · 42 ms", state: "Correcta" },
+    { time: "11:52:08", system: "CAM5-CTRL-01", action: "Lectura Modbus completada", detail: `${activeChannelCount} canales · 42 ms`, state: "Correcta" },
     { time: "11:52:07", system: "CAM5-GW-01", action: "Paquete de telemetría enviado", detail: "Subestación Norte", state: "Correcta" },
-    { time: "11:52:06", system: "CAM5 CORE", action: "Reglas de condición evaluadas", detail: "8 señales", state: "Correcta" },
+    { time: "11:52:06", system: "CAM5 CORE", action: "Reglas de condición evaluadas", detail: `${activeChannelCount} señales`, state: "Correcta" },
     { time: "11:48:04", system: "Motor de eventos", action: "Evento crítico registrado", detail: "AL-260811-031", state: "Correcta" },
   ];
 
@@ -814,7 +892,7 @@ function IntegrationsView() {
         <article><span className="module-summary-icon amber"><Webhook size={19} /></span><div><small>Integraciones futuras</small><strong>2</strong><span>Historiador + CMMS</span></div></article>
       </section>
 
-      <article className="panel module-panel integration-module">
+      <article className={`panel module-panel integration-module ${role === "Solo lectura" ? "role-readonly" : ""}`}>
         <div className="module-toolbar"><div className="module-tabs" role="tablist" aria-label="Secciones de integraciones"><button className={tab === "connections" ? "active" : ""} onClick={() => setTab("connections")}><PlugConnected size={16} /> Conexiones</button><button className={tab === "flow" ? "active" : ""} onClick={() => setTab("flow")}><Timeline size={16} /> Flujo de datos</button><button className={tab === "api" ? "active" : ""} onClick={() => setTab("api")}><Key size={16} /> Acceso API</button></div><span className="autosave-state"><ShieldCheck size={14} /> Configuración local protegida</span></div>
 
         {tab === "connections" && <div className="integration-content"><div className="settings-section-head"><span className="settings-icon"><PlugConnected size={20} /></span><div><h2>Arquitectura de la instalación</h2><p>Dos enlaces requeridos y fijos para la primera implementación monositio.</p></div></div><div className="integration-card-grid">{connections.map((connection) => <article className={`integration-card ${connection.enabled ? "enabled" : "disabled"}`} key={connection.id}><div className="integration-card-head"><span className="integration-card-icon">{connection.id === "controller" ? <Radio size={21} /> : connection.id === "gateway" ? <Server size={21} /> : connection.id === "historian" ? <Database size={21} /> : <Tool size={21} />}</span>{connection.locked ? <span className="core-link-label"><ShieldCheck size={13} /> Requerida</span> : <button className={`switch-control ${connection.enabled ? "on" : ""}`} onClick={() => toggleConnection(connection.id)} aria-label={`${connection.enabled ? "Desactivar" : "Activar"} ${connection.name}`}><i /></button>}</div><span className="eyebrow">{connection.role}</span><h3>{connection.name}</h3><dl><div><dt>Protocolo</dt><dd>{connection.protocol}</dd></div><div><dt>Destino</dt><dd title={connection.endpoint}>{connection.endpoint}</dd></div><div><dt>Última actividad</dt><dd>{connection.freshness}</dd></div></dl><div className="integration-card-footer"><span className={connection.enabled && connection.status === "Operativa" ? "quality-ok" : connection.status === "Probando…" ? "integration-testing" : "muted-state"}>{connection.status === "Operativa" && <CheckCircle2 size={14} />}{connection.status}</span><button onClick={() => testConnection(connection.id)} disabled={!connection.enabled || testingId === connection.id}>{testingId === connection.id ? "Probando…" : "Probar conexión"}</button></div></article>)}</div><div className="configuration-note"><ShieldCheck size={17} /><p><strong>Alcance inicial fijo.</strong> Subestación Norte utiliza un controlador CAM5-CTRL-01 y un gateway CAM5-GW-01. Historiador y CMMS quedan preparados visualmente para una fase posterior.</p></div></div>}
@@ -829,25 +907,32 @@ function IntegrationsView() {
 
 function SettingsView() {
   const notify = useFeedback();
+  const confirm = useConfirm();
+  const sensors = useSensorData();
+  const role = useActiveRole();
   const [tab, setTab] = useState<SettingsTab>("asset");
   const [saved, setSaved] = useState(false);
   const [connection, setConnection] = useState<"idle" | "testing" | "success">("idle");
-  const [assetConfig, setAssetConfig] = usePersistentState("cam5.front.asset-config", { name: "MCC-01", description: "Alimentador Norte", voltage: "13.8", location: "Subestación Norte", timezone: "America/Santiago" });
+  const [assetConfig, setAssetConfig] = usePersistentState("cam5.front.asset-config", defaultAssetConfig);
   const [gatewayConfig, setGatewayConfig] = usePersistentState("cam5.front.gateway-config", { gateway: "CAM5-GW-01", controller: "CAM5-CTRL-01", protocol: "Modbus TCP", controllerIp: "192.168.10.42", gatewayIp: "192.168.10.40", port: "502", unit: "1", polling: "2", uplink: "Ethernet / HTTPS" });
-  const [channels, setChannels] = usePersistentState("cam5.front.channel-config", sensors.map((sensor) => ({ ...sensor, enabled: true, warning: sensor.id === "PD1" ? "40" : sensor.id === "PD2" ? "40" : sensor.id === "H01" ? "75" : sensor.threshold.split(" ")[0], critical: sensor.id.startsWith("PD") ? "60" : sensor.id === "H01" ? "85" : String(Number(sensor.threshold.split(" ")[0]) + 10) })));
+  const [channels, setChannels] = usePersistentState("cam5.front.channel-config", defaultChannelConfiguration());
   const [registerMap, setRegisterMap] = usePersistentState("cam5.front.register-map", sensors.map((sensor) => ({ id: sensor.id, label: sensor.label, reference: sensor.register.replace("HR ", ""), functionCode: "03", dataType: (sensor.type === "Temperatura" ? "Int16" : "UInt16") as ModbusDataType, scale: sensor.type === "Temperatura" ? "0.1" : "1", byteOrder: "AB" as ModbusByteOrder, unit: sensor.unit, value: sensor.value })));
   const [mapValidation, setMapValidation] = useState<"idle" | "validating" | "success" | "error">("idle");
   const duplicateReferences = new Set(registerMap.filter((row, index, rows) => rows.findIndex((candidate) => candidate.reference === row.reference) !== index).map((row) => row.reference));
   const invalidReferences = registerMap.filter((row) => !/^4\d{4}$/.test(row.reference) || Number(row.reference) < 40001 || Number(row.reference) > 49999).map((row) => row.id);
   const mappingIssues = duplicateReferences.size + invalidReferences.length;
-  const saveChanges = () => { setSaved(true); notify("Configuración guardada en este entorno de demostración."); window.setTimeout(() => setSaved(false), 2400); };
+  const thresholdIssues = channels.filter((channel) => !Number.isFinite(Number(channel.warning)) || !Number.isFinite(Number(channel.critical)) || Number(channel.warning) >= Number(channel.critical));
+  const validIp = (value: string) => { const parts = value.split(".").map(Number); return parts.length === 4 && parts.every((part) => Number.isInteger(part) && part >= 0 && part <= 255); };
+  const gatewayIssues = [!validIp(gatewayConfig.gatewayIp), !validIp(gatewayConfig.controllerIp), Number(gatewayConfig.port) < 1 || Number(gatewayConfig.port) > 65535, Number(gatewayConfig.unit) < 0 || Number(gatewayConfig.unit) > 247, Number(gatewayConfig.polling) < 1].filter(Boolean).length;
+  const configurationIssues = mappingIssues + thresholdIssues.length + gatewayIssues;
+  const saveChanges = () => { if (configurationIssues) { setTab(thresholdIssues.length ? "channels" : mappingIssues ? "registers" : "gateway"); notify(`Hay ${configurationIssues} campo${configurationIssues === 1 ? "" : "s"} por corregir antes de guardar.`, "warning"); return; } setSaved(true); notify("Configuración validada y guardada en este entorno de demostración."); window.setTimeout(() => setSaved(false), 2400); };
   const testConnection = () => { setConnection("testing"); window.setTimeout(() => { setConnection("success"); notify("Prueba Modbus completada correctamente."); }, 900); };
-  const updateChannel = (id: string, field: "enabled" | "warning" | "critical", value: boolean | string) => setChannels((current) => current.map((item) => item.id === id ? { ...item, [field]: value } : item));
+  const updateChannel = (id: string, field: "enabled" | "warning" | "critical", value: boolean | string) => { const apply = () => setChannels((current) => current.map((item) => item.id === id ? { ...item, [field]: value } : item)); if (field === "enabled" && value === false) confirm({ title: `Desactivar canal ${id}`, detail: "El canal dejará de aparecer en tendencias, reportes e indicadores operativos.", confirmLabel: "Desactivar canal", tone: "danger", onConfirm: apply }); else apply(); };
   const updateRegister = (id: string, field: "reference" | "dataType" | "scale" | "byteOrder", value: string) => { setMapValidation("idle"); setRegisterMap((current) => current.map((row) => row.id === id ? { ...row, [field]: value } : row)); };
   const validateRegisterMap = () => { setMapValidation("validating"); window.setTimeout(() => { setMapValidation(mappingIssues ? "error" : "success"); notify(mappingIssues ? `${mappingIssues} conflicto${mappingIssues === 1 ? "" : "s"} en el mapa Modbus.` : "Mapa Modbus validado sin conflictos.", mappingIssues ? "warning" : "success"); }, 700); };
 
   return (
-    <article className="panel module-panel settings-module">
+    <article className={`panel module-panel settings-module ${role === "Solo lectura" ? "role-readonly" : ""}`}>
       <div className="module-toolbar">
         <div className="module-tabs" role="tablist" aria-label="Secciones de configuración">
           <button className={tab === "asset" ? "active" : ""} onClick={() => setTab("asset")}><Building2 size={16} /> Activo</button>
@@ -857,6 +942,7 @@ function SettingsView() {
         </div>
         <button className={`save-config-button ${saved ? "saved" : ""}`} onClick={saveChanges}>{saved ? <CheckCircle2 size={16} /> : <Save size={16} />}{saved ? "Cambios guardados" : "Guardar cambios"}</button>
       </div>
+      {configurationIssues > 0 && <div className="validation-summary" role="alert"><AlertTriangle size={17} /><div><strong>Configuración pendiente de validar</strong><p>{thresholdIssues.length} umbrales · {mappingIssues} conflictos Modbus · {gatewayIssues} parámetros de comunicación.</p></div></div>}
 
       {tab === "asset" && <div className="settings-content"><div className="settings-section-head"><span className="settings-icon"><Building2 size={20} /></span><div><h2>Identificación del activo</h2><p>Datos utilizados en navegación, reportes y trazabilidad.</p></div></div><div className="form-grid"><label><span>Código del activo</span><input value={assetConfig.name} onChange={(event) => setAssetConfig({ ...assetConfig, name: event.target.value })} /></label><label><span>Descripción</span><input value={assetConfig.description} onChange={(event) => setAssetConfig({ ...assetConfig, description: event.target.value })} /></label><label><span>Tensión nominal</span><div className="input-unit"><input value={assetConfig.voltage} onChange={(event) => setAssetConfig({ ...assetConfig, voltage: event.target.value })} /><b>kV</b></div></label><label><span>Ubicación fija</span><input value={assetConfig.location} readOnly /></label><label className="form-span-2"><span>Zona horaria</span><select value={assetConfig.timezone} onChange={(event) => setAssetConfig({ ...assetConfig, timezone: event.target.value })}><option>America/Santiago</option><option>UTC</option></select></label></div><div className="configuration-note"><ShieldCheck size={17} /><p><strong>Despliegue monositio.</strong> Todos los activos pertenecen a Subestación Norte y comparten el gateway CAM5-GW-01.</p></div></div>}
 
@@ -887,6 +973,8 @@ function SettingsView() {
 
 function UsersView() {
   const notify = useFeedback();
+  const confirm = useConfirm();
+  const currentRole = useActiveRole();
   const [users, setUsers] = usePersistentState<Array<{ id: number; name: string; email: string; role: UserRole; status: "Activo" | "Suspendido" | "Invitado"; lastAccess: string }>>("cam5.front.users", [
     { id: 1, name: "Emerson Allende", email: "emerson@cam5.local", role: "Administrador", status: "Activo", lastAccess: "Ahora" },
     { id: 2, name: "Paula Rojas", email: "paula.rojas@cam5.local", role: "Ingeniero", status: "Activo", lastAccess: "Hace 18 min" },
@@ -896,9 +984,11 @@ function UsersView() {
   const [showInvite, setShowInvite] = useState(false);
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<UserRole>("Operador");
-  const inviteUser = (event: React.FormEvent) => { event.preventDefault(); if (!email.trim()) return; const base = email.split("@")[0].replace(/[._-]+/g, " "); const name = base.replace(/\b\w/g, (letter) => letter.toUpperCase()); setUsers((current) => [...current, { id: Date.now(), name, email, role, status: "Invitado", lastAccess: "Pendiente" }]); notify(`Invitación preparada para ${email}.`); setEmail(""); setShowInvite(false); };
+  const inviteUser = (event: React.FormEvent) => { event.preventDefault(); if (!email.trim()) return; if (users.some((user) => user.email.toLowerCase() === email.trim().toLowerCase())) { notify("Ese correo ya pertenece a un usuario registrado.", "warning"); return; } const base = email.split("@")[0].replace(/[._-]+/g, " "); const name = base.replace(/\b\w/g, (letter) => letter.toUpperCase()); setUsers((current) => [...current, { id: Date.now(), name, email: email.trim().toLowerCase(), role, status: "Invitado", lastAccess: "Pendiente" }]); notify(`Invitación preparada para ${email}.`); setEmail(""); setShowInvite(false); };
   const updateRole = (id: number, nextRole: UserRole) => setUsers((current) => current.map((user) => user.id === id ? { ...user, role: nextRole } : user));
-  const toggleUser = (id: number) => { const user = users.find((item) => item.id === id); setUsers((current) => current.map((item) => item.id === id ? { ...item, status: item.status === "Activo" ? "Suspendido" : "Activo" } : item)); notify(`${user?.name ?? "Usuario"} ${user?.status === "Activo" ? "suspendido" : "activado"}.`, user?.status === "Activo" ? "warning" : "success"); };
+  const toggleUser = (id: number) => { const user = users.find((item) => item.id === id); const apply = () => { setUsers((current) => current.map((item) => item.id === id ? { ...item, status: item.status === "Activo" ? "Suspendido" : "Activo" } : item)); notify(`${user?.name ?? "Usuario"} ${user?.status === "Activo" ? "suspendido" : "activado"}.`, user?.status === "Activo" ? "warning" : "success"); }; if (user?.status === "Activo") confirm({ title: `Suspender a ${user.name}`, detail: "El usuario perderá acceso operativo hasta que un administrador vuelva a activarlo.", confirmLabel: "Suspender usuario", tone: "danger", onConfirm: apply }); else apply(); };
+
+  if (currentRole !== "Administrador") return <PermissionState area="usuarios y roles" />;
 
   return (
     <>
@@ -915,6 +1005,7 @@ function UsersView() {
 
 function NotificationsView() {
   const notify = useFeedback();
+  const role = useActiveRole();
   const [tab, setTab] = useState<"channels" | "rules" | "delivery">("channels");
   const [testedChannel, setTestedChannel] = useState<string | null>(null);
   const [channels, setChannels] = usePersistentState("cam5.front.notification-channels", [
@@ -941,7 +1032,7 @@ function NotificationsView() {
   return (
     <>
       <section className="module-summary-grid notification-summary"><article><span className="module-summary-icon green"><Mail size={19} /></span><div><small>Canales activos</small><strong>{channels.filter((channel) => channel.enabled).length}</strong><span>de {channels.length} configurados</span></div></article><article><span className="module-summary-icon blue"><BellRing size={19} /></span><div><small>Reglas habilitadas</small><strong>{rules.filter((rule) => rule.enabled).length}</strong><span>Escalamiento automático</span></div></article><article><span className="module-summary-icon amber"><CheckCircle2 size={19} /></span><div><small>Entrega últimas 24 h</small><strong>100%</strong><span>4 de 4 entregadas</span></div></article></section>
-      <article className="panel module-panel notification-module">
+      <article className={`panel module-panel notification-module ${role === "Solo lectura" ? "role-readonly" : ""}`}>
         <div className="module-toolbar"><div className="module-tabs" role="tablist" aria-label="Secciones de notificaciones"><button className={tab === "channels" ? "active" : ""} onClick={() => setTab("channels")}><Mail size={16} /> Canales</button><button className={tab === "rules" ? "active" : ""} onClick={() => setTab("rules")}><BellRing size={16} /> Escalamiento</button><button className={tab === "delivery" ? "active" : ""} onClick={() => setTab("delivery")}><Timeline size={16} /> Entregas</button></div><span className="autosave-state"><CheckCircle2 size={14} /> Cambios locales guardados</span></div>
 
         {tab === "channels" && <div className="notification-content"><div className="settings-section-head"><span className="settings-icon"><Mail size={20} /></span><div><h2>Canales de notificación</h2><p>Define cómo se informa un evento a los equipos responsables.</p></div></div><div className="notification-channel-grid">{channels.map((channel) => <article className={`notification-channel-card ${channel.enabled ? "enabled" : ""}`} key={channel.id}><div className="notification-channel-head"><span className="notification-channel-icon">{channel.id === "email" ? <Mail size={20} /> : channel.id === "teams" ? <Users size={20} /> : <PlugConnected size={20} />}</span><button className={`switch-control ${channel.enabled ? "on" : ""}`} onClick={() => toggleChannel(channel.id)} aria-label={`${channel.enabled ? "Desactivar" : "Activar"} ${channel.name}`}><i /></button></div><h3>{channel.name}</h3><p>{channel.detail}</p><dl><div><dt>Destino</dt><dd>{channel.destination}</dd></div><div><dt>Estado</dt><dd className={channel.enabled ? "quality-ok" : "muted-state"}>{channel.status}</dd></div></dl><button className="test-notification-button" onClick={() => testChannel(channel.id)} disabled={!channel.enabled}>{testedChannel === channel.id ? <><CheckCircle2 size={15} /> Prueba enviada</> : <><BellRing size={15} /> Enviar prueba</>}</button></article>)}</div></div>}
@@ -955,6 +1046,9 @@ function NotificationsView() {
 }
 
 export default function Home() {
+  const sensors = useSensorData();
+  const [assetConfig] = usePersistentState("cam5.front.asset-config", defaultAssetConfig);
+  const activeSensorRouteKey = sensors.filter((sensor) => sensor.enabled).map((sensor) => sensor.id).join(",");
   const [view, setView] = useState<View>("overview");
   const [menuOpen, setMenuOpen] = useState(false);
   const [period, setPeriod] = useState("24 h");
@@ -965,7 +1059,10 @@ export default function Home() {
   const [closedAlarmIds, setClosedAlarmIds] = usePersistentState<string[]>("cam5.front.closed-alarms", []);
   const [alarmAssignees, setAlarmAssignees] = usePersistentState<Record<string, string>>("cam5.front.alarm-assignees", { "AL-260811-031": "Emerson Allende", "AL-260811-028": "Paula Rojas", "AL-260811-019": "Felipe Soto" });
   const [alarmNotes, setAlarmNotes] = usePersistentState<Record<string, string[]>>("cam5.front.alarm-notes", {});
+  const [systemMode, setSystemMode] = usePersistentState<SystemMode>("cam5.front.system-mode", "normal");
+  const [activeRole, setActiveRole] = usePersistentState<UserRole>("cam5.front.active-role", "Administrador");
   const [notice, setNotice] = useState<{ id: number; message: string; tone: NoticeTone } | null>(null);
+  const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null);
   const noticeTimer = useRef<number | null>(null);
 
   const notify = (message: string, tone: NoticeTone = "success") => {
@@ -978,8 +1075,43 @@ export default function Home() {
     if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
   }, []);
 
-  const navigate = (next: View) => { setView(next); if (next !== "maintenance") setFocusOrderId(null); setMenuOpen(false); };
-  const openChannelTrend = (id: string) => { setTrendSensorId(id); navigate("trends"); };
+  useEffect(() => {
+    const applyRoute = () => {
+      const params = new URLSearchParams(window.location.search);
+      const nextView = params.get("view");
+      if (nextView && Object.prototype.hasOwnProperty.call(viewTitles, nextView)) setView(nextView as View);
+      const channel = params.get("channel");
+      if (channel && sensors.some((sensor) => sensor.id === channel && sensor.enabled)) setTrendSensorId(channel);
+    };
+    if (!new URLSearchParams(window.location.search).has("view")) {
+      const url = new URL(window.location.href);
+      url.searchParams.set("view", "overview");
+      window.history.replaceState({}, "", url);
+    }
+    applyRoute();
+    window.addEventListener("popstate", applyRoute);
+    return () => window.removeEventListener("popstate", applyRoute);
+  }, [activeSensorRouteKey]);
+
+  const navigate = (next: View, parameters?: Record<string, string>) => {
+    setView(next);
+    if (next !== "maintenance") setFocusOrderId(null);
+    setMenuOpen(false);
+    const url = new URL(window.location.href);
+    url.searchParams.set("view", next);
+    url.searchParams.delete("channel");
+    url.searchParams.delete("record");
+    Object.entries(parameters ?? {}).forEach(([key, value]) => url.searchParams.set(key, value));
+    window.history.pushState({}, "", url);
+  };
+  const openChannelTrend = (id: string) => { setTrendSensorId(id); navigate("trends", { channel: id }); };
+  const selectTrendChannel = (id: string) => {
+    setTrendSensorId(id);
+    const url = new URL(window.location.href);
+    url.searchParams.set("view", "trends");
+    url.searchParams.set("channel", id);
+    window.history.replaceState({}, "", url);
+  };
   const acknowledge = (id: string) => {
     setAcknowledged((current) => current.includes(id) ? current : [...current, id]);
     notify(`Evento ${id} reconocido.`);
@@ -993,7 +1125,7 @@ export default function Home() {
     setWorkOrders((current) => [order, ...current]); setFocusOrderId(id); navigate("maintenance"); notify(`Orden ${id} creada y vinculada al evento.`);
   };
   const exportCsv = () => {
-    const rows = ["canal,tipo,ubicacion,valor,unidad,estado", ...sensors.map((sensor) => [sensor.id, sensor.type, sensor.zone, sensor.value, sensor.unit, sensor.state].join(","))];
+    const rows = ["canal,tipo,ubicacion,valor,unidad,estado", ...sensors.filter((sensor) => sensor.enabled).map((sensor) => [sensor.id, sensor.type, sensor.zone, sensor.value, sensor.unit, sensor.state].join(","))];
     const url = URL.createObjectURL(new Blob([rows.join("\n")], { type: "text/csv;charset=utf-8" }));
     const anchor = document.createElement("a"); anchor.href = url; anchor.download = "cam5-telemetria.csv"; anchor.click(); URL.revokeObjectURL(url);
     notify("Telemetría exportada correctamente.", "info");
@@ -1001,6 +1133,8 @@ export default function Home() {
 
   return (
     <FeedbackContext.Provider value={notify}>
+    <ConfirmContext.Provider value={setConfirmRequest}>
+    <RoleContext.Provider value={activeRole}>
     <div className="app-shell">
       {menuOpen && <button className="mobile-scrim" aria-label="Cerrar navegación" onClick={() => setMenuOpen(false)} />}
       <aside className={`sidebar ${menuOpen ? "open" : ""}`}>
@@ -1038,17 +1172,18 @@ export default function Home() {
 
       <main className="main-shell">
         <header className="topbar">
-          <div className="topbar-left"><button className="menu-button" aria-label="Abrir navegación" onClick={() => setMenuOpen(true)}><Menu size={22} /></button><span className="mobile-brand"><Zap size={18} fill="currentColor" /></span><div className="site-selector"><Building2 size={17} /><div><span>Subestación Norte</span><strong className="site-active-asset">MCC-01 · Alimentador Norte</strong></div><span className="single-site-label">Piloto monositio</span></div></div>
-          <div className="topbar-right"><span className="demo-pill">Datos simulados</span><div className="live-state"><span /><div><strong>Telemetría activa</strong><small>Actualizado hace 2 s</small></div></div></div>
+          <div className="topbar-left"><button className="menu-button" aria-label="Abrir navegación" onClick={() => setMenuOpen(true)}><Menu size={22} /></button><span className="mobile-brand"><Zap size={18} fill="currentColor" /></span><div className="site-selector"><Building2 size={17} /><div><span>{assetConfig.location}</span><strong className="site-active-asset">{assetConfig.name} · {assetConfig.description}</strong></div><span className="single-site-label">Piloto monositio</span></div></div>
+          <div className="topbar-right"><label className="simulation-mode role-preview"><span>Vista por rol</span><select value={activeRole} onChange={(event) => setActiveRole(event.target.value as UserRole)} aria-label="Simular permisos de usuario"><option>Administrador</option><option>Ingeniero</option><option>Operador</option><option>Solo lectura</option></select></label><label className="simulation-mode"><span>Simulación</span><select value={systemMode} onChange={(event) => setSystemMode(event.target.value as SystemMode)} aria-label="Simular estado de telemetría"><option value="normal">Operativa</option><option value="loading">Actualizando</option><option value="stale">Datos atrasados</option><option value="offline">Sin conexión</option></select></label><div className={`live-state live-${systemMode}`}><span /><div><strong>{systemMode === "offline" ? "Telemetría interrumpida" : systemMode === "stale" ? "Telemetría atrasada" : systemMode === "loading" ? "Actualizando telemetría" : "Telemetría activa"}</strong><small>{systemMode === "offline" ? "Sin datos hace 18 min" : systemMode === "stale" ? "Último dato hace 6 min" : systemMode === "loading" ? "Esperando respuesta" : "Actualizado hace 2 s"}</small></div></div></div>
         </header>
 
         <div className="content-scroll">
           <div className="page-content">
+            {systemMode !== "normal" && <section className={`operational-banner banner-${systemMode}`} role="alert"><span>{systemMode === "offline" ? <PlugConnected size={19} /> : systemMode === "loading" ? <Refresh className="spin" size={19} /> : <Clock3 size={19} />}</span><div><strong>{systemMode === "offline" ? "Gateway sin comunicación" : systemMode === "loading" ? "Sincronizando datos" : "Las lecturas están atrasadas"}</strong><p>{systemMode === "offline" ? "El portal conserva el último valor conocido. Las acciones operativas siguen disponibles, pero no hay telemetría nueva." : systemMode === "loading" ? "Solicitando la última configuración, lecturas y eventos disponibles." : "Los datos visibles superan el tiempo de frescura configurado. Revisa el enlace antes de tomar una decisión."}</p></div>{systemMode !== "loading" && <button onClick={() => { setSystemMode("normal"); notify("Conexión simulada restablecida."); }}><Refresh size={15} /> Reintentar</button>}</section>}
             <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> Gestión de activos críticos</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{view !== "assets" && view !== "settings" && view !== "integrations" && view !== "users" && view !== "notifications" && view !== "reports" && view !== "maintenance" && view !== "diagnostics" && <button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button>}<button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{3 - acknowledged.length} alertas abiertas</button></div></section>
             {view === "overview" && <Overview onNavigate={navigate} onAcknowledge={acknowledge} acknowledged={acknowledged} />}
             {view === "cabinet" && <CabinetView onOpenTrend={openChannelTrend} />}
             {view === "diagnostics" && <DiagnosticsView />}
-            {view === "trends" && <TrendsView period={period} setPeriod={setPeriod} selectedId={trendSensorId} onSelectChannel={setTrendSensorId} onBackToMap={() => navigate("cabinet")} />}
+            {view === "trends" && <TrendsView period={period} setPeriod={setPeriod} selectedId={trendSensorId} onSelectChannel={selectTrendChannel} onBackToMap={() => navigate("cabinet")} />}
             {view === "alarms" && <AlarmsView acknowledged={acknowledged} onAcknowledge={acknowledge} workOrders={workOrders} onOpenWorkOrder={openWorkOrderFromAlarm} closedIds={closedAlarmIds} setClosedIds={setClosedAlarmIds} assignees={alarmAssignees} setAssignees={setAlarmAssignees} notes={alarmNotes} setNotes={setAlarmNotes} />}
             {view === "history" && <HistoryView />}
             {view === "assets" && <AssetsView onNavigate={navigate} />}
@@ -1062,7 +1197,10 @@ export default function Home() {
         </div>
       </main>
       {notice && <div className={`portal-notice notice-${notice.tone}`} role="status" aria-live="polite" key={notice.id}><CheckCircle2 size={18} /><span>{notice.message}</span><button onClick={() => setNotice(null)} aria-label="Cerrar notificación"><X size={16} /></button></div>}
+      {confirmRequest && <div className="confirm-backdrop" role="presentation" onMouseDown={() => setConfirmRequest(null)}><section className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-title" onMouseDown={(event) => event.stopPropagation()}><span className={`confirm-icon ${confirmRequest.tone === "danger" ? "danger" : ""}`}>{confirmRequest.tone === "danger" ? <AlertTriangle size={22} /> : <ShieldCheck size={22} />}</span><div><span className="eyebrow">Confirmación requerida</span><h2 id="confirm-title">{confirmRequest.title}</h2><p>{confirmRequest.detail}</p></div><div className="confirm-actions"><button className="secondary-button" onClick={() => setConfirmRequest(null)}>Cancelar</button><button className={confirmRequest.tone === "danger" ? "danger-button" : "primary-button"} onClick={() => { const action = confirmRequest.onConfirm; setConfirmRequest(null); action(); }}>{confirmRequest.confirmLabel}</button></div></section></div>}
     </div>
+    </RoleContext.Provider>
+    </ConfirmContext.Provider>
     </FeedbackContext.Provider>
   );
 }
