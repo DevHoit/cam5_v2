@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { ComponentType } from "react";
+import { usePersistentState } from "./use-persistent-state";
 import {
   IconActivity as Activity,
   IconAlertTriangle as AlertTriangle,
@@ -62,6 +63,10 @@ type UserRole = "Administrador" | "Ingeniero" | "Operador" | "Solo lectura";
 type WorkStatus = "Pendiente" | "En curso" | "Completada";
 type WorkPriority = "Crítica" | "Alta" | "Normal";
 type WorkOrder = { id: string; title: string; source: string; sourceAlarmId?: string; due: string; priority: WorkPriority; assignee: string; status: WorkStatus };
+type NoticeTone = "success" | "info" | "warning";
+
+const FeedbackContext = createContext<(message: string, tone?: NoticeTone) => void>(() => undefined);
+const useFeedback = () => useContext(FeedbackContext);
 
 const sensors = [
   { id: "T01", label: "Barra fase L1", zone: "Barras principales", value: "68.4", unit: "°C", type: "Temperatura", state: "warning" as SensorState, trend: "+1.8 °C/h", threshold: "65 °C", register: "HR 40001", quality: "Válida" },
@@ -166,6 +171,10 @@ const viewTitles: Record<View, { title: string; description: string }> = {
 
 function StatusPill({ state, children }: { state: SensorState | Severity | "online"; children: React.ReactNode }) {
   return <span className={`status-pill status-${state}`}><span className="status-dot" />{children}</span>;
+}
+
+function TableEmptyState({ title, detail }: { title: string; detail: string }) {
+  return <div className="table-empty-state"><Search size={21} /><div><strong>{title}</strong><p>{detail}</p></div></div>;
 }
 
 function MetricCard({
@@ -428,6 +437,7 @@ function TrendsView({ period, setPeriod, selectedId, onSelectChannel, onBackToMa
 }
 
 function AlarmsView({ acknowledged, onAcknowledge, workOrders, onOpenWorkOrder, closedIds, setClosedIds, assignees, setAssignees, notes, setNotes }: { acknowledged: string[]; onAcknowledge: (id: string) => void; workOrders: WorkOrder[]; onOpenWorkOrder: (alarm: (typeof initialAlarms)[number], assignee: string) => void; closedIds: string[]; setClosedIds: React.Dispatch<React.SetStateAction<string[]>>; assignees: Record<string, string>; setAssignees: React.Dispatch<React.SetStateAction<Record<string, string>>>; notes: Record<string, string[]>; setNotes: React.Dispatch<React.SetStateAction<Record<string, string[]>>> }) {
+  const notify = useFeedback();
   const [severity, setSeverity] = useState<"all" | Severity>("all");
   const [workflowStatus, setWorkflowStatus] = useState<"all" | "open" | "acknowledged" | "closed">("all");
   const [query, setQuery] = useState("");
@@ -435,14 +445,14 @@ function AlarmsView({ acknowledged, onAcknowledge, workOrders, onOpenWorkOrder, 
   const [noteInput, setNoteInput] = useState("");
   const getWorkflowStatus = (alarm: (typeof initialAlarms)[number]) => closedIds.includes(alarm.id) ? "closed" : alarm.acknowledged || acknowledged.includes(alarm.id) ? "acknowledged" : "open";
   const filtered = initialAlarms.filter((alarm) => (severity === "all" || alarm.severity === severity) && (workflowStatus === "all" || getWorkflowStatus(alarm) === workflowStatus) && `${alarm.title} ${alarm.detail}`.toLowerCase().includes(query.toLowerCase()));
-  const selected = initialAlarms.find((alarm) => alarm.id === selectedId) ?? initialAlarms[0];
+  const selected = filtered.find((alarm) => alarm.id === selectedId) ?? filtered[0] ?? initialAlarms[0];
   const selectedStatus = getWorkflowStatus(selected);
   const selectedNotes = notes[selected.id] ?? [];
   const linkedOrder = workOrders.find((order) => order.sourceAlarmId === selected.id);
   const interventionComplete = linkedOrder?.status === "Completada";
   const addNote = (event: React.FormEvent) => { event.preventDefault(); if (!noteInput.trim()) return; setNotes((current) => ({ ...current, [selected.id]: [...(current[selected.id] ?? []), noteInput.trim()] })); setNoteInput(""); };
-  const closeEvent = () => { if (selectedStatus === "open") onAcknowledge(selected.id); setClosedIds((current) => current.includes(selected.id) ? current : [...current, selected.id]); };
-  const reopenEvent = () => setClosedIds((current) => current.filter((id) => id !== selected.id));
+  const closeEvent = () => { if (selectedStatus === "open") onAcknowledge(selected.id); setClosedIds((current) => current.includes(selected.id) ? current : [...current, selected.id]); notify(`Evento ${selected.id} cerrado.`); };
+  const reopenEvent = () => { setClosedIds((current) => current.filter((id) => id !== selected.id)); notify(`Evento ${selected.id} reabierto.`, "warning"); };
   const openCritical = initialAlarms.filter((alarm) => alarm.severity === "critical" && !closedIds.includes(alarm.id)).length;
   const openWarnings = initialAlarms.filter((alarm) => alarm.severity === "warning" && !closedIds.includes(alarm.id)).length;
   return (
@@ -469,8 +479,9 @@ function AlarmsView({ acknowledged, onAcknowledge, workOrders, onOpenWorkOrder, 
               <span><button className={selected.id === alarm.id ? "ack-button" : "ghost-button"} onClick={() => setSelectedId(alarm.id)}>Gestionar</button></span>
             </div>;
           })}
+          {filtered.length === 0 && <TableEmptyState title="No hay eventos con estos filtros" detail="Ajusta el estado, la severidad o el texto de búsqueda." />}
         </div></div>
-        <section className={`event-detail-panel event-${selected.severity}`}>
+        {filtered.length > 0 && <section className={`event-detail-panel event-${selected.severity}`}>
           <div className="event-detail-header"><span className="event-detail-icon"><AlertTriangle size={20} /></span><div><span className="eyebrow">Evento seleccionado · {selected.id}</span><h2>{selected.title}</h2><p>{selected.detail}</p></div><span className={`workflow-badge workflow-${selectedStatus}`}>{selectedStatus === "closed" ? "Cerrada" : selectedStatus === "acknowledged" ? "Reconocida" : "Abierta"}</span></div>
           <div className="event-workspace">
             <div className="event-management">
@@ -481,7 +492,7 @@ function AlarmsView({ acknowledged, onAcknowledge, workOrders, onOpenWorkOrder, 
             <div className="event-timeline"><h3>Línea de tiempo</h3><div><span className="timeline-dot critical" /><p><strong>Evento detectado</strong><small>{selected.since} · Motor de reglas CAM5</small></p></div>{selectedStatus !== "open" && <div><span className="timeline-dot normal" /><p><strong>Evento reconocido</strong><small>Emerson Allende · Portal web</small></p></div>}{linkedOrder && <div><span className={`timeline-dot ${interventionComplete ? "normal" : "info"}`} /><p><strong>{interventionComplete ? "Orden de trabajo completada" : "Orden de trabajo vinculada"}</strong><small>{linkedOrder.id} · {linkedOrder.status}</small></p></div>}{selectedNotes.map((note, index) => <div key={`${selected.id}-${index}`}><span className="timeline-dot info" /><p><strong>Nota operativa</strong><small>{note}</small></p></div>)}{selectedStatus === "closed" && <div><span className="timeline-dot normal" /><p><strong>Evento cerrado</strong><small>Condición revisada por el operador</small></p></div>}</div>
           </div>
           <form className="event-note-form" onSubmit={addNote}><input value={noteInput} onChange={(event) => setNoteInput(event.target.value)} placeholder="Agregar una nota de seguimiento…" /><button type="submit">Agregar nota</button></form>
-        </section>
+        </section>}
       </article>
     </>
   );
@@ -530,8 +541,10 @@ function HistoryView() {
   );
 }
 
-function AssetsView() {
+function AssetsView({ onNavigate }: { onNavigate: (view: View) => void }) {
   type AssetState = "normal" | "warning" | "critical";
+  type AssetRecord = { id: string; name: string; type: string; site: string; area: string; state: AssetState; configured: number; capacity: number; gateway: string; voltage: string; owner: string; updated: string };
+  const notify = useFeedback();
   const [tab, setTab] = useState<"hierarchy" | "directory">("hierarchy");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | AssetState>("all");
@@ -539,7 +552,7 @@ function AssetsView() {
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({ code: "", name: "", type: "Centro de control", site: "Subestación Norte", area: "Sala eléctrica A" });
-  const [assets, setAssets] = useState<Array<{ id: string; name: string; type: string; site: string; area: string; state: AssetState; configured: number; capacity: number; gateway: string; voltage: string; owner: string; updated: string }>>([
+  const [assets, setAssets] = usePersistentState<AssetRecord[]>("cam5.front.assets", [
     { id: "MCC-01", name: "Alimentador Norte", type: "Centro de control de motores", site: "Subestación Norte", area: "Sala eléctrica A", state: "critical", configured: 8, capacity: 24, gateway: "CAM5-GW-01", voltage: "13.8 kV", owner: "Paula Rojas", updated: "Hace 2 s" },
     { id: "MCC-02", name: "Banco de condensadores", type: "Centro de control de motores", site: "Subestación Norte", area: "Sala eléctrica A", state: "normal", configured: 6, capacity: 12, gateway: "CAM5-GW-01", voltage: "13.8 kV", owner: "Felipe Soto", updated: "Hace 5 s" },
     { id: "TR-01", name: "Transformador principal", type: "Transformador de potencia", site: "Subestación Norte", area: "Patio de transformación", state: "warning", configured: 12, capacity: 16, gateway: "CAM5-GW-01", voltage: "110 / 13.8 kV", owner: "Emerson Allende", updated: "Hace 4 s" },
@@ -556,10 +569,16 @@ function AssetsView() {
     event.preventDefault();
     if (!form.code.trim() || !form.name.trim()) return;
     const next = { id: form.code.trim().toUpperCase(), name: form.name.trim(), type: form.type, site: "Subestación Norte", area: form.area, state: "normal" as AssetState, configured: 0, capacity: 0, gateway: "CAM5-GW-01", voltage: "Sin definir", owner: "Sin asignar", updated: "Nunca" };
-    setAssets((current) => [next, ...current]); setSelectedId(next.id); setTab("hierarchy"); setShowCreate(false); setForm({ code: "", name: "", type: "Centro de control", site: "Subestación Norte", area: "Sala eléctrica A" });
+    setAssets((current) => [next, ...current]); setSelectedId(next.id); setTab("hierarchy"); setShowCreate(false); setForm({ code: "", name: "", type: "Centro de control", site: "Subestación Norte", area: "Sala eléctrica A" }); notify(`Activo ${next.id} registrado en el inventario.`);
   };
   const updateSelected = (field: "name" | "area" | "owner" | "voltage", value: string) => setAssets((current) => current.map((asset) => asset.id === selected.id ? { ...asset, [field]: value } : asset));
-  const openAsset = (id: string) => { setSelectedId(id); setTab("hierarchy"); setEditing(false); };
+  const openAsset = (id: string) => {
+    if (id === selectedId && tab === "hierarchy" && !editing) {
+      onNavigate(id === "MCC-01" ? (selected.state === "normal" ? "cabinet" : "alarms") : "settings");
+      return;
+    }
+    setSelectedId(id); setTab("hierarchy"); setEditing(false);
+  };
 
   return (
     <>
@@ -577,13 +596,15 @@ function AssetsView() {
         {tab === "hierarchy" && <div className="asset-management-layout"><aside className="asset-tree"><div className="asset-tree-head"><span className="asset-tree-icon"><Factory size={20} /></span><div><span className="eyebrow">Instalación única</span><strong>Subestación Norte</strong></div></div><div className="asset-tree-content">{locations.map((location) => <section key={location}><div className="tree-location"><span><Building2 size={17} /></span><div><strong>{location}</strong><small>{assets.filter((asset) => asset.site === location).length} activos</small></div></div><div className="tree-assets">{assets.filter((asset) => asset.site === location).map((asset) => <button key={asset.id} className={selected.id === asset.id ? "selected" : ""} onClick={() => openAsset(asset.id)}><span className={`tree-state state-${asset.state}`} /><span><strong>{asset.id}</strong><small>{asset.name}</small></span><ChevronRight size={15} /></button>)}</div></section>)}</div><div className="asset-tree-footer"><MapPin size={15} /><span>1 ubicación · 1 gateway · {assets.length} activos</span></div></aside><section className="asset-detail"><div className="asset-detail-header"><span className={`asset-detail-icon state-${selected.state}`}><CircuitBoard size={23} /></span><div><span className="eyebrow">Activo seleccionado · {selected.id}</span><h2>{selected.name}</h2><p><MapPin size={14} /> {selected.site} · {selected.area}</p></div><StatusPill state={selected.state}>{stateLabel(selected.state)}</StatusPill></div><div className="asset-detail-actions"><span>Ficha actualizada {selected.updated}</span><button className="secondary-button" onClick={() => setEditing((current) => !current)}>{editing ? <><CheckCircle2 size={15} /> Finalizar edición</> : <><Settings size={15} /> Editar ficha</>}</button></div>{editing ? <div className="asset-edit-grid"><label><span>Nombre operacional</span><input value={selected.name} onChange={(event) => updateSelected("name", event.target.value)} /></label><label><span>Área</span><input value={selected.area} onChange={(event) => updateSelected("area", event.target.value)} /></label><label><span>Gateway único</span><input value={selected.gateway} readOnly /></label><label><span>Responsable</span><select value={selected.owner} onChange={(event) => updateSelected("owner", event.target.value)}><option>Sin asignar</option><option>Emerson Allende</option><option>Paula Rojas</option><option>Felipe Soto</option></select></label><label><span>Tensión nominal</span><input value={selected.voltage} onChange={(event) => updateSelected("voltage", event.target.value)} /></label></div> : <dl className="asset-facts"><div><dt>Tipo</dt><dd>{selected.type}</dd></div><div><dt>Tensión nominal</dt><dd>{selected.voltage}</dd></div><div><dt>Gateway único</dt><dd>{selected.gateway}</dd></div><div><dt>Responsable</dt><dd>{selected.owner}</dd></div></dl>}<div className="asset-detail-grid"><section className="asset-coverage-card"><div><span className="eyebrow">Cobertura de instrumentación</span><strong>{coverage}%</strong></div><p>{selected.capacity ? `${selected.configured} canales configurados de ${selected.capacity} disponibles.` : "Activo nuevo sin capacidad de instrumentación definida."}</p><span className="asset-coverage-bar"><i style={{ width: `${coverage}%` }} /></span><dl><div><dt>Temperatura</dt><dd>{selected.id === "MCC-01" ? "5 canales" : "Configuración base"}</dd></div><div><dt>Descarga parcial</dt><dd>{selected.id === "MCC-01" ? "2 canales" : "No configurada"}</dd></div><div><dt>Ambiental</dt><dd>{selected.id === "MCC-01" ? "1 canal" : "No configurada"}</dd></div></dl></section><section className={`asset-condition-card condition-${selected.state}`}><span className="eyebrow">Condición actual</span><div><AlertTriangle size={20} /><strong>{stateLabel(selected.state)}</strong></div><p>{selected.state === "critical" ? "Descarga parcial acelerada en el compartimiento de cables. Requiere diagnóstico priorizado." : selected.state === "warning" ? "Existen variables sobre nivel preventivo. Mantener seguimiento de tendencia." : "No se observan condiciones fuera de los límites definidos."}</p><button onClick={() => openAsset(selected.id)}>{selected.state === "normal" ? "Revisar cobertura" : "Revisar hallazgos"} <ChevronRight size={15} /></button></section></div><div className="asset-channel-preview"><div className="report-library-head"><div><span className="eyebrow">Instrumentación</span><h2>Canales asociados</h2></div><span>{selectedSensors.length || selected.configured} canales</span></div>{selectedSensors.length ? <div className="asset-channel-grid">{selectedSensors.map((sensor) => <span key={sensor.id}><b className={`sensor-code sensor-${sensor.state}`}>{sensor.id}</b><span><strong>{sensor.label}</strong><small>{sensor.value} {sensor.unit} · {sensor.quality}</small></span></span>)}</div> : <div className="asset-empty-state"><Activity size={22} /><div><strong>Instrumentación sin detalle demostrativo</strong><p>La ficha está creada, pero sus canales se definirán desde Configuración.</p></div></div>}</div></section></div>}
 
         {tab === "directory" && <div className="asset-directory"><div className="asset-directory-toolbar"><label className="search-field"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar código, nombre, tipo o ubicación…" /></label><label className="status-filter"><span>Condición</span><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}><option value="all">Todas</option><option value="normal">Normal</option><option value="warning">Advertencia</option><option value="critical">Crítico</option></select><ChevronDown size={13} /></label></div><div className="module-table-wrap"><div className="asset-directory-table"><div className="module-table-head"><span>Activo</span><span>Tipo</span><span>Ubicación</span><span>Cobertura</span><span>Gateway</span><span>Condición</span><span>Acción</span></div>{filtered.map((asset) => <div className="module-table-row" key={asset.id}><span className="asset-directory-name"><b><CircuitBoard size={17} /></b><span><strong>{asset.id}</strong><small>{asset.name}</small></span></span><span>{asset.type}</span><span>{asset.site}<small>{asset.area}</small></span><span>{asset.configured} / {asset.capacity || "—"} canales</span><span className="mono-cell">{asset.gateway}</span><span><StatusPill state={asset.state}>{stateLabel(asset.state)}</StatusPill></span><span><button className="ghost-button" onClick={() => openAsset(asset.id)}>Abrir ficha</button></span></div>)}</div></div></div>}
-        <div className="module-footer"><span><ShieldCheck size={14} /> Inventario con trazabilidad de cambios.</span><small>Datos demostrativos · pendiente de persistencia central.</small></div>
+        {tab === "directory" && filtered.length === 0 && <TableEmptyState title="No hay activos con estos filtros" detail="Prueba con otra condición o modifica el texto de búsqueda." />}
+        <div className="module-footer"><span><ShieldCheck size={14} /> Inventario con trazabilidad de cambios.</span><small>Cambios conservados localmente · listo para conectar al inventario central.</small></div>
       </article>
     </>
   );
 }
 
 function ReportsView() {
+  const notify = useFeedback();
   const templates = [
     { id: "condition", name: "Condición del activo", detail: "Salud general, hallazgos y recomendación técnica", icon: "condition", accent: "blue" },
     { id: "events", name: "Eventos y alarmas", detail: "Tiempos de atención, causas y trazabilidad operativa", icon: "events", accent: "amber" },
@@ -592,9 +613,9 @@ function ReportsView() {
   const [templateId, setTemplateId] = useState("condition");
   const [period, setPeriod] = useState("30 días");
   const [format, setFormat] = useState("PDF");
-  const [automatic, setAutomatic] = useState(true);
+  const [automatic, setAutomatic] = usePersistentState("cam5.front.report-schedule", true);
   const [generating, setGenerating] = useState(false);
-  const [reports, setReports] = useState([
+  const [reports, setReports] = usePersistentState("cam5.front.reports", [
     { id: "RPT-260811-012", name: "Condición mensual MCC-01", period: "12 jul – 11 ago", created: "Hoy 11:50", format: "PDF", owner: "Emerson Allende" },
     { id: "RPT-260804-011", name: "Eventos críticos · Semana 32", period: "29 jul – 4 ago", created: "4 ago 18:10", format: "PDF", owner: "Sistema" },
     { id: "RPT-260801-010", name: "Resumen ejecutivo · Julio", period: "1 – 31 jul", created: "1 ago 08:00", format: "XLSX", owner: "Sistema" },
@@ -605,12 +626,14 @@ function ReportsView() {
     window.setTimeout(() => {
       setReports((current) => [{ id: `RPT-${Date.now().toString().slice(-9)}`, name: `${selectedTemplate.name} · MCC-01`, period, created: "Ahora", format, owner: "Emerson Allende" }, ...current]);
       setGenerating(false);
+      notify(`${selectedTemplate.name} generado y agregado a la biblioteca.`);
     }, 850);
   };
   const downloadReportData = (name: string) => {
     const rows = ["reporte,activo,canal,valor,unidad,estado", ...sensors.map((sensor) => [name, "MCC-01", sensor.id, sensor.value, sensor.unit, sensor.state].join(","))];
     const url = URL.createObjectURL(new Blob([rows.join("\n")], { type: "text/csv;charset=utf-8" }));
     const anchor = document.createElement("a"); anchor.href = url; anchor.download = "cam5-datos-reporte.csv"; anchor.click(); URL.revokeObjectURL(url);
+    notify("Datos del reporte exportados correctamente.", "info");
   };
 
   return (
@@ -647,6 +670,7 @@ function ReportsView() {
 }
 
 function MaintenanceView({ orders, setOrders, focusOrderId }: { orders: WorkOrder[]; setOrders: React.Dispatch<React.SetStateAction<WorkOrder[]>>; focusOrderId: string | null }) {
+  const notify = useFeedback();
   const [tab, setTab] = useState<"plan" | "orders">(focusOrderId ? "orders" : "plan");
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ title: "", priority: "Alta", assignee: "Paula Rojas" });
@@ -660,10 +684,12 @@ function MaintenanceView({ orders, setOrders, focusOrderId }: { orders: WorkOrde
   const createOrder = (event: React.FormEvent) => {
     event.preventDefault();
     if (!form.title.trim()) return;
-    setOrders((current) => [{ id: `OT-${Date.now().toString().slice(-9)}`, title: form.title.trim(), source: "Creación manual · Portal web", due: "Sin programar", priority: form.priority as WorkPriority, assignee: form.assignee, status: "Pendiente" }, ...current]);
+    const id = `OT-${Date.now().toString().slice(-9)}`;
+    setOrders((current) => [{ id, title: form.title.trim(), source: "Creación manual · Portal web", due: "Sin programar", priority: form.priority as WorkPriority, assignee: form.assignee, status: "Pendiente" }, ...current]);
+    notify(`Orden ${id} creada correctamente.`);
     setForm({ title: "", priority: "Alta", assignee: "Paula Rojas" }); setShowCreate(false); setTab("orders");
   };
-  const updateOrder = (id: string, status: WorkStatus) => setOrders((current) => current.map((order) => order.id === id ? { ...order, status } : order));
+  const updateOrder = (id: string, status: WorkStatus) => { setOrders((current) => current.map((order) => order.id === id ? { ...order, status } : order)); notify(`${id} actualizada a “${status}”.`, "info"); };
 
   return (
     <>
@@ -688,6 +714,7 @@ function MaintenanceView({ orders, setOrders, focusOrderId }: { orders: WorkOrde
 }
 
 function DiagnosticsView() {
+  const notify = useFeedback();
   const [diagnosticState, setDiagnosticState] = useState<"idle" | "running" | "success">("idle");
   const [lastRun, setLastRun] = useState("No ejecutado en esta sesión");
   const transactions = [
@@ -698,7 +725,7 @@ function DiagnosticsView() {
   const runDiagnostic = () => {
     setDiagnosticState("running");
     setLastRun("Comprobación en curso…");
-    window.setTimeout(() => { setDiagnosticState("success"); setLastRun("Ahora · 4 de 4 etapas correctas"); }, 1200);
+    window.setTimeout(() => { setDiagnosticState("success"); setLastRun("Ahora · 4 de 4 etapas correctas"); notify("Diagnóstico completado: 4 de 4 etapas correctas."); }, 1200);
   };
   const stateClass = diagnosticState === "running" ? "testing" : diagnosticState === "success" ? "passed" : "ready";
 
@@ -736,19 +763,20 @@ function DiagnosticsView() {
 }
 
 function IntegrationsView() {
+  const notify = useFeedback();
   const [tab, setTab] = useState<"connections" | "flow" | "api">("connections");
   const [testingId, setTestingId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [showApiForm, setShowApiForm] = useState(false);
   const [apiForm, setApiForm] = useState({ name: "", scope: "Solo lectura" });
   const [newApiKey, setNewApiKey] = useState<string | null>(null);
-  const [connections, setConnections] = useState([
+  const [connections, setConnections] = usePersistentState("cam5.front.integrations", [
     { id: "controller", name: "Controlador CAM5-CTRL-01", role: "Adquisición de campo", protocol: "Modbus TCP", endpoint: "192.168.10.42:502 · Unit ID 1", enabled: true, locked: true, status: "Operativa", freshness: "Hace 2 s" },
     { id: "gateway", name: "Gateway CAM5-GW-01", role: "Puente OT / plataforma", protocol: "Ethernet · HTTPS/MQTT", endpoint: "LAN 192.168.10.40", enabled: true, locked: true, status: "Operativa", freshness: "Hace 2 s" },
     { id: "historian", name: "Historiador OT", role: "Integración futura", protocol: "OPC UA", endpoint: "No configurado", enabled: false, locked: false, status: "Fuera del MVP", freshness: "Sin sincronizar" },
     { id: "cmms", name: "CMMS de mantenimiento", role: "Integración futura", protocol: "REST / Webhook", endpoint: "No configurado", enabled: false, locked: false, status: "Fuera del MVP", freshness: "Sin sincronizar" },
   ]);
-  const [apiKeys, setApiKeys] = useState([
+  const [apiKeys, setApiKeys] = usePersistentState("cam5.front.api-keys", [
     { id: 1, name: "Integración de pruebas", token: "cam5_test_••••••••7K2P", scope: "Solo lectura", created: "11 ago 2026", lastUse: "Nunca", active: false },
   ]);
   const activeConnections = connections.filter((connection) => connection.enabled).length;
@@ -758,6 +786,7 @@ function IntegrationsView() {
     window.setTimeout(() => {
       setConnections((current) => current.map((connection) => connection.id === id ? { ...connection, status: "Operativa", freshness: "Ahora" } : connection));
       setTestingId(null);
+      notify("Conexión comprobada correctamente.");
     }, 900);
   };
   const toggleConnection = (id: string) => setConnections((current) => current.map((connection) => connection.id === id && !connection.locked ? { ...connection, enabled: !connection.enabled, status: connection.enabled ? "Desactivada" : "Operativa", freshness: connection.enabled ? "Sin sincronizar" : "Ahora" } : connection));
@@ -766,10 +795,10 @@ function IntegrationsView() {
     if (!apiForm.name.trim()) return;
     const rawKey = `cam5_live_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
     setApiKeys((current) => [{ id: Date.now(), name: apiForm.name.trim(), token: `${rawKey.slice(0, 10)}••••••••${rawKey.slice(-4).toUpperCase()}`, scope: apiForm.scope, created: "Ahora", lastUse: "Nunca", active: true }, ...current]);
-    setNewApiKey(rawKey); setApiForm({ name: "", scope: "Solo lectura" }); setShowApiForm(false);
+    setNewApiKey(rawKey); setApiForm({ name: "", scope: "Solo lectura" }); setShowApiForm(false); notify("Clave creada. Cópiala antes de abandonar esta sección.", "info");
   };
-  const revokeApiKey = (id: number) => setApiKeys((current) => current.map((key) => key.id === id ? { ...key, active: !key.active } : key));
-  const copyApiKey = async () => { if (!newApiKey) return; await navigator.clipboard?.writeText(newApiKey); setCopied(true); window.setTimeout(() => setCopied(false), 1800); };
+  const revokeApiKey = (id: number) => { const key = apiKeys.find((item) => item.id === id); setApiKeys((current) => current.map((item) => item.id === id ? { ...item, active: !item.active } : item)); notify(`Clave ${key?.active ? "revocada" : "reactivada"}.`, key?.active ? "warning" : "success"); };
+  const copyApiKey = async () => { if (!newApiKey) return; await navigator.clipboard?.writeText(newApiKey); setCopied(true); notify("Clave copiada al portapapeles.", "info"); window.setTimeout(() => setCopied(false), 1800); };
   const syncLog = [
     { time: "11:52:08", system: "CAM5-CTRL-01", action: "Lectura Modbus completada", detail: "8 canales · 42 ms", state: "Correcta" },
     { time: "11:52:07", system: "CAM5-GW-01", action: "Paquete de telemetría enviado", detail: "Subestación Norte", state: "Correcta" },
@@ -799,22 +828,23 @@ function IntegrationsView() {
 }
 
 function SettingsView() {
+  const notify = useFeedback();
   const [tab, setTab] = useState<SettingsTab>("asset");
   const [saved, setSaved] = useState(false);
   const [connection, setConnection] = useState<"idle" | "testing" | "success">("idle");
-  const [assetConfig, setAssetConfig] = useState({ name: "MCC-01", description: "Alimentador Norte", voltage: "13.8", location: "Subestación Norte", timezone: "America/Santiago" });
-  const [gatewayConfig, setGatewayConfig] = useState({ gateway: "CAM5-GW-01", controller: "CAM5-CTRL-01", protocol: "Modbus TCP", controllerIp: "192.168.10.42", gatewayIp: "192.168.10.40", port: "502", unit: "1", polling: "2", uplink: "Ethernet / HTTPS" });
-  const [channels, setChannels] = useState(sensors.map((sensor) => ({ ...sensor, enabled: true, warning: sensor.id === "PD1" ? "40" : sensor.id === "PD2" ? "40" : sensor.id === "H01" ? "75" : sensor.threshold.split(" ")[0], critical: sensor.id.startsWith("PD") ? "60" : sensor.id === "H01" ? "85" : String(Number(sensor.threshold.split(" ")[0]) + 10) })));
-  const [registerMap, setRegisterMap] = useState(sensors.map((sensor) => ({ id: sensor.id, label: sensor.label, reference: sensor.register.replace("HR ", ""), functionCode: "03", dataType: (sensor.type === "Temperatura" ? "Int16" : "UInt16") as ModbusDataType, scale: sensor.type === "Temperatura" ? "0.1" : "1", byteOrder: "AB" as ModbusByteOrder, unit: sensor.unit, value: sensor.value })));
+  const [assetConfig, setAssetConfig] = usePersistentState("cam5.front.asset-config", { name: "MCC-01", description: "Alimentador Norte", voltage: "13.8", location: "Subestación Norte", timezone: "America/Santiago" });
+  const [gatewayConfig, setGatewayConfig] = usePersistentState("cam5.front.gateway-config", { gateway: "CAM5-GW-01", controller: "CAM5-CTRL-01", protocol: "Modbus TCP", controllerIp: "192.168.10.42", gatewayIp: "192.168.10.40", port: "502", unit: "1", polling: "2", uplink: "Ethernet / HTTPS" });
+  const [channels, setChannels] = usePersistentState("cam5.front.channel-config", sensors.map((sensor) => ({ ...sensor, enabled: true, warning: sensor.id === "PD1" ? "40" : sensor.id === "PD2" ? "40" : sensor.id === "H01" ? "75" : sensor.threshold.split(" ")[0], critical: sensor.id.startsWith("PD") ? "60" : sensor.id === "H01" ? "85" : String(Number(sensor.threshold.split(" ")[0]) + 10) })));
+  const [registerMap, setRegisterMap] = usePersistentState("cam5.front.register-map", sensors.map((sensor) => ({ id: sensor.id, label: sensor.label, reference: sensor.register.replace("HR ", ""), functionCode: "03", dataType: (sensor.type === "Temperatura" ? "Int16" : "UInt16") as ModbusDataType, scale: sensor.type === "Temperatura" ? "0.1" : "1", byteOrder: "AB" as ModbusByteOrder, unit: sensor.unit, value: sensor.value })));
   const [mapValidation, setMapValidation] = useState<"idle" | "validating" | "success" | "error">("idle");
   const duplicateReferences = new Set(registerMap.filter((row, index, rows) => rows.findIndex((candidate) => candidate.reference === row.reference) !== index).map((row) => row.reference));
   const invalidReferences = registerMap.filter((row) => !/^4\d{4}$/.test(row.reference) || Number(row.reference) < 40001 || Number(row.reference) > 49999).map((row) => row.id);
   const mappingIssues = duplicateReferences.size + invalidReferences.length;
-  const saveChanges = () => { setSaved(true); window.setTimeout(() => setSaved(false), 2400); };
-  const testConnection = () => { setConnection("testing"); window.setTimeout(() => setConnection("success"), 900); };
+  const saveChanges = () => { setSaved(true); notify("Configuración guardada en este entorno de demostración."); window.setTimeout(() => setSaved(false), 2400); };
+  const testConnection = () => { setConnection("testing"); window.setTimeout(() => { setConnection("success"); notify("Prueba Modbus completada correctamente."); }, 900); };
   const updateChannel = (id: string, field: "enabled" | "warning" | "critical", value: boolean | string) => setChannels((current) => current.map((item) => item.id === id ? { ...item, [field]: value } : item));
   const updateRegister = (id: string, field: "reference" | "dataType" | "scale" | "byteOrder", value: string) => { setMapValidation("idle"); setRegisterMap((current) => current.map((row) => row.id === id ? { ...row, [field]: value } : row)); };
-  const validateRegisterMap = () => { setMapValidation("validating"); window.setTimeout(() => setMapValidation(mappingIssues ? "error" : "success"), 700); };
+  const validateRegisterMap = () => { setMapValidation("validating"); window.setTimeout(() => { setMapValidation(mappingIssues ? "error" : "success"); notify(mappingIssues ? `${mappingIssues} conflicto${mappingIssues === 1 ? "" : "s"} en el mapa Modbus.` : "Mapa Modbus validado sin conflictos.", mappingIssues ? "warning" : "success"); }, 700); };
 
   return (
     <article className="panel module-panel settings-module">
@@ -856,7 +886,8 @@ function SettingsView() {
 }
 
 function UsersView() {
-  const [users, setUsers] = useState<Array<{ id: number; name: string; email: string; role: UserRole; status: "Activo" | "Suspendido" | "Invitado"; lastAccess: string }>>([
+  const notify = useFeedback();
+  const [users, setUsers] = usePersistentState<Array<{ id: number; name: string; email: string; role: UserRole; status: "Activo" | "Suspendido" | "Invitado"; lastAccess: string }>>("cam5.front.users", [
     { id: 1, name: "Emerson Allende", email: "emerson@cam5.local", role: "Administrador", status: "Activo", lastAccess: "Ahora" },
     { id: 2, name: "Paula Rojas", email: "paula.rojas@cam5.local", role: "Ingeniero", status: "Activo", lastAccess: "Hace 18 min" },
     { id: 3, name: "Felipe Soto", email: "felipe.soto@cam5.local", role: "Operador", status: "Activo", lastAccess: "Hace 2 h" },
@@ -865,9 +896,9 @@ function UsersView() {
   const [showInvite, setShowInvite] = useState(false);
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<UserRole>("Operador");
-  const inviteUser = (event: React.FormEvent) => { event.preventDefault(); if (!email.trim()) return; const base = email.split("@")[0].replace(/[._-]+/g, " "); const name = base.replace(/\b\w/g, (letter) => letter.toUpperCase()); setUsers((current) => [...current, { id: Date.now(), name, email, role, status: "Invitado", lastAccess: "Pendiente" }]); setEmail(""); setShowInvite(false); };
+  const inviteUser = (event: React.FormEvent) => { event.preventDefault(); if (!email.trim()) return; const base = email.split("@")[0].replace(/[._-]+/g, " "); const name = base.replace(/\b\w/g, (letter) => letter.toUpperCase()); setUsers((current) => [...current, { id: Date.now(), name, email, role, status: "Invitado", lastAccess: "Pendiente" }]); notify(`Invitación preparada para ${email}.`); setEmail(""); setShowInvite(false); };
   const updateRole = (id: number, nextRole: UserRole) => setUsers((current) => current.map((user) => user.id === id ? { ...user, role: nextRole } : user));
-  const toggleUser = (id: number) => setUsers((current) => current.map((user) => user.id === id ? { ...user, status: user.status === "Activo" ? "Suspendido" : "Activo" } : user));
+  const toggleUser = (id: number) => { const user = users.find((item) => item.id === id); setUsers((current) => current.map((item) => item.id === id ? { ...item, status: item.status === "Activo" ? "Suspendido" : "Activo" } : item)); notify(`${user?.name ?? "Usuario"} ${user?.status === "Activo" ? "suspendido" : "activado"}.`, user?.status === "Activo" ? "warning" : "success"); };
 
   return (
     <>
@@ -883,14 +914,15 @@ function UsersView() {
 }
 
 function NotificationsView() {
+  const notify = useFeedback();
   const [tab, setTab] = useState<"channels" | "rules" | "delivery">("channels");
   const [testedChannel, setTestedChannel] = useState<string | null>(null);
-  const [channels, setChannels] = useState([
+  const [channels, setChannels] = usePersistentState("cam5.front.notification-channels", [
     { id: "email", name: "Correo OT", detail: "Alertas a responsables y turnos", destination: "operaciones@cam5.local", enabled: true, status: "Verificado" },
     { id: "teams", name: "Microsoft Teams", detail: "Canal del equipo de mantenimiento", destination: "Equipo · Mantenimiento eléctrico", enabled: true, status: "Conectado" },
     { id: "webhook", name: "Webhook CMMS", detail: "Creación de avisos externos", destination: "https://cmms.local/cam5/events", enabled: false, status: "Sin configurar" },
   ]);
-  const [rules, setRules] = useState([
+  const [rules, setRules] = usePersistentState("cam5.front.notification-rules", [
     { id: 1, event: "Evento crítico", scope: "Todos los activos", delay: "Inmediato", recipients: "Administrador + Ingeniero", enabled: true },
     { id: 2, event: "Advertencia persistente", scope: "Más de 5 minutos", delay: "5 minutos", recipients: "Ingeniero + Operador", enabled: true },
     { id: 3, event: "Pérdida de comunicación", scope: "Gateway sin datos", delay: "10 minutos", recipients: "Administrador", enabled: true },
@@ -902,7 +934,7 @@ function NotificationsView() {
     { time: "Hoy 09:22:18", event: "AL-260811-028 · Diferencial térmico", channel: "Correo OT", recipient: "3 destinatarios", state: "Entregada" },
     { time: "Ayer 18:43:11", event: "Recuperación de gateway", channel: "Correo OT", recipient: "1 destinatario", state: "Entregada" },
   ];
-  const testChannel = (id: string) => { setTestedChannel(id); window.setTimeout(() => setTestedChannel(null), 2200); };
+  const testChannel = (id: string) => { const channel = channels.find((item) => item.id === id); setTestedChannel(id); notify(`Prueba enviada por ${channel?.name ?? "el canal"}.`, "info"); window.setTimeout(() => setTestedChannel(null), 2200); };
   const toggleChannel = (id: string) => setChannels((current) => current.map((channel) => channel.id === id ? { ...channel, enabled: !channel.enabled } : channel));
   const updateRule = (id: number, field: "delay" | "recipients" | "enabled", value: string | boolean) => setRules((current) => current.map((rule) => rule.id === id ? { ...rule, [field]: value } : rule));
 
@@ -927,32 +959,48 @@ export default function Home() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [period, setPeriod] = useState("24 h");
   const [trendSensorId, setTrendSensorId] = useState("T01");
-  const [acknowledged, setAcknowledged] = useState<string[]>([]);
-  const [asset, setAsset] = useState("MCC-01 · Alimentador Norte");
-  const [workOrders, setWorkOrders] = useState<WorkOrder[]>(initialWorkOrders);
+  const [acknowledged, setAcknowledged] = usePersistentState<string[]>("cam5.front.acknowledged", []);
+  const [workOrders, setWorkOrders] = usePersistentState<WorkOrder[]>("cam5.front.work-orders", initialWorkOrders);
   const [focusOrderId, setFocusOrderId] = useState<string | null>(null);
-  const [closedAlarmIds, setClosedAlarmIds] = useState<string[]>([]);
-  const [alarmAssignees, setAlarmAssignees] = useState<Record<string, string>>({ "AL-260811-031": "Emerson Allende", "AL-260811-028": "Paula Rojas", "AL-260811-019": "Felipe Soto" });
-  const [alarmNotes, setAlarmNotes] = useState<Record<string, string[]>>({});
+  const [closedAlarmIds, setClosedAlarmIds] = usePersistentState<string[]>("cam5.front.closed-alarms", []);
+  const [alarmAssignees, setAlarmAssignees] = usePersistentState<Record<string, string>>("cam5.front.alarm-assignees", { "AL-260811-031": "Emerson Allende", "AL-260811-028": "Paula Rojas", "AL-260811-019": "Felipe Soto" });
+  const [alarmNotes, setAlarmNotes] = usePersistentState<Record<string, string[]>>("cam5.front.alarm-notes", {});
+  const [notice, setNotice] = useState<{ id: number; message: string; tone: NoticeTone } | null>(null);
+  const noticeTimer = useRef<number | null>(null);
+
+  const notify = (message: string, tone: NoticeTone = "success") => {
+    if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
+    setNotice({ id: Date.now(), message, tone });
+    noticeTimer.current = window.setTimeout(() => setNotice(null), 3200);
+  };
+
+  useEffect(() => () => {
+    if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
+  }, []);
 
   const navigate = (next: View) => { setView(next); if (next !== "maintenance") setFocusOrderId(null); setMenuOpen(false); };
   const openChannelTrend = (id: string) => { setTrendSensorId(id); navigate("trends"); };
-  const acknowledge = (id: string) => setAcknowledged((current) => current.includes(id) ? current : [...current, id]);
+  const acknowledge = (id: string) => {
+    setAcknowledged((current) => current.includes(id) ? current : [...current, id]);
+    notify(`Evento ${id} reconocido.`);
+  };
   const openWorkOrderFromAlarm = (alarm: (typeof initialAlarms)[number], assignee: string) => {
     const existing = workOrders.find((order) => order.sourceAlarmId === alarm.id);
-    if (existing) { setFocusOrderId(existing.id); navigate("maintenance"); return; }
+    if (existing) { setFocusOrderId(existing.id); navigate("maintenance"); notify(`Orden ${existing.id} abierta.`, "info"); return; }
     const id = `OT-${Date.now().toString().slice(-9)}`;
     const signal = alarm.detail.split(" · ")[0];
     const order: WorkOrder = { id, title: `Atender ${alarm.title.toLowerCase()}`, source: `${signal} · Evento ${alarm.id}`, sourceAlarmId: alarm.id, due: alarm.severity === "critical" ? "Hoy · Prioritario" : alarm.severity === "warning" ? "Próximas 24 h" : "Sin programar", priority: alarm.severity === "critical" ? "Crítica" : alarm.severity === "warning" ? "Alta" : "Normal", assignee: assignee === "Sin asignar" ? "Paula Rojas" : assignee, status: "Pendiente" };
-    setWorkOrders((current) => [order, ...current]); setFocusOrderId(id); navigate("maintenance");
+    setWorkOrders((current) => [order, ...current]); setFocusOrderId(id); navigate("maintenance"); notify(`Orden ${id} creada y vinculada al evento.`);
   };
   const exportCsv = () => {
     const rows = ["canal,tipo,ubicacion,valor,unidad,estado", ...sensors.map((sensor) => [sensor.id, sensor.type, sensor.zone, sensor.value, sensor.unit, sensor.state].join(","))];
     const url = URL.createObjectURL(new Blob([rows.join("\n")], { type: "text/csv;charset=utf-8" }));
     const anchor = document.createElement("a"); anchor.href = url; anchor.download = "cam5-telemetria.csv"; anchor.click(); URL.revokeObjectURL(url);
+    notify("Telemetría exportada correctamente.", "info");
   };
 
   return (
+    <FeedbackContext.Provider value={notify}>
     <div className="app-shell">
       {menuOpen && <button className="mobile-scrim" aria-label="Cerrar navegación" onClick={() => setMenuOpen(false)} />}
       <aside className={`sidebar ${menuOpen ? "open" : ""}`}>
@@ -984,13 +1032,13 @@ export default function Home() {
         </nav>
         <div className="sidebar-status">
           <div className="gateway-badge"><span className="gateway-icon"><Server size={17} /></span><span><strong>Cadena OT operativa</strong><small>CAM5-CTRL-01 → CAM5-GW-01</small></span><i /></div>
-          <button className="user-card"><span className="user-avatar">EA</span><span className="user-copy"><strong>Emerson Allende</strong><small>Administrador OT</small></span><ChevronRight size={16} /></button>
+          <button className="user-card" onClick={() => navigate("users")} aria-label="Abrir usuarios y roles"><span className="user-avatar">EA</span><span className="user-copy"><strong>Emerson Allende</strong><small>Administrador OT</small></span><ChevronRight size={16} /></button>
         </div>
       </aside>
 
       <main className="main-shell">
         <header className="topbar">
-          <div className="topbar-left"><button className="menu-button" aria-label="Abrir navegación" onClick={() => setMenuOpen(true)}><Menu size={22} /></button><span className="mobile-brand"><Zap size={18} fill="currentColor" /></span><div className="site-selector"><Building2 size={17} /><div><span>Subestación Norte</span><select value={asset} onChange={(event) => setAsset(event.target.value)} aria-label="Seleccionar activo"><option>MCC-01 · Alimentador Norte</option><option>MCC-02 · Banco de condensadores</option><option>TR-01 · Transformador principal</option></select></div><ChevronDown size={15} /></div></div>
+          <div className="topbar-left"><button className="menu-button" aria-label="Abrir navegación" onClick={() => setMenuOpen(true)}><Menu size={22} /></button><span className="mobile-brand"><Zap size={18} fill="currentColor" /></span><div className="site-selector"><Building2 size={17} /><div><span>Subestación Norte</span><strong className="site-active-asset">MCC-01 · Alimentador Norte</strong></div><span className="single-site-label">Piloto monositio</span></div></div>
           <div className="topbar-right"><span className="demo-pill">Datos simulados</span><div className="live-state"><span /><div><strong>Telemetría activa</strong><small>Actualizado hace 2 s</small></div></div></div>
         </header>
 
@@ -1003,7 +1051,7 @@ export default function Home() {
             {view === "trends" && <TrendsView period={period} setPeriod={setPeriod} selectedId={trendSensorId} onSelectChannel={setTrendSensorId} onBackToMap={() => navigate("cabinet")} />}
             {view === "alarms" && <AlarmsView acknowledged={acknowledged} onAcknowledge={acknowledge} workOrders={workOrders} onOpenWorkOrder={openWorkOrderFromAlarm} closedIds={closedAlarmIds} setClosedIds={setClosedAlarmIds} assignees={alarmAssignees} setAssignees={setAlarmAssignees} notes={alarmNotes} setNotes={setAlarmNotes} />}
             {view === "history" && <HistoryView />}
-            {view === "assets" && <AssetsView />}
+            {view === "assets" && <AssetsView onNavigate={navigate} />}
             {view === "reports" && <ReportsView />}
             {view === "maintenance" && <MaintenanceView orders={workOrders} setOrders={setWorkOrders} focusOrderId={focusOrderId} />}
             {view === "settings" && <SettingsView />}
@@ -1013,6 +1061,8 @@ export default function Home() {
           </div>
         </div>
       </main>
+      {notice && <div className={`portal-notice notice-${notice.tone}`} role="status" aria-live="polite" key={notice.id}><CheckCircle2 size={18} /><span>{notice.message}</span><button onClick={() => setNotice(null)} aria-label="Cerrar notificación"><X size={16} /></button></div>}
     </div>
+    </FeedbackContext.Provider>
   );
 }

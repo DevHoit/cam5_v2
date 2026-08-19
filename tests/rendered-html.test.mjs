@@ -49,7 +49,7 @@ test("keeps the production portal free of starter preview code", async () => {
   ]);
 
   assert.match(page, /function ReportsView\(\)/);
-  assert.match(page, /function AssetsView\(\)/);
+  assert.match(page, /function AssetsView\(\{ onNavigate \}/);
   assert.match(page, /function MaintenanceView\(/);
   assert.match(page, /function IntegrationsView\(\)/);
   assert.match(page, /function DiagnosticsView\(\)/);
@@ -61,6 +61,9 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(page, /closedAlarmIds/);
   assert.match(page, /alarmNotes/);
   assert.match(page, /Intervención completada/);
+  assert.match(page, /usePersistentState/);
+  assert.match(page, /portal-notice/);
+  assert.match(page, /Piloto monositio/);
   assert.match(page, /CAM5-CTRL-01/);
   assert.match(page, /CAM5-GW-01/);
   assert.match(page, /Subestación Norte/);
