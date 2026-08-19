@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import type { ComponentType } from "react";
 import {
   IconActivity as Activity,
@@ -59,6 +59,9 @@ type SettingsTab = "asset" | "channels" | "registers" | "gateway";
 type ModbusDataType = "Int16" | "UInt16";
 type ModbusByteOrder = "AB" | "BA";
 type UserRole = "Administrador" | "Ingeniero" | "Operador" | "Solo lectura";
+type WorkStatus = "Pendiente" | "En curso" | "Completada";
+type WorkPriority = "Crítica" | "Alta" | "Normal";
+type WorkOrder = { id: string; title: string; source: string; sourceAlarmId?: string; due: string; priority: WorkPriority; assignee: string; status: WorkStatus };
 
 const sensors = [
   { id: "T01", label: "Barra fase L1", zone: "Barras principales", value: "68.4", unit: "°C", type: "Temperatura", state: "warning" as SensorState, trend: "+1.8 °C/h", threshold: "65 °C", register: "HR 40001", quality: "Válida" },
@@ -76,6 +79,13 @@ const initialAlarms = [
   { id: "AL-260811-028", severity: "warning" as Severity, title: "Diferencial térmico elevado", detail: "T01 Barra L1 vs. L2/L3", since: "Hace 34 min", value: "+15.6 °C", acknowledged: false },
   { id: "AL-260811-019", severity: "warning" as Severity, title: "Humedad sobre umbral", detail: "H01 Ambiente cabina", since: "Hace 2 h", value: "78 %RH", acknowledged: false },
   { id: "AL-260810-104", severity: "info" as Severity, title: "Sincronización recuperada", detail: "Gateway CAM5-GW-01", since: "Ayer 18:42", value: "Resuelta", acknowledged: true },
+];
+
+const initialWorkOrders: WorkOrder[] = [
+  { id: "OT-260811-018", title: "Diagnóstico de descarga parcial", source: "PD1 · Evento AL-260811-031", sourceAlarmId: "AL-260811-031", due: "Hoy · 16:00", priority: "Crítica", assignee: "Emerson Allende", status: "En curso" },
+  { id: "OT-260811-017", title: "Inspección termográfica dirigida", source: "T01 · Evento AL-260811-028", sourceAlarmId: "AL-260811-028", due: "21 ago 2026", priority: "Alta", assignee: "Paula Rojas", status: "Pendiente" },
+  { id: "OT-260810-014", title: "Control de humedad en cabina", source: "H01 · Evento AL-260811-019", sourceAlarmId: "AL-260811-019", due: "22 ago 2026", priority: "Alta", assignee: "Felipe Soto", status: "Pendiente" },
+  { id: "OT-260731-009", title: "Verificación mensual de gateway", source: "Plan preventivo PM-04", due: "31 jul 2026", priority: "Normal", assignee: "Felipe Soto", status: "Completada" },
 ];
 
 const chartData = [
@@ -417,7 +427,7 @@ function TrendsView({ period, setPeriod, selectedId, onSelectChannel, onBackToMa
   );
 }
 
-function AlarmsView({ acknowledged, onAcknowledge }: { acknowledged: string[]; onAcknowledge: (id: string) => void }) {
+function AlarmsView({ acknowledged, onAcknowledge, workOrders, onOpenWorkOrder }: { acknowledged: string[]; onAcknowledge: (id: string) => void; workOrders: WorkOrder[]; onOpenWorkOrder: (alarm: (typeof initialAlarms)[number], assignee: string) => void }) {
   const [severity, setSeverity] = useState<"all" | Severity>("all");
   const [workflowStatus, setWorkflowStatus] = useState<"all" | "open" | "acknowledged" | "closed">("all");
   const [query, setQuery] = useState("");
@@ -427,10 +437,11 @@ function AlarmsView({ acknowledged, onAcknowledge }: { acknowledged: string[]; o
   const [notes, setNotes] = useState<Record<string, string[]>>({});
   const [noteInput, setNoteInput] = useState("");
   const getWorkflowStatus = (alarm: (typeof initialAlarms)[number]) => closedIds.includes(alarm.id) ? "closed" : alarm.acknowledged || acknowledged.includes(alarm.id) ? "acknowledged" : "open";
-  const filtered = useMemo(() => initialAlarms.filter((alarm) => (severity === "all" || alarm.severity === severity) && (workflowStatus === "all" || getWorkflowStatus(alarm) === workflowStatus) && `${alarm.title} ${alarm.detail}`.toLowerCase().includes(query.toLowerCase())), [severity, workflowStatus, query, acknowledged, closedIds]);
+  const filtered = initialAlarms.filter((alarm) => (severity === "all" || alarm.severity === severity) && (workflowStatus === "all" || getWorkflowStatus(alarm) === workflowStatus) && `${alarm.title} ${alarm.detail}`.toLowerCase().includes(query.toLowerCase()));
   const selected = initialAlarms.find((alarm) => alarm.id === selectedId) ?? initialAlarms[0];
   const selectedStatus = getWorkflowStatus(selected);
   const selectedNotes = notes[selected.id] ?? [];
+  const linkedOrder = workOrders.find((order) => order.sourceAlarmId === selected.id);
   const addNote = (event: React.FormEvent) => { event.preventDefault(); if (!noteInput.trim()) return; setNotes((current) => ({ ...current, [selected.id]: [...(current[selected.id] ?? []), noteInput.trim()] })); setNoteInput(""); };
   const closeEvent = () => { if (selectedStatus === "open") onAcknowledge(selected.id); setClosedIds((current) => current.includes(selected.id) ? current : [...current, selected.id]); };
   const reopenEvent = () => setClosedIds((current) => current.filter((id) => id !== selected.id));
@@ -466,9 +477,9 @@ function AlarmsView({ acknowledged, onAcknowledge }: { acknowledged: string[]; o
           <div className="event-workspace">
             <div className="event-management">
               <dl className="event-facts"><div><dt>Valor detectado</dt><dd>{selected.value}</dd></div><div><dt>Inicio</dt><dd>{selected.since}</dd></div><div><dt>Responsable</dt><dd><select value={assignees[selected.id] ?? "Sin asignar"} onChange={(event) => setAssignees((current) => ({ ...current, [selected.id]: event.target.value }))}><option>Sin asignar</option><option>Emerson Allende</option><option>Paula Rojas</option><option>Felipe Soto</option></select></dd></div></dl>
-              <div className="event-actions">{selectedStatus === "open" && <button className="primary-button" onClick={() => onAcknowledge(selected.id)}><CheckCircle2 size={15} /> Reconocer evento</button>}{selectedStatus === "closed" ? <button className="secondary-button" onClick={reopenEvent}>Reabrir evento</button> : <button className="secondary-button" onClick={closeEvent}><ShieldCheck size={15} /> Cerrar evento</button>}</div>
+              <div className="event-actions">{selectedStatus === "open" && <button className="primary-button" onClick={() => onAcknowledge(selected.id)}><CheckCircle2 size={15} /> Reconocer evento</button>}<button className={`work-order-action ${linkedOrder ? "linked" : ""}`} onClick={() => onOpenWorkOrder(selected, assignees[selected.id] ?? "Sin asignar")}><ClipboardCheck size={15} /> {linkedOrder ? `Abrir ${linkedOrder.id}` : "Crear orden de trabajo"}</button>{selectedStatus === "closed" ? <button className="secondary-button" onClick={reopenEvent}>Reabrir evento</button> : <button className="secondary-button" onClick={closeEvent}><ShieldCheck size={15} /> Cerrar evento</button>}</div>
             </div>
-            <div className="event-timeline"><h3>Línea de tiempo</h3><div><span className="timeline-dot critical" /><p><strong>Evento detectado</strong><small>{selected.since} · Motor de reglas CAM5</small></p></div>{selectedStatus !== "open" && <div><span className="timeline-dot normal" /><p><strong>Evento reconocido</strong><small>Emerson Allende · Portal web</small></p></div>}{selectedNotes.map((note, index) => <div key={`${selected.id}-${index}`}><span className="timeline-dot info" /><p><strong>Nota operativa</strong><small>{note}</small></p></div>)}{selectedStatus === "closed" && <div><span className="timeline-dot normal" /><p><strong>Evento cerrado</strong><small>Condición revisada por el operador</small></p></div>}</div>
+            <div className="event-timeline"><h3>Línea de tiempo</h3><div><span className="timeline-dot critical" /><p><strong>Evento detectado</strong><small>{selected.since} · Motor de reglas CAM5</small></p></div>{selectedStatus !== "open" && <div><span className="timeline-dot normal" /><p><strong>Evento reconocido</strong><small>Emerson Allende · Portal web</small></p></div>}{linkedOrder && <div><span className="timeline-dot info" /><p><strong>Orden de trabajo vinculada</strong><small>{linkedOrder.id} · {linkedOrder.status}</small></p></div>}{selectedNotes.map((note, index) => <div key={`${selected.id}-${index}`}><span className="timeline-dot info" /><p><strong>Nota operativa</strong><small>{note}</small></p></div>)}{selectedStatus === "closed" && <div><span className="timeline-dot normal" /><p><strong>Evento cerrado</strong><small>Condición revisada por el operador</small></p></div>}</div>
           </div>
           <form className="event-note-form" onSubmit={addNote}><input value={noteInput} onChange={(event) => setNoteInput(event.target.value)} placeholder="Agregar una nota de seguimiento…" /><button type="submit">Agregar nota</button></form>
         </section>
@@ -636,17 +647,10 @@ function ReportsView() {
   );
 }
 
-function MaintenanceView() {
-  type WorkStatus = "Pendiente" | "En curso" | "Completada";
-  const [tab, setTab] = useState<"plan" | "orders">("plan");
+function MaintenanceView({ orders, setOrders, focusOrderId }: { orders: WorkOrder[]; setOrders: React.Dispatch<React.SetStateAction<WorkOrder[]>>; focusOrderId: string | null }) {
+  const [tab, setTab] = useState<"plan" | "orders">(focusOrderId ? "orders" : "plan");
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ title: "", priority: "Alta", assignee: "Paula Rojas" });
-  const [orders, setOrders] = useState<Array<{ id: string; title: string; source: string; due: string; priority: "Crítica" | "Alta" | "Normal"; assignee: string; status: WorkStatus }>>([
-    { id: "OT-260811-018", title: "Diagnóstico de descarga parcial", source: "PD1 · Evento AL-260811-031", due: "Hoy · 16:00", priority: "Crítica", assignee: "Emerson Allende", status: "En curso" },
-    { id: "OT-260811-017", title: "Inspección termográfica dirigida", source: "T01 · Diferencial +15.6 °C", due: "21 ago 2026", priority: "Alta", assignee: "Paula Rojas", status: "Pendiente" },
-    { id: "OT-260810-014", title: "Control de humedad en cabina", source: "H01 · 78 %RH", due: "22 ago 2026", priority: "Alta", assignee: "Felipe Soto", status: "Pendiente" },
-    { id: "OT-260731-009", title: "Verificación mensual de gateway", source: "Plan preventivo PM-04", due: "31 jul 2026", priority: "Normal", assignee: "Felipe Soto", status: "Completada" },
-  ]);
   const plans = [
     { code: "PM-01", name: "Inspección termográfica", frequency: "Mensual", next: "21 ago 2026", progress: 82, state: "Próxima" },
     { code: "PM-02", name: "Diagnóstico UHF de descarga parcial", frequency: "Trimestral", next: "Hoy", progress: 100, state: "Vencida" },
@@ -657,7 +661,7 @@ function MaintenanceView() {
   const createOrder = (event: React.FormEvent) => {
     event.preventDefault();
     if (!form.title.trim()) return;
-    setOrders((current) => [{ id: `OT-${Date.now().toString().slice(-9)}`, title: form.title.trim(), source: "Creación manual · Portal web", due: "Sin programar", priority: form.priority as "Alta" | "Normal", assignee: form.assignee, status: "Pendiente" }, ...current]);
+    setOrders((current) => [{ id: `OT-${Date.now().toString().slice(-9)}`, title: form.title.trim(), source: "Creación manual · Portal web", due: "Sin programar", priority: form.priority as WorkPriority, assignee: form.assignee, status: "Pendiente" }, ...current]);
     setForm({ title: "", priority: "Alta", assignee: "Paula Rojas" }); setShowCreate(false); setTab("orders");
   };
   const updateOrder = (id: string, status: WorkStatus) => setOrders((current) => current.map((order) => order.id === id ? { ...order, status } : order));
@@ -673,11 +677,11 @@ function MaintenanceView() {
       <article className="panel module-panel maintenance-module">
         <div className="module-toolbar"><div className="module-tabs" role="tablist" aria-label="Secciones de mantenimiento"><button className={tab === "plan" ? "active" : ""} onClick={() => setTab("plan")}><CalendarEvent size={16} /> Plan preventivo</button><button className={tab === "orders" ? "active" : ""} onClick={() => setTab("orders")}><ClipboardCheck size={16} /> Órdenes de trabajo</button></div><button className="primary-button" onClick={() => setShowCreate((current) => !current)}><Plus size={16} /> {showCreate ? "Cancelar" : "Nueva orden"}</button></div>
 
-        {showCreate && <form className="work-order-form" onSubmit={createOrder}><label><span>Trabajo requerido</span><input required value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} placeholder="Ej.: Revisar conexión del sensor T02" /></label><label><span>Prioridad</span><select value={form.priority} onChange={(event) => setForm({ ...form, priority: event.target.value })}><option>Alta</option><option>Normal</option></select></label><label><span>Responsable</span><select value={form.assignee} onChange={(event) => setForm({ ...form, assignee: event.target.value })}><option>Paula Rojas</option><option>Emerson Allende</option><option>Felipe Soto</option></select></label><button type="submit"><ClipboardCheck size={15} /> Crear orden</button></form>}
+        {showCreate && <form className="work-order-form" onSubmit={createOrder}><label><span>Trabajo requerido</span><input required value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} placeholder="Ej.: Revisar conexión del sensor T02" /></label><label><span>Prioridad</span><select value={form.priority} onChange={(event) => setForm({ ...form, priority: event.target.value })}><option>Crítica</option><option>Alta</option><option>Normal</option></select></label><label><span>Responsable</span><select value={form.assignee} onChange={(event) => setForm({ ...form, assignee: event.target.value })}><option>Paula Rojas</option><option>Emerson Allende</option><option>Felipe Soto</option></select></label><button type="submit"><ClipboardCheck size={15} /> Crear orden</button></form>}
 
         {tab === "plan" && <div className="maintenance-plan-content"><div className="settings-section-head"><span className="settings-icon"><CalendarEvent size={20} /></span><div><h2>Plan basado en condición</h2><p>La frecuencia se complementa con los hallazgos de telemetría y eventos activos.</p></div></div><div className="maintenance-plan-grid">{plans.map((plan) => <article className={`maintenance-plan-card plan-${plan.state.toLowerCase().replace(" ", "-")}`} key={plan.code}><div className="maintenance-plan-head"><span>{plan.code}</span><i>{plan.state}</i></div><h3>{plan.name}</h3><dl><div><dt>Frecuencia</dt><dd>{plan.frequency}</dd></div><div><dt>Próxima ejecución</dt><dd>{plan.next}</dd></div></dl><div className="maintenance-progress"><span><i style={{ width: `${plan.progress}%` }} /></span><small>{plan.progress}% del intervalo consumido</small></div><button onClick={() => { setForm({ title: plan.name, priority: plan.state === "Vencida" ? "Alta" : "Normal", assignee: "Paula Rojas" }); setShowCreate(true); }}><Plus size={14} /> Crear orden desde el plan</button></article>)}</div><div className="maintenance-recommendation"><AlertTriangle size={19} /><div><strong>Recomendación prioritaria</strong><p>Adelantar el diagnóstico UHF de PD1 y coordinar una ventana de inspección antes de cualquier intervención invasiva.</p></div><button onClick={() => setTab("orders")}>Revisar órdenes <ChevronRight size={15} /></button></div></div>}
 
-        {tab === "orders" && <div className="maintenance-orders"><div className="report-library-head"><div><span className="eyebrow">Ejecución</span><h2>Órdenes de trabajo</h2></div><span>{openOrders} abiertas</span></div><div className="module-table-wrap"><div className="work-order-table"><div className="module-table-head"><span>Orden / trabajo</span><span>Origen</span><span>Vencimiento</span><span>Prioridad</span><span>Responsable</span><span>Estado</span></div>{orders.map((order) => <div className="module-table-row" key={order.id}><span className="event-cell"><strong>{order.title}</strong><small>{order.id}</small></span><span>{order.source}</span><span>{order.due}</span><span><i className={`maintenance-priority priority-${order.priority.toLowerCase()}`}>{order.priority}</i></span><span>{order.assignee}</span><span><select className={`work-status status-${order.status.toLowerCase().replace(" ", "-")}`} value={order.status} onChange={(event) => updateOrder(order.id, event.target.value as WorkStatus)}><option>Pendiente</option><option>En curso</option><option>Completada</option></select></span></div>)}</div></div></div>}
+        {tab === "orders" && <div className="maintenance-orders">{focusOrderId && <div className="work-order-focus-banner"><ClipboardCheck size={17} /><div><strong>Orden abierta desde el Centro de alertas</strong><p>{focusOrderId} quedó seleccionada para mantener la trazabilidad del evento.</p></div></div>}<div className="report-library-head"><div><span className="eyebrow">Ejecución</span><h2>Órdenes de trabajo</h2></div><span>{openOrders} abiertas</span></div><div className="module-table-wrap"><div className="work-order-table"><div className="module-table-head"><span>Orden / trabajo</span><span>Origen</span><span>Vencimiento</span><span>Prioridad</span><span>Responsable</span><span>Estado</span></div>{orders.map((order) => <div className={`module-table-row ${order.id === focusOrderId ? "focused-order" : ""}`} key={order.id}><span className="event-cell"><strong>{order.title}</strong><small>{order.id}</small></span><span>{order.source}</span><span>{order.due}</span><span><i className={`maintenance-priority priority-${order.priority.toLowerCase()}`}>{order.priority}</i></span><span>{order.assignee}</span><span><select className={`work-status status-${order.status.toLowerCase().replace(" ", "-")}`} value={order.status} onChange={(event) => updateOrder(order.id, event.target.value as WorkStatus)}><option>Pendiente</option><option>En curso</option><option>Completada</option></select></span></div>)}</div></div></div>}
         <div className="module-footer"><span><ShieldCheck size={14} /> Toda modificación queda asociada al usuario y al activo.</span><small>Flujo demostrativo · pendiente de integración con CMMS.</small></div>
       </article>
     </>
@@ -926,10 +930,20 @@ export default function Home() {
   const [trendSensorId, setTrendSensorId] = useState("T01");
   const [acknowledged, setAcknowledged] = useState<string[]>([]);
   const [asset, setAsset] = useState("MCC-01 · Alimentador Norte");
+  const [workOrders, setWorkOrders] = useState<WorkOrder[]>(initialWorkOrders);
+  const [focusOrderId, setFocusOrderId] = useState<string | null>(null);
 
-  const navigate = (next: View) => { setView(next); setMenuOpen(false); };
+  const navigate = (next: View) => { setView(next); if (next !== "maintenance") setFocusOrderId(null); setMenuOpen(false); };
   const openChannelTrend = (id: string) => { setTrendSensorId(id); navigate("trends"); };
   const acknowledge = (id: string) => setAcknowledged((current) => current.includes(id) ? current : [...current, id]);
+  const openWorkOrderFromAlarm = (alarm: (typeof initialAlarms)[number], assignee: string) => {
+    const existing = workOrders.find((order) => order.sourceAlarmId === alarm.id);
+    if (existing) { setFocusOrderId(existing.id); navigate("maintenance"); return; }
+    const id = `OT-${Date.now().toString().slice(-9)}`;
+    const signal = alarm.detail.split(" · ")[0];
+    const order: WorkOrder = { id, title: `Atender ${alarm.title.toLowerCase()}`, source: `${signal} · Evento ${alarm.id}`, sourceAlarmId: alarm.id, due: alarm.severity === "critical" ? "Hoy · Prioritario" : alarm.severity === "warning" ? "Próximas 24 h" : "Sin programar", priority: alarm.severity === "critical" ? "Crítica" : alarm.severity === "warning" ? "Alta" : "Normal", assignee: assignee === "Sin asignar" ? "Paula Rojas" : assignee, status: "Pendiente" };
+    setWorkOrders((current) => [order, ...current]); setFocusOrderId(id); navigate("maintenance");
+  };
   const exportCsv = () => {
     const rows = ["canal,tipo,ubicacion,valor,unidad,estado", ...sensors.map((sensor) => [sensor.id, sensor.type, sensor.zone, sensor.value, sensor.unit, sensor.state].join(","))];
     const url = URL.createObjectURL(new Blob([rows.join("\n")], { type: "text/csv;charset=utf-8" }));
@@ -985,11 +999,11 @@ export default function Home() {
             {view === "cabinet" && <CabinetView onOpenTrend={openChannelTrend} />}
             {view === "diagnostics" && <DiagnosticsView />}
             {view === "trends" && <TrendsView period={period} setPeriod={setPeriod} selectedId={trendSensorId} onSelectChannel={setTrendSensorId} onBackToMap={() => navigate("cabinet")} />}
-            {view === "alarms" && <AlarmsView acknowledged={acknowledged} onAcknowledge={acknowledge} />}
+            {view === "alarms" && <AlarmsView acknowledged={acknowledged} onAcknowledge={acknowledge} workOrders={workOrders} onOpenWorkOrder={openWorkOrderFromAlarm} />}
             {view === "history" && <HistoryView />}
             {view === "assets" && <AssetsView />}
             {view === "reports" && <ReportsView />}
-            {view === "maintenance" && <MaintenanceView />}
+            {view === "maintenance" && <MaintenanceView orders={workOrders} setOrders={setWorkOrders} focusOrderId={focusOrderId} />}
             {view === "settings" && <SettingsView />}
             {view === "integrations" && <IntegrationsView />}
             {view === "users" && <UsersView />}
