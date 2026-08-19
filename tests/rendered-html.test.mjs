@@ -56,12 +56,16 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(page, /CAM5-GW-01/);
   assert.match(page, /Subestación Norte/);
   assert.match(page, /Modbus TCP/);
+  assert.match(page, /Mapa de registros Modbus/);
+  assert.match(page, /Offset base 0/);
+  assert.match(page, /Referencia visible versus offset del protocolo/);
   assert.doesNotMatch(page, /CAM5-GW-0[234]|Subestación Auxiliar|2 subestaciones/);
   assert.match(layout, /CAM5 CORE \| Gestión de Activos Críticos/);
   assert.match(css, /\.report-builder/);
   assert.match(css, /\.asset-management-layout/);
   assert.match(css, /\.maintenance-plan-grid/);
   assert.match(css, /\.integration-card-grid/);
+  assert.match(css, /\.register-map-table/);
   assert.doesNotMatch(page, /SkeletonPreview|codex-preview/);
   assert.doesNotMatch(layout, /SkeletonPreview|codex-preview/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
