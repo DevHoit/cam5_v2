@@ -8,6 +8,7 @@ import {
   IconBellRinging as BellRing,
   IconBolt as Zap,
   IconBuilding as Building2,
+  IconBuildingFactory2 as Factory,
   IconChevronDown as ChevronDown,
   IconChevronRight as ChevronRight,
   IconCircleCheck as CheckCircle2,
@@ -24,9 +25,11 @@ import {
   IconFileTypePdf as FileTypePdf,
   IconGauge as Gauge,
   IconHistory as History,
+  IconHierarchy3 as Hierarchy,
   IconKey as Key,
   IconLayoutDashboard as LayoutDashboard,
   IconMail as Mail,
+  IconMapPin as MapPin,
   IconMenu2 as Menu,
   IconPlugConnected as PlugConnected,
   IconPlus as Plus,
@@ -47,7 +50,7 @@ import {
   IconX as X,
 } from "@tabler/icons-react";
 
-type View = "overview" | "cabinet" | "trends" | "alarms" | "history" | "reports" | "maintenance" | "settings" | "integrations" | "users" | "notifications";
+type View = "overview" | "cabinet" | "trends" | "alarms" | "history" | "assets" | "reports" | "maintenance" | "settings" | "integrations" | "users" | "notifications";
 type Severity = "critical" | "warning" | "info";
 type SensorState = "normal" | "warning" | "critical";
 type HistoryTab = "measurements" | "alarms" | "audit";
@@ -114,6 +117,7 @@ const navGroups = [
     index: "03",
     label: "Gestión",
     items: [
+      { id: "assets" as View, label: "Activos y ubicaciones", description: "Jerarquía y cobertura", icon: Factory },
       { id: "reports" as View, label: "Reportes", description: "Informes y programación", icon: FileReport },
       { id: "maintenance" as View, label: "Mantenimiento", description: "Planes y órdenes", icon: Tool },
     ],
@@ -136,6 +140,7 @@ const viewTitles: Record<View, { title: string; description: string }> = {
   trends: { title: "Tendencias", description: "Evolución térmica, descarga parcial y humedad ambiental." },
   alarms: { title: "Centro de alertas", description: "Triage operativo, reconocimiento y trazabilidad de eventos." },
   history: { title: "Histórico", description: "Mediciones, alarmas y cambios administrativos en una sola trazabilidad." },
+  assets: { title: "Activos y ubicaciones", description: "Inventario técnico, jerarquía operacional y cobertura de instrumentación." },
   reports: { title: "Reportes", description: "Informes de condición, eventos y cumplimiento para operación y mantenimiento." },
   maintenance: { title: "Mantenimiento", description: "Plan preventivo y órdenes de trabajo priorizadas por condición." },
   settings: { title: "Configuración", description: "Parámetros del activo, canales de adquisición y comunicaciones." },
@@ -510,6 +515,61 @@ function HistoryView() {
   );
 }
 
+function AssetsView() {
+  type AssetState = "normal" | "warning" | "critical";
+  const [tab, setTab] = useState<"hierarchy" | "directory">("hierarchy");
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | AssetState>("all");
+  const [selectedId, setSelectedId] = useState("MCC-01");
+  const [showCreate, setShowCreate] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({ code: "", name: "", type: "Centro de control", site: "Subestación Norte", area: "Sala eléctrica A" });
+  const [assets, setAssets] = useState<Array<{ id: string; name: string; type: string; site: string; area: string; state: AssetState; configured: number; capacity: number; gateway: string; voltage: string; owner: string; updated: string }>>([
+    { id: "MCC-01", name: "Alimentador Norte", type: "Centro de control de motores", site: "Subestación Norte", area: "Sala eléctrica A", state: "critical", configured: 8, capacity: 24, gateway: "CAM5-GW-01", voltage: "13.8 kV", owner: "Paula Rojas", updated: "Hace 2 s" },
+    { id: "MCC-02", name: "Banco de condensadores", type: "Centro de control de motores", site: "Subestación Norte", area: "Sala eléctrica A", state: "normal", configured: 6, capacity: 12, gateway: "CAM5-GW-02", voltage: "13.8 kV", owner: "Felipe Soto", updated: "Hace 5 s" },
+    { id: "TR-01", name: "Transformador principal", type: "Transformador de potencia", site: "Subestación Norte", area: "Patio de transformación", state: "warning", configured: 12, capacity: 16, gateway: "CAM5-GW-03", voltage: "110 / 13.8 kV", owner: "Emerson Allende", updated: "Hace 4 s" },
+    { id: "SWG-01", name: "Switchgear servicios", type: "Celda de media tensión", site: "Subestación Auxiliar", area: "Sala eléctrica B", state: "normal", configured: 5, capacity: 8, gateway: "CAM5-GW-04", voltage: "4.16 kV", owner: "Felipe Soto", updated: "Hace 9 s" },
+    { id: "UPS-01", name: "Respaldo de control", type: "UPS industrial", site: "Subestación Auxiliar", area: "Sala de control", state: "normal", configured: 4, capacity: 6, gateway: "CAM5-GW-04", voltage: "480 V", owner: "Paula Rojas", updated: "Hace 11 s" },
+  ]);
+  const selected = assets.find((asset) => asset.id === selectedId) ?? assets[0];
+  const filtered = assets.filter((asset) => (statusFilter === "all" || asset.state === statusFilter) && `${asset.id} ${asset.name} ${asset.type} ${asset.site} ${asset.area}`.toLowerCase().includes(query.toLowerCase()));
+  const locations = ["Subestación Norte", "Subestación Auxiliar"];
+  const totalConfigured = assets.reduce((sum, asset) => sum + asset.configured, 0);
+  const totalCapacity = assets.reduce((sum, asset) => sum + asset.capacity, 0);
+  const coverage = selected.capacity ? Math.round((selected.configured / selected.capacity) * 100) : 0;
+  const selectedSensors = selected.id === "MCC-01" ? sensors : [];
+  const stateLabel = (state: AssetState) => state === "critical" ? "Crítico" : state === "warning" ? "Advertencia" : "Normal";
+  const createAsset = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!form.code.trim() || !form.name.trim()) return;
+    const next = { id: form.code.trim().toUpperCase(), name: form.name.trim(), type: form.type, site: form.site, area: form.area, state: "normal" as AssetState, configured: 0, capacity: 0, gateway: "Sin asignar", voltage: "Sin definir", owner: "Sin asignar", updated: "Nunca" };
+    setAssets((current) => [next, ...current]); setSelectedId(next.id); setTab("hierarchy"); setShowCreate(false); setForm({ code: "", name: "", type: "Centro de control", site: "Subestación Norte", area: "Sala eléctrica A" });
+  };
+  const updateSelected = (field: "name" | "area" | "gateway" | "owner" | "voltage", value: string) => setAssets((current) => current.map((asset) => asset.id === selected.id ? { ...asset, [field]: value } : asset));
+  const openAsset = (id: string) => { setSelectedId(id); setTab("hierarchy"); setEditing(false); };
+
+  return (
+    <>
+      <section className="module-summary-grid asset-inventory-summary">
+        <article><span className="module-summary-icon blue"><Factory size={19} /></span><div><small>Activos registrados</small><strong>{assets.length}</strong><span>2 ubicaciones operativas</span></div></article>
+        <article><span className="module-summary-icon amber"><AlertTriangle size={19} /></span><div><small>Atención requerida</small><strong>{assets.filter((asset) => asset.state !== "normal").length}</strong><span>1 crítico · 1 advertencia</span></div></article>
+        <article><span className="module-summary-icon green"><Activity size={19} /></span><div><small>Canales configurados</small><strong>{totalConfigured}</strong><span>de {totalCapacity} disponibles</span></div></article>
+      </section>
+
+      <article className="panel module-panel asset-inventory-module">
+        <div className="module-toolbar"><div className="module-tabs" role="tablist" aria-label="Secciones de activos"><button className={tab === "hierarchy" ? "active" : ""} onClick={() => setTab("hierarchy")}><Hierarchy size={16} /> Jerarquía</button><button className={tab === "directory" ? "active" : ""} onClick={() => setTab("directory")}><Database size={16} /> Directorio</button></div><button className="primary-button" onClick={() => setShowCreate((current) => !current)}><Plus size={16} /> {showCreate ? "Cancelar" : "Nuevo activo"}</button></div>
+
+        {showCreate && <form className="asset-create-form" onSubmit={createAsset}><label><span>Código</span><input required value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value })} placeholder="Ej.: MCC-03" /></label><label><span>Nombre</span><input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Descripción operacional" /></label><label><span>Tipo</span><select value={form.type} onChange={(event) => setForm({ ...form, type: event.target.value })}><option>Centro de control</option><option>Transformador de potencia</option><option>Celda de media tensión</option><option>UPS industrial</option></select></label><label><span>Ubicación</span><select value={form.site} onChange={(event) => setForm({ ...form, site: event.target.value, area: event.target.value === "Subestación Norte" ? "Sala eléctrica A" : "Sala eléctrica B" })}><option>Subestación Norte</option><option>Subestación Auxiliar</option></select></label><button type="submit"><Plus size={15} /> Registrar</button></form>}
+
+        {tab === "hierarchy" && <div className="asset-management-layout"><aside className="asset-tree"><div className="asset-tree-head"><span className="asset-tree-icon"><Factory size={20} /></span><div><span className="eyebrow">Complejo Industrial Norte</span><strong>Jerarquía operacional</strong></div></div><div className="asset-tree-content">{locations.map((location) => <section key={location}><div className="tree-location"><span><Building2 size={17} /></span><div><strong>{location}</strong><small>{assets.filter((asset) => asset.site === location).length} activos</small></div></div><div className="tree-assets">{assets.filter((asset) => asset.site === location).map((asset) => <button key={asset.id} className={selected.id === asset.id ? "selected" : ""} onClick={() => openAsset(asset.id)}><span className={`tree-state state-${asset.state}`} /><span><strong>{asset.id}</strong><small>{asset.name}</small></span><ChevronRight size={15} /></button>)}</div></section>)}</div><div className="asset-tree-footer"><MapPin size={15} /><span>2 subestaciones · {assets.length} activos</span></div></aside><section className="asset-detail"><div className="asset-detail-header"><span className={`asset-detail-icon state-${selected.state}`}><CircuitBoard size={23} /></span><div><span className="eyebrow">Activo seleccionado · {selected.id}</span><h2>{selected.name}</h2><p><MapPin size={14} /> {selected.site} · {selected.area}</p></div><StatusPill state={selected.state}>{stateLabel(selected.state)}</StatusPill></div><div className="asset-detail-actions"><span>Ficha actualizada {selected.updated}</span><button className="secondary-button" onClick={() => setEditing((current) => !current)}>{editing ? <><CheckCircle2 size={15} /> Finalizar edición</> : <><Settings size={15} /> Editar ficha</>}</button></div>{editing ? <div className="asset-edit-grid"><label><span>Nombre operacional</span><input value={selected.name} onChange={(event) => updateSelected("name", event.target.value)} /></label><label><span>Área</span><input value={selected.area} onChange={(event) => updateSelected("area", event.target.value)} /></label><label><span>Gateway</span><input value={selected.gateway} onChange={(event) => updateSelected("gateway", event.target.value)} /></label><label><span>Responsable</span><select value={selected.owner} onChange={(event) => updateSelected("owner", event.target.value)}><option>Sin asignar</option><option>Emerson Allende</option><option>Paula Rojas</option><option>Felipe Soto</option></select></label><label><span>Tensión nominal</span><input value={selected.voltage} onChange={(event) => updateSelected("voltage", event.target.value)} /></label></div> : <dl className="asset-facts"><div><dt>Tipo</dt><dd>{selected.type}</dd></div><div><dt>Tensión nominal</dt><dd>{selected.voltage}</dd></div><div><dt>Gateway</dt><dd>{selected.gateway}</dd></div><div><dt>Responsable</dt><dd>{selected.owner}</dd></div></dl>}<div className="asset-detail-grid"><section className="asset-coverage-card"><div><span className="eyebrow">Cobertura de instrumentación</span><strong>{coverage}%</strong></div><p>{selected.capacity ? `${selected.configured} canales configurados de ${selected.capacity} disponibles.` : "Activo nuevo sin capacidad de instrumentación definida."}</p><span className="asset-coverage-bar"><i style={{ width: `${coverage}%` }} /></span><dl><div><dt>Temperatura</dt><dd>{selected.id === "MCC-01" ? "5 canales" : "Configuración base"}</dd></div><div><dt>Descarga parcial</dt><dd>{selected.id === "MCC-01" ? "2 canales" : "No configurada"}</dd></div><div><dt>Ambiental</dt><dd>{selected.id === "MCC-01" ? "1 canal" : "No configurada"}</dd></div></dl></section><section className={`asset-condition-card condition-${selected.state}`}><span className="eyebrow">Condición actual</span><div><AlertTriangle size={20} /><strong>{stateLabel(selected.state)}</strong></div><p>{selected.state === "critical" ? "Descarga parcial acelerada en el compartimiento de cables. Requiere diagnóstico priorizado." : selected.state === "warning" ? "Existen variables sobre nivel preventivo. Mantener seguimiento de tendencia." : "No se observan condiciones fuera de los límites definidos."}</p><button onClick={() => openAsset(selected.id)}>{selected.state === "normal" ? "Revisar cobertura" : "Revisar hallazgos"} <ChevronRight size={15} /></button></section></div><div className="asset-channel-preview"><div className="report-library-head"><div><span className="eyebrow">Instrumentación</span><h2>Canales asociados</h2></div><span>{selectedSensors.length || selected.configured} canales</span></div>{selectedSensors.length ? <div className="asset-channel-grid">{selectedSensors.map((sensor) => <span key={sensor.id}><b className={`sensor-code sensor-${sensor.state}`}>{sensor.id}</b><span><strong>{sensor.label}</strong><small>{sensor.value} {sensor.unit} · {sensor.quality}</small></span></span>)}</div> : <div className="asset-empty-state"><Activity size={22} /><div><strong>Instrumentación sin detalle demostrativo</strong><p>La ficha está creada, pero sus canales se definirán desde Configuración.</p></div></div>}</div></section></div>}
+
+        {tab === "directory" && <div className="asset-directory"><div className="asset-directory-toolbar"><label className="search-field"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar código, nombre, tipo o ubicación…" /></label><label className="status-filter"><span>Condición</span><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}><option value="all">Todas</option><option value="normal">Normal</option><option value="warning">Advertencia</option><option value="critical">Crítico</option></select><ChevronDown size={13} /></label></div><div className="module-table-wrap"><div className="asset-directory-table"><div className="module-table-head"><span>Activo</span><span>Tipo</span><span>Ubicación</span><span>Cobertura</span><span>Gateway</span><span>Condición</span><span>Acción</span></div>{filtered.map((asset) => <div className="module-table-row" key={asset.id}><span className="asset-directory-name"><b><CircuitBoard size={17} /></b><span><strong>{asset.id}</strong><small>{asset.name}</small></span></span><span>{asset.type}</span><span>{asset.site}<small>{asset.area}</small></span><span>{asset.configured} / {asset.capacity || "—"} canales</span><span className="mono-cell">{asset.gateway}</span><span><StatusPill state={asset.state}>{stateLabel(asset.state)}</StatusPill></span><span><button className="ghost-button" onClick={() => openAsset(asset.id)}>Abrir ficha</button></span></div>)}</div></div></div>}
+        <div className="module-footer"><span><ShieldCheck size={14} /> Inventario con trazabilidad de cambios.</span><small>Datos demostrativos · pendiente de persistencia central.</small></div>
+      </article>
+    </>
+  );
+}
+
 function ReportsView() {
   const templates = [
     { id: "condition", name: "Condición del activo", detail: "Salud general, hallazgos y recomendación técnica", icon: "condition", accent: "blue" },
@@ -843,12 +903,13 @@ export default function Home() {
 
         <div className="content-scroll">
           <div className="page-content">
-            <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> Gestión de activos críticos</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{view !== "settings" && view !== "integrations" && view !== "users" && view !== "notifications" && view !== "reports" && view !== "maintenance" && <button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button>}<button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{3 - acknowledged.length} alertas abiertas</button></div></section>
+            <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> Gestión de activos críticos</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{view !== "assets" && view !== "settings" && view !== "integrations" && view !== "users" && view !== "notifications" && view !== "reports" && view !== "maintenance" && <button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button>}<button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{3 - acknowledged.length} alertas abiertas</button></div></section>
             {view === "overview" && <Overview onNavigate={navigate} onAcknowledge={acknowledge} acknowledged={acknowledged} />}
             {view === "cabinet" && <CabinetView onOpenTrend={openChannelTrend} />}
             {view === "trends" && <TrendsView period={period} setPeriod={setPeriod} selectedId={trendSensorId} onSelectChannel={setTrendSensorId} onBackToMap={() => navigate("cabinet")} />}
             {view === "alarms" && <AlarmsView acknowledged={acknowledged} onAcknowledge={acknowledge} />}
             {view === "history" && <HistoryView />}
+            {view === "assets" && <AssetsView />}
             {view === "reports" && <ReportsView />}
             {view === "maintenance" && <MaintenanceView />}
             {view === "settings" && <SettingsView />}
