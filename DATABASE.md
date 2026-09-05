@@ -102,7 +102,7 @@ El host `192.168.10.42` del seed es provisional. Debe reemplazarse por la direcc
 - Sesiones de 12 horas almacenadas en `auth_sessions`, con sitio activo persistido; el navegador recibe solo un token aleatorio en una cookie `HttpOnly`, `SameSite=Strict` y `Secure` en producción.
 - Logout con revocación inmediata de la sesión.
 - Administración de usuarios protegida por `users.manage`, con acceso multi-sitio, búsqueda y paginación del lado del servidor.
-- API de jerarquía para clientes, sitios, puntos de medición, gateways y controladores, con validación de pertenencia al sitio.
+- API de jerarquía para crear, editar, desactivar, reactivar y eliminar de forma segura clientes, sitios, puntos de medición, gateways y controladores, con validación de pertenencia, dependencias y auditoría.
 - Histórico protegido y paginado con filtros `from`, `to`, `q` y `channel`.
 - Auditoría de inicio de sesión, creación, edición y eliminación de usuarios.
 
@@ -119,4 +119,5 @@ El host `192.168.10.42` del seed es provisional. Debe reemplazarse por la direcc
 - `drizzle/0001_eager_blockbuster.sql`: clientes, sitio activo y consistencia de la cadena OT.
 - `drizzle/0002_sparkling_wallow.sql`: membresías de usuario por cliente.
 - `drizzle/0003_rich_charles_xavier.sql`: credenciales del gateway y muestras de los 105 registros CAM5.
+- `drizzle/0004_windy_gauntlet.sql`: estado activo reversible para puntos, gateways y controladores.
 - `tests/database-schema.test.mjs`: prueba en PostgreSQL embebido.

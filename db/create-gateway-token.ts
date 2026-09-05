@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { pathToFileURL } from "node:url";
 import { createGatewayToken, gatewayTokenDisplayPrefix, hashGatewayToken } from "./gateway-auth";
 import { closeDb, getDb } from "./index";
@@ -10,7 +10,7 @@ export async function provisionGatewayToken(gatewayCode: string, name = "Token d
   if (!Number.isInteger(validityDays) || validityDays < 1 || validityDays > 1825) throw new Error("La vigencia debe estar entre 1 y 1825 días.");
   const db = getDb();
   const matches = await db.select({ id: gateways.id, code: gateways.code, name: gateways.name }).from(gateways)
-    .where(eq(gateways.code, gatewayCode.trim().toUpperCase())).limit(2);
+    .where(and(eq(gateways.code, gatewayCode.trim().toUpperCase()), eq(gateways.active, true))).limit(2);
   if (!matches.length) throw new Error(`No existe el gateway ${gatewayCode}.`);
   if (matches.length > 1) throw new Error(`El código ${gatewayCode} existe en varios sitios; utiliza un código de gateway globalmente distinguible.`);
   const token = createGatewayToken();

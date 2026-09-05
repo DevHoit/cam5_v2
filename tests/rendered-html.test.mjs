@@ -53,6 +53,9 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(page, /portal-notice/);
   assert.match(page, /Estructura operacional/);
   assert.match(page, /Clientes, sitios y medición/);
+  assert.match(page, /Administración operacional/);
+  assert.match(page, /Eliminar definitivamente/);
+  assert.match(page, /Elemento activo/);
   assert.match(page, /\/api\/v1\/hierarchy/);
   assert.match(page, /\/api\/v1\/auth\/context/);
   assert.match(page, /function useSensorData/);

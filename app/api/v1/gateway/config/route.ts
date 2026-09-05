@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
-import { eq } from "drizzle-orm";
-import { devices, readingProfileRanges, readingProfiles, registerDefinitions } from "../../../../../db/schema";
+import { and, eq } from "drizzle-orm";
+import { assets, devices, readingProfileRanges, readingProfiles, registerDefinitions } from "../../../../../db/schema";
 import { apiErrorResponse } from "../../_lib/auth";
 import { requireGatewayCredential } from "../_lib/auth";
 
@@ -9,7 +9,11 @@ export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest) {
   try {
     const { db, credential } = await requireGatewayCredential(request);
-    const deviceRows = await db.select().from(devices).where(eq(devices.gatewayId, credential.gatewayId)).orderBy(devices.unitId);
+    const deviceRows = await db.select({ device: devices }).from(devices)
+      .innerJoin(assets, eq(assets.id, devices.assetId))
+      .where(and(eq(devices.gatewayId, credential.gatewayId), eq(devices.active, true), eq(assets.active, true)))
+      .orderBy(devices.unitId)
+      .then((rows) => rows.map((row) => row.device));
     const payloadDevices = await Promise.all(deviceRows.map(async (device) => {
       const [ranges, registers] = await Promise.all([
         device.readingProfileId ? db.select({

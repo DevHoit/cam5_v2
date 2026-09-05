@@ -52,7 +52,7 @@ const expectedTables = [
 test("applies the CAM5 PostgreSQL migration with access profiles and telemetry constraints", async () => {
   const database = new PGlite();
   try {
-    for (const filename of ["0000_cam5_initial_schema.sql", "0001_eager_blockbuster.sql", "0002_sparkling_wallow.sql", "0003_rich_charles_xavier.sql"]) {
+    for (const filename of ["0000_cam5_initial_schema.sql", "0001_eager_blockbuster.sql", "0002_sparkling_wallow.sql", "0003_rich_charles_xavier.sql", "0004_windy_gauntlet.sql"]) {
       const migration = await readFile(new URL(`../drizzle/${filename}`, import.meta.url), "utf8");
       await database.exec(migration.replaceAll("--> statement-breakpoint", ""));
     }
@@ -91,6 +91,15 @@ test("applies the CAM5 PostgreSQL migration with access profiles and telemetry c
       where table_schema = 'public' and table_name = 'sites' and column_name = 'client_id'
     `);
     assert.equal(siteColumns.rows[0]?.is_nullable, "NO");
+
+    const operationalActiveColumns = await database.query(`
+      select table_name
+      from information_schema.columns
+      where table_schema = 'public' and column_name = 'active'
+        and table_name in ('assets', 'gateways', 'devices')
+      order by table_name
+    `);
+    assert.deepEqual(operationalActiveColumns.rows.map((row) => row.table_name), ["assets", "devices", "gateways"]);
   } finally {
     await database.close();
   }

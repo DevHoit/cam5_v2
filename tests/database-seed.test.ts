@@ -14,7 +14,7 @@ import * as schema from "../db/schema";
 test("seeds the initial CAM5 installation and remains idempotent", async () => {
   const client = new PGlite();
   try {
-    for (const filename of ["0000_cam5_initial_schema.sql", "0001_eager_blockbuster.sql", "0002_sparkling_wallow.sql", "0003_rich_charles_xavier.sql"]) {
+    for (const filename of ["0000_cam5_initial_schema.sql", "0001_eager_blockbuster.sql", "0002_sparkling_wallow.sql", "0003_rich_charles_xavier.sql", "0004_windy_gauntlet.sql"]) {
       const migration = await readFile(new URL(`../drizzle/${filename}`, import.meta.url), "utf8");
       await client.exec(migration.replaceAll("--> statement-breakpoint", ""));
     }
@@ -80,6 +80,10 @@ test("seeds the initial CAM5 installation and remains idempotent", async () => {
     assert.equal(switchedSession?.clientName, "Segundo cliente");
     assert.equal(switchedSession?.siteName, "Segundo sitio");
     assert.equal(switchedSession?.sites.length, 2);
+    await db.update(schema.sites).set({ active: false }).where(eq(schema.sites.id, secondSite.id));
+    const fallbackSession = await resolvePortalSession(seedDb, session.token);
+    assert.equal(fallbackSession?.siteName, "Subestación Norte");
+    assert.equal(fallbackSession?.sites.length, 1);
     await revokePortalSession(seedDb, session.token);
     assert.equal(await resolvePortalSession(seedDb, session.token), null);
 

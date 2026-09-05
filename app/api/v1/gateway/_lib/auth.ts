@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { and, eq, gt, isNull, or } from "drizzle-orm";
 import { hashGatewayToken } from "../../../../../db/gateway-auth";
 import { getDb } from "../../../../../db/index";
-import { gatewayApiCredentials, gateways } from "../../../../../db/schema";
+import { clients, gatewayApiCredentials, gateways, sites } from "../../../../../db/schema";
 import { ApiError } from "../../_lib/auth";
 
 export async function requireGatewayCredential(request: NextRequest) {
@@ -22,8 +22,13 @@ export async function requireGatewayCredential(request: NextRequest) {
     siteId: gateways.siteId,
   }).from(gatewayApiCredentials)
     .innerJoin(gateways, eq(gateways.id, gatewayApiCredentials.gatewayId))
+    .innerJoin(sites, eq(sites.id, gateways.siteId))
+    .innerJoin(clients, eq(clients.id, sites.clientId))
     .where(and(
       eq(gatewayApiCredentials.tokenHash, hashGatewayToken(token)),
+      eq(gateways.active, true),
+      eq(sites.active, true),
+      eq(clients.active, true),
       isNull(gatewayApiCredentials.revokedAt),
       or(isNull(gatewayApiCredentials.expiresAt), gt(gatewayApiCredentials.expiresAt, now)),
     ))

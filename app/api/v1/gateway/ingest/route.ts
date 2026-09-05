@@ -163,10 +163,14 @@ export async function POST(request: NextRequest) {
       assetId: devices.assetId,
       modelId: devices.modelId,
       code: devices.code,
-    }).from(devices).where(and(
+    }).from(devices)
+      .innerJoin(assets, eq(assets.id, devices.assetId))
+      .where(and(
       eq(devices.gatewayId, credential.gatewayId),
       eq(devices.code, payload.device.code),
       eq(devices.unitId, payload.device.unitId),
+      eq(devices.active, true),
+      eq(assets.active, true),
     )).limit(1);
     if (!device) throw new ApiError(404, "El controlador no está registrado para este gateway y Unit ID.");
 

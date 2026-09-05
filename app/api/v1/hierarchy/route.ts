@@ -1,17 +1,21 @@
 import type { NextRequest } from "next/server";
-import { and, count, eq, inArray } from "drizzle-orm";
+import { and, count, desc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 import {
+  alarms,
   assets,
   auditLogs,
   clients,
   deviceModels,
   devices,
+  gatewayApiCredentials,
   gateways,
+  ingestionBatches,
   readingProfiles,
   roles,
   sites,
   userClientAssignments,
   userRoleAssignments,
+  workOrders,
 } from "../../../../db/schema";
 import { apiErrorResponse, ApiError, requestMetadata, requireApiSession } from "../_lib/auth";
 
@@ -48,14 +52,36 @@ function parseResource(body: Record<string, unknown>) {
 export async function GET(request: NextRequest) {
   try {
     const { db, user } = await requireApiSession(request, "assets.read");
-    const siteIds = user.sites.map((site) => site.id);
-    const [clientRows, pointCounts, gatewayCounts, controllerCounts, pointRows, gatewayRows, controllerRows] = await Promise.all([
-      db.select({ id: clients.id, code: clients.code, name: clients.name, roleKey: roles.key, roleName: roles.name })
+    const now = new Date();
+    const [clientRows, siteMembershipRows] = await Promise.all([
+      db.select({ id: clients.id, code: clients.code, name: clients.name, legalName: clients.legalName, taxId: clients.taxId, contactEmail: clients.contactEmail, active: clients.active, roleKey: roles.key, roleName: roles.name })
         .from(userClientAssignments)
         .innerJoin(clients, eq(clients.id, userClientAssignments.clientId))
         .innerJoin(roles, eq(roles.id, userClientAssignments.roleId))
-        .where(and(eq(userClientAssignments.userId, user.id), eq(clients.active, true)))
+        .where(eq(userClientAssignments.userId, user.id))
         .orderBy(clients.name),
+      db.select({
+        id: sites.id,
+        code: sites.code,
+        name: sites.name,
+        description: sites.description,
+        timezone: sites.timezone,
+        active: sites.active,
+        clientId: clients.id,
+        clientCode: clients.code,
+        clientName: clients.name,
+        roleKey: roles.key,
+        roleName: roles.name,
+      }).from(userRoleAssignments)
+        .innerJoin(roles, eq(roles.id, userRoleAssignments.roleId))
+        .innerJoin(sites, eq(sites.id, userRoleAssignments.siteId))
+        .innerJoin(clients, eq(clients.id, sites.clientId))
+        .where(and(eq(userRoleAssignments.userId, user.id), or(isNull(userRoleAssignments.expiresAt), gt(userRoleAssignments.expiresAt, now))))
+        .orderBy(sites.name, desc(sql<number>`case ${roles.key} when 'administrator' then 4 when 'engineer' then 3 when 'operator' then 2 else 1 end`)),
+    ]);
+    const managedSites = siteMembershipRows.filter((site, index, rows) => rows.findIndex((candidate) => candidate.id === site.id) === index);
+    const siteIds = managedSites.map((site) => site.id);
+    const [pointCounts, gatewayCounts, controllerCounts, pointRows, gatewayRows, controllerRows] = await Promise.all([
       db.select({ siteId: assets.siteId, value: count() }).from(assets).where(inArray(assets.siteId, siteIds)).groupBy(assets.siteId),
       db.select({ siteId: gateways.siteId, value: count() }).from(gateways).where(inArray(gateways.siteId, siteIds)).groupBy(gateways.siteId),
       db.select({ siteId: assets.siteId, value: count() }).from(devices).innerJoin(assets, eq(assets.id, devices.assetId)).where(inArray(assets.siteId, siteIds)).groupBy(assets.siteId),
@@ -68,6 +94,7 @@ export async function GET(request: NextRequest) {
         type: assets.assetType,
         nominalVoltageKv: assets.nominalVoltageKv,
         state: assets.state,
+        active: assets.active,
       }).from(assets).where(eq(assets.siteId, user.siteId)).orderBy(assets.code),
       db.select({
         id: gateways.id,
@@ -77,6 +104,7 @@ export async function GET(request: NextRequest) {
         serialNumber: gateways.serialNumber,
         softwareVersion: gateways.softwareVersion,
         state: gateways.state,
+        active: gateways.active,
         lastSeenAt: gateways.lastSeenAt,
         ipAddress: gateways.ipAddress,
       }).from(gateways).where(eq(gateways.siteId, user.siteId)).orderBy(gateways.code),
@@ -89,6 +117,7 @@ export async function GET(request: NextRequest) {
         model: deviceModels.name,
         serialNumber: devices.serialNumber,
         state: devices.state,
+        active: devices.active,
         protocol: devices.protocol,
         host: devices.host,
         port: devices.port,
@@ -112,15 +141,8 @@ export async function GET(request: NextRequest) {
         siteName: user.siteName,
       },
       clients: clientRows,
-      sites: user.sites.map((site) => ({
-        id: site.id,
-        code: site.code,
-        name: site.name,
-        clientId: site.clientId,
-        clientCode: site.clientCode,
-        clientName: site.clientName,
-        roleKey: site.roleKey,
-        roleName: site.roleName,
+      sites: managedSites.map((site) => ({
+        ...site,
         pointCount: countFor(pointCounts, site.id),
         gatewayCount: countFor(gatewayCounts, site.id),
         controllerCount: countFor(controllerCounts, site.id),
@@ -164,7 +186,8 @@ export async function POST(request: NextRequest) {
         requirePermission(user.permissions, "users.manage");
         const clientId = textField(body, "clientId", "El cliente");
         const [membership] = await tx.select({ id: userClientAssignments.id }).from(userClientAssignments)
-          .where(and(eq(userClientAssignments.userId, user.id), eq(userClientAssignments.clientId, clientId))).limit(1);
+          .innerJoin(clients, eq(clients.id, userClientAssignments.clientId))
+          .where(and(eq(userClientAssignments.userId, user.id), eq(userClientAssignments.clientId, clientId), eq(clients.active, true))).limit(1);
         if (!membership) throw new ApiError(403, "No tienes acceso al cliente indicado.");
         const [row] = await tx.insert(sites).values({
           clientId,
@@ -210,8 +233,8 @@ export async function POST(request: NextRequest) {
         const pointId = textField(body, "pointId", "El punto de medición");
         const gatewayId = textField(body, "gatewayId", "El gateway");
         const [[point], [gateway], [model], [profile]] = await Promise.all([
-          tx.select({ id: assets.id, siteId: assets.siteId }).from(assets).where(eq(assets.id, pointId)).limit(1),
-          tx.select({ id: gateways.id, siteId: gateways.siteId }).from(gateways).where(eq(gateways.id, gatewayId)).limit(1),
+          tx.select({ id: assets.id, siteId: assets.siteId }).from(assets).where(and(eq(assets.id, pointId), eq(assets.active, true))).limit(1),
+          tx.select({ id: gateways.id, siteId: gateways.siteId }).from(gateways).where(and(eq(gateways.id, gatewayId), eq(gateways.active, true))).limit(1),
           tx.select({ id: deviceModels.id }).from(deviceModels).where(eq(deviceModels.code, "CAM5-TPH-XDCW")).limit(1),
           tx.select({ id: readingProfiles.id }).from(readingProfiles).where(eq(readingProfiles.key, "cam5-balanced-v1")).limit(1),
         ]);
@@ -270,20 +293,26 @@ export async function PATCH(request: NextRequest) {
         const [membership] = await tx.select({ id: userClientAssignments.id }).from(userClientAssignments)
           .where(and(eq(userClientAssignments.userId, user.id), eq(userClientAssignments.clientId, id))).limit(1);
         if (!membership) throw new ApiError(403, "No tienes acceso al cliente indicado.");
+        if (body.active === false && id === user.clientId) throw new ApiError(409, "Cambia primero a otro cliente antes de desactivar el contexto activo.");
         [record] = await tx.update(clients).set({
           ...(typeof body.name === "string" ? { name: textField(body, "name", "El nombre") } : {}),
           ...(typeof body.legalName === "string" ? { legalName: optionalText(body, "legalName") } : {}),
           ...(typeof body.taxId === "string" ? { taxId: optionalText(body, "taxId") } : {}),
           ...(typeof body.contactEmail === "string" ? { contactEmail: optionalText(body, "contactEmail") } : {}),
+          ...(typeof body.active === "boolean" ? { active: body.active } : {}),
           updatedAt: new Date(),
         }).where(eq(clients.id, id)).returning();
       } else if (resource === "site") {
         requirePermission(user.permissions, "users.manage");
-        assertSiteAccess(siteIds, id);
+        const [membership] = await tx.select({ id: userRoleAssignments.id }).from(userRoleAssignments)
+          .where(and(eq(userRoleAssignments.userId, user.id), eq(userRoleAssignments.siteId, id), or(isNull(userRoleAssignments.expiresAt), gt(userRoleAssignments.expiresAt, new Date())))).limit(1);
+        if (!membership) throw new ApiError(403, "No tienes acceso al sitio indicado.");
+        if (body.active === false && id === user.siteId) throw new ApiError(409, "Cambia primero a otro sitio antes de desactivar el contexto activo.");
         [record] = await tx.update(sites).set({
           ...(typeof body.name === "string" ? { name: textField(body, "name", "El nombre") } : {}),
           ...(typeof body.description === "string" ? { description: optionalText(body, "description") } : {}),
           ...(typeof body.timezone === "string" ? { timezone: textField(body, "timezone", "La zona horaria") } : {}),
+          ...(typeof body.active === "boolean" ? { active: body.active } : {}),
           updatedAt: new Date(),
         }).where(eq(sites.id, id)).returning();
       } else if (resource === "point") {
@@ -294,7 +323,8 @@ export async function PATCH(request: NextRequest) {
         [record] = await tx.update(assets).set({
           ...(typeof body.name === "string" ? { name: textField(body, "name", "El nombre") } : {}),
           ...(typeof body.area === "string" ? { area: optionalText(body, "area") } : {}),
-          ...(typeof body.nominalVoltageKv === "number" ? { nominalVoltageKv: String(body.nominalVoltageKv) } : {}),
+          ...(typeof body.nominalVoltageKv === "number" || body.nominalVoltageKv === null ? { nominalVoltageKv: body.nominalVoltageKv === null ? null : String(body.nominalVoltageKv) } : {}),
+          ...(typeof body.active === "boolean" ? { active: body.active, state: body.active ? "offline" : "maintenance" } : {}),
           updatedAt: new Date(),
         }).where(eq(assets.id, id)).returning();
       } else if (resource === "gateway") {
@@ -306,6 +336,7 @@ export async function PATCH(request: NextRequest) {
           ...(typeof body.name === "string" ? { name: textField(body, "name", "El nombre") } : {}),
           ...(typeof body.ipAddress === "string" ? { ipAddress: optionalText(body, "ipAddress") } : {}),
           ...(typeof body.serialNumber === "string" ? { serialNumber: optionalText(body, "serialNumber") } : {}),
+          ...(typeof body.active === "boolean" ? { active: body.active, state: body.active ? "pending" : "offline" } : {}),
           updatedAt: new Date(),
         }).where(eq(gateways.id, id)).returning();
       } else {
@@ -318,6 +349,7 @@ export async function PATCH(request: NextRequest) {
           ...(typeof body.host === "string" ? { host: textField(body, "host", "La dirección del controlador") } : {}),
           ...(typeof body.port === "number" ? { port: body.port } : {}),
           ...(typeof body.unitId === "number" ? { unitId: body.unitId } : {}),
+          ...(typeof body.active === "boolean" ? { active: body.active, state: body.active ? "commissioning" : "decommissioned" } : {}),
           updatedAt: new Date(),
         }).where(eq(devices.id, id)).returning();
       }
@@ -335,6 +367,89 @@ export async function PATCH(request: NextRequest) {
       return record;
     });
     return Response.json({ item: updated }, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    return apiErrorResponse(error);
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const { db, user } = await requireApiSession(request);
+    const body = await request.json().catch(() => null) as Record<string, unknown> | null;
+    if (!body) throw new ApiError(400, "No se recibió el elemento a eliminar.");
+    const resource = parseResource(body);
+    const id = textField(body, "id", "El identificador");
+    const metadata = requestMetadata(request);
+    const siteIds = user.sites.map((site) => site.id);
+
+    await db.transaction(async (tx) => {
+      let record: Record<string, unknown> | undefined;
+      if (resource === "client") {
+        requirePermission(user.permissions, "users.manage");
+        const [membership] = await tx.select({ id: userClientAssignments.id }).from(userClientAssignments)
+          .where(and(eq(userClientAssignments.userId, user.id), eq(userClientAssignments.clientId, id))).limit(1);
+        if (!membership) throw new ApiError(403, "No tienes acceso al cliente indicado.");
+        const [dependencies] = await tx.select({ value: count() }).from(sites).where(eq(sites.clientId, id));
+        if (Number(dependencies.value)) throw new ApiError(409, "El cliente conserva sitios. Desactívalo o elimina primero sus sitios vacíos.");
+        [record] = await tx.delete(clients).where(eq(clients.id, id)).returning();
+      } else if (resource === "site") {
+        requirePermission(user.permissions, "users.manage");
+        if (id === user.siteId) throw new ApiError(409, "Cambia primero a otro sitio antes de eliminar el contexto activo.");
+        const [membership] = await tx.select({ id: userRoleAssignments.id }).from(userRoleAssignments)
+          .where(and(eq(userRoleAssignments.userId, user.id), eq(userRoleAssignments.siteId, id), or(isNull(userRoleAssignments.expiresAt), gt(userRoleAssignments.expiresAt, new Date())))).limit(1);
+        if (!membership) throw new ApiError(403, "No tienes acceso al sitio indicado.");
+        const [[pointCount], [gatewayCount], [auditCount]] = await Promise.all([
+          tx.select({ value: count() }).from(assets).where(eq(assets.siteId, id)),
+          tx.select({ value: count() }).from(gateways).where(eq(gateways.siteId, id)),
+          tx.select({ value: count() }).from(auditLogs).where(eq(auditLogs.siteId, id)),
+        ]);
+        if (Number(pointCount.value) || Number(gatewayCount.value) || Number(auditCount.value)) throw new ApiError(409, "El sitio conserva puntos, gateways o auditoría. Desactívalo para preservar su trazabilidad.");
+        [record] = await tx.delete(sites).where(eq(sites.id, id)).returning();
+      } else if (resource === "point") {
+        requirePermission(user.permissions, "assets.write");
+        const [current] = await tx.select().from(assets).where(eq(assets.id, id)).limit(1);
+        if (!current) throw new ApiError(404, "El punto de medición no existe.");
+        assertSiteAccess(siteIds, current.siteId);
+        const [[deviceCount], [alarmCount], [orderCount]] = await Promise.all([
+          tx.select({ value: count() }).from(devices).where(eq(devices.assetId, id)),
+          tx.select({ value: count() }).from(alarms).where(eq(alarms.assetId, id)),
+          tx.select({ value: count() }).from(workOrders).where(eq(workOrders.assetId, id)),
+        ]);
+        if (Number(deviceCount.value) || Number(alarmCount.value) || Number(orderCount.value)) throw new ApiError(409, "El punto conserva controladores, alarmas u órdenes. Desactívalo para preservar su trazabilidad.");
+        [record] = await tx.delete(assets).where(eq(assets.id, id)).returning();
+      } else if (resource === "gateway") {
+        requirePermission(user.permissions, "settings.write");
+        const [current] = await tx.select().from(gateways).where(eq(gateways.id, id)).limit(1);
+        if (!current) throw new ApiError(404, "El gateway no existe.");
+        assertSiteAccess(siteIds, current.siteId);
+        const [[deviceCount], [credentialCount]] = await Promise.all([
+          tx.select({ value: count() }).from(devices).where(eq(devices.gatewayId, id)),
+          tx.select({ value: count() }).from(gatewayApiCredentials).where(eq(gatewayApiCredentials.gatewayId, id)),
+        ]);
+        if (Number(deviceCount.value) || Number(credentialCount.value)) throw new ApiError(409, "El gateway conserva controladores o credenciales. Desactívalo para preservar la comunicación y auditoría.");
+        [record] = await tx.delete(gateways).where(eq(gateways.id, id)).returning();
+      } else {
+        requirePermission(user.permissions, "settings.write");
+        const [current] = await tx.select({ id: devices.id, siteId: assets.siteId }).from(devices).innerJoin(assets, eq(assets.id, devices.assetId)).where(eq(devices.id, id)).limit(1);
+        if (!current) throw new ApiError(404, "El controlador no existe.");
+        assertSiteAccess(siteIds, current.siteId);
+        const [historyCount] = await tx.select({ value: count() }).from(ingestionBatches).where(eq(ingestionBatches.deviceId, id));
+        if (Number(historyCount.value)) throw new ApiError(409, "El controlador conserva telemetría. Desactívalo para mantener el histórico.");
+        [record] = await tx.delete(devices).where(eq(devices.id, id)).returning();
+      }
+      if (!record) throw new ApiError(404, "El elemento no existe.");
+      await tx.insert(auditLogs).values({
+        siteId: user.siteId,
+        actorUserId: user.id,
+        action: `hierarchy.${resource}.delete`,
+        resourceType: resource,
+        resourceId: id,
+        ipAddress: metadata.ipAddress,
+        userAgent: metadata.userAgent,
+        before: record,
+      });
+    });
+    return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return apiErrorResponse(error);
   }

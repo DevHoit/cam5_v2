@@ -19,8 +19,8 @@ export async function GET(request: NextRequest) {
     const { db, user } = await requireApiSession(request, "condition.read");
     const requestedPointId = request.nextUrl.searchParams.get("pointId");
     const [point] = requestedPointId
-      ? await db.select().from(assets).where(and(eq(assets.id, requestedPointId), eq(assets.siteId, user.siteId))).limit(1)
-      : await db.select().from(assets).where(eq(assets.siteId, user.siteId)).orderBy(assets.code).limit(1);
+      ? await db.select().from(assets).where(and(eq(assets.id, requestedPointId), eq(assets.siteId, user.siteId), eq(assets.active, true))).limit(1)
+      : await db.select().from(assets).where(and(eq(assets.siteId, user.siteId), eq(assets.active, true))).orderBy(assets.code).limit(1);
     if (!point) throw new ApiError(404, "No existe un punto de medición accesible en el sitio activo.");
 
     const [device] = await db.select({
@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
     }).from(devices)
       .innerJoin(gateways, eq(gateways.id, devices.gatewayId))
       .leftJoin(readingProfiles, eq(readingProfiles.id, devices.readingProfileId))
-      .where(eq(devices.assetId, point.id))
+      .where(and(eq(devices.assetId, point.id), eq(devices.active, true), eq(gateways.active, true)))
       .orderBy(devices.code)
       .limit(1);
 
