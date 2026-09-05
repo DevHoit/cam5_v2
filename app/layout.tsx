@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "CAM5 CORE | Gestión de Activos Críticos",
+  title: "CAM5 CORE | Monitoreo de condición eléctrica",
   description:
-    "Telemetría predictiva para temperatura, descarga parcial y humedad en activos eléctricos críticos.",
+    "Gestión multi-cliente de sitios, puntos de medición, gateways y telemetría CAM5.",
 };
 
 export default function RootLayout({

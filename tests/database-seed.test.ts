@@ -5,7 +5,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { count, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import { PORTAL_ROLES } from "../db/access-control";
-import { authenticateLocalUser, createPortalSession, resolvePortalSession, revokePortalSession, verifyPassword } from "../db/auth";
+import { authenticateLocalUser, createPortalSession, resolvePortalSession, revokePortalSession, switchPortalSessionSite, verifyPassword } from "../db/auth";
 import { resolvePortalAccess } from "../db/authorization";
 import type { Cam5Database } from "../db/index";
 import { seedCam5Database } from "../db/seed";
@@ -14,8 +14,10 @@ import * as schema from "../db/schema";
 test("seeds the initial CAM5 installation and remains idempotent", async () => {
   const client = new PGlite();
   try {
-    const migration = await readFile(new URL("../drizzle/0000_cam5_initial_schema.sql", import.meta.url), "utf8");
-    await client.exec(migration.replaceAll("--> statement-breakpoint", ""));
+    for (const filename of ["0000_cam5_initial_schema.sql", "0001_eager_blockbuster.sql", "0002_sparkling_wallow.sql"]) {
+      const migration = await readFile(new URL(`../drizzle/${filename}`, import.meta.url), "utf8");
+      await client.exec(migration.replaceAll("--> statement-breakpoint", ""));
+    }
     const db = drizzle(client, { schema });
     const seedDb = db as unknown as Cam5Database;
 
@@ -23,6 +25,7 @@ test("seeds the initial CAM5 installation and remains idempotent", async () => {
     await seedCam5Database(seedDb, seedOptions);
     await seedCam5Database(seedDb, seedOptions);
 
+    const [clientCount] = await db.select({ value: count() }).from(schema.clients);
     const [siteCount] = await db.select({ value: count() }).from(schema.sites);
     const [assetCount] = await db.select({ value: count() }).from(schema.assets);
     const [deviceCount] = await db.select({ value: count() }).from(schema.devices);
@@ -36,7 +39,9 @@ test("seeds the initial CAM5 installation and remains idempotent", async () => {
     const [profileRangeCount] = await db.select({ value: count() }).from(schema.readingProfileRanges);
     const [adminCount] = await db.select({ value: count() }).from(schema.users).where(eq(schema.users.email, "admin@example.test"));
     const [identityCount] = await db.select({ value: count() }).from(schema.authIdentities);
+    const [clientAssignmentCount] = await db.select({ value: count() }).from(schema.userClientAssignments);
 
+    assert.equal(clientCount.value, 1);
     assert.equal(siteCount.value, 1);
     assert.equal(assetCount.value, 1);
     assert.equal(deviceCount.value, 1);
@@ -50,6 +55,7 @@ test("seeds the initial CAM5 installation and remains idempotent", async () => {
     assert.equal(profileRangeCount.value, 4);
     assert.equal(adminCount.value, 1);
     assert.equal(identityCount.value, 1);
+    assert.equal(clientAssignmentCount.value, 1);
 
     const [storedIdentity] = await db.select().from(schema.authIdentities).limit(1);
     assert.ok(storedIdentity.passwordHash);
@@ -61,7 +67,19 @@ test("seeds the initial CAM5 installation and remains idempotent", async () => {
     const resolvedSession = await resolvePortalSession(seedDb, session.token);
     assert.equal(resolvedSession?.email, "admin@example.test");
     assert.equal(resolvedSession?.roleKey, "administrator");
+    assert.equal(resolvedSession?.clientName, "Cliente principal");
+    assert.equal(resolvedSession?.siteName, "Subestación Norte");
+    assert.equal(resolvedSession?.sites.length, 1);
     assert.ok(resolvedSession?.permissions.includes("users.manage"));
+
+    const [secondClient] = await db.insert(schema.clients).values({ code: "CLIENTE-02", name: "Segundo cliente" }).returning();
+    const [secondSite] = await db.insert(schema.sites).values({ clientId: secondClient.id, code: "SITE-02", name: "Segundo sitio" }).returning();
+    const [administratorRole] = await db.select().from(schema.roles).where(eq(schema.roles.key, "administrator")).limit(1);
+    await db.insert(schema.userRoleAssignments).values({ userId: authenticatedUserId, roleId: administratorRole.id, siteId: secondSite.id });
+    const switchedSession = await switchPortalSessionSite(seedDb, session.token, secondSite.id);
+    assert.equal(switchedSession?.clientName, "Segundo cliente");
+    assert.equal(switchedSession?.siteName, "Segundo sitio");
+    assert.equal(switchedSession?.sites.length, 2);
     await revokePortalSession(seedDb, session.token);
     assert.equal(await resolvePortalSession(seedDb, session.token), null);
 

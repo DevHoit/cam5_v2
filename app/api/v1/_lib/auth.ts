@@ -26,6 +26,12 @@ export function apiErrorResponse(error: unknown) {
   if (error instanceof ApiError) {
     return Response.json({ error: error.message }, { status: error.status, headers: { "Cache-Control": "no-store" } });
   }
+  if (typeof error === "object" && error && "code" in error && error.code === "23505") {
+    return Response.json({ error: "Ya existe un elemento con ese código o identificador en el mismo nivel." }, { status: 409, headers: { "Cache-Control": "no-store" } });
+  }
+  if (typeof error === "object" && error && "code" in error && error.code === "23503") {
+    return Response.json({ error: "El elemento está relacionado con otros registros y no puede modificarse de esa forma." }, { status: 409, headers: { "Cache-Control": "no-store" } });
+  }
   console.error("CAM5 API error", error);
   return Response.json({ error: "No fue posible completar la solicitud." }, { status: 500, headers: { "Cache-Control": "no-store" } });
 }

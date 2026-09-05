@@ -1,13 +1,15 @@
 import { createHash, randomBytes, scrypt as nodeScrypt, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
-import { and, eq, gt, isNull, or } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, or, sql } from "drizzle-orm";
 import type { Cam5Database } from "./index";
 import {
   authIdentities,
   authSessions,
+  clients,
   permissions,
   rolePermissions,
   roles,
+  sites,
   userRoleAssignments,
   users,
 } from "./schema";
@@ -25,7 +27,22 @@ export type AuthenticatedPortalUser = {
   status: "invited" | "active" | "suspended";
   roleKey: "administrator" | "engineer" | "operator" | "viewer";
   roleName: "Administrador" | "Ingeniero" | "Operador" | "Solo lectura";
+  clientId: string;
+  clientCode: string;
+  clientName: string;
   siteId: string;
+  siteCode: string;
+  siteName: string;
+  sites: Array<{
+    id: string;
+    code: string;
+    name: string;
+    clientId: string;
+    clientCode: string;
+    clientName: string;
+    roleKey: AuthenticatedPortalUser["roleKey"];
+    roleName: AuthenticatedPortalUser["roleName"];
+  }>;
   permissions: string[];
 };
 
@@ -60,8 +77,21 @@ export async function createPortalSession(
 ) {
   const token = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + SESSION_HOURS * 60 * 60 * 1000);
+  const [initialScope] = await db
+    .select({ siteId: userRoleAssignments.siteId })
+    .from(userRoleAssignments)
+    .innerJoin(sites, eq(sites.id, userRoleAssignments.siteId))
+    .innerJoin(clients, eq(clients.id, sites.clientId))
+    .where(and(
+      eq(userRoleAssignments.userId, userId),
+      eq(sites.active, true),
+      eq(clients.active, true),
+      or(isNull(userRoleAssignments.expiresAt), gt(userRoleAssignments.expiresAt, new Date())),
+    ))
+    .limit(1);
   await db.insert(authSessions).values({
     userId,
+    activeSiteId: initialScope?.siteId ?? null,
     tokenHash: hashSessionToken(token),
     expiresAt,
     ipAddress: metadata.ipAddress || null,
@@ -100,33 +130,89 @@ export async function revokePortalSession(db: Cam5Database, token: string): Prom
     .where(and(eq(authSessions.tokenHash, hashSessionToken(token)), isNull(authSessions.revokedAt)));
 }
 
+export async function switchPortalSessionSite(db: Cam5Database, token: string, siteId: string): Promise<AuthenticatedPortalUser | null> {
+  const tokenHash = hashSessionToken(token);
+  const [allowed] = await db
+    .select({ sessionId: authSessions.id })
+    .from(authSessions)
+    .innerJoin(userRoleAssignments, eq(userRoleAssignments.userId, authSessions.userId))
+    .innerJoin(sites, eq(sites.id, userRoleAssignments.siteId))
+    .innerJoin(clients, eq(clients.id, sites.clientId))
+    .where(and(
+      eq(authSessions.tokenHash, tokenHash),
+      isNull(authSessions.revokedAt),
+      gt(authSessions.expiresAt, new Date()),
+      eq(userRoleAssignments.siteId, siteId),
+      eq(sites.active, true),
+      eq(clients.active, true),
+      or(isNull(userRoleAssignments.expiresAt), gt(userRoleAssignments.expiresAt, new Date())),
+    ))
+    .limit(1);
+  if (!allowed) return null;
+  await db.update(authSessions).set({ activeSiteId: siteId, lastSeenAt: new Date() }).where(eq(authSessions.id, allowed.sessionId));
+  return resolvePortalSession(db, token);
+}
+
 export async function resolvePortalSession(db: Cam5Database, token: string): Promise<AuthenticatedPortalUser | null> {
   const now = new Date();
   const [session] = await db
     .select({
       sessionId: authSessions.id,
+      activeSiteId: authSessions.activeSiteId,
       userId: users.id,
       email: users.email,
       displayName: users.displayName,
       status: users.status,
-      roleKey: roles.key,
-      roleName: roles.name,
-      siteId: userRoleAssignments.siteId,
     })
     .from(authSessions)
     .innerJoin(users, eq(users.id, authSessions.userId))
-    .innerJoin(userRoleAssignments, eq(userRoleAssignments.userId, users.id))
-    .innerJoin(roles, eq(roles.id, userRoleAssignments.roleId))
     .where(and(
       eq(authSessions.tokenHash, hashSessionToken(token)),
       isNull(authSessions.revokedAt),
       gt(authSessions.expiresAt, now),
       eq(users.status, "active"),
-      or(isNull(userRoleAssignments.expiresAt), gt(userRoleAssignments.expiresAt, now)),
     ))
     .limit(1);
 
-  if (!session?.siteId) return null;
+  if (!session) return null;
+
+  const assignmentRows = await db
+    .select({
+      roleId: roles.id,
+      roleKey: roles.key,
+      roleName: roles.name,
+      siteId: sites.id,
+      siteCode: sites.code,
+      siteName: sites.name,
+      clientId: clients.id,
+      clientCode: clients.code,
+      clientName: clients.name,
+    })
+    .from(userRoleAssignments)
+    .innerJoin(roles, eq(roles.id, userRoleAssignments.roleId))
+    .innerJoin(sites, eq(sites.id, userRoleAssignments.siteId))
+    .innerJoin(clients, eq(clients.id, sites.clientId))
+    .where(and(
+      eq(userRoleAssignments.userId, session.userId),
+      eq(sites.active, true),
+      eq(clients.active, true),
+      or(isNull(userRoleAssignments.expiresAt), gt(userRoleAssignments.expiresAt, now)),
+    ))
+    .orderBy(
+      sites.name,
+      desc(sql<number>`case ${roles.key} when 'administrator' then 4 when 'engineer' then 3 when 'operator' then 2 else 1 end`),
+    );
+
+  const bestAssignmentBySite = new Map<string, (typeof assignmentRows)[number]>();
+  for (const assignment of assignmentRows) {
+    if (!bestAssignmentBySite.has(assignment.siteId)) bestAssignmentBySite.set(assignment.siteId, assignment);
+  }
+  const availableSites = [...bestAssignmentBySite.values()];
+  if (!availableSites.length) return null;
+  const selected = availableSites.find((assignment) => assignment.siteId === session.activeSiteId) ?? availableSites[0];
+  if (selected.siteId !== session.activeSiteId) {
+    await db.update(authSessions).set({ activeSiteId: selected.siteId }).where(eq(authSessions.id, session.sessionId));
+  }
 
   const permissionRows = await db
     .select({ code: permissions.code })
@@ -135,7 +221,7 @@ export async function resolvePortalSession(db: Cam5Database, token: string): Pro
     .innerJoin(permissions, eq(permissions.id, rolePermissions.permissionId))
     .where(and(
       eq(userRoleAssignments.userId, session.userId),
-      eq(userRoleAssignments.siteId, session.siteId),
+      eq(userRoleAssignments.siteId, selected.siteId),
     ));
 
   await db.update(authSessions).set({ lastSeenAt: now }).where(eq(authSessions.id, session.sessionId));
@@ -145,9 +231,24 @@ export async function resolvePortalSession(db: Cam5Database, token: string): Pro
     email: session.email,
     displayName: session.displayName,
     status: session.status,
-    roleKey: session.roleKey as AuthenticatedPortalUser["roleKey"],
-    roleName: session.roleName as AuthenticatedPortalUser["roleName"],
-    siteId: session.siteId,
+    roleKey: selected.roleKey as AuthenticatedPortalUser["roleKey"],
+    roleName: selected.roleName as AuthenticatedPortalUser["roleName"],
+    clientId: selected.clientId,
+    clientCode: selected.clientCode,
+    clientName: selected.clientName,
+    siteId: selected.siteId,
+    siteCode: selected.siteCode,
+    siteName: selected.siteName,
+    sites: availableSites.map((scope) => ({
+      id: scope.siteId,
+      code: scope.siteCode,
+      name: scope.siteName,
+      clientId: scope.clientId,
+      clientCode: scope.clientCode,
+      clientName: scope.clientName,
+      roleKey: scope.roleKey as AuthenticatedPortalUser["roleKey"],
+      roleName: scope.roleName as AuthenticatedPortalUser["roleName"],
+    })),
     permissions: [...new Set(permissionRows.map((row) => row.code))],
   };
 }

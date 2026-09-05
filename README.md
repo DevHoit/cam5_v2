@@ -1,8 +1,8 @@
 # CAM5 CORE
 
-Portal web de telemetría y gestión de condición para una instalación IntelliSAW CAM-5.
+Portal web multi-cliente de telemetría y gestión de condición para instalaciones IntelliSAW CAM-5.
 
-El alcance inicial es una ubicación, un gateway `CAM5-GW-01` y un controlador/equipo CAM-5 mediante Modbus TCP.
+La estructura operacional admite uno o varios clientes, sitios, puntos de medición y gateways. Cada controlador CAM-5 se asocia a un punto y a uno de los gateways de su mismo sitio mediante Modbus TCP.
 
 ## Frontend incluido
 
@@ -14,7 +14,8 @@ El alcance inicial es una ubicación, un gateway `CAM5-GW-01` y un controlador/e
 - Login/logout persistente, usuarios, roles y auditoría conectados a PostgreSQL.
 - Búsqueda, filtros y paginación en los listados operativos y administrativos.
 - Histórico consultable por rango de fechas, canal y texto.
-- Activos, notificaciones e integraciones.
+- Estructura operacional de clientes, sitios, puntos, gateways y controladores.
+- Notificaciones e integraciones.
 - Configuración de canales, umbrales, gateway y mapa Modbus.
 - Puesta en marcha con identidad, 24 entradas físicas, alarmas, seis relés, red, respaldo y checklist de producción.
 - Catálogo CAM-5/IRM-48 completo: 105 registros nativos entre 418 y 522.
@@ -71,7 +72,7 @@ Configurar:
 NEXT_PUBLIC_CAM5_API_URL=https://api.ejemplo.cl/api/v1
 ```
 
-La autenticación, los usuarios y el histórico ya utilizan rutas internas `/api/v1` conectadas a PostgreSQL. El dashboard, tendencias en vivo, alarmas operativas, configuración, reportes y mantenimiento todavía conservan datos demostrativos hasta conectar el servicio del gateway.
+La autenticación, los usuarios, la jerarquía operacional y el histórico utilizan rutas internas `/api/v1` conectadas a PostgreSQL. El dashboard, tendencias en vivo, alarmas operativas, configuración, reportes y mantenimiento conservan datos de referencia hasta conectar el servicio del gateway.
 
 `NEXT_PUBLIC_CAM5_API_URL` se reserva para ese servicio de telemetría. El cliente tipado está en `app/cam5-api.ts` y el contrato de implementación se encuentra en `BACKEND_HANDOFF.md`.
 
@@ -81,6 +82,6 @@ La autenticación, los usuarios y el histórico ya utilizan rutas internas `/api
 - `app/cam5-engineering.tsx`: puesta en marcha CAM-5.
 - `app/cam5-model.ts`: canales, inventario y catálogo Modbus.
 - `app/cam5-api.ts`: contrato de API.
-- `app/api/v1/`: login, logout, sesión, usuarios e histórico PostgreSQL.
+- `app/api/v1/`: login, logout, contexto activo, jerarquía, usuarios e histórico PostgreSQL.
 - `app/globals.css`: sistema visual y responsive.
 - `BACKEND_HANDOFF.md`: guía de conexión del backend.

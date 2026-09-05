@@ -12,6 +12,7 @@ const expectedTables = [
   "auth_identities",
   "auth_sessions",
   "channels",
+  "clients",
   "commissioning_items",
   "configuration_snapshots",
   "device_models",
@@ -38,6 +39,7 @@ const expectedTables = [
   "roles",
   "sites",
   "user_asset_scopes",
+  "user_client_assignments",
   "user_invitations",
   "user_role_assignments",
   "users",
@@ -48,8 +50,10 @@ const expectedTables = [
 test("applies the CAM5 PostgreSQL migration with access profiles and telemetry constraints", async () => {
   const database = new PGlite();
   try {
-    const migration = await readFile(new URL("../drizzle/0000_cam5_initial_schema.sql", import.meta.url), "utf8");
-    await database.exec(migration.replaceAll("--> statement-breakpoint", ""));
+    for (const filename of ["0000_cam5_initial_schema.sql", "0001_eager_blockbuster.sql", "0002_sparkling_wallow.sql"]) {
+      const migration = await readFile(new URL(`../drizzle/${filename}`, import.meta.url), "utf8");
+      await database.exec(migration.replaceAll("--> statement-breakpoint", ""));
+    }
 
     const tableResult = await database.query(`
       select table_name
@@ -76,8 +80,15 @@ test("applies the CAM5 PostgreSQL migration with access profiles and telemetry c
       /reading_profiles_(stale|retention)_positive_chk/,
     );
 
-    const accessTables = ["users", "roles", "permissions", "role_permissions", "user_role_assignments", "user_asset_scopes"];
+    const accessTables = ["users", "roles", "permissions", "role_permissions", "user_client_assignments", "user_role_assignments", "user_asset_scopes"];
     for (const table of accessTables) assert.ok(expectedTables.includes(table), `Falta la tabla de acceso ${table}`);
+
+    const siteColumns = await database.query(`
+      select is_nullable
+      from information_schema.columns
+      where table_schema = 'public' and table_name = 'sites' and column_name = 'client_id'
+    `);
+    assert.equal(siteColumns.rows[0]?.is_nullable, "NO");
   } finally {
     await database.close();
   }

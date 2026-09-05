@@ -70,7 +70,30 @@ type UserRole = "Administrador" | "Ingeniero" | "Operador" | "Solo lectura";
 type WorkStatus = "Pendiente" | "En curso" | "Completada";
 type WorkPriority = "Crítica" | "Alta" | "Normal";
 type WorkOrder = { id: string; title: string; source: string; sourceAlarmId?: string; due: string; priority: WorkPriority; assignee: string; status: WorkStatus };
-type PortalSessionUser = { id: string; email: string; displayName: string; roleKey: "administrator" | "engineer" | "operator" | "viewer"; roleName: UserRole; siteId: string; permissions: string[] };
+type PortalSiteScope = { id: string; code: string; name: string; clientId: string; clientCode: string; clientName: string; roleKey: "administrator" | "engineer" | "operator" | "viewer"; roleName: UserRole };
+type PortalSessionUser = {
+  id: string;
+  email: string;
+  displayName: string;
+  roleKey: "administrator" | "engineer" | "operator" | "viewer";
+  roleName: UserRole;
+  clientId: string;
+  clientCode: string;
+  clientName: string;
+  siteId: string;
+  siteCode: string;
+  siteName: string;
+  sites: PortalSiteScope[];
+  permissions: string[];
+};
+type PortalHierarchy = {
+  active: { clientId: string; clientCode: string; clientName: string; siteId: string; siteCode: string; siteName: string };
+  clients: Array<{ id: string; code: string; name: string; roleKey: PortalSessionUser["roleKey"]; roleName: UserRole }>;
+  sites: Array<PortalSiteScope & { pointCount: number; gatewayCount: number; controllerCount: number }>;
+  points: Array<{ id: string; siteId: string; code: string; name: string; area: string | null; type: string; nominalVoltageKv: number | null; state: "normal" | "warning" | "critical" | "offline" | "maintenance" }>;
+  gateways: Array<{ id: string; siteId: string; code: string; name: string; serialNumber: string | null; softwareVersion: string | null; state: "pending" | "online" | "degraded" | "offline"; lastSeenAt: string | null; ipAddress: string | null }>;
+  controllers: Array<{ id: string; pointId: string; gatewayId: string; code: string; name: string; model: string; serialNumber: string | null; state: string; protocol: string; host: string; port: number; unitId: number; lastReadAt: string | null }>;
+};
 type PaginationMeta = { page: number; pageSize: number; total: number; totalPages: number };
 type NoticeTone = "success" | "info" | "warning";
 type SystemMode = "normal" | "loading" | "stale" | "offline";
@@ -173,7 +196,7 @@ const navGroups = [
     index: "03",
     label: "Gestión",
     items: [
-      { id: "assets" as View, label: "Activos y ubicaciones", description: "Jerarquía y cobertura", icon: Factory },
+      { id: "assets" as View, label: "Estructura operacional", description: "Clientes, sitios y medición", icon: Factory },
       { id: "reports" as View, label: "Reportes", description: "Informes y programación", icon: FileReport },
       { id: "maintenance" as View, label: "Mantenimiento", description: "Planes y órdenes", icon: Tool },
     ],
@@ -198,7 +221,7 @@ const viewTitles: Record<View, { title: string; description: string }> = {
   trends: { title: "Tendencias", description: "Evolución térmica, descarga parcial y humedad ambiental." },
   alarms: { title: "Centro de alertas", description: "Triage operativo, reconocimiento y trazabilidad de eventos." },
   history: { title: "Histórico", description: "Mediciones, alarmas y cambios administrativos en una sola trazabilidad." },
-  assets: { title: "Activos y ubicaciones", description: "Inventario técnico, jerarquía operacional y cobertura de instrumentación." },
+  assets: { title: "Estructura operacional", description: "Clientes, sitios, puntos de medición, gateways y controladores asociados." },
   reports: { title: "Reportes", description: "Informes de condición, eventos y cumplimiento para operación y mantenimiento." },
   maintenance: { title: "Mantenimiento", description: "Plan preventivo y órdenes de trabajo priorizadas por condición." },
   settings: { title: "Configuración", description: "Parámetros del activo, canales de adquisición y comunicaciones." },
@@ -336,7 +359,7 @@ function Overview({ onNavigate, onAcknowledge, acknowledged }: { onNavigate: (vi
       <section className="overview-grid">
         <article className="panel asset-summary-panel">
           <div className="panel-header asset-summary-header">
-            <div><span className="eyebrow">Activo prioritario</span><h2>{assetConfig.name} · {assetConfig.description}</h2><p>Cabina de {assetConfig.voltage} kV · evaluación actualizada hace 2 s</p></div>
+            <div><span className="eyebrow">Punto de medición prioritario</span><h2>{assetConfig.name} · {assetConfig.description}</h2><p>Cabina de {assetConfig.voltage} kV · condición consolidada</p></div>
             <StatusPill state="critical">Atención prioritaria</StatusPill>
           </div>
 
@@ -650,71 +673,117 @@ function HistoryView() {
   );
 }
 
-function AssetsView({ onNavigate }: { onNavigate: (view: View) => void }) {
-  type AssetState = "normal" | "warning" | "critical";
-  type AssetRecord = { id: string; name: string; type: string; site: string; area: string; state: AssetState; configured: number; capacity: number; gateway: string; voltage: string; owner: string; updated: string };
+function OperationalHierarchyView({
+  hierarchy,
+  loading,
+  permissions,
+  onReload,
+  onSwitchSite,
+}: {
+  hierarchy: PortalHierarchy | null;
+  loading: boolean;
+  permissions: string[];
+  onReload: () => Promise<void>;
+  onSwitchSite: (siteId: string) => Promise<void>;
+}) {
+  type Resource = "client" | "site" | "point" | "gateway" | "controller";
   const notify = useFeedback();
-  const sensors = useSensorData();
-  const [assetConfig, setAssetConfig] = usePersistentState("cam5.front.asset-config", defaultAssetConfig);
-  const [tab, setTab] = useState<"hierarchy" | "directory">("hierarchy");
+  const [tab, setTab] = useState<"structure" | "connections">("structure");
   const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | AssetState>("all");
-  const [selectedId, setSelectedId] = useState("MCC-01");
   const [showCreate, setShowCreate] = useState(false);
-  const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState({ code: "", name: "", type: "Centro de control", site: "Subestación Norte", area: "Sala eléctrica A" });
-  const [assets, setAssets] = usePersistentState<AssetRecord[]>("cam5.front.assets.v2", [
-    { id: "MCC-01", name: "Alimentador Norte", type: "Centro de control de motores", site: "Subestación Norte", area: "Sala eléctrica A", state: "critical", configured: 8, capacity: 24, gateway: "CAM5-GW-01", voltage: "13.8 kV", owner: "Paula Rojas", updated: "Hace 2 s" },
-  ]);
-  const activeInputCount = new Set(sensors.filter((sensor) => sensor.enabled).map((sensor) => sensor.sourceId)).size;
-  const storedSelected = assets.find((asset) => asset.id === selectedId) ?? assets[0];
-  const selected = storedSelected.id === "MCC-01" ? { ...storedSelected, configured: activeInputCount } : storedSelected;
-  const filtered = assets.filter((asset) => (statusFilter === "all" || asset.state === statusFilter) && `${asset.id} ${asset.name} ${asset.type} ${asset.site} ${asset.area}`.toLowerCase().includes(query.toLowerCase()));
-  const assetPage = useClientPagination(filtered, 8);
-  const locations = ["Subestación Norte"];
-  const totalConfigured = assets.reduce((sum, asset) => sum + (asset.id === "MCC-01" ? activeInputCount : asset.configured), 0);
-  const totalCapacity = assets.reduce((sum, asset) => sum + asset.capacity, 0);
-  const selectedConfigured = selected.id === "MCC-01" ? activeInputCount : selected.configured;
-  const coverage = selected.capacity ? Math.round((selectedConfigured / selected.capacity) * 100) : 0;
-  const selectedSensors = selected.id === "MCC-01" ? sensors.filter((sensor) => sensor.enabled) : [];
-  const stateLabel = (state: AssetState) => state === "critical" ? "Crítico" : state === "warning" ? "Advertencia" : "Normal";
-  const createAsset = (event: React.FormEvent) => {
+  const [resource, setResource] = useState<Resource>("point");
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ code: "", name: "", clientId: "", area: "", voltage: "", ipAddress: "", pointId: "", gatewayId: "", host: "", port: "502", unitId: "1" });
+
+  const canManageClients = permissions.includes("users.manage");
+  const canManagePoints = permissions.includes("assets.write");
+  const canManageConnections = permissions.includes("settings.write");
+  const availableResources: Array<{ value: Resource; label: string }> = [
+    ...(canManageClients ? [{ value: "client" as const, label: "Cliente" }, { value: "site" as const, label: "Sitio" }] : []),
+    ...(canManagePoints ? [{ value: "point" as const, label: "Punto de medición" }] : []),
+    ...(canManageConnections ? [{ value: "gateway" as const, label: "Gateway" }, { value: "controller" as const, label: "Controlador CAM5" }] : []),
+  ];
+  const filteredPoints = (hierarchy?.points ?? []).filter((point) => `${point.code} ${point.name} ${point.area ?? ""}`.toLowerCase().includes(query.toLowerCase()));
+  const filteredGateways = (hierarchy?.gateways ?? []).filter((gateway) => `${gateway.code} ${gateway.name} ${gateway.ipAddress ?? ""}`.toLowerCase().includes(query.toLowerCase()));
+  const filteredControllers = (hierarchy?.controllers ?? []).filter((controller) => `${controller.code} ${controller.name} ${controller.host}`.toLowerCase().includes(query.toLowerCase()));
+  const pointPage = useClientPagination(filteredPoints, 6);
+  const gatewayPage = useClientPagination(filteredGateways, 6);
+  const controllerPage = useClientPagination(filteredControllers, 8);
+
+  const resetForm = () => setForm({ code: "", name: "", clientId: hierarchy?.active.clientId ?? "", area: "", voltage: "", ipAddress: "", pointId: "", gatewayId: "", host: "", port: "502", unitId: "1" });
+  const changeResource = (value: Resource) => { setResource(value); resetForm(); };
+  const createResource = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!form.code.trim() || !form.name.trim()) return;
-    if (assets.some((asset) => asset.id === form.code.trim().toUpperCase())) { notify(`El código ${form.code.trim().toUpperCase()} ya está registrado.`, "warning"); return; }
-    const next = { id: form.code.trim().toUpperCase(), name: form.name.trim(), type: form.type, site: "Subestación Norte", area: form.area, state: "normal" as AssetState, configured: 0, capacity: 0, gateway: "CAM5-GW-01", voltage: "Sin definir", owner: "Sin asignar", updated: "Nunca" };
-    setAssets((current) => [next, ...current]); setSelectedId(next.id); setTab("hierarchy"); setShowCreate(false); setForm({ code: "", name: "", type: "Centro de control", site: "Subestación Norte", area: "Sala eléctrica A" }); notify(`Activo ${next.id} registrado en el inventario.`);
-  };
-  const updateSelected = (field: "name" | "area" | "owner" | "voltage", value: string) => { setAssets((current) => current.map((asset) => asset.id === selected.id ? { ...asset, [field]: value } : asset)); if (selected.id === "MCC-01" && field === "name") setAssetConfig({ ...assetConfig, description: value }); if (selected.id === "MCC-01" && field === "voltage") setAssetConfig({ ...assetConfig, voltage: value.replace(/\s*kV$/i, "") }); };
-  const openAsset = (id: string) => {
-    if (id === selectedId && tab === "hierarchy" && !editing) {
-      onNavigate(id === "MCC-01" ? (selected.state === "normal" ? "cabinet" : "alarms") : "settings");
-      return;
+    if (!hierarchy) return;
+    setSaving(true);
+    try {
+      const payload: Record<string, unknown> = { resource, code: form.code, name: form.name };
+      if (resource === "site") Object.assign(payload, { clientId: form.clientId || hierarchy.active.clientId, timezone: "America/Santiago" });
+      if (resource === "point") Object.assign(payload, { siteId: hierarchy.active.siteId, area: form.area, nominalVoltageKv: form.voltage ? Number(form.voltage) : undefined });
+      if (resource === "gateway") Object.assign(payload, { siteId: hierarchy.active.siteId, ipAddress: form.ipAddress });
+      if (resource === "controller") Object.assign(payload, { pointId: form.pointId, gatewayId: form.gatewayId, host: form.host, port: Number(form.port), unitId: Number(form.unitId) });
+      await portalRequest("/api/v1/hierarchy", { method: "POST", body: JSON.stringify(payload) });
+      await onReload();
+      notify(`${availableResources.find((item) => item.value === resource)?.label ?? "Elemento"} registrado correctamente.`);
+      setShowCreate(false);
+      resetForm();
+    } catch (requestError) {
+      notify(requestError instanceof Error ? requestError.message : "No fue posible guardar el elemento.", "warning");
+    } finally {
+      setSaving(false);
     }
-    setSelectedId(id); setTab("hierarchy"); setEditing(false);
   };
 
-  return (
-    <>
-      <section className="module-summary-grid asset-inventory-summary">
-        <article><span className="module-summary-icon blue"><Factory size={19} /></span><div><small>Activos registrados</small><strong>{assets.length}</strong><span>1 ubicación operativa</span></div></article>
-        <article><span className="module-summary-icon amber"><AlertTriangle size={19} /></span><div><small>Atención requerida</small><strong>{assets.filter((asset) => asset.state !== "normal").length}</strong><span>1 crítico · 1 advertencia</span></div></article>
-        <article><span className="module-summary-icon green"><Activity size={19} /></span><div><small>Canales configurados</small><strong>{totalConfigured}</strong><span>de {totalCapacity} disponibles</span></div></article>
-      </section>
+  if (loading && !hierarchy) return <section className="panel hierarchy-loading"><Refresh className="spin" size={20} /> Cargando estructura operacional…</section>;
+  if (!hierarchy) return <section className="panel permission-state"><span><AlertTriangle size={26} /></span><div><span className="eyebrow">Estructura no disponible</span><h2>No fue posible consultar la organización</h2><p>Revisa la conexión con la base de datos e inténtalo nuevamente.</p></div></section>;
 
-      <article className="panel module-panel asset-inventory-module">
-        <div className="module-toolbar"><div className="module-tabs" role="tablist" aria-label="Secciones de activos"><button className={tab === "hierarchy" ? "active" : ""} onClick={() => setTab("hierarchy")}><Hierarchy size={16} /> Jerarquía</button><button className={tab === "directory" ? "active" : ""} onClick={() => setTab("directory")}><Database size={16} /> Directorio</button></div><button className="primary-button" onClick={() => setShowCreate((current) => !current)}><Plus size={16} /> {showCreate ? "Cancelar" : "Nuevo activo"}</button></div>
+  const activeSite = hierarchy.sites.find((site) => site.id === hierarchy.active.siteId);
+  const activeGateway = hierarchy.gateways[0];
+  const stateLabel = (state: string) => state === "online" || state === "active" || state === "normal" ? "Operativo" : state === "commissioning" || state === "pending" ? "En puesta en marcha" : state === "warning" || state === "degraded" ? "Atención" : state === "critical" ? "Crítico" : state === "maintenance" ? "Mantenimiento" : "Sin conexión";
 
-        {showCreate && <form className="asset-create-form" onSubmit={createAsset}><label><span>Código</span><input required value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value })} placeholder="Ej.: MCC-03" /></label><label><span>Nombre</span><input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Descripción operacional" /></label><label><span>Tipo</span><select value={form.type} onChange={(event) => setForm({ ...form, type: event.target.value })}><option>Centro de control</option><option>Transformador de potencia</option><option>Celda de media tensión</option><option>UPS industrial</option></select></label><label><span>Área dentro de Subestación Norte</span><input value={form.area} onChange={(event) => setForm({ ...form, area: event.target.value })} placeholder="Ej.: Sala eléctrica A" /></label><button type="submit"><Plus size={15} /> Registrar</button></form>}
+  return <>
+    <section className="module-summary-grid hierarchy-summary">
+      <article><span className="module-summary-icon blue"><Building2 size={19} /></span><div><small>Clientes accesibles</small><strong>{hierarchy.clients.length}</strong><span>{hierarchy.sites.length} sitios autorizados</span></div></article>
+      <article><span className="module-summary-icon green"><MapPin size={19} /></span><div><small>Puntos de medición</small><strong>{hierarchy.points.length}</strong><span>En {hierarchy.active.siteName}</span></div></article>
+      <article><span className="module-summary-icon amber"><Server size={19} /></span><div><small>Cadena de adquisición</small><strong>{hierarchy.gateways.length}</strong><span>{hierarchy.controllers.length} controladores asociados</span></div></article>
+    </section>
 
-        {tab === "hierarchy" && <div className="asset-management-layout"><aside className="asset-tree"><div className="asset-tree-head"><span className="asset-tree-icon"><Factory size={20} /></span><div><span className="eyebrow">Instalación única</span><strong>Subestación Norte</strong></div></div><div className="asset-tree-content">{locations.map((location) => <section key={location}><div className="tree-location"><span><Building2 size={17} /></span><div><strong>{location}</strong><small>{assets.filter((asset) => asset.site === location).length} activos</small></div></div><div className="tree-assets">{assets.filter((asset) => asset.site === location).map((asset) => <button key={asset.id} className={selected.id === asset.id ? "selected" : ""} onClick={() => openAsset(asset.id)}><span className={`tree-state state-${asset.state}`} /><span><strong>{asset.id}</strong><small>{asset.name}</small></span><ChevronRight size={15} /></button>)}</div></section>)}</div><div className="asset-tree-footer"><MapPin size={15} /><span>1 ubicación · 1 gateway · {assets.length} activos</span></div></aside><section className="asset-detail"><div className="asset-detail-header"><span className={`asset-detail-icon state-${selected.state}`}><CircuitBoard size={23} /></span><div><span className="eyebrow">Activo seleccionado · {selected.id}</span><h2>{selected.name}</h2><p><MapPin size={14} /> {selected.site} · {selected.area}</p></div><StatusPill state={selected.state}>{stateLabel(selected.state)}</StatusPill></div><div className="asset-detail-actions"><span>Ficha actualizada {selected.updated}</span><button className="secondary-button" onClick={() => setEditing((current) => !current)}>{editing ? <><CheckCircle2 size={15} /> Finalizar edición</> : <><Settings size={15} /> Editar ficha</>}</button></div>{editing ? <div className="asset-edit-grid"><label><span>Nombre operacional</span><input value={selected.name} onChange={(event) => updateSelected("name", event.target.value)} /></label><label><span>Área</span><input value={selected.area} onChange={(event) => updateSelected("area", event.target.value)} /></label><label><span>Gateway único</span><input value={selected.gateway} readOnly /></label><label><span>Responsable</span><select value={selected.owner} onChange={(event) => updateSelected("owner", event.target.value)}><option>Sin asignar</option><option>Emerson Allende</option><option>Paula Rojas</option><option>Felipe Soto</option></select></label><label><span>Tensión nominal</span><input value={selected.voltage} onChange={(event) => updateSelected("voltage", event.target.value)} /></label></div> : <dl className="asset-facts"><div><dt>Tipo</dt><dd>{selected.type}</dd></div><div><dt>Tensión nominal</dt><dd>{selected.voltage}</dd></div><div><dt>Gateway único</dt><dd>{selected.gateway}</dd></div><div><dt>Responsable</dt><dd>{selected.owner}</dd></div></dl>}<div className="asset-detail-grid"><section className="asset-coverage-card"><div><span className="eyebrow">Cobertura de instrumentación</span><strong>{coverage}%</strong></div><p>{selected.capacity ? `${selected.configured} canales configurados de ${selected.capacity} disponibles.` : "Activo nuevo sin capacidad de instrumentación definida."}</p><span className="asset-coverage-bar"><i style={{ width: `${coverage}%` }} /></span><dl><div><dt>Temperatura</dt><dd>{selected.id === "MCC-01" ? "5 canales" : "Configuración base"}</dd></div><div><dt>Descarga parcial</dt><dd>{selected.id === "MCC-01" ? "2 canales" : "No configurada"}</dd></div><div><dt>Ambiental</dt><dd>{selected.id === "MCC-01" ? "1 canal" : "No configurada"}</dd></div></dl></section><section className={`asset-condition-card condition-${selected.state}`}><span className="eyebrow">Condición actual</span><div><AlertTriangle size={20} /><strong>{stateLabel(selected.state)}</strong></div><p>{selected.state === "critical" ? "Descarga parcial acelerada en el compartimiento de cables. Requiere diagnóstico priorizado." : selected.state === "warning" ? "Existen variables sobre nivel preventivo. Mantener seguimiento de tendencia." : "No se observan condiciones fuera de los límites definidos."}</p><button onClick={() => openAsset(selected.id)}>{selected.state === "normal" ? "Revisar cobertura" : "Revisar hallazgos"} <ChevronRight size={15} /></button></section></div><div className="asset-channel-preview"><div className="report-library-head"><div><span className="eyebrow">Instrumentación</span><h2>Canales asociados</h2></div><span>{selectedSensors.length || selected.configured} canales</span></div>{selectedSensors.length ? <div className="asset-channel-grid">{selectedSensors.map((sensor) => <span key={sensor.id}><b className={`sensor-code sensor-${sensor.state}`}>{sensor.id}</b><span><strong>{sensor.label}</strong><small>{sensor.value} {sensor.unit} · {sensor.quality}</small></span></span>)}</div> : <div className="asset-empty-state"><Activity size={22} /><div><strong>Instrumentación sin detalle demostrativo</strong><p>La ficha está creada, pero sus canales se definirán desde Configuración.</p></div></div>}</div></section></div>}
+    <article className="panel module-panel hierarchy-module">
+      <div className="module-toolbar">
+        <div className="module-tabs" role="tablist" aria-label="Estructura operacional">
+          <button className={tab === "structure" ? "active" : ""} onClick={() => setTab("structure")}><Hierarchy size={16} /> Organización</button>
+          <button className={tab === "connections" ? "active" : ""} onClick={() => setTab("connections")}><PlugConnected size={16} /> Conexiones Modbus</button>
+        </div>
+        {availableResources.length > 0 && <button className="primary-button" onClick={() => setShowCreate((current) => !current)}><Plus size={16} />{showCreate ? "Cancelar" : "Agregar elemento"}</button>}
+      </div>
 
-        {tab === "directory" && <div className="asset-directory"><div className="asset-directory-toolbar"><label className="search-field"><Search size={17} /><input value={query} onChange={(event) => { setQuery(event.target.value); assetPage.setPage(1); }} placeholder="Buscar código, nombre, tipo o ubicación…" /></label><label className="status-filter"><span>Condición</span><select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value as typeof statusFilter); assetPage.setPage(1); }}><option value="all">Todas</option><option value="normal">Normal</option><option value="warning">Advertencia</option><option value="critical">Crítico</option></select><ChevronDown size={13} /></label></div><div className="module-table-wrap"><div className="asset-directory-table"><div className="module-table-head"><span>Activo</span><span>Tipo</span><span>Ubicación</span><span>Cobertura</span><span>Gateway</span><span>Condición</span><span>Acción</span></div>{assetPage.pageItems.map((asset) => <div className="module-table-row" key={asset.id}><span className="asset-directory-name"><b><CircuitBoard size={17} /></b><span><strong>{asset.id}</strong><small>{asset.name}</small></span></span><span>{asset.type}</span><span>{asset.site}<small>{asset.area}</small></span><span>{asset.configured} / {asset.capacity || "—"} canales</span><span className="mono-cell">{asset.gateway}</span><span><StatusPill state={asset.state}>{stateLabel(asset.state)}</StatusPill></span><span><button className="ghost-button" onClick={() => openAsset(asset.id)}>Abrir ficha</button></span></div>)}</div></div><Pagination page={assetPage.page} totalPages={assetPage.totalPages} total={assetPage.total} pageSize={assetPage.pageSize} onPageChange={assetPage.setPage} itemLabel="activos" /></div>}
-        {tab === "directory" && filtered.length === 0 && <TableEmptyState title="No hay activos con estos filtros" detail="Prueba con otra condición o modifica el texto de búsqueda." />}
-        <div className="module-footer"><span><ShieldCheck size={14} /> Inventario con trazabilidad de cambios.</span><small>Cambios conservados localmente · listo para conectar al inventario central.</small></div>
-      </article>
-    </>
-  );
+      {showCreate && <form className="hierarchy-create-form" onSubmit={createResource}>
+        <div className="hierarchy-form-heading"><span className="eyebrow">Alta operacional</span><h3>Agregar a la estructura</h3></div>
+        <label><span>Tipo de elemento</span><select value={resource} onChange={(event) => changeResource(event.target.value as Resource)}>{availableResources.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+        <label><span>Código único</span><input required value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value })} placeholder={resource === "client" ? "CLIENTE-01" : resource === "site" ? "SITIO-01" : resource === "point" ? "MCC-01" : resource === "gateway" ? "GW-01" : "CAM5-01"} /></label>
+        <label><span>Nombre</span><input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Nombre operacional" /></label>
+        {resource === "site" && <label><span>Cliente</span><select required value={form.clientId || hierarchy.active.clientId} onChange={(event) => setForm({ ...form, clientId: event.target.value })}>{hierarchy.clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select></label>}
+        {resource === "point" && <><label><span>Área</span><input value={form.area} onChange={(event) => setForm({ ...form, area: event.target.value })} placeholder="Sala o área eléctrica" /></label><label><span>Tensión nominal (kV)</span><input type="number" min="0" step="0.1" value={form.voltage} onChange={(event) => setForm({ ...form, voltage: event.target.value })} /></label></>}
+        {resource === "gateway" && <label><span>Dirección IP</span><input value={form.ipAddress} onChange={(event) => setForm({ ...form, ipAddress: event.target.value })} placeholder="10.0.0.20" /></label>}
+        {resource === "controller" && <><label><span>Punto de medición</span><select required value={form.pointId} onChange={(event) => setForm({ ...form, pointId: event.target.value })}><option value="">Seleccionar…</option>{hierarchy.points.map((point) => <option key={point.id} value={point.id}>{point.code} · {point.name}</option>)}</select></label><label><span>Gateway</span><select required value={form.gatewayId} onChange={(event) => setForm({ ...form, gatewayId: event.target.value })}><option value="">Seleccionar…</option>{hierarchy.gateways.map((gateway) => <option key={gateway.id} value={gateway.id}>{gateway.code} · {gateway.name}</option>)}</select></label><label><span>IP del CAM5</span><input required value={form.host} onChange={(event) => setForm({ ...form, host: event.target.value })} placeholder="192.168.10.42" /></label><label><span>Puerto</span><input type="number" min="1" max="65535" required value={form.port} onChange={(event) => setForm({ ...form, port: event.target.value })} /></label><label><span>Unit ID</span><input type="number" min="0" max="247" required value={form.unitId} onChange={(event) => setForm({ ...form, unitId: event.target.value })} /></label></>}
+        <button className="primary-button" type="submit" disabled={saving || (resource === "controller" && (!hierarchy.points.length || !hierarchy.gateways.length))}>{saving ? "Guardando…" : "Registrar"}</button>
+      </form>}
+
+      <div className="hierarchy-scope-bar"><div><span className="eyebrow">Contexto operacional</span><strong>{hierarchy.active.clientName} <ChevronRight size={14} /> {hierarchy.active.siteName}</strong></div><label className="search-field"><Search size={17} /><input value={query} onChange={(event) => { setQuery(event.target.value); pointPage.setPage(1); gatewayPage.setPage(1); controllerPage.setPage(1); }} placeholder="Buscar punto, gateway o controlador…" /></label></div>
+
+      {tab === "structure" && <div className="hierarchy-workspace">
+        <aside className="organization-tree">
+          {hierarchy.clients.map((client) => <section key={client.id}><div className="organization-client"><span><Factory size={17} /></span><div><strong>{client.name}</strong><small>{client.code}</small></div></div><div className="organization-sites">{hierarchy.sites.filter((site) => site.clientId === client.id).map((site) => <button key={site.id} className={site.id === hierarchy.active.siteId ? "active" : ""} onClick={() => onSwitchSite(site.id)}><span><Building2 size={16} /></span><span><strong>{site.name}</strong><small>{site.pointCount} puntos · {site.gatewayCount} gateways</small></span><ChevronRight size={15} /></button>)}{hierarchy.sites.every((site) => site.clientId !== client.id) && <p>Cliente sin sitios registrados.</p>}</div></section>)}
+        </aside>
+        <div className="site-inventory">
+          <section className="site-identity-card"><span><Building2 size={22} /></span><div><span className="eyebrow">Sitio activo · {activeSite?.code}</span><h2>{hierarchy.active.siteName}</h2><p>{hierarchy.active.clientName} · {activeSite?.roleName}</p></div><dl><div><dt>Puntos</dt><dd>{activeSite?.pointCount ?? 0}</dd></div><div><dt>Gateways</dt><dd>{activeSite?.gatewayCount ?? 0}</dd></div><div><dt>Controladores</dt><dd>{activeSite?.controllerCount ?? 0}</dd></div></dl></section>
+          <div className="inventory-columns"><section><div className="inventory-heading"><div><span className="eyebrow">Medición</span><h3>Puntos de medición</h3></div><span>{filteredPoints.length}</span></div><div className="operational-card-list">{pointPage.pageItems.map((point) => { const linked = hierarchy.controllers.filter((controller) => controller.pointId === point.id); return <article key={point.id}><span className={`operational-state state-${point.state}`}><CircuitBoard size={18} /></span><div><strong>{point.code} · {point.name}</strong><small>{point.area || "Área sin definir"} · {point.nominalVoltageKv ? `${point.nominalVoltageKv} kV` : "Tensión sin definir"}</small><em>{linked.length} controlador{linked.length === 1 ? "" : "es"} asociado{linked.length === 1 ? "" : "s"}</em></div><b>{stateLabel(point.state)}</b></article>; })}{pointPage.pageItems.length === 0 && <TableEmptyState title="No hay puntos de medición" detail="Registra el primer punto para asociar un controlador CAM5." />}</div><Pagination page={pointPage.page} totalPages={pointPage.totalPages} total={filteredPoints.length} pageSize={6} onPageChange={pointPage.setPage} itemLabel="puntos" /></section><section><div className="inventory-heading"><div><span className="eyebrow">Conectividad</span><h3>Gateways del sitio</h3></div><span>{filteredGateways.length}</span></div><div className="operational-card-list">{gatewayPage.pageItems.map((gateway) => { const linked = hierarchy.controllers.filter((controller) => controller.gatewayId === gateway.id); return <article key={gateway.id}><span className={`operational-state state-${gateway.state}`}><Server size={18} /></span><div><strong>{gateway.code} · {gateway.name}</strong><small>{gateway.ipAddress || "IP pendiente"} · {gateway.softwareVersion || "Versión pendiente"}</small><em>{linked.length} punto{linked.length === 1 ? "" : "s"} conectado{linked.length === 1 ? "" : "s"}</em></div><b>{stateLabel(gateway.state)}</b></article>; })}{gatewayPage.pageItems.length === 0 && <TableEmptyState title="No hay gateways" detail="Registra un gateway antes de configurar conexiones Modbus." />}</div><Pagination page={gatewayPage.page} totalPages={gatewayPage.totalPages} total={filteredGateways.length} pageSize={6} onPageChange={gatewayPage.setPage} itemLabel="gateways" /></section></div>
+        </div>
+      </div>}
+
+      {tab === "connections" && <div className="connections-content"><div className="connection-explainer"><span><PlugConnected size={21} /></span><div><h3>Ruta de adquisición</h3><p>El gateway consulta por Modbus al controlador CAM5 instalado en cada punto. La base impide relacionar equipos de sitios distintos.</p></div><strong>{activeGateway?.code ?? "Sin gateway"} → CAM5 → CORE</strong></div><div className="module-table-wrap"><div className="connections-table"><div className="module-table-head"><span>Controlador</span><span>Punto de medición</span><span>Gateway</span><span>Destino Modbus</span><span>Estado</span></div>{controllerPage.pageItems.map((controller) => { const point = hierarchy.points.find((item) => item.id === controller.pointId); const gateway = hierarchy.gateways.find((item) => item.id === controller.gatewayId); return <div className="module-table-row" key={controller.id}><span><strong>{controller.code}</strong><small>{controller.model}</small></span><span>{point ? `${point.code} · ${point.name}` : "Punto no disponible"}</span><span>{gateway ? gateway.code : "Gateway no disponible"}</span><span className="mono-cell">{controller.host}:{controller.port} · ID {controller.unitId}</span><span><i className={`connection-status state-${controller.state}`}>{stateLabel(controller.state)}</i></span></div>; })}{controllerPage.pageItems.length === 0 && <TableEmptyState title="No hay conexiones Modbus" detail="Asocia un controlador CAM5 a un punto de medición y a un gateway." />}</div></div><Pagination page={controllerPage.page} totalPages={controllerPage.totalPages} total={filteredControllers.length} pageSize={8} onPageChange={controllerPage.setPage} itemLabel="conexiones" /></div>}
+    </article>
+  </>;
 }
 
 function ReportsView() {
@@ -783,7 +852,7 @@ function ReportsView() {
           </aside>
         </div>
 
-        {previewOpen && <section className="report-preview" aria-label="Vista previa del informe"><div className="report-preview-toolbar"><div><span className="eyebrow">Vista previa · {format}</span><h2>{selectedTemplate.name}</h2></div><div><button className="secondary-button" onClick={() => setPreviewOpen(false)}><X size={15} /> Cerrar</button><button className="primary-button" onClick={() => window.print()}><Printer size={15} /> Imprimir / guardar PDF</button></div></div><div className="report-sheet"><header><span className="brand-mark"><Zap size={21} /></span><div><strong>CAM5 CORE</strong><small>Informe de condición de activo crítico</small></div><time>Subestación Norte · MCC-01</time></header><section><span className="eyebrow">Resumen del periodo · {period}</span><h1>{selectedTemplate.name}</h1><p>Evaluación consolidada de temperatura, descarga parcial, humedad y disponibilidad de comunicaciones.</p></section><div className="report-kpi-row"><article><small>Condición</small><strong>Atención prioritaria</strong></article><article><small>Canales incluidos</small><strong>{sensors.filter((sensor) => sensor.enabled).length} de {sensors.length}</strong></article><article><small>Integridad</small><strong>99.98%</strong></article></div><section className="report-finding"><AlertTriangle size={20} /><div><strong>Hallazgo principal</strong><h2>Descarga parcial en aceleración · PD1</h2><p>El índice actual supera el umbral crítico configurado. Se recomienda inspección dirigida del compartimiento de cables.</p></div><b>72 idx</b></section><section className="report-channel-summary"><h2>Lecturas incluidas</h2><div>{sensors.filter((sensor) => sensor.enabled).map((sensor) => <span key={sensor.id}><b className={`sensor-code sensor-${sensor.state}`}>{sensor.id}</b><span><strong>{sensor.label}</strong><small>{sensor.zone}</small></span><em>{sensor.value} {sensor.unit}</em></span>)}</div></section><footer><ShieldCheck size={16} /><span>Documento generado desde datos simulados. La fuente definitiva será proporcionada por el historiador CAM5.</span></footer></div></section>}
+        {previewOpen && <section className="report-preview" aria-label="Vista previa del informe"><div className="report-preview-toolbar"><div><span className="eyebrow">Vista previa · {format}</span><h2>{selectedTemplate.name}</h2></div><div><button className="secondary-button" onClick={() => setPreviewOpen(false)}><X size={15} /> Cerrar</button><button className="primary-button" onClick={() => window.print()}><Printer size={15} /> Imprimir / guardar PDF</button></div></div><div className="report-sheet"><header><span className="brand-mark"><Zap size={21} /></span><div><strong>CAM5 CORE</strong><small>Informe de condición del punto de medición</small></div><time>Subestación Norte · MCC-01</time></header><section><span className="eyebrow">Resumen del periodo · {period}</span><h1>{selectedTemplate.name}</h1><p>Evaluación consolidada de temperatura, descarga parcial, humedad y disponibilidad de comunicaciones.</p></section><div className="report-kpi-row"><article><small>Condición</small><strong>Atención prioritaria</strong></article><article><small>Canales incluidos</small><strong>{sensors.filter((sensor) => sensor.enabled).length} de {sensors.length}</strong></article><article><small>Integridad</small><strong>99.98%</strong></article></div><section className="report-finding"><AlertTriangle size={20} /><div><strong>Hallazgo principal</strong><h2>Descarga parcial en aceleración · PD1</h2><p>El índice actual supera el umbral crítico configurado. Se recomienda inspección dirigida del compartimiento de cables.</p></div><b>72 idx</b></section><section className="report-channel-summary"><h2>Lecturas incluidas</h2><div>{sensors.filter((sensor) => sensor.enabled).map((sensor) => <span key={sensor.id}><b className={`sensor-code sensor-${sensor.state}`}>{sensor.id}</b><span><strong>{sensor.label}</strong><small>{sensor.zone}</small></span><em>{sensor.value} {sensor.unit}</em></span>)}</div></section><footer><ShieldCheck size={16} /><span>Documento preliminar hasta completar la conexión del historiador CAM5.</span></footer></div></section>}
 
         <div className="report-library-head"><div><span className="eyebrow">Biblioteca</span><h2>Informes recientes</h2></div><span>{reports.length} documentos</span></div>
         <div className="module-table-wrap"><div className="report-table"><div className="module-table-head"><span>Informe</span><span>Periodo</span><span>Generado</span><span>Formato</span><span>Responsable</span><span>Datos</span></div>{reportPage.pageItems.map((report) => <div className="module-table-row" key={report.id}><span className="report-name-cell"><b><FileReport size={16} /></b><span><strong>{report.name}</strong><small>{report.id}</small></span></span><span>{report.period}</span><span>{report.created}</span><span><i className="report-format">{report.format}</i></span><span>{report.owner}</span><span><button className="ghost-button" onClick={() => downloadReportData(report.name)}><Download size={14} /> Descargar datos</button></span></div>)}</div></div>
@@ -885,7 +954,7 @@ function DiagnosticsView() {
           <section className="diagnostic-health-card"><div className="report-library-head"><div><span className="eyebrow">Salud de comunicación</span><h2>Indicadores actuales</h2></div><StatusPill state="online">En línea</StatusPill></div><dl><div><dt>Latencia controlador</dt><dd>42 ms <small>Normal</small></dd></div><div><dt>Latencia hacia CORE</dt><dd>86 ms <small>Normal</small></dd></div><div><dt>Última respuesta válida</dt><dd>Hace 2 s <small>FC 03</small></dd></div><div><dt>Reintentos / 24 h</dt><dd>2 <small>0.01%</small></dd></div><div><dt>Excepciones Modbus</dt><dd>0 <small>Sin errores</small></dd></div><div><dt>Calidad de datos</dt><dd>105 / 105 <small>Válidos</small></dd></div></dl></section>
           <section className="diagnostic-transactions"><div className="report-library-head"><div><span className="eyebrow">Tráfico reciente</span><h2>Últimas lecturas Modbus</h2></div><span>FC 03</span></div><div className="module-table-wrap"><div className="diagnostic-transaction-table"><div className="module-table-head"><span>Hora</span><span>Solicitud</span><span>Rango</span><span>Resultado</span><span>Tiempo</span></div>{transactions.map((transaction) => <div className="module-table-row" key={`${transaction.time}-${transaction.range}`}><span className="mono-cell">{transaction.time}</span><span className="mono-cell">{transaction.request}</span><span className="mono-cell">{transaction.range}</span><span className="quality-ok"><CheckCircle2 size={14} /> {transaction.result}</span><span className="mono-cell">{transaction.latency}</span></div>)}</div></div></section>
         </div>
-        <div className="configuration-note diagnostics-note"><ShieldCheck size={17} /><p><strong>Modo de simulación activo.</strong> Al incorporar el servicio de adquisición, esta vista consumirá las respuestas reales del gateway y las excepciones Modbus del controlador.</p></div>
+        <div className="configuration-note diagnostics-note"><ShieldCheck size={17} /><p><strong>Adquisición pendiente de conexión.</strong> Esta vista consumirá las respuestas del gateway y las excepciones Modbus del controlador cuando el servicio OT quede habilitado.</p></div>
       </article>
     </>
   );
@@ -950,9 +1019,9 @@ function IntegrationsView() {
       <article className={`panel module-panel integration-module ${role === "Solo lectura" ? "role-readonly" : ""}`}>
         <div className="module-toolbar"><div className="module-tabs" role="tablist" aria-label="Secciones de integraciones"><button className={tab === "connections" ? "active" : ""} onClick={() => setTab("connections")}><PlugConnected size={16} /> Conexiones</button><button className={tab === "flow" ? "active" : ""} onClick={() => setTab("flow")}><Timeline size={16} /> Flujo de datos</button><button className={tab === "api" ? "active" : ""} onClick={() => setTab("api")}><Key size={16} /> Acceso API</button></div><span className="autosave-state"><ShieldCheck size={14} /> Configuración local protegida</span></div>
 
-        {tab === "connections" && <div className="integration-content"><div className="settings-section-head"><span className="settings-icon"><PlugConnected size={20} /></span><div><h2>Arquitectura de la instalación</h2><p>Dos enlaces requeridos y fijos para la primera implementación monositio.</p></div></div><div className="integration-card-grid">{connections.map((connection) => <article className={`integration-card ${connection.enabled ? "enabled" : "disabled"}`} key={connection.id}><div className="integration-card-head"><span className="integration-card-icon">{connection.id === "controller" ? <Radio size={21} /> : connection.id === "gateway" ? <Server size={21} /> : connection.id === "historian" ? <Database size={21} /> : <Tool size={21} />}</span>{connection.locked ? <span className="core-link-label"><ShieldCheck size={13} /> Requerida</span> : <button className={`switch-control ${connection.enabled ? "on" : ""}`} onClick={() => toggleConnection(connection.id)} aria-label={`${connection.enabled ? "Desactivar" : "Activar"} ${connection.name}`}><i /></button>}</div><span className="eyebrow">{connection.role}</span><h3>{connection.name}</h3><dl><div><dt>Protocolo</dt><dd>{connection.protocol}</dd></div><div><dt>Destino</dt><dd title={connection.endpoint}>{connection.endpoint}</dd></div><div><dt>Última actividad</dt><dd>{connection.freshness}</dd></div></dl><div className="integration-card-footer"><span className={connection.enabled && connection.status === "Operativa" ? "quality-ok" : connection.status === "Probando…" ? "integration-testing" : "muted-state"}>{connection.status === "Operativa" && <CheckCircle2 size={14} />}{connection.status}</span><button onClick={() => testConnection(connection.id)} disabled={!connection.enabled || testingId === connection.id}>{testingId === connection.id ? "Probando…" : "Probar conexión"}</button></div></article>)}</div><div className="configuration-note"><ShieldCheck size={17} /><p><strong>Alcance inicial fijo.</strong> Subestación Norte utiliza un controlador CAM5-CTRL-01 y un gateway CAM5-GW-01. Historiador y CMMS quedan preparados visualmente para una fase posterior.</p></div></div>}
+        {tab === "connections" && <div className="integration-content"><div className="settings-section-head"><span className="settings-icon"><PlugConnected size={20} /></span><div><h2>Arquitectura del sitio activo</h2><p>Enlaces configurados entre controladores, gateways y servicios externos.</p></div></div><div className="integration-card-grid">{connections.map((connection) => <article className={`integration-card ${connection.enabled ? "enabled" : "disabled"}`} key={connection.id}><div className="integration-card-head"><span className="integration-card-icon">{connection.id === "controller" ? <Radio size={21} /> : connection.id === "gateway" ? <Server size={21} /> : connection.id === "historian" ? <Database size={21} /> : <Tool size={21} />}</span>{connection.locked ? <span className="core-link-label"><ShieldCheck size={13} /> Requerida</span> : <button className={`switch-control ${connection.enabled ? "on" : ""}`} onClick={() => toggleConnection(connection.id)} aria-label={`${connection.enabled ? "Desactivar" : "Activar"} ${connection.name}`}><i /></button>}</div><span className="eyebrow">{connection.role}</span><h3>{connection.name}</h3><dl><div><dt>Protocolo</dt><dd>{connection.protocol}</dd></div><div><dt>Destino</dt><dd title={connection.endpoint}>{connection.endpoint}</dd></div><div><dt>Última actividad</dt><dd>{connection.freshness}</dd></div></dl><div className="integration-card-footer"><span className={connection.enabled && connection.status === "Operativa" ? "quality-ok" : connection.status === "Probando…" ? "integration-testing" : "muted-state"}>{connection.status === "Operativa" && <CheckCircle2 size={14} />}{connection.status}</span><button onClick={() => testConnection(connection.id)} disabled={!connection.enabled || testingId === connection.id}>{testingId === connection.id ? "Probando…" : "Probar conexión"}</button></div></article>)}</div><div className="configuration-note"><ShieldCheck size={17} /><p><strong>Cadena OT configurada.</strong> Cada sitio puede incorporar uno o más gateways y asociarlos a sus puntos de medición. Historiador y CMMS quedan disponibles para integración.</p></div></div>}
 
-        {tab === "flow" && <div className="integration-content flow-content"><div className="settings-section-head"><span className="settings-icon"><Timeline size={20} /></span><div><h2>Ruta monositio de los datos</h2><p>Una cadena fija y fácil de diagnosticar desde el sensor hasta el portal.</p></div></div><div className="data-flow"><article><span><Activity size={21} /></span><small>Origen</small><strong>24 entradas CAM5</strong><p>{activeChannelCount} señales activas · temperatura, UHF y ambiente</p></article><i><ChevronRight size={19} /></i><article><span><CircuitBoard size={21} /></span><small>Controlador</small><strong>CAM5-CTRL-01</strong><p>Modbus TCP · Unit ID 1</p></article><i><ChevronRight size={19} /></i><article><span><Server size={21} /></span><small>Gateway</small><strong>CAM5-GW-01</strong><p>Ethernet · HTTPS/MQTT</p></article><i><ChevronRight size={19} /></i><article className="flow-core"><span><Zap size={21} /></span><small>Procesamiento</small><strong>CAM5 CORE</strong><p>Reglas, eventos e histórico</p></article><i><ChevronRight size={19} /></i><article><span><MonitorDot size={21} /></span><small>Aplicación</small><strong>Portal CAM5</strong><p>Dashboard, alertas y reportes</p></article></div><div className="flow-grid"><section><div className="report-library-head"><div><span className="eyebrow">Mapeo Modbus</span><h2>Señales publicadas</h2></div><span>{activeChannelCount} activas</span></div><div className="module-table-wrap"><div className="integration-mapping-table"><div className="module-table-head"><span>Canal</span><span>Registro</span><span>Variable publicada</span><span>Publicación</span><span>Calidad</span></div>{sensors.filter((sensor) => sensor.enabled).map((sensor) => <div className="module-table-row" key={sensor.id}><span><b className={`sensor-code sensor-${sensor.state}`}>{sensor.id}</b></span><span className="mono-cell">{sensor.nativeRegister} · {sensor.register.replace("HR ", "")}</span><span className="mono-cell">cam5.mcc01.{sensor.id.toLowerCase()}</span><span>{sensor.id === "PD1" ? "CORE + eventos" : "CAM5 CORE"}</span><span className="quality-ok"><CheckCircle2 size={14} /> {sensor.quality}</span></div>)}</div></div></section><aside className="sync-activity"><div className="report-library-head"><div><span className="eyebrow">Actividad</span><h2>Últimas sincronizaciones</h2></div></div><div>{syncLog.map((entry) => <article key={`${entry.time}-${entry.system}`}><span className={entry.state === "Correcta" ? "normal" : "warning"}><Refresh size={15} /></span><div><strong>{entry.action}</strong><small>{entry.system} · {entry.detail}</small></div><time>{entry.time}</time></article>)}</div></aside></div></div>}
+        {tab === "flow" && <div className="integration-content flow-content"><div className="settings-section-head"><span className="settings-icon"><Timeline size={20} /></span><div><h2>Ruta de datos del sitio activo</h2><p>Cadena de adquisición y procesamiento desde cada sensor hasta el portal.</p></div></div><div className="data-flow"><article><span><Activity size={21} /></span><small>Origen</small><strong>24 entradas CAM5</strong><p>{activeChannelCount} señales activas · temperatura, UHF y ambiente</p></article><i><ChevronRight size={19} /></i><article><span><CircuitBoard size={21} /></span><small>Controlador</small><strong>CAM5-CTRL-01</strong><p>Modbus TCP · Unit ID 1</p></article><i><ChevronRight size={19} /></i><article><span><Server size={21} /></span><small>Gateway</small><strong>CAM5-GW-01</strong><p>Ethernet · HTTPS/MQTT</p></article><i><ChevronRight size={19} /></i><article className="flow-core"><span><Zap size={21} /></span><small>Procesamiento</small><strong>CAM5 CORE</strong><p>Reglas, eventos e histórico</p></article><i><ChevronRight size={19} /></i><article><span><MonitorDot size={21} /></span><small>Aplicación</small><strong>Portal CAM5</strong><p>Dashboard, alertas y reportes</p></article></div><div className="flow-grid"><section><div className="report-library-head"><div><span className="eyebrow">Mapeo Modbus</span><h2>Señales publicadas</h2></div><span>{activeChannelCount} activas</span></div><div className="module-table-wrap"><div className="integration-mapping-table"><div className="module-table-head"><span>Canal</span><span>Registro</span><span>Variable publicada</span><span>Publicación</span><span>Calidad</span></div>{sensors.filter((sensor) => sensor.enabled).map((sensor) => <div className="module-table-row" key={sensor.id}><span><b className={`sensor-code sensor-${sensor.state}`}>{sensor.id}</b></span><span className="mono-cell">{sensor.nativeRegister} · {sensor.register.replace("HR ", "")}</span><span className="mono-cell">cam5.mcc01.{sensor.id.toLowerCase()}</span><span>{sensor.id === "PD1" ? "CORE + eventos" : "CAM5 CORE"}</span><span className="quality-ok"><CheckCircle2 size={14} /> {sensor.quality}</span></div>)}</div></div></section><aside className="sync-activity"><div className="report-library-head"><div><span className="eyebrow">Actividad</span><h2>Últimas sincronizaciones</h2></div></div><div>{syncLog.map((entry) => <article key={`${entry.time}-${entry.system}`}><span className={entry.state === "Correcta" ? "normal" : "warning"}><Refresh size={15} /></span><div><strong>{entry.action}</strong><small>{entry.system} · {entry.detail}</small></div><time>{entry.time}</time></article>)}</div></aside></div></div>}
 
         {tab === "api" && <div className="integration-content api-content"><div className="api-section-head"><div className="settings-section-head"><span className="settings-icon"><Key size={20} /></span><div><h2>Credenciales de integración</h2><p>Claves para servicios que consumen o publican información en CAM5.</p></div></div><button className="primary-button" onClick={() => setShowApiForm((current) => !current)}><Plus size={16} /> {showApiForm ? "Cancelar" : "Nueva clave"}</button></div>{showApiForm && <form className="api-key-form" onSubmit={createApiKey}><label><span>Nombre de la integración</span><input required value={apiForm.name} onChange={(event) => setApiForm({ ...apiForm, name: event.target.value })} placeholder="Ej.: Panel de confiabilidad" /></label><label><span>Alcance</span><select value={apiForm.scope} onChange={(event) => setApiForm({ ...apiForm, scope: event.target.value })}><option>Solo lectura</option><option>Telemetría · lectura</option><option>Eventos · escritura</option></select></label><button type="submit"><Key size={15} /> Crear clave</button></form>}{newApiKey && <div className="api-key-reveal"><ShieldCheck size={19} /><div><strong>Copia la nueva clave ahora</strong><code>{newApiKey}</code><small>Por seguridad, no volverá a mostrarse completa.</small></div><button onClick={copyApiKey}>{copied ? <CheckCircle2 size={15} /> : <Copy size={15} />}{copied ? "Copiada" : "Copiar"}</button></div>}<div className="api-layout"><section className="api-key-list"><div className="report-library-head"><div><span className="eyebrow">Credenciales</span><h2>Claves registradas</h2></div><span>{apiKeys.filter((key) => key.active).length} activas</span></div>{apiKeys.map((key) => <article key={key.id}><span className={`api-key-icon ${key.active ? "active" : ""}`}><Key size={18} /></span><div><strong>{key.name}</strong><code>{key.token}</code><small>{key.scope} · Creada {key.created} · Uso: {key.lastUse}</small></div><button className="ghost-button" onClick={() => revokeApiKey(key.id)}>{key.active ? "Revocar" : "Reactivar"}</button></article>)}</section><aside className="api-endpoints"><span className="eyebrow">Endpoints disponibles</span><h3>API CAM5 v1</h3><p>Rutas propuestas para la futura integración con servicios autorizados.</p><dl><div><dt>GET</dt><dd>/api/v1/assets/mcc-01/readings</dd></div><div><dt>GET</dt><dd>/api/v1/assets/mcc-01/events</dd></div><div><dt>POST</dt><dd>/api/v1/work-orders</dd></div><div><dt>POST</dt><dd>/api/v1/webhooks/events</dd></div></dl><div className="configuration-note"><Webhook size={16} /><p>Los endpoints son parte del diseño del frontend; todavía no exponen información real.</p></div></aside></div></div>}
       </article>
@@ -992,7 +1061,7 @@ function SettingsView() {
   const validIp = (value: string) => { const parts = value.split(".").map(Number); return parts.length === 4 && parts.every((part) => Number.isInteger(part) && part >= 0 && part <= 255); };
   const gatewayIssues = [!validIp(gatewayConfig.gatewayIp), !validIp(gatewayConfig.controllerIp), Number(gatewayConfig.port) < 1 || Number(gatewayConfig.port) > 65535, Number(gatewayConfig.unit) < 0 || Number(gatewayConfig.unit) > 247, Number(gatewayConfig.polling) < 1].filter(Boolean).length;
   const configurationIssues = mappingIssues + thresholdIssues.length + gatewayIssues;
-  const saveChanges = () => { if (configurationIssues) { setTab(thresholdIssues.length ? "channels" : mappingIssues ? "registers" : "gateway"); notify(`Hay ${configurationIssues} campo${configurationIssues === 1 ? "" : "s"} por corregir antes de guardar.`, "warning"); return; } setSaved(true); notify("Configuración validada y guardada en este entorno de demostración."); window.setTimeout(() => setSaved(false), 2400); };
+  const saveChanges = () => { if (configurationIssues) { setTab(thresholdIssues.length ? "channels" : mappingIssues ? "registers" : "gateway"); notify(`Hay ${configurationIssues} campo${configurationIssues === 1 ? "" : "s"} por corregir antes de guardar.`, "warning"); return; } setSaved(true); notify("Configuración validada. La publicación al controlador se habilitará mediante el servicio del gateway."); window.setTimeout(() => setSaved(false), 2400); };
   const testConnection = () => { setConnection("testing"); window.setTimeout(() => { setConnection("success"); notify("Prueba Modbus completada correctamente."); }, 900); };
   const updateChannel = (id: string, field: "enabled" | "warning" | "critical", value: boolean | string) => { const apply = () => setChannels((current) => current.map((item) => item.id === id ? { ...item, [field]: value } : item)); if (field === "enabled" && value === false) confirm({ title: `Desactivar canal ${id}`, detail: "El canal dejará de aparecer en tendencias, reportes e indicadores operativos.", confirmLabel: "Desactivar canal", tone: "danger", onConfirm: apply }); else apply(); };
   const updateRegister = (id: string, field: "reference" | "dataType" | "scale" | "byteOrder", value: string) => { setMapValidation("idle"); setRegisterMap((current) => current.map((row) => row.id === id ? { ...row, [field]: value } : row)); };
@@ -1011,13 +1080,13 @@ function SettingsView() {
       </div>
       {configurationIssues > 0 && <div className="validation-summary" role="alert"><AlertTriangle size={17} /><div><strong>Configuración pendiente de validar</strong><p>{thresholdIssues.length} umbrales · {mappingIssues} conflictos Modbus · {gatewayIssues} parámetros de comunicación.</p></div></div>}
 
-      {tab === "asset" && <div className="settings-content"><div className="settings-section-head"><span className="settings-icon"><Building2 size={20} /></span><div><h2>Identificación del activo</h2><p>Datos utilizados en navegación, reportes y trazabilidad.</p></div></div><div className="form-grid"><label><span>Código del activo</span><input value={assetConfig.name} onChange={(event) => setAssetConfig({ ...assetConfig, name: event.target.value })} /></label><label><span>Descripción</span><input value={assetConfig.description} onChange={(event) => setAssetConfig({ ...assetConfig, description: event.target.value })} /></label><label><span>Tensión nominal</span><div className="input-unit"><input value={assetConfig.voltage} onChange={(event) => setAssetConfig({ ...assetConfig, voltage: event.target.value })} /><b>kV</b></div></label><label><span>Ubicación fija</span><input value={assetConfig.location} readOnly /></label><label className="form-span-2"><span>Zona horaria</span><select value={assetConfig.timezone} onChange={(event) => setAssetConfig({ ...assetConfig, timezone: event.target.value })}><option>America/Santiago</option><option>UTC</option></select></label></div><div className="configuration-note"><ShieldCheck size={17} /><p><strong>Despliegue monositio.</strong> Todos los activos pertenecen a Subestación Norte y comparten el gateway CAM5-GW-01.</p></div></div>}
+      {tab === "asset" && <div className="settings-content"><div className="settings-section-head"><span className="settings-icon"><Building2 size={20} /></span><div><h2>Identificación del punto de medición</h2><p>Datos utilizados en navegación, reportes y trazabilidad.</p></div></div><div className="form-grid"><label><span>Código del punto</span><input value={assetConfig.name} onChange={(event) => setAssetConfig({ ...assetConfig, name: event.target.value })} /></label><label><span>Descripción</span><input value={assetConfig.description} onChange={(event) => setAssetConfig({ ...assetConfig, description: event.target.value })} /></label><label><span>Tensión nominal</span><div className="input-unit"><input value={assetConfig.voltage} onChange={(event) => setAssetConfig({ ...assetConfig, voltage: event.target.value })} /><b>kV</b></div></label><label><span>Sitio activo</span><input value={assetConfig.location} readOnly /></label><label className="form-span-2"><span>Zona horaria</span><select value={assetConfig.timezone} onChange={(event) => setAssetConfig({ ...assetConfig, timezone: event.target.value })}><option>America/Santiago</option><option>UTC</option></select></label></div><div className="configuration-note"><ShieldCheck size={17} /><p><strong>Configuración contextual.</strong> El punto de medición se administra dentro del sitio seleccionado y puede asociarse a uno de sus gateways.</p></div></div>}
 
       {tab === "channels" && <div className="settings-content channels-settings"><div className="settings-section-head"><span className="settings-icon"><Activity size={20} /></span><div><h2>Canales y umbrales</h2><p>Habilita señales y define niveles operativos de alarma.</p></div></div><div className="channel-config-table"><div className="channel-config-head"><span>Canal</span><span>Registro</span><span>Advertencia</span><span>Crítico</span><span>Estado</span></div>{channelPage.pageItems.map((channel) => <div className="channel-config-row" key={channel.id}><span className="history-channel"><b className={`sensor-code sensor-${channel.state}`}>{channel.id}</b><span><strong>{channel.label}</strong><small>{channel.type}</small></span></span><span className="mono-cell">{channel.register}</span><label className="compact-input"><input value={channel.warning} onChange={(event) => updateChannel(channel.id, "warning", event.target.value)} /><b>{channel.unit}</b></label><label className="compact-input"><input value={channel.critical} onChange={(event) => updateChannel(channel.id, "critical", event.target.value)} /><b>{channel.unit}</b></label><button className={`channel-toggle ${channel.enabled ? "on" : ""}`} onClick={() => updateChannel(channel.id, "enabled", !channel.enabled)}><i />{channel.enabled ? "Activo" : "Inactivo"}</button></div>)}</div><Pagination page={channelPage.page} totalPages={channelPage.totalPages} total={channelPage.total} pageSize={channelPage.pageSize} onPageChange={channelPage.setPage} itemLabel="canales" /></div>}
 
       {tab === "registers" && <div className="settings-content register-settings">
         <div className="register-settings-head">
-          <div className="settings-section-head"><span className="settings-icon"><Database size={20} /></span><div><h2>Mapa de registros Modbus</h2><p>Define cómo CAM5-CTRL-01 expone cada señal al gateway único.</p></div></div>
+          <div className="settings-section-head"><span className="settings-icon"><Database size={20} /></span><div><h2>Mapa de registros Modbus</h2><p>Define cómo el controlador CAM5 expone cada señal al gateway asignado.</p></div></div>
           <div className="register-header-actions"><label><span>Grupo</span><select value={registerGroup} onChange={(event) => { setRegisterGroup(event.target.value); registerPage.setPage(1); }}>{registerGroups.map((group) => <option key={group}>{group}</option>)}</select><ChevronDown size={12} /></label><button className={`register-validate-button ${mapValidation}`} onClick={validateRegisterMap} disabled={mapValidation === "validating"}>{mapValidation === "validating" ? <><Refresh size={15} /> Validando…</> : mapValidation === "success" ? <><CheckCircle2 size={15} /> Mapa válido</> : mapValidation === "error" ? <><AlertTriangle size={15} /> Revisar mapa</> : <><ShieldCheck size={15} /> Validar mapa</>}</button></div>
         </div>
         <div className="register-map-summary">
@@ -1033,18 +1102,19 @@ function SettingsView() {
         <div className="configuration-note"><ShieldCheck size={17} /><p><strong>Mapa base incorporado desde el manual CAM-5/IRM-48.</strong> Al conectar el equipo solo será necesario confirmar modelo, versión de datos y convención efectiva del driver del gateway.</p></div>
       </div>}
 
-      {tab === "gateway" && <div className="settings-content"><div className="settings-section-head"><span className="settings-icon"><PlugConnected size={20} /></span><div><h2>Gateway y controlador Modbus</h2><p>Arquitectura única de adquisición para Subestación Norte.</p></div></div><div className="single-stack-note"><Radio size={18} /><div><strong>CAM5-CTRL-01 → CAM5-GW-01 → CAM5 CORE</strong><p>El controlador concentra los registros Modbus TCP. El gateway transporta la telemetría hacia la plataforma.</p></div></div><div className="gateway-layout"><div className="form-grid"><label><span>Gateway único</span><input value={gatewayConfig.gateway} readOnly /></label><label><span>IP del gateway</span><input value={gatewayConfig.gatewayIp} onChange={(event) => setGatewayConfig({ ...gatewayConfig, gatewayIp: event.target.value })} /></label><label><span>Enlace hacia CAM5 CORE</span><input value={gatewayConfig.uplink} readOnly /></label><label><span>Controlador Modbus</span><input value={gatewayConfig.controller} readOnly /></label><label><span>Protocolo de campo</span><select value={gatewayConfig.protocol} onChange={(event) => setGatewayConfig({ ...gatewayConfig, protocol: event.target.value })}><option>Modbus TCP</option></select></label><label><span>IP del controlador</span><input value={gatewayConfig.controllerIp} onChange={(event) => setGatewayConfig({ ...gatewayConfig, controllerIp: event.target.value })} /></label><label><span>Puerto Modbus</span><input value={gatewayConfig.port} onChange={(event) => setGatewayConfig({ ...gatewayConfig, port: event.target.value })} /></label><label><span>Unit ID</span><input value={gatewayConfig.unit} onChange={(event) => setGatewayConfig({ ...gatewayConfig, unit: event.target.value })} /></label><label><span>Intervalo de lectura</span><div className="input-unit"><input value={gatewayConfig.polling} onChange={(event) => setGatewayConfig({ ...gatewayConfig, polling: event.target.value })} /><b>s</b></div></label></div><aside className="connection-test-card"><span className={`connection-test-icon ${connection}`}><Radio size={24} /></span><h3>Controlador CAM5-CTRL-01</h3><p>Valida acceso, puerto y respuesta Modbus desde el gateway único.</p><dl><div><dt>Destino</dt><dd>{gatewayConfig.controllerIp}:{gatewayConfig.port}</dd></div><div><dt>Gateway</dt><dd>{gatewayConfig.gateway}</dd></div><div><dt>Timeout</dt><dd>3 segundos</dd></div></dl><button onClick={testConnection} disabled={connection === "testing"}>{connection === "testing" ? "Probando…" : connection === "success" ? <><CheckCircle2 size={15} /> Controlador disponible</> : <><PlugConnected size={15} /> Probar Modbus</>}</button></aside></div></div>}
+      {tab === "gateway" && <div className="settings-content"><div className="settings-section-head"><span className="settings-icon"><PlugConnected size={20} /></span><div><h2>Gateway y controlador Modbus</h2><p>Cadena de adquisición del punto de medición seleccionado.</p></div></div><div className="single-stack-note"><Radio size={18} /><div><strong>CAM5-CTRL-01 → CAM5-GW-01 → CAM5 CORE</strong><p>El controlador concentra los registros Modbus TCP. El gateway transporta la telemetría hacia la plataforma.</p></div></div><div className="gateway-layout"><div className="form-grid"><label><span>Gateway asignado</span><input value={gatewayConfig.gateway} readOnly /></label><label><span>IP del gateway</span><input value={gatewayConfig.gatewayIp} onChange={(event) => setGatewayConfig({ ...gatewayConfig, gatewayIp: event.target.value })} /></label><label><span>Enlace hacia CAM5 CORE</span><input value={gatewayConfig.uplink} readOnly /></label><label><span>Controlador Modbus</span><input value={gatewayConfig.controller} readOnly /></label><label><span>Protocolo de campo</span><select value={gatewayConfig.protocol} onChange={(event) => setGatewayConfig({ ...gatewayConfig, protocol: event.target.value })}><option>Modbus TCP</option></select></label><label><span>IP del controlador</span><input value={gatewayConfig.controllerIp} onChange={(event) => setGatewayConfig({ ...gatewayConfig, controllerIp: event.target.value })} /></label><label><span>Puerto Modbus</span><input value={gatewayConfig.port} onChange={(event) => setGatewayConfig({ ...gatewayConfig, port: event.target.value })} /></label><label><span>Unit ID</span><input value={gatewayConfig.unit} onChange={(event) => setGatewayConfig({ ...gatewayConfig, unit: event.target.value })} /></label><label><span>Intervalo de lectura</span><div className="input-unit"><input value={gatewayConfig.polling} onChange={(event) => setGatewayConfig({ ...gatewayConfig, polling: event.target.value })} /><b>s</b></div></label></div><aside className="connection-test-card"><span className={`connection-test-icon ${connection}`}><Radio size={24} /></span><h3>Controlador CAM5-CTRL-01</h3><p>Valida acceso, puerto y respuesta Modbus desde el gateway asignado.</p><dl><div><dt>Destino</dt><dd>{gatewayConfig.controllerIp}:{gatewayConfig.port}</dd></div><div><dt>Gateway</dt><dd>{gatewayConfig.gateway}</dd></div><div><dt>Timeout</dt><dd>3 segundos</dd></div></dl><button onClick={testConnection} disabled={connection === "testing"}>{connection === "testing" ? "Probando…" : connection === "success" ? <><CheckCircle2 size={15} /> Controlador disponible</> : <><PlugConnected size={15} /> Probar Modbus</>}</button></aside></div></div>}
     </article>
   );
 }
 
-function UsersView({ currentUserId }: { currentUserId: string }) {
+function UsersView({ currentUserId, sites, activeSiteId }: { currentUserId: string; sites: PortalSiteScope[]; activeSiteId: string }) {
   const notify = useFeedback();
   const confirm = useConfirm();
   const currentRole = useActiveRole();
-  type UserRow = { id: string; displayName: string; email: string; status: "active" | "suspended" | "invited"; lastLoginAt: string | null; createdAt: string; role: { key: "administrator" | "engineer" | "operator" | "viewer"; name: UserRole } };
+  const manageableSites = sites.filter((site) => site.roleKey === "administrator");
+  type UserRow = { id: string; displayName: string; email: string; status: "active" | "suspended" | "invited"; lastLoginAt: string | null; createdAt: string; role: { key: "administrator" | "engineer" | "operator" | "viewer"; name: UserRole }; siteIds: string[] };
   type UserResult = PaginationMeta & { items: UserRow[]; summary: { total: number; active: number; administrators: number; invited: number } };
-  const blankForm = { displayName: "", email: "", password: "", role: "operator" as UserRow["role"]["key"], status: "active" as UserRow["status"] };
+  const blankForm = { displayName: "", email: "", password: "", role: "operator" as UserRow["role"]["key"], status: "active" as UserRow["status"], siteIds: [activeSiteId] };
   const [result, setResult] = useState<UserResult | null>(null);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -1078,7 +1148,8 @@ function UsersView({ currentUserId }: { currentUserId: string }) {
   }, [currentRole, page, query, statusFilter, reload]);
 
   const openCreate = () => { setEditingId(null); setForm(blankForm); setShowForm(true); };
-  const openEdit = (user: UserRow) => { setEditingId(user.id); setForm({ displayName: user.displayName, email: user.email, password: "", role: user.role.key, status: user.status }); setShowForm(true); };
+  const openEdit = (user: UserRow) => { setEditingId(user.id); setForm({ displayName: user.displayName, email: user.email, password: "", role: user.role.key, status: user.status, siteIds: user.siteIds }); setShowForm(true); };
+  const toggleSite = (siteId: string) => setForm((current) => ({ ...current, siteIds: current.siteIds.includes(siteId) ? current.siteIds.filter((id) => id !== siteId) : [...current.siteIds, siteId] }));
   const submitUser = async (event: React.FormEvent) => {
     event.preventDefault();
     setSaving(true);
@@ -1099,14 +1170,14 @@ function UsersView({ currentUserId }: { currentUserId: string }) {
     }
   };
   const deleteUser = (user: UserRow) => confirm({
-    title: `Eliminar a ${user.displayName}`,
-    detail: "Se eliminarán su identidad local, sesiones y asignaciones de acceso. Esta acción quedará registrada en auditoría.",
-    confirmLabel: "Eliminar usuario",
+    title: `Quitar acceso de ${user.displayName}`,
+    detail: "Se revocará su acceso al sitio activo. Sus accesos a otros sitios se conservarán y la acción quedará registrada en auditoría.",
+    confirmLabel: "Quitar acceso",
     tone: "danger",
     onConfirm: async () => {
       try {
         await portalRequest(`/api/v1/users/${user.id}`, { method: "DELETE" });
-        notify(`${user.displayName} fue eliminado.`);
+        notify(`Se quitó el acceso de ${user.displayName} al sitio activo.`);
         if ((result?.items.length ?? 0) === 1 && page > 1) setPage(page - 1);
         else setReload((value) => value + 1);
       } catch (requestError) {
@@ -1122,11 +1193,11 @@ function UsersView({ currentUserId }: { currentUserId: string }) {
       <section className="module-summary-grid user-summary-grid"><article><span className="module-summary-icon blue"><Users size={19} /></span><div><small>Usuarios registrados</small><strong>{result?.summary.total ?? 0}</strong><span>{result?.summary.active ?? 0} activos</span></div></article><article><span className="module-summary-icon green"><ShieldCheck size={19} /></span><div><small>Administradores</small><strong>{result?.summary.administrators ?? 0}</strong><span>Acceso total</span></div></article><article><span className="module-summary-icon amber"><Mail size={19} /></span><div><small>Invitaciones pendientes</small><strong>{result?.summary.invited ?? 0}</strong><span>Sin primer acceso</span></div></article></section>
       <article className="panel module-panel users-module">
         <div className="module-toolbar"><div><span className="eyebrow">Control de acceso</span><h2>Equipo con acceso al portal</h2></div><button className="primary-button" onClick={showForm ? () => setShowForm(false) : openCreate}><UserPlus size={16} />{showForm ? "Cancelar" : "Crear usuario"}</button></div>
-        {showForm && <form className="user-editor-form" onSubmit={submitUser}><div><span className="eyebrow">{editingId ? "Editar acceso" : "Nuevo acceso"}</span><h3>{editingId ? "Actualizar usuario" : "Crear usuario conectado a PostgreSQL"}</h3></div><label><span>Nombre completo</span><input required minLength={3} value={form.displayName} onChange={(event) => setForm({ ...form, displayName: event.target.value })} /></label><label><span>Correo electrónico</span><input type="email" required value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label><label><span>{editingId ? "Nueva contraseña (opcional)" : "Contraseña inicial"}</span><input type="password" required={!editingId} minLength={10} autoComplete="new-password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} placeholder="Mínimo 10 caracteres" /></label><label><span>Perfil</span><select value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value as UserRow["role"]["key"] })}><option value="administrator">Administrador</option><option value="engineer">Ingeniero</option><option value="operator">Operador</option><option value="viewer">Solo lectura</option></select></label><label><span>Estado</span><select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as UserRow["status"] })}><option value="active">Activo</option><option value="suspended">Suspendido</option><option value="invited">Invitado</option></select></label><div className="user-editor-actions"><button type="button" className="secondary-button" onClick={() => setShowForm(false)}>Cancelar</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Guardando…" : editingId ? "Guardar cambios" : "Crear usuario"}</button></div></form>}
+        {showForm && <form className="user-editor-form" onSubmit={submitUser}><div><span className="eyebrow">{editingId ? "Editar acceso" : "Nuevo acceso"}</span><h3>{editingId ? "Actualizar usuario" : "Crear usuario conectado a PostgreSQL"}</h3></div><label><span>Nombre completo</span><input required minLength={3} value={form.displayName} onChange={(event) => setForm({ ...form, displayName: event.target.value })} /></label><label><span>Correo electrónico</span><input type="email" required value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label><label><span>{editingId ? "Nueva contraseña (opcional)" : "Contraseña inicial"}</span><input type="password" required={!editingId} minLength={10} autoComplete="new-password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} placeholder="Mínimo 10 caracteres" /></label><label><span>Perfil</span><select value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value as UserRow["role"]["key"] })}><option value="administrator">Administrador</option><option value="engineer">Ingeniero</option><option value="operator">Operador</option><option value="viewer">Solo lectura</option></select></label><label><span>Estado</span><select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as UserRow["status"] })}><option value="active">Activo</option><option value="suspended">Suspendido</option><option value="invited">Invitado</option></select></label><fieldset className="user-site-access"><legend>Sitios autorizados</legend><p>El perfil seleccionado se aplicará en cada sitio donde tienes administración.</p><div>{manageableSites.map((site) => <label key={site.id} className={form.siteIds.includes(site.id) ? "selected" : ""}><input type="checkbox" checked={form.siteIds.includes(site.id)} onChange={() => toggleSite(site.id)} /><span><strong>{site.name}</strong><small>{site.clientName} · {site.code}</small></span></label>)}</div>{!form.siteIds.length && <small className="field-error">Selecciona al menos un sitio.</small>}</fieldset><div className="user-editor-actions"><button type="button" className="secondary-button" onClick={() => setShowForm(false)}>Cancelar</button><button type="submit" className="primary-button" disabled={saving || !form.siteIds.length}>{saving ? "Guardando…" : editingId ? "Guardar cambios" : "Crear usuario"}</button></div></form>}
         <div className="user-list-toolbar"><label className="search-field"><Search size={17} /><input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="Buscar por nombre o correo…" /></label><label className="status-filter"><span>Estado</span><select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPage(1); }}><option value="all">Todos</option><option value="active">Activos</option><option value="suspended">Suspendidos</option><option value="invited">Invitados</option></select><ChevronDown size={13} /></label></div>
         {error && <div className="data-error"><AlertTriangle size={18} /><div><strong>No se pudieron cargar los usuarios</strong><p>{error}</p></div></div>}
         {loading && <div className="data-loading"><Refresh className="spin" size={18} /> Consultando usuarios…</div>}
-        {!loading && !error && <><div className="module-table-wrap"><div className="users-table"><div className="module-table-head"><span>Usuario</span><span>Rol</span><span>Estado</span><span>Último acceso</span><span>Acciones</span></div>{result?.items.map((user) => <div className="module-table-row" key={user.id}><span className="user-identity"><b>{user.displayName.split(" ").map((part) => part[0]).slice(0, 2).join("").toUpperCase()}</b><span><strong>{user.displayName}{user.id === currentUserId ? " · Tú" : ""}</strong><small>{user.email}</small></span></span><span><i className="role-chip">{user.role.name}</i></span><span><i className={`user-status status-${user.status}`}>{user.status === "active" ? "Activo" : user.status === "suspended" ? "Suspendido" : "Invitado"}</i></span><span>{formatDateTime(user.lastLoginAt)}</span><span className="row-actions"><button className="ghost-button" onClick={() => openEdit(user)}><Pencil size={14} /> Editar</button><button className="icon-danger-button" disabled={user.id === currentUserId} onClick={() => deleteUser(user)} aria-label={`Eliminar a ${user.displayName}`}><Trash size={15} /></button></span></div>)}{result?.items.length === 0 && <TableEmptyState title="No hay usuarios con estos filtros" detail="Cambia la búsqueda o crea un nuevo acceso." />}</div></div>{result && <Pagination page={result.page} totalPages={result.totalPages} total={result.total} pageSize={result.pageSize} onPageChange={setPage} itemLabel="usuarios" />}</>}
+        {!loading && !error && <><div className="module-table-wrap"><div className="users-table"><div className="module-table-head"><span>Usuario</span><span>Rol</span><span>Sitios</span><span>Estado</span><span>Último acceso</span><span>Acciones</span></div>{result?.items.map((user) => <div className="module-table-row" key={user.id}><span className="user-identity"><b>{user.displayName.split(" ").map((part) => part[0]).slice(0, 2).join("").toUpperCase()}</b><span><strong>{user.displayName}{user.id === currentUserId ? " · Tú" : ""}</strong><small>{user.email}</small></span></span><span><i className="role-chip">{user.role.name}</i></span><span><i className="site-count-chip">{user.siteIds.length} {user.siteIds.length === 1 ? "sitio" : "sitios"}</i></span><span><i className={`user-status status-${user.status}`}>{user.status === "active" ? "Activo" : user.status === "suspended" ? "Suspendido" : "Invitado"}</i></span><span>{formatDateTime(user.lastLoginAt)}</span><span className="row-actions"><button className="ghost-button" onClick={() => openEdit(user)}><Pencil size={14} /> Editar</button><button className="icon-danger-button" disabled={user.id === currentUserId} onClick={() => deleteUser(user)} aria-label={`Quitar acceso de ${user.displayName} al sitio activo`}><Trash size={15} /></button></span></div>)}{result?.items.length === 0 && <TableEmptyState title="No hay usuarios con estos filtros" detail="Cambia la búsqueda o crea un nuevo acceso." />}</div></div>{result && <Pagination page={result.page} totalPages={result.totalPages} total={result.total} pageSize={result.pageSize} onPageChange={setPage} itemLabel="usuarios" />}</>}
         <div className="role-matrix"><div><span className="eyebrow">Matriz de permisos</span><h3>Alcance de cada rol</h3></div><div className="role-matrix-grid"><span><strong>Administrador</strong><small>Configuración, usuarios y operación completa</small></span><span><strong>Ingeniero</strong><small>Diagnóstico, umbrales y reportes</small></span><span><strong>Operador</strong><small>Supervisión y reconocimiento de alarmas</small></span><span><strong>Solo lectura</strong><small>Consulta sin capacidad de modificación</small></span></div></div>
       </article>
     </>
@@ -1198,8 +1269,8 @@ function LoginScreen({ checking, onAuthenticated }: { checking: boolean; onAuthe
   return <main className="login-shell">
     <section className="login-brand-panel">
       <span className="login-brand-mark"><Zap size={28} strokeWidth={2.2} /></span>
-      <div><span className="eyebrow">CAM5 CORE</span><h1>Condición eléctrica bajo control</h1><p>Supervisión, histórico y trazabilidad para la cabina MCC-01 desde un acceso protegido.</p></div>
-      <dl><div><dt>Ubicación</dt><dd>Subestación Norte</dd></div><div><dt>Cadena OT</dt><dd>CAM5 → Gateway → CORE</dd></div><div><dt>Datos</dt><dd>PostgreSQL</dd></div></dl>
+      <div><span className="eyebrow">CAM5 CORE</span><h1>Condición eléctrica bajo control</h1><p>Supervisión centralizada de clientes, sitios y puntos de medición con trazabilidad operacional.</p></div>
+      <dl><div><dt>Estructura</dt><dd>Cliente → Sitio → Punto</dd></div><div><dt>Adquisición</dt><dd>CAM5 → Gateway → CORE</dd></div><div><dt>Seguridad</dt><dd>Acceso por sitio y perfil</dd></div></dl>
     </section>
     <section className="login-form-panel">
       <div className="login-card">
@@ -1221,7 +1292,6 @@ function LoginScreen({ checking, onAuthenticated }: { checking: boolean; onAuthe
 
 export default function Home() {
   const sensors = useSensorData();
-  const [assetConfig] = usePersistentState("cam5.front.asset-config", defaultAssetConfig);
   const activeSensorRouteKey = sensors.filter((sensor) => sensor.enabled).map((sensor) => sensor.id).join(",");
   const [view, setView] = useState<View>("overview");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -1235,6 +1305,9 @@ export default function Home() {
   const [alarmNotes, setAlarmNotes] = usePersistentState<Record<string, string[]>>("cam5.front.alarm-notes", {});
   const [systemMode, setSystemMode] = usePersistentState<SystemMode>("cam5.front.system-mode", "normal");
   const [sessionUser, setSessionUser] = useState<PortalSessionUser | null>(null);
+  const [hierarchy, setHierarchy] = useState<PortalHierarchy | null>(null);
+  const [hierarchyLoading, setHierarchyLoading] = useState(false);
+  const [activePointId, setActivePointId] = useState("");
   const [authState, setAuthState] = useState<"checking" | "authenticated" | "anonymous">("checking");
   const [notice, setNotice] = useState<{ id: number; message: string; tone: NoticeTone } | null>(null);
   const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null);
@@ -1253,10 +1326,39 @@ export default function Home() {
   useEffect(() => {
     let active = true;
     portalRequest<{ user: PortalSessionUser }>("/api/v1/auth/session")
-      .then((response) => { if (active) { setSessionUser(response.user); setAuthState("authenticated"); } })
+      .then(async (response) => {
+        if (!active) return;
+        setSessionUser(response.user);
+        setAuthState("authenticated");
+        setHierarchyLoading(true);
+        try {
+          const data = await portalRequest<PortalHierarchy>("/api/v1/hierarchy");
+          if (active) {
+            setHierarchy(data);
+            setActivePointId(data.points[0]?.id ?? "");
+          }
+        } catch {
+          if (active) setHierarchy(null);
+        } finally {
+          if (active) setHierarchyLoading(false);
+        }
+      })
       .catch(() => { if (active) setAuthState("anonymous"); });
     return () => { active = false; };
   }, []);
+
+  const loadHierarchy = async () => {
+    setHierarchyLoading(true);
+    try {
+      const data = await portalRequest<PortalHierarchy>("/api/v1/hierarchy");
+      setHierarchy(data);
+      setActivePointId((current) => data.points.some((point) => point.id === current) ? current : data.points[0]?.id ?? "");
+    } catch (requestError) {
+      notify(requestError instanceof Error ? requestError.message : "No fue posible cargar la estructura operacional.", "warning");
+    } finally {
+      setHierarchyLoading(false);
+    }
+  };
 
   useEffect(() => {
     const activeSensorIds = new Set(activeSensorRouteKey.split(","));
@@ -1316,11 +1418,27 @@ export default function Home() {
   };
   const logout = async () => {
     try { await portalRequest("/api/v1/auth/logout", { method: "POST" }); }
-    finally { setSessionUser(null); setAuthState("anonymous"); }
+    finally { setSessionUser(null); setHierarchy(null); setAuthState("anonymous"); }
   };
 
-  if (authState !== "authenticated" || !sessionUser) return <LoginScreen checking={authState === "checking"} onAuthenticated={(user) => { setSessionUser(user); setAuthState("authenticated"); }} />;
+  const switchSite = async (siteId: string) => {
+    if (siteId === sessionUser?.siteId) return;
+    try {
+      const response = await portalRequest<{ user: PortalSessionUser }>("/api/v1/auth/context", { method: "PATCH", body: JSON.stringify({ siteId }) });
+      setSessionUser(response.user);
+      setActivePointId("");
+      await loadHierarchy();
+      notify(`Contexto cambiado a ${response.user.siteName}.`, "info");
+    } catch (requestError) {
+      notify(requestError instanceof Error ? requestError.message : "No fue posible cambiar de sitio.", "warning");
+    }
+  };
+
+  if (authState !== "authenticated" || !sessionUser) return <LoginScreen checking={authState === "checking"} onAuthenticated={(user) => { setSessionUser(user); setAuthState("authenticated"); void loadHierarchy(); }} />;
   const activeRole = sessionUser.roleName;
+  const activePoint = hierarchy?.points.find((point) => point.id === activePointId) ?? hierarchy?.points[0];
+  const activeGateway = hierarchy?.gateways[0];
+  const activeController = hierarchy?.controllers.find((controller) => controller.pointId === activePoint?.id) ?? hierarchy?.controllers[0];
 
   return (
     <FeedbackContext.Provider value={notify}>
@@ -1331,7 +1449,7 @@ export default function Home() {
       <aside className={`sidebar ${menuOpen ? "open" : ""}`}>
         <div className="brand-block">
           <span className="brand-mark"><Zap size={22} strokeWidth={2.3} /></span>
-          <div className="brand-copy"><span className="brand-name"><strong>CAM5</strong><b>CORE</b></span><small>Critical asset intelligence</small></div>
+          <div className="brand-copy"><span className="brand-name"><strong>CAM5</strong><b>CORE</b></span><small>Monitoreo de condición eléctrica</small></div>
           <button className="sidebar-close" aria-label="Cerrar menú" onClick={() => setMenuOpen(false)}><X size={20} /></button>
         </div>
 
@@ -1356,7 +1474,7 @@ export default function Home() {
           ))}
         </nav>
         <div className="sidebar-status">
-          <div className="gateway-badge"><span className="gateway-icon"><Server size={17} /></span><span><strong>Cadena OT operativa</strong><small>CAM5-CTRL-01 → CAM5-GW-01</small></span><i /></div>
+          <div className="gateway-badge"><span className="gateway-icon"><Server size={17} /></span><span><strong>{activeGateway?.state === "online" ? "Cadena OT operativa" : "Cadena OT en puesta en marcha"}</strong><small>{activeController?.code ?? "Controlador pendiente"} → {activeGateway?.code ?? "Gateway pendiente"}</small></span><i className={activeGateway?.state === "online" ? "" : "pending"} /></div>
           <button className="user-card" onClick={() => navigate("users")} aria-label="Abrir usuarios y roles"><span className="user-avatar">{sessionUser.displayName.split(" ").map((part) => part[0]).slice(0, 2).join("").toUpperCase()}</span><span className="user-copy"><strong>{sessionUser.displayName}</strong><small>{sessionUser.roleName}</small></span><ChevronRight size={16} /></button>
           <button className="sidebar-logout" onClick={logout}><LogOut size={17} /> Cerrar sesión</button>
         </div>
@@ -1364,13 +1482,13 @@ export default function Home() {
 
       <main className="main-shell">
         <header className="topbar">
-          <div className="topbar-left"><button className="menu-button" aria-label="Abrir navegación" onClick={() => setMenuOpen(true)}><Menu size={22} /></button><span className="mobile-brand"><Zap size={18} fill="currentColor" /></span><div className="site-selector"><Building2 size={17} /><div><span>{assetConfig.location}</span><strong className="site-active-asset">{assetConfig.name} · {assetConfig.description}</strong></div><span className="single-site-label">Piloto monositio</span></div></div>
-          <div className="topbar-right"><span className="authenticated-role"><ShieldCheck size={15} /><span><small>Sesión activa</small><strong>{sessionUser.roleName}</strong></span></span><label className="simulation-mode"><span>Simulación</span><select value={systemMode} onChange={(event) => setSystemMode(event.target.value as SystemMode)} aria-label="Simular estado de telemetría"><option value="normal">Operativa</option><option value="loading">Actualizando</option><option value="stale">Datos atrasados</option><option value="offline">Sin conexión</option></select></label><div className={`live-state live-${systemMode}`}><span /><div><strong>{systemMode === "offline" ? "Telemetría interrumpida" : systemMode === "stale" ? "Telemetría atrasada" : systemMode === "loading" ? "Actualizando telemetría" : "Telemetría activa"}</strong><small>{systemMode === "offline" ? "Sin datos hace 18 min" : systemMode === "stale" ? "Último dato hace 6 min" : systemMode === "loading" ? "Esperando respuesta" : "Actualizado hace 2 s"}</small></div></div><button className="topbar-logout" onClick={logout} aria-label="Cerrar sesión"><LogOut size={18} /></button></div>
+          <div className="topbar-left"><button className="menu-button" aria-label="Abrir navegación" onClick={() => setMenuOpen(true)}><Menu size={22} /></button><span className="mobile-brand"><Zap size={18} fill="currentColor" /></span><div className="operational-context"><Building2 size={17} /><label><span>Cliente</span><select value={sessionUser.clientId} onChange={(event) => { const firstSite = hierarchy?.sites.find((site) => site.clientId === event.target.value); if (firstSite) void switchSite(firstSite.id); }} aria-label="Cliente activo">{hierarchy?.clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>) ?? <option value={sessionUser.clientId}>{sessionUser.clientName}</option>}</select></label><ChevronRight size={14} /><label><span>Sitio</span><select value={sessionUser.siteId} onChange={(event) => void switchSite(event.target.value)} aria-label="Sitio activo">{(hierarchy?.sites ?? sessionUser.sites).filter((site) => site.clientId === sessionUser.clientId).map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}</select></label><ChevronRight size={14} /><label><span>Punto de medición</span><select value={activePoint?.id ?? ""} onChange={(event) => setActivePointId(event.target.value)} aria-label="Punto de medición activo"><option value="">Sin punto seleccionado</option>{hierarchy?.points.map((point) => <option key={point.id} value={point.id}>{point.code} · {point.name}</option>)}</select></label></div></div>
+          <div className="topbar-right"><span className="authenticated-role"><ShieldCheck size={15} /><span><small>Sesión activa</small><strong>{sessionUser.roleName}</strong></span></span><div className={`live-state live-${activeGateway?.state === "online" ? "normal" : "offline"}`}><span /><div><strong>{activeGateway?.state === "online" ? "Adquisición operativa" : "Adquisición pendiente"}</strong><small>{activeGateway ? `${activeGateway.code} · ${activeGateway.state === "online" ? "en línea" : "sin telemetría"}` : "Gateway no configurado"}</small></div></div><button className="topbar-logout" onClick={logout} aria-label="Cerrar sesión"><LogOut size={18} /></button></div>
         </header>
 
         <div className="content-scroll">
           <div className="page-content">
-            {systemMode !== "normal" && <section className={`operational-banner banner-${systemMode}`} role="alert"><span>{systemMode === "offline" ? <PlugConnected size={19} /> : systemMode === "loading" ? <Refresh className="spin" size={19} /> : <Clock3 size={19} />}</span><div><strong>{systemMode === "offline" ? "Gateway sin comunicación" : systemMode === "loading" ? "Sincronizando datos" : "Las lecturas están atrasadas"}</strong><p>{systemMode === "offline" ? "El portal conserva el último valor conocido. Las acciones operativas siguen disponibles, pero no hay telemetría nueva." : systemMode === "loading" ? "Solicitando la última configuración, lecturas y eventos disponibles." : "Los datos visibles superan el tiempo de frescura configurado. Revisa el enlace antes de tomar una decisión."}</p></div>{systemMode !== "loading" && <button onClick={() => { setSystemMode("normal"); notify("Conexión simulada restablecida."); }}><Refresh size={15} /> Reintentar</button>}</section>}
+            {systemMode !== "normal" && <section className={`operational-banner banner-${systemMode}`} role="alert"><span>{systemMode === "offline" ? <PlugConnected size={19} /> : systemMode === "loading" ? <Refresh className="spin" size={19} /> : <Clock3 size={19} />}</span><div><strong>{systemMode === "offline" ? "Gateway sin comunicación" : systemMode === "loading" ? "Sincronizando datos" : "Las lecturas están atrasadas"}</strong><p>{systemMode === "offline" ? "El portal conserva el último valor conocido. Las acciones operativas siguen disponibles, pero no hay telemetría nueva." : systemMode === "loading" ? "Solicitando la última configuración, lecturas y eventos disponibles." : "Los datos visibles superan el tiempo de frescura configurado. Revisa el enlace antes de tomar una decisión."}</p></div>{systemMode !== "loading" && <button onClick={() => { setSystemMode("normal"); notify("Solicitud de reconexión enviada."); }}><Refresh size={15} /> Reintentar</button>}</section>}
             <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> Gestión de activos críticos</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{view !== "assets" && view !== "settings" && view !== "integrations" && view !== "users" && view !== "notifications" && view !== "reports" && view !== "maintenance" && view !== "diagnostics" && view !== "commissioning" && <button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button>}<button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{3 - acknowledged.length} alertas abiertas</button></div></section>
             {view === "overview" && <Overview onNavigate={navigate} onAcknowledge={acknowledge} acknowledged={acknowledged} />}
             {view === "cabinet" && <CabinetView onOpenTrend={openChannelTrend} />}
@@ -1379,12 +1497,12 @@ export default function Home() {
             {view === "trends" && <TrendsView period={period} setPeriod={setPeriod} selectedId={trendSensorId} onSelectChannel={selectTrendChannel} onBackToMap={() => navigate("cabinet")} />}
             {view === "alarms" && <AlarmsView acknowledged={acknowledged} onAcknowledge={acknowledge} workOrders={workOrders} onOpenWorkOrder={openWorkOrderFromAlarm} closedIds={closedAlarmIds} setClosedIds={setClosedAlarmIds} assignees={alarmAssignees} setAssignees={setAlarmAssignees} notes={alarmNotes} setNotes={setAlarmNotes} />}
             {view === "history" && <HistoryView />}
-            {view === "assets" && <AssetsView onNavigate={navigate} />}
+            {view === "assets" && <OperationalHierarchyView hierarchy={hierarchy} loading={hierarchyLoading} permissions={sessionUser.permissions} onReload={loadHierarchy} onSwitchSite={switchSite} />}
             {view === "reports" && <ReportsView />}
             {view === "maintenance" && <MaintenanceView orders={workOrders} setOrders={setWorkOrders} focusOrderId={focusOrderId} />}
             {view === "settings" && <SettingsView />}
             {view === "integrations" && <IntegrationsView />}
-            {view === "users" && <UsersView currentUserId={sessionUser.id} />}
+            {view === "users" && <UsersView currentUserId={sessionUser.id} sites={sessionUser.sites} activeSiteId={sessionUser.siteId} />}
             {view === "notifications" && <NotificationsView />}
           </div>
         </div>

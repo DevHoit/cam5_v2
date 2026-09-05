@@ -1,6 +1,6 @@
 # CAM5 CORE — contrato para backend
 
-El frontend queda preparado para una primera instalación con una ubicación, un gateway y un equipo CAM-5 accesible mediante Modbus TCP.
+El frontend admite varios clientes. Cada cliente contiene uno o más sitios; cada sitio contiene puntos de medición y gateways, y cada equipo CAM-5 relaciona un punto con un gateway del mismo sitio mediante Modbus TCP.
 
 ## Cadena de adquisición
 
@@ -66,6 +66,8 @@ El cliente tipado está en `app/cam5-api.ts`. Las familias principales son:
 - `/auth/login`
 - `/auth/logout`
 - `/auth/session`
+- `/auth/context`
+- `/hierarchy`
 - `/history`
 - `/me/access`
 - `/users`
@@ -88,9 +90,9 @@ El cliente tipado está en `app/cam5-api.ts`. Las familias principales son:
 
 ## Persistencia y autorización
 
-La base PostgreSQL, la migración inicial y el seed se encuentran en `db/` y `drizzle/`. El diseño incluye datos crudos, última lectura, agregados históricos, perfiles Modbus y control de acceso por rol, ubicación y activo.
+La base PostgreSQL, sus migraciones y el seed se encuentran en `db/` y `drizzle/`. El diseño incluye datos crudos, última lectura, agregados históricos, perfiles Modbus y control de acceso por rol, cliente, sitio y punto de medición.
 
-Ya están implementadas las sesiones locales, contraseñas con `scrypt`, cookie `HttpOnly` y `SameSite=Strict`, revocación al cerrar sesión, administración paginada de usuarios y consulta histórica paginada. Los endpoints de escritura impiden eliminar o suspender la cuenta propia y protegen al último administrador activo.
+Ya están implementadas las sesiones locales con contexto de sitio activo, contraseñas con `scrypt`, cookie `HttpOnly` y `SameSite=Strict`, revocación al cerrar sesión, jerarquía operacional, administración paginada de usuarios con asignación multi-sitio y consulta histórica paginada. Los endpoints de escritura impiden suspender la cuenta propia y protegen al último administrador activo de cada sitio.
 
 Los perfiles iniciales son Administrador, Ingeniero, Operador y Solo lectura. La autorización se aplica en el backend mediante `db/authorization.ts`; la visibilidad del menú en el frontend es solamente una ayuda visual y no un control de seguridad.
 

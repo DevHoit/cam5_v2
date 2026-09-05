@@ -8,6 +8,20 @@
       "when": 1788619518556,
       "tag": "0000_cam5_initial_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1788623044251,
+      "tag": "0001_eager_blockbuster",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788623378871,
+      "tag": "0002_sparkling_wallow",
+      "breakpoints": true
     }
   ]
 }

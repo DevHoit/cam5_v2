@@ -11,6 +11,7 @@ import {
   authIdentities,
   channels,
   commissioningItems,
+  clients,
   deviceModels,
   devices,
   gateways,
@@ -24,6 +25,7 @@ import {
   rolePermissions,
   roles,
   sites,
+  userClientAssignments,
   userRoleAssignments,
   users,
 } from "./schema";
@@ -72,19 +74,39 @@ function physicalInputCode(sourceId: string): string {
 
 export async function seedCam5Database(
   db: Cam5Database,
-  options: { adminEmail?: string; adminName?: string; adminPassword?: string; log?: boolean } = {},
+  options: {
+    adminEmail?: string;
+    adminName?: string;
+    adminPassword?: string;
+    clientCode?: string;
+    clientName?: string;
+    log?: boolean;
+  } = {},
 ) {
   await db.transaction(async (tx) => {
+    const clientCode = options.clientCode ?? process.env.CAM5_CLIENT_CODE ?? "CLIENTE-PRINCIPAL";
+    const clientName = options.clientName ?? process.env.CAM5_CLIENT_NAME ?? "Cliente principal";
+    await tx.insert(clients).values({
+      code: clientCode,
+      name: clientName,
+    }).onConflictDoUpdate({
+      target: clients.code,
+      set: { name: clientName, active: true, updatedAt: new Date() },
+    });
+    const [client] = await tx.select().from(clients).where(eq(clients.code, clientCode)).limit(1);
+    if (!client) throw new Error("No fue posible crear el cliente inicial.");
+
     await tx.insert(sites).values({
+      clientId: client.id,
       code: "SITE-NORTE",
       name: "Subestación Norte",
       description: "Primera ubicación productiva CAM5 CORE",
       timezone: "America/Santiago",
     }).onConflictDoUpdate({
-      target: sites.code,
+      target: [sites.clientId, sites.code],
       set: { name: "Subestación Norte", timezone: "America/Santiago", active: true, updatedAt: new Date() },
     });
-    const [site] = await tx.select().from(sites).where(eq(sites.code, "SITE-NORTE")).limit(1);
+    const [site] = await tx.select().from(sites).where(and(eq(sites.clientId, client.id), eq(sites.code, "SITE-NORTE"))).limit(1);
     if (!site) throw new Error("No fue posible crear la ubicación inicial.");
 
     await tx.insert(assets).values({
@@ -390,6 +412,7 @@ export async function seedCam5Database(
       const [admin] = await tx.select().from(users).where(sql`lower(${users.email}) = ${adminEmail}`).limit(1);
       const [adminRole] = await tx.select().from(roles).where(eq(roles.key, "administrator")).limit(1);
       if (!admin || !adminRole) throw new Error("No fue posible asignar el administrador inicial.");
+      await tx.insert(userClientAssignments).values({ userId: admin.id, clientId: client.id, roleId: adminRole.id }).onConflictDoNothing();
       await tx.insert(userRoleAssignments).values({ userId: admin.id, roleId: adminRole.id, siteId: site.id }).onConflictDoNothing();
       if (configuredAdminPassword) {
         const passwordHash = await hashPassword(configuredAdminPassword);
@@ -406,7 +429,7 @@ export async function seedCam5Database(
     }
   });
 
-  if (options.log !== false) console.log("Base CAM5 inicializada: 1 sitio, 1 activo, 1 gateway, 1 CAM5, 24 entradas, 36 señales, 105 registros y 4 perfiles de portal.");
+  if (options.log !== false) console.log("Base CAM5 inicializada: 1 cliente, 1 sitio, 1 punto de medición, 1 gateway, 1 controlador CAM5, 24 entradas, 36 señales, 105 registros y 4 perfiles de portal.");
 }
 
 const isMainModule = Boolean(process.argv[1]) && import.meta.url === pathToFileURL(process.argv[1]).href;

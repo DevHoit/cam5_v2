@@ -20,7 +20,7 @@ test("server-renders the protected CAM5 access gate", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /<title>CAM5 CORE \| Gestión de Activos Críticos<\/title>/i);
+  assert.match(html, /<title>CAM5 CORE \| Monitoreo de condición eléctrica<\/title>/i);
   assert.match(html, /CAM5 CORE/);
   assert.match(html, /Validando sesión/);
   assert.match(html, /Consultando sesión/);
@@ -37,7 +37,7 @@ test("keeps the production portal free of starter preview code", async () => {
   ]);
 
   assert.match(page, /function ReportsView\(\)/);
-  assert.match(page, /function AssetsView\(\{ onNavigate \}/);
+  assert.match(page, /function OperationalHierarchyView\(/);
   assert.match(page, /function MaintenanceView\(/);
   assert.match(page, /function IntegrationsView\(\)/);
   assert.match(page, /function DiagnosticsView\(\)/);
@@ -51,7 +51,10 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(page, /Intervención completada/);
   assert.match(page, /usePersistentState/);
   assert.match(page, /portal-notice/);
-  assert.match(page, /Piloto monositio/);
+  assert.match(page, /Estructura operacional/);
+  assert.match(page, /Clientes, sitios y medición/);
+  assert.match(page, /\/api\/v1\/hierarchy/);
+  assert.match(page, /\/api\/v1\/auth\/context/);
   assert.match(page, /function useSensorData/);
   assert.match(page, /function LoginScreen/);
   assert.match(page, /\/api\/v1\/auth\/login/);
@@ -59,11 +62,11 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(page, /function HistoryView/);
   assert.match(page, /type="date"/);
   assert.match(page, /<Pagination/);
-  assert.match(page, /Eliminar usuario/);
+  assert.match(page, /Quitar acceso/);
   assert.match(page, /URLSearchParams/);
   assert.match(page, /report-preview/);
   assert.match(page, /ConfirmContext/);
-  assert.match(page, /Datos atrasados/);
+  assert.match(page, /Las lecturas están atrasadas/);
   assert.match(page, /Sesión activa/);
   assert.match(page, /CAM5-CTRL-01/);
   assert.match(page, /CAM5-GW-01/);
@@ -77,7 +80,7 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(model, /cam5RegisterCatalog/);
   assert.match(model, /cam5InputInventory/);
   assert.doesNotMatch(page, /CAM5-GW-0[234]|Subestación Auxiliar|2 subestaciones/);
-  assert.match(layout, /CAM5 CORE \| Gestión de Activos Críticos/);
+  assert.match(layout, /CAM5 CORE \| Monitoreo de condición eléctrica/);
   assert.match(css, /\.report-builder/);
   assert.match(css, /\.asset-management-layout/);
   assert.match(css, /\.maintenance-plan-grid/);

@@ -52,8 +52,24 @@ export const integrationKindEnum = pgEnum("integration_kind", ["webhook", "rest_
 export const auditOutcomeEnum = pgEnum("audit_outcome", ["success", "denied", "failed"]);
 export const configurationKindEnum = pgEnum("configuration_kind", ["baseline", "manual", "pre_deploy", "backup", "restore"]);
 
+export const clients = pgTable("clients", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  code: varchar("code", { length: 60 }).notNull(),
+  name: varchar("name", { length: 180 }).notNull(),
+  legalName: varchar("legal_name", { length: 220 }),
+  taxId: varchar("tax_id", { length: 40 }),
+  contactEmail: varchar("contact_email", { length: 320 }),
+  active: boolean("active").default(true).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("clients_code_uidx").on(table.code),
+  index("clients_active_idx").on(table.active),
+]);
+
 export const sites = pgTable("sites", {
   id: uuid("id").defaultRandom().primaryKey(),
+  clientId: uuid("client_id").notNull().references(() => clients.id, { onDelete: "restrict" }),
   code: varchar("code", { length: 40 }).notNull(),
   name: varchar("name", { length: 160 }).notNull(),
   timezone: varchar("timezone", { length: 80 }).default("America/Santiago").notNull(),
@@ -62,8 +78,8 @@ export const sites = pgTable("sites", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
-  uniqueIndex("sites_code_uidx").on(table.code),
-  index("sites_active_idx").on(table.active),
+  uniqueIndex("sites_client_code_uidx").on(table.clientId, table.code),
+  index("sites_client_active_idx").on(table.clientId, table.active),
 ]);
 
 export const assets = pgTable("assets", {
@@ -155,6 +171,18 @@ export const rolePermissions = pgTable("role_permissions", {
   permissionId: uuid("permission_id").notNull().references(() => permissions.id, { onDelete: "cascade" }),
 }, (table) => [primaryKey({ columns: [table.roleId, table.permissionId] })]);
 
+export const userClientAssignments = pgTable("user_client_assignments", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  clientId: uuid("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  roleId: uuid("role_id").notNull().references(() => roles.id, { onDelete: "restrict" }),
+  grantedBy: uuid("granted_by").references(() => users.id, { onDelete: "set null" }),
+  grantedAt: timestamp("granted_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("user_client_assignments_scope_uidx").on(table.userId, table.clientId),
+  index("user_client_assignments_client_idx").on(table.clientId, table.userId),
+]);
+
 export const userRoleAssignments = pgTable("user_role_assignments", {
   id: uuid("id").defaultRandom().primaryKey(),
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
@@ -177,6 +205,7 @@ export const userAssetScopes = pgTable("user_asset_scopes", {
 export const authSessions = pgTable("auth_sessions", {
   id: uuid("id").defaultRandom().primaryKey(),
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  activeSiteId: uuid("active_site_id").references(() => sites.id, { onDelete: "set null" }),
   tokenHash: varchar("token_hash", { length: 64 }).notNull(),
   ipAddress: varchar("ip_address", { length: 64 }),
   userAgent: text("user_agent"),
@@ -187,6 +216,7 @@ export const authSessions = pgTable("auth_sessions", {
 }, (table) => [
   uniqueIndex("auth_sessions_token_hash_uidx").on(table.tokenHash),
   index("auth_sessions_user_expiry_idx").on(table.userId, table.expiresAt),
+  index("auth_sessions_active_site_idx").on(table.activeSiteId),
   check("auth_sessions_expiry_chk", sql`${table.expiresAt} > ${table.createdAt}`),
 ]);
 

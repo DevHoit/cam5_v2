@@ -122,7 +122,7 @@ export function Cam5CommissioningView({ notify }: { notify: Notify }) {
           <button className={tab === "system" ? "active" : ""} onClick={() => setTab("system")}><Network size={16} /> Sistema</button>
           <button className={tab === "checklist" ? "active" : ""} onClick={() => setTab("checklist")}><ShieldCheck size={16} /> Cierre</button>
         </div>
-        <span className="engineering-scope"><TopologyStar3 size={15} /> 1 ubicación · 1 gateway · 1 CAM-5</span>
+        <span className="engineering-scope"><TopologyStar3 size={15} /> Contexto del sitio y punto de medición activos</span>
       </div>
 
       {tab === "device" && <div className="engineering-content">
