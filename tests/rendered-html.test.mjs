@@ -32,11 +32,13 @@ test("server-renders the CAM5 operational portal", async () => {
 });
 
 test("keeps the production portal free of starter preview code", async () => {
-  const [page, layout, css, packageJson] = await Promise.all([
+  const [page, layout, css, packageJson, engineering, model] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
+    readFile(new URL("../app/cam5-engineering.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/cam5-model.ts", import.meta.url), "utf8"),
   ]);
 
   assert.match(page, /function ReportsView\(\)/);
@@ -66,8 +68,12 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(page, /Subestación Norte/);
   assert.match(page, /Modbus TCP/);
   assert.match(page, /Mapa de registros Modbus/);
-  assert.match(page, /Offset base 0/);
-  assert.match(page, /Referencia visible versus offset del protocolo/);
+  assert.match(engineering, /Mapa oficial incorporado al frontend/);
+  assert.match(engineering, /Ver mapa 418–522/);
+  assert.match(model, /const humanReference/);
+  assert.match(model, /registerDefinition\(418/);
+  assert.match(model, /cam5RegisterCatalog/);
+  assert.match(model, /cam5InputInventory/);
   assert.doesNotMatch(page, /CAM5-GW-0[234]|Subestación Auxiliar|2 subestaciones/);
   assert.match(layout, /CAM5 CORE \| Gestión de Activos Críticos/);
   assert.match(css, /\.report-builder/);
@@ -76,6 +82,8 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(css, /\.integration-card-grid/);
   assert.match(css, /\.register-map-table/);
   assert.match(css, /\.diagnostic-chain/);
+  assert.match(css, /\.commissioning-summary/);
+  assert.match(css, /\.register-reference-table/);
   assert.match(css, /\.focused-order/);
   assert.match(css, /\.event-remediation-state/);
   assert.doesNotMatch(page, /SkeletonPreview|codex-preview/);

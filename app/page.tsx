@@ -3,6 +3,8 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { ComponentType } from "react";
 import { usePersistentState } from "./use-persistent-state";
+import { Cam5CommissioningView } from "./cam5-engineering";
+import { cam5OperationalChannels, cam5PdMetrics, cam5RegisterCatalog } from "./cam5-model";
 import {
   IconActivity as Activity,
   IconAlertTriangle as AlertTriangle,
@@ -53,7 +55,7 @@ import {
   IconX as X,
 } from "@tabler/icons-react";
 
-type View = "overview" | "cabinet" | "diagnostics" | "trends" | "alarms" | "history" | "assets" | "reports" | "maintenance" | "settings" | "integrations" | "users" | "notifications";
+type View = "overview" | "cabinet" | "diagnostics" | "commissioning" | "trends" | "alarms" | "history" | "assets" | "reports" | "maintenance" | "settings" | "integrations" | "users" | "notifications";
 type Severity = "critical" | "warning" | "info";
 type SensorState = "normal" | "warning" | "critical";
 type HistoryTab = "measurements" | "alarms" | "audit";
@@ -75,37 +77,28 @@ const useConfirm = () => useContext(ConfirmContext);
 const RoleContext = createContext<UserRole>("Administrador");
 const useActiveRole = () => useContext(RoleContext);
 
-const sensors = [
-  { id: "T01", label: "Barra fase L1", zone: "Barras principales", value: "68.4", unit: "°C", type: "Temperatura", state: "warning" as SensorState, trend: "+1.8 °C/h", threshold: "65 °C", register: "HR 40001", quality: "Válida" },
-  { id: "T02", label: "Barra fase L2", zone: "Barras principales", value: "54.1", unit: "°C", type: "Temperatura", state: "normal" as SensorState, trend: "+0.2 °C/h", threshold: "65 °C", register: "HR 40002", quality: "Válida" },
-  { id: "T03", label: "Barra fase L3", zone: "Barras principales", value: "52.8", unit: "°C", type: "Temperatura", state: "normal" as SensorState, trend: "+0.1 °C/h", threshold: "65 °C", register: "HR 40003", quality: "Válida" },
-  { id: "T04", label: "Contacto superior", zone: "Interruptor", value: "47.2", unit: "°C", type: "Temperatura", state: "normal" as SensorState, trend: "Estable", threshold: "70 °C", register: "HR 40004", quality: "Válida" },
-  { id: "T05", label: "Contacto inferior", zone: "Interruptor", value: "49.5", unit: "°C", type: "Temperatura", state: "normal" as SensorState, trend: "+0.3 °C/h", threshold: "70 °C", register: "HR 40005", quality: "Válida" },
-  { id: "PD1", label: "Canal UHF 01", zone: "Compartimiento de cables", value: "72", unit: "idx", type: "Descarga parcial", state: "critical" as SensorState, trend: "Acelerando · Φ 2.8×", threshold: "60 idx", register: "HR 40121", quality: "Válida" },
-  { id: "PD2", label: "Canal UHF 02", zone: "Barras principales", value: "18", unit: "idx", type: "Descarga parcial", state: "normal" as SensorState, trend: "Estable", threshold: "60 idx", register: "HR 40122", quality: "Válida" },
-  { id: "H01", label: "Ambiente de cabina", zone: "Compartimiento de cables", value: "78", unit: "%RH", type: "Humedad", state: "warning" as SensorState, trend: "+4 % / 24h", threshold: "75 %RH", register: "HR 40201", quality: "Válida" },
-];
+const sensors = cam5OperationalChannels;
 
 const defaultAssetConfig = { name: "MCC-01", description: "Alimentador Norte", voltage: "13.8", location: "Subestación Norte", timezone: "America/Santiago" };
 
 function defaultChannelConfiguration() {
   return sensors.map((sensor) => ({
     ...sensor,
-    enabled: true,
-    warning: sensor.id === "PD1" || sensor.id === "PD2" ? "40" : sensor.id === "H01" ? "75" : sensor.threshold.split(" ")[0],
-    critical: sensor.id.startsWith("PD") ? "60" : sensor.id === "H01" ? "85" : String(Number(sensor.threshold.split(" ")[0]) + 10),
+    enabled: sensor.configured,
+    warning: String(sensor.warningDefault),
+    critical: String(sensor.criticalDefault),
   }));
 }
 
 function useSensorData() {
-  const [configuration] = usePersistentState("cam5.front.channel-config", defaultChannelConfiguration());
+  const [configuration] = usePersistentState("cam5.front.channel-config.v2", defaultChannelConfiguration());
   return sensors.map((sensor) => {
     const configured = configuration.find((item) => item.id === sensor.id);
     const warning = Number(configured?.warning ?? sensor.threshold.split(" ")[0]);
     const critical = Number(configured?.critical ?? warning + 10);
     const reading = Number(sensor.value);
-    const state: SensorState = reading >= critical ? "critical" : reading >= warning ? "warning" : "normal";
-    const enabled = configured?.enabled ?? true;
+    const enabled = configured?.enabled ?? sensor.configured;
+    const state: SensorState = enabled && Number.isFinite(reading) ? reading >= critical ? "critical" : reading >= warning ? "warning" : "normal" : "normal";
     const activeThreshold = state === "critical" ? critical : warning;
     return { ...sensor, enabled, warning, critical, state, threshold: `${activeThreshold} ${sensor.unit}`, quality: enabled ? sensor.quality : "Deshabilitado" };
   });
@@ -135,7 +128,7 @@ const auditEntries = [
   { time: "Hoy 11:48", user: "Emerson Allende", action: "Umbral crítico actualizado", target: "PD1 · 65 → 60 idx", origin: "Portal web" },
   { time: "Hoy 09:22", user: "Paula Rojas", action: "Alarma reconocida", target: "AL-260811-028 · T01", origin: "Portal web" },
   { time: "Ayer 18:43", user: "Sistema", action: "Gateway reconectado", target: "CAM5-GW-01", origin: "Servicio OT" },
-  { time: "Ayer 16:15", user: "Emerson Allende", action: "Registro Modbus modificado", target: "H01 · HR 40201", origin: "Portal web" },
+  { time: "Ayer 16:15", user: "Emerson Allende", action: "Registro Modbus modificado", target: "H01 · HR 400431", origin: "Portal web" },
   { time: "10 ago 14:06", user: "Felipe Soto", action: "Informe exportado", target: "MCC-01 · 30 días", origin: "Portal web" },
 ];
 
@@ -159,6 +152,7 @@ const navGroups = [
     label: "Diagnóstico",
     items: [
       { id: "diagnostics" as View, label: "Diagnóstico OT", description: "Controlador y gateway", icon: Radio },
+      { id: "commissioning" as View, label: "Puesta en marcha", description: "Conectar y validar CAM-5", icon: ClipboardCheck },
       { id: "trends" as View, label: "Tendencias", description: "Evolución por canal", icon: History },
       { id: "alarms" as View, label: "Centro de alertas", description: "Triage y seguimiento", icon: BellRing, badge: "3" },
       { id: "history" as View, label: "Histórico", description: "Mediciones y trazabilidad", icon: Database },
@@ -189,6 +183,7 @@ const viewTitles: Record<View, { title: string; description: string }> = {
   overview: { title: "Resumen de condición", description: "Estado predictivo de activos críticos en tiempo real." },
   cabinet: { title: "Mapa de condición", description: "Ubicación, lectura y estado de cada canal instrumentado." },
   diagnostics: { title: "Diagnóstico OT", description: "Puesta en marcha y comprobación de la cadena Controlador → Gateway → CORE." },
+  commissioning: { title: "Puesta en marcha CAM-5", description: "Identidad, entradas, registros, alarmas y controles previos a la conexión productiva." },
   trends: { title: "Tendencias", description: "Evolución térmica, descarga parcial y humedad ambiental." },
   alarms: { title: "Centro de alertas", description: "Triage operativo, reconocimiento y trazabilidad de eventos." },
   history: { title: "Histórico", description: "Mediciones, alarmas y cambios administrativos en una sola trazabilidad." },
@@ -308,6 +303,7 @@ function Overview({ onNavigate, onAcknowledge, acknowledged }: { onNavigate: (vi
   const sensors = useSensorData();
   const [assetConfig] = usePersistentState("cam5.front.asset-config", defaultAssetConfig);
   const activeSensors = sensors.filter((sensor) => sensor.enabled);
+  const activeInputCount = new Set(activeSensors.map((sensor) => sensor.sourceId)).size;
   const temperature = activeSensors.filter((sensor) => sensor.type === "Temperatura").sort((a, b) => Number(b.value) - Number(a.value))[0];
   const partialDischarge = activeSensors.find((sensor) => sensor.id === "PD1");
   const humidity = activeSensors.find((sensor) => sensor.id === "H01");
@@ -323,7 +319,7 @@ function Overview({ onNavigate, onAcknowledge, acknowledged }: { onNavigate: (vi
         <MetricCard label="Temperatura máxima" value={temperature?.value ?? "—"} unit={temperature?.unit} note={temperature ? `${temperature.id} · ${temperature.trend}` : "Sin canales activos"} tone={temperature?.state === "critical" ? "red" : temperature?.state === "warning" ? "amber" : "green"} icon={Thermometer} />
         <MetricCard label="Descarga parcial" value={partialDischarge?.value ?? "—"} unit={partialDischarge?.unit} note={partialDischarge ? `${partialDischarge.id} · ${partialDischarge.trend}` : "Canal deshabilitado"} tone={partialDischarge?.state === "critical" ? "red" : partialDischarge?.state === "warning" ? "amber" : "green"} icon={Activity} />
         <MetricCard label="Humedad relativa" value={humidity?.value ?? "—"} unit={humidity?.unit} note={humidity ? `${humidity.id} · ${humidity.trend}` : "Canal deshabilitado"} tone={humidity?.state === "critical" ? "red" : humidity?.state === "warning" ? "amber" : "blue"} icon={Droplets} />
-        <MetricCard label="Disponibilidad" value={`${activeSensors.length}/${sensors.length}`} note={`${sensors.length - activeSensors.length} canales deshabilitados`} tone="green" icon={Server} />
+        <MetricCard label="Entradas supervisadas" value={`${activeInputCount}/24`} note={`${activeSensors.length} señales de telemetría activas`} tone="green" icon={Server} />
       </section>
 
       <section className="overview-grid">
@@ -405,15 +401,16 @@ function Overview({ onNavigate, onAcknowledge, acknowledged }: { onNavigate: (vi
 function CabinetView({ onOpenTrend }: { onOpenTrend: (id: string) => void }) {
   const sensors = useSensorData();
   const activeSensors = sensors.filter((sensor) => sensor.enabled);
+  const activeInputCount = new Set(activeSensors.map((sensor) => sensor.sourceId)).size;
   const [selectedId, setSelectedId] = useState("PD1");
   const selected = sensors.find((sensor) => sensor.id === selectedId && sensor.enabled) ?? sensors.find((sensor) => sensor.enabled) ?? sensors[0];
-  const SelectedIcon = selected.type === "Temperatura" ? Thermometer : selected.type === "Humedad" ? Droplets : Activity;
+  const SelectedIcon = selected.metric === "temperature" || selected.metric === "ambient" ? Thermometer : selected.metric === "humidity" ? Droplets : Activity;
   const selectedStateLabel = !selected.enabled ? "No configurado" : selected.state === "critical" ? "Crítico" : selected.state === "warning" ? "Advertencia" : "Normal";
 
   return (
     <section className="cabinet-view-grid">
       <article className="panel cabinet-full-panel">
-        <div className="panel-header"><div><span className="eyebrow">Mapa de condición de la cabina</span><h2>MCC-01 · Alimentador Norte</h2><p>{activeSensors.length} canales activos · {24 - activeSensors.length} disponibles</p></div><StatusPill state="critical">{activeSensors.filter((sensor) => sensor.state === "critical").length} crítico · {activeSensors.filter((sensor) => sensor.state === "warning").length} advertencias</StatusPill></div>
+        <div className="panel-header"><div><span className="eyebrow">Mapa de condición de la cabina</span><h2>MCC-01 · Alimentador Norte</h2><p>{activeInputCount} entradas asignadas · {24 - activeInputCount} disponibles · {activeSensors.length} señales</p></div><StatusPill state="critical">{activeSensors.filter((sensor) => sensor.state === "critical").length} crítico · {activeSensors.filter((sensor) => sensor.state === "warning").length} advertencias</StatusPill></div>
         <CabinetDiagram selectedId={selectedId} onSelect={setSelectedId} />
         <div className="diagram-legend"><span><i className="dot-normal" />Normal</span><span><i className="dot-warning" />Advertencia</span><span><i className="dot-critical" />Crítico</span><span><i className="dot-disabled" />No configurado</span><small>Selecciona una tarjeta para revisar el canal.</small></div>
       </article>
@@ -422,12 +419,12 @@ function CabinetView({ onOpenTrend }: { onOpenTrend: (id: string) => void }) {
           <div className="selected-sensor-head"><span className="selected-sensor-icon"><SelectedIcon size={21} /></span><div><small>Canal seleccionado</small><strong>{selected.id} · {selected.type}</strong></div><StatusPill state={selected.state}>{selectedStateLabel}</StatusPill></div>
           <div className="selected-sensor-value">{selected.value}<span>{selected.unit}</span></div>
           <p>{selected.label} · {selected.zone}</p>
-          <dl><div><dt>Tendencia</dt><dd>{selected.trend}</dd></div><div><dt>Umbral</dt><dd>{selected.threshold}</dd></div><div><dt>Registro asumido</dt><dd>{selected.register}</dd></div><div><dt>Calidad</dt><dd>{selected.quality}</dd></div></dl>
+          <dl><div><dt>Tendencia</dt><dd>{selected.trend}</dd></div><div><dt>Umbral</dt><dd>{selected.threshold}</dd></div><div><dt>Registro CAM-5</dt><dd>{selected.nativeRegister} · {selected.register}</dd></div><div><dt>Calidad</dt><dd>{selected.quality}</dd></div></dl>
           <button type="button" onClick={() => onOpenTrend(selected.id)}>Abrir tendencia del canal <TrendingUp size={16} /></button>
         </div>
         <div className="panel-header compact sensor-list-header"><div><span className="eyebrow">Canales configurados</span><h2>Matriz de sensores</h2></div><span className="data-fresh"><Wifi size={14} /> Hace 2 s</span></div>
         <div className="sensor-list">
-          {sensors.map((sensor) => (
+          {activeSensors.map((sensor) => (
             <button type="button" className={`sensor-row ${!sensor.enabled ? "disabled" : ""} ${selectedId === sensor.id ? "selected" : ""}`} key={sensor.id} onClick={() => setSelectedId(sensor.id)} disabled={!sensor.enabled}>
               <span className={`sensor-code sensor-${sensor.state}`}>{sensor.id}</span>
               <div><strong>{sensor.label}</strong><small>{sensor.zone}</small></div>
@@ -442,18 +439,24 @@ function CabinetView({ onOpenTrend }: { onOpenTrend: (id: string) => void }) {
 
 function TrendsView({ period, setPeriod, selectedId, onSelectChannel, onBackToMap }: { period: string; setPeriod: (period: string) => void; selectedId: string; onSelectChannel: (id: string) => void; onBackToMap: () => void }) {
   const sensors = useSensorData();
+  const [pdMetric, setPdMetric] = useState<(typeof cam5PdMetrics)[number]["key"]>("total");
+  const [pdScale, setPdScale] = useState<"lineal" | "log">("lineal");
   const activeSensors = sensors.filter((sensor) => sensor.enabled);
   const selected = activeSensors.find((sensor) => sensor.id === selectedId) ?? activeSensors[0] ?? sensors[0];
-  const currentValue = Number(selected.value);
-  const thresholdValue = Number.parseFloat(selected.threshold);
-  const amplitude = selected.type === "Descarga parcial" ? (selected.state === "critical" ? 48 : 8) : selected.type === "Humedad" ? 14 : selected.state === "warning" ? 17 : 5;
+  const isDischarge = selected.metric === "pd" || selected.metric === "sd";
+  const supportsUhfMetrics = selected.metric === "pd";
+  const pdMetricDefinition = cam5PdMetrics.find((metric) => metric.key === pdMetric) ?? cam5PdMetrics[0];
+  const currentValue = supportsUhfMetrics && selected.id === "PD1" ? pdMetricDefinition.value : Number(selected.value);
+  const displayUnit = supportsUhfMetrics && pdMetric === "phi" ? "×" : selected.unit;
+  const thresholdValue = supportsUhfMetrics && pdMetric === "phi" ? 2 : Number.parseFloat(selected.threshold);
+  const amplitude = isDischarge ? (selected.state === "critical" ? Math.max(2, currentValue * .66) : 8) : selected.type === "Humedad" ? 14 : selected.state === "warning" ? 17 : 5;
   const profile = [-1, -.96, -.98, -.9, -.84, -.87, -.78, -.73, -.68, -.7, -.62, -.56, -.5, -.45, -.38, -.4, -.3, -.25, -.27, -.18, -.12, -.08, -.05, 0];
   const series = profile.map((point) => Math.max(0, Number((currentValue + point * amplitude).toFixed(1))));
   const chartMax = Math.ceil(Math.max(currentValue, thresholdValue, ...series) * 1.15 / 10) * 10;
   const variation = currentValue - series[0];
   const stateLabel = selected.state === "critical" ? "Crítico" : selected.state === "warning" ? "Advertencia" : "Normal";
   const stateTone = selected.state === "critical" ? "red" : selected.state === "warning" ? "amber" : "green";
-  const SelectedIcon = selected.type === "Temperatura" ? Thermometer : selected.type === "Humedad" ? Droplets : Activity;
+  const SelectedIcon = selected.metric === "temperature" || selected.metric === "ambient" ? Thermometer : selected.metric === "humidity" ? Droplets : Activity;
   const insight = selected.state === "critical"
     ? `${selected.id} mantiene crecimiento sostenido y supera el umbral configurado. Se recomienda inspección prioritaria de ${selected.zone.toLowerCase()}.`
     : selected.state === "warning"
@@ -468,21 +471,22 @@ function TrendsView({ period, setPeriod, selectedId, onSelectChannel, onBackToMa
           <div className="segmented" aria-label="Rango temporal">{["24 h", "7 días", "30 días"].map((item) => <button key={item} className={period === item ? "active" : ""} onClick={() => setPeriod(item)}>{item}</button>)}</div>
         </div>
       </section>
+      {supportsUhfMetrics && <section className="pd-analysis-toolbar"><div><span>Variable UHF</span>{cam5PdMetrics.map((metric) => <button key={metric.key} className={pdMetric === metric.key ? "active" : ""} onClick={() => setPdMetric(metric.key)}>{metric.label}</button>)}</div><label><span>Escala</span><select value={pdScale} onChange={(event) => setPdScale(event.target.value as typeof pdScale)}><option value="lineal">Lineal</option><option value="log">Logarítmica</option></select><ChevronDown size={12} /></label><p>{pdMetricDefinition.description} · magnitud UHF aproximada y no lineal</p></section>}
       <section className="metrics-grid compact-metrics">
-        <MetricCard label="Lectura actual" value={selected.value} unit={selected.unit} note={`${selected.id} · ${selected.label}`} tone={stateTone} icon={SelectedIcon} />
-        <MetricCard label="Umbral configurado" value={String(thresholdValue)} unit={selected.unit} note={currentValue > thresholdValue ? "Umbral superado" : "Dentro del rango"} tone={currentValue > thresholdValue ? "amber" : "green"} icon={Gauge} />
-        <MetricCard label="Variación del periodo" value={`+${variation.toFixed(selected.type === "Descarga parcial" ? 0 : 1)}`} unit={selected.unit} note={selected.trend} tone="blue" icon={TrendingUp} />
+        <MetricCard label={supportsUhfMetrics ? pdMetricDefinition.label : "Lectura actual"} value={String(currentValue)} unit={displayUnit} note={`${selected.id} · ${selected.label}`} tone={stateTone} icon={SelectedIcon} />
+        <MetricCard label="Umbral configurado" value={String(thresholdValue)} unit={displayUnit} note={currentValue > thresholdValue ? "Umbral superado" : "Dentro del rango"} tone={currentValue > thresholdValue ? "amber" : "green"} icon={Gauge} />
+        <MetricCard label="Variación del periodo" value={`${variation >= 0 ? "+" : ""}${variation.toFixed(1)}`} unit={displayUnit} note={selected.trend} tone="blue" icon={TrendingUp} />
         <MetricCard label="Calidad del dato" value="100" unit="%" note={`${selected.quality} · actualizado hace 2 s`} tone="green" icon={ShieldCheck} />
       </section>
       <article className="panel chart-panel">
-        <div className="panel-header"><div><span className="eyebrow">{selected.id} · Resolución 1 hora · {period}</span><h2>{selected.label}</h2><p>{selected.zone} · {selected.type}</p></div><StatusPill state={selected.state}>{stateLabel}</StatusPill></div>
+        <div className="panel-header"><div><span className="eyebrow">{selected.id} · Resolución 1 hora · {period}</span><h2>{selected.label}{supportsUhfMetrics ? ` · ${pdMetricDefinition.label}` : ""}</h2><p>{selected.zone} · {selected.type}{supportsUhfMetrics ? ` · escala ${pdScale}` : ""}</p></div><StatusPill state={selected.state}>{stateLabel}</StatusPill></div>
         <div className="chart-scale"><span>{chartMax}</span><span>{Math.round(chartMax * .75)}</span><span>{Math.round(chartMax * .5)}</span><span>{Math.round(chartMax * .25)}</span><span>0</span></div>
         <div className={`large-chart channel-chart chart-${selected.state}`}>
-          <div className="threshold-line" style={{ bottom: `${Math.min(100, thresholdValue / chartMax * 100)}%` }}><span>Umbral {selected.threshold}</span></div>
-          {series.map((value, index) => <span key={index} title={`${String(index).padStart(2, "0")}:00 · ${value} ${selected.unit}`}><i style={{ height: `${Math.max(3, value / chartMax * 100)}%` }} /></span>)}
+          <div className="threshold-line" style={{ bottom: `${Math.min(100, thresholdValue / chartMax * 100)}%` }}><span>Umbral {thresholdValue} {displayUnit}</span></div>
+          {series.map((value, index) => <span key={index} title={`${String(index).padStart(2, "0")}:00 · ${value} ${displayUnit}`}><i style={{ height: `${Math.max(3, value / chartMax * 100)}%` }} /></span>)}
         </div>
         <div className="chart-axis"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>23:00</span></div>
-        <div className="chart-legend centered"><span><i className={`legend-channel legend-${selected.state}`} />{selected.id} · {selected.unit}</span><span><i className="legend-threshold" />Umbral {selected.threshold}</span></div>
+        <div className="chart-legend centered"><span><i className={`legend-channel legend-${selected.state}`} />{selected.id} · {supportsUhfMetrics ? pdMetricDefinition.label : displayUnit}</span><span><i className="legend-threshold" />Umbral {thresholdValue} {displayUnit}</span></div>
       </article>
       <article className={`panel insight-panel insight-${selected.state}`}><span className="insight-icon"><TrendingUp size={20} /></span><div><strong>Interpretación del canal</strong><p>{insight}</p></div><button onClick={onBackToMap}><CircuitBoard size={15} /> Volver al mapa</button></article>
     </>
@@ -585,7 +589,7 @@ function HistoryView() {
 
         {tab === "measurements" && <div className="module-table-wrap"><div className="history-table measurement-history"><div className="module-table-head"><span>Canal</span><span>Última lectura</span><span>Promedio</span><span>Mínimo</span><span>Máximo</span><span>Calidad</span></div>{visibleSensors.map((sensor) => {
           const value = Number(sensor.value);
-          const spread = sensor.type === "Descarga parcial" ? 8 : sensor.type === "Humedad" ? 5 : 4;
+          const spread = sensor.metric === "pd" || sensor.metric === "sd" ? 8 : sensor.type === "Humedad" ? 5 : 4;
           return <div className="module-table-row" key={sensor.id}><span className="history-channel"><b className={`sensor-code sensor-${sensor.state}`}>{sensor.id}</b><span><strong>{sensor.label}</strong><small>{sensor.zone}</small></span></span><span className="mono-cell">{sensor.value} {sensor.unit}</span><span className="mono-cell">{(value - spread * .35).toFixed(1)} {sensor.unit}</span><span className="mono-cell">{(value - spread).toFixed(1)} {sensor.unit}</span><span className="mono-cell">{(value + (sensor.state === "normal" ? 1.2 : 2.4)).toFixed(1)} {sensor.unit}</span><span className="quality-ok"><CheckCircle2 size={14} /> Válida</span></div>;
         })}</div></div>}
 
@@ -612,19 +616,17 @@ function AssetsView({ onNavigate }: { onNavigate: (view: View) => void }) {
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({ code: "", name: "", type: "Centro de control", site: "Subestación Norte", area: "Sala eléctrica A" });
-  const [assets, setAssets] = usePersistentState<AssetRecord[]>("cam5.front.assets", [
+  const [assets, setAssets] = usePersistentState<AssetRecord[]>("cam5.front.assets.v2", [
     { id: "MCC-01", name: "Alimentador Norte", type: "Centro de control de motores", site: "Subestación Norte", area: "Sala eléctrica A", state: "critical", configured: 8, capacity: 24, gateway: "CAM5-GW-01", voltage: "13.8 kV", owner: "Paula Rojas", updated: "Hace 2 s" },
-    { id: "MCC-02", name: "Banco de condensadores", type: "Centro de control de motores", site: "Subestación Norte", area: "Sala eléctrica A", state: "normal", configured: 6, capacity: 12, gateway: "CAM5-GW-01", voltage: "13.8 kV", owner: "Felipe Soto", updated: "Hace 5 s" },
-    { id: "TR-01", name: "Transformador principal", type: "Transformador de potencia", site: "Subestación Norte", area: "Patio de transformación", state: "warning", configured: 12, capacity: 16, gateway: "CAM5-GW-01", voltage: "110 / 13.8 kV", owner: "Emerson Allende", updated: "Hace 4 s" },
   ]);
-  const activeSensorCount = sensors.filter((sensor) => sensor.enabled).length;
+  const activeInputCount = new Set(sensors.filter((sensor) => sensor.enabled).map((sensor) => sensor.sourceId)).size;
   const storedSelected = assets.find((asset) => asset.id === selectedId) ?? assets[0];
-  const selected = storedSelected.id === "MCC-01" ? { ...storedSelected, configured: activeSensorCount } : storedSelected;
+  const selected = storedSelected.id === "MCC-01" ? { ...storedSelected, configured: activeInputCount } : storedSelected;
   const filtered = assets.filter((asset) => (statusFilter === "all" || asset.state === statusFilter) && `${asset.id} ${asset.name} ${asset.type} ${asset.site} ${asset.area}`.toLowerCase().includes(query.toLowerCase()));
   const locations = ["Subestación Norte"];
-  const totalConfigured = assets.reduce((sum, asset) => sum + (asset.id === "MCC-01" ? activeSensorCount : asset.configured), 0);
+  const totalConfigured = assets.reduce((sum, asset) => sum + (asset.id === "MCC-01" ? activeInputCount : asset.configured), 0);
   const totalCapacity = assets.reduce((sum, asset) => sum + asset.capacity, 0);
-  const selectedConfigured = selected.id === "MCC-01" ? activeSensorCount : selected.configured;
+  const selectedConfigured = selected.id === "MCC-01" ? activeInputCount : selected.configured;
   const coverage = selected.capacity ? Math.round((selectedConfigured / selected.capacity) * 100) : 0;
   const selectedSensors = selected.id === "MCC-01" ? sensors.filter((sensor) => sensor.enabled) : [];
   const stateLabel = (state: AssetState) => state === "critical" ? "Crítico" : state === "warning" ? "Advertencia" : "Normal";
@@ -792,9 +794,9 @@ function DiagnosticsView() {
   const [diagnosticState, setDiagnosticState] = useState<"idle" | "running" | "success">("idle");
   const [lastRun, setLastRun] = useState("No ejecutado en esta sesión");
   const transactions = [
-    { time: "11:52:08", request: "FC 03", range: "40001–40005", result: "5 registros", latency: "42 ms" },
-    { time: "11:52:06", request: "FC 03", range: "40121–40122", result: "2 registros", latency: "38 ms" },
-    { time: "11:52:04", request: "FC 03", range: "40201", result: "1 registro", latency: "31 ms" },
+    { time: "11:52:08", request: "FC 03", range: "418–445", result: "28 registros", latency: "42 ms" },
+    { time: "11:52:06", request: "FC 03", range: "446–490", result: "45 registros", latency: "38 ms" },
+    { time: "11:52:04", request: "FC 03", range: "491–522", result: "32 registros", latency: "31 ms" },
   ];
   const runDiagnostic = () => {
     setDiagnosticState("running");
@@ -807,7 +809,7 @@ function DiagnosticsView() {
     <>
       <section className="module-summary-grid diagnostic-summary-grid">
         <article><span className="module-summary-icon green"><Radio size={19} /></span><div><small>Cadena OT</small><strong>Operativa</strong><span>Controlador + gateway + CORE</span></div></article>
-        <article><span className="module-summary-icon blue"><Refresh size={19} /></span><div><small>Ciclo de sondeo</small><strong>2.0 s</strong><span>8 registros por ciclo</span></div></article>
+        <article><span className="module-summary-icon blue"><Refresh size={19} /></span><div><small>Ciclo de sondeo</small><strong>2.0 s</strong><span>105 registros documentados</span></div></article>
         <article><span className="module-summary-icon green"><CheckCircle2 size={19} /></span><div><small>Éxito últimas 24 h</small><strong>99.98%</strong><span>0 excepciones Modbus</span></div></article>
       </section>
 
@@ -817,7 +819,7 @@ function DiagnosticsView() {
         <div className={`diagnostic-chain ${stateClass}`} aria-live="polite">
           <article><span><CircuitBoard size={21} /></span><small>Etapa 01</small><strong>CAM5-CTRL-01</strong><p>192.168.10.42:502</p><i>{diagnosticState === "running" ? "Probando" : "Disponible"}</i></article>
           <b><ChevronRight size={19} /></b>
-          <article><span><Radio size={21} /></span><small>Etapa 02</small><strong>Modbus TCP</strong><p>FC 03 · Unit ID 1</p><i>{diagnosticState === "running" ? "Leyendo" : "8/8 registros"}</i></article>
+          <article><span><Radio size={21} /></span><small>Etapa 02</small><strong>Modbus TCP</strong><p>FC 03 · Unit ID 1</p><i>{diagnosticState === "running" ? "Leyendo" : "105/105 registros"}</i></article>
           <b><ChevronRight size={19} /></b>
           <article><span><Server size={21} /></span><small>Etapa 03</small><strong>CAM5-GW-01</strong><p>LAN 192.168.10.40</p><i>{diagnosticState === "running" ? "Enviando" : "En línea"}</i></article>
           <b><ChevronRight size={19} /></b>
@@ -827,7 +829,7 @@ function DiagnosticsView() {
         <div className="diagnostics-result-bar"><span className={stateClass}>{diagnosticState === "running" ? <Refresh size={16} /> : <CheckCircle2 size={16} />}</span><div><strong>{diagnosticState === "running" ? "Comprobando la cadena OT" : diagnosticState === "success" ? "Diagnóstico completado sin hallazgos" : "Cadena preparada para comprobar"}</strong><p>{lastRun}</p></div><small>Tiempo objetivo ≤ 3 s</small></div>
 
         <div className="diagnostics-grid">
-          <section className="diagnostic-health-card"><div className="report-library-head"><div><span className="eyebrow">Salud de comunicación</span><h2>Indicadores actuales</h2></div><StatusPill state="online">En línea</StatusPill></div><dl><div><dt>Latencia controlador</dt><dd>42 ms <small>Normal</small></dd></div><div><dt>Latencia hacia CORE</dt><dd>86 ms <small>Normal</small></dd></div><div><dt>Última respuesta válida</dt><dd>Hace 2 s <small>FC 03</small></dd></div><div><dt>Reintentos / 24 h</dt><dd>2 <small>0.01%</small></dd></div><div><dt>Excepciones Modbus</dt><dd>0 <small>Sin errores</small></dd></div><div><dt>Calidad de datos</dt><dd>8 / 8 <small>Válidos</small></dd></div></dl></section>
+          <section className="diagnostic-health-card"><div className="report-library-head"><div><span className="eyebrow">Salud de comunicación</span><h2>Indicadores actuales</h2></div><StatusPill state="online">En línea</StatusPill></div><dl><div><dt>Latencia controlador</dt><dd>42 ms <small>Normal</small></dd></div><div><dt>Latencia hacia CORE</dt><dd>86 ms <small>Normal</small></dd></div><div><dt>Última respuesta válida</dt><dd>Hace 2 s <small>FC 03</small></dd></div><div><dt>Reintentos / 24 h</dt><dd>2 <small>0.01%</small></dd></div><div><dt>Excepciones Modbus</dt><dd>0 <small>Sin errores</small></dd></div><div><dt>Calidad de datos</dt><dd>105 / 105 <small>Válidos</small></dd></div></dl></section>
           <section className="diagnostic-transactions"><div className="report-library-head"><div><span className="eyebrow">Tráfico reciente</span><h2>Últimas lecturas Modbus</h2></div><span>FC 03</span></div><div className="module-table-wrap"><div className="diagnostic-transaction-table"><div className="module-table-head"><span>Hora</span><span>Solicitud</span><span>Rango</span><span>Resultado</span><span>Tiempo</span></div>{transactions.map((transaction) => <div className="module-table-row" key={`${transaction.time}-${transaction.range}`}><span className="mono-cell">{transaction.time}</span><span className="mono-cell">{transaction.request}</span><span className="mono-cell">{transaction.range}</span><span className="quality-ok"><CheckCircle2 size={14} /> {transaction.result}</span><span className="mono-cell">{transaction.latency}</span></div>)}</div></div></section>
         </div>
         <div className="configuration-note diagnostics-note"><ShieldCheck size={17} /><p><strong>Modo de simulación activo.</strong> Al incorporar el servicio de adquisición, esta vista consumirá las respuestas reales del gateway y las excepciones Modbus del controlador.</p></div>
@@ -897,7 +899,7 @@ function IntegrationsView() {
 
         {tab === "connections" && <div className="integration-content"><div className="settings-section-head"><span className="settings-icon"><PlugConnected size={20} /></span><div><h2>Arquitectura de la instalación</h2><p>Dos enlaces requeridos y fijos para la primera implementación monositio.</p></div></div><div className="integration-card-grid">{connections.map((connection) => <article className={`integration-card ${connection.enabled ? "enabled" : "disabled"}`} key={connection.id}><div className="integration-card-head"><span className="integration-card-icon">{connection.id === "controller" ? <Radio size={21} /> : connection.id === "gateway" ? <Server size={21} /> : connection.id === "historian" ? <Database size={21} /> : <Tool size={21} />}</span>{connection.locked ? <span className="core-link-label"><ShieldCheck size={13} /> Requerida</span> : <button className={`switch-control ${connection.enabled ? "on" : ""}`} onClick={() => toggleConnection(connection.id)} aria-label={`${connection.enabled ? "Desactivar" : "Activar"} ${connection.name}`}><i /></button>}</div><span className="eyebrow">{connection.role}</span><h3>{connection.name}</h3><dl><div><dt>Protocolo</dt><dd>{connection.protocol}</dd></div><div><dt>Destino</dt><dd title={connection.endpoint}>{connection.endpoint}</dd></div><div><dt>Última actividad</dt><dd>{connection.freshness}</dd></div></dl><div className="integration-card-footer"><span className={connection.enabled && connection.status === "Operativa" ? "quality-ok" : connection.status === "Probando…" ? "integration-testing" : "muted-state"}>{connection.status === "Operativa" && <CheckCircle2 size={14} />}{connection.status}</span><button onClick={() => testConnection(connection.id)} disabled={!connection.enabled || testingId === connection.id}>{testingId === connection.id ? "Probando…" : "Probar conexión"}</button></div></article>)}</div><div className="configuration-note"><ShieldCheck size={17} /><p><strong>Alcance inicial fijo.</strong> Subestación Norte utiliza un controlador CAM5-CTRL-01 y un gateway CAM5-GW-01. Historiador y CMMS quedan preparados visualmente para una fase posterior.</p></div></div>}
 
-        {tab === "flow" && <div className="integration-content flow-content"><div className="settings-section-head"><span className="settings-icon"><Timeline size={20} /></span><div><h2>Ruta monositio de los datos</h2><p>Una cadena fija y fácil de diagnosticar desde el sensor hasta el portal.</p></div></div><div className="data-flow"><article><span><Activity size={21} /></span><small>Origen</small><strong>8 canales CAM5</strong><p>Temperatura, UHF y humedad</p></article><i><ChevronRight size={19} /></i><article><span><CircuitBoard size={21} /></span><small>Controlador</small><strong>CAM5-CTRL-01</strong><p>Modbus TCP · Unit ID 1</p></article><i><ChevronRight size={19} /></i><article><span><Server size={21} /></span><small>Gateway</small><strong>CAM5-GW-01</strong><p>Ethernet · HTTPS/MQTT</p></article><i><ChevronRight size={19} /></i><article className="flow-core"><span><Zap size={21} /></span><small>Procesamiento</small><strong>CAM5 CORE</strong><p>Reglas, eventos e histórico</p></article><i><ChevronRight size={19} /></i><article><span><MonitorDot size={21} /></span><small>Aplicación</small><strong>Portal CAM5</strong><p>Dashboard, alertas y reportes</p></article></div><div className="flow-grid"><section><div className="report-library-head"><div><span className="eyebrow">Mapeo Modbus</span><h2>Señales publicadas</h2></div><span>8 activas</span></div><div className="module-table-wrap"><div className="integration-mapping-table"><div className="module-table-head"><span>Canal</span><span>Registro</span><span>Variable publicada</span><span>Publicación</span><span>Calidad</span></div>{sensors.map((sensor) => <div className="module-table-row" key={sensor.id}><span><b className={`sensor-code sensor-${sensor.state}`}>{sensor.id}</b></span><span className="mono-cell">{sensor.register}</span><span className="mono-cell">cam5.mcc01.{sensor.id.toLowerCase()}</span><span>{sensor.id === "PD1" ? "CORE + eventos" : "CAM5 CORE"}</span><span className="quality-ok"><CheckCircle2 size={14} /> Válida</span></div>)}</div></div></section><aside className="sync-activity"><div className="report-library-head"><div><span className="eyebrow">Actividad</span><h2>Últimas sincronizaciones</h2></div></div><div>{syncLog.map((entry) => <article key={`${entry.time}-${entry.system}`}><span className={entry.state === "Correcta" ? "normal" : "warning"}><Refresh size={15} /></span><div><strong>{entry.action}</strong><small>{entry.system} · {entry.detail}</small></div><time>{entry.time}</time></article>)}</div></aside></div></div>}
+        {tab === "flow" && <div className="integration-content flow-content"><div className="settings-section-head"><span className="settings-icon"><Timeline size={20} /></span><div><h2>Ruta monositio de los datos</h2><p>Una cadena fija y fácil de diagnosticar desde el sensor hasta el portal.</p></div></div><div className="data-flow"><article><span><Activity size={21} /></span><small>Origen</small><strong>24 entradas CAM5</strong><p>{activeChannelCount} señales activas · temperatura, UHF y ambiente</p></article><i><ChevronRight size={19} /></i><article><span><CircuitBoard size={21} /></span><small>Controlador</small><strong>CAM5-CTRL-01</strong><p>Modbus TCP · Unit ID 1</p></article><i><ChevronRight size={19} /></i><article><span><Server size={21} /></span><small>Gateway</small><strong>CAM5-GW-01</strong><p>Ethernet · HTTPS/MQTT</p></article><i><ChevronRight size={19} /></i><article className="flow-core"><span><Zap size={21} /></span><small>Procesamiento</small><strong>CAM5 CORE</strong><p>Reglas, eventos e histórico</p></article><i><ChevronRight size={19} /></i><article><span><MonitorDot size={21} /></span><small>Aplicación</small><strong>Portal CAM5</strong><p>Dashboard, alertas y reportes</p></article></div><div className="flow-grid"><section><div className="report-library-head"><div><span className="eyebrow">Mapeo Modbus</span><h2>Señales publicadas</h2></div><span>{activeChannelCount} activas</span></div><div className="module-table-wrap"><div className="integration-mapping-table"><div className="module-table-head"><span>Canal</span><span>Registro</span><span>Variable publicada</span><span>Publicación</span><span>Calidad</span></div>{sensors.filter((sensor) => sensor.enabled).map((sensor) => <div className="module-table-row" key={sensor.id}><span><b className={`sensor-code sensor-${sensor.state}`}>{sensor.id}</b></span><span className="mono-cell">{sensor.nativeRegister} · {sensor.register.replace("HR ", "")}</span><span className="mono-cell">cam5.mcc01.{sensor.id.toLowerCase()}</span><span>{sensor.id === "PD1" ? "CORE + eventos" : "CAM5 CORE"}</span><span className="quality-ok"><CheckCircle2 size={14} /> {sensor.quality}</span></div>)}</div></div></section><aside className="sync-activity"><div className="report-library-head"><div><span className="eyebrow">Actividad</span><h2>Últimas sincronizaciones</h2></div></div><div>{syncLog.map((entry) => <article key={`${entry.time}-${entry.system}`}><span className={entry.state === "Correcta" ? "normal" : "warning"}><Refresh size={15} /></span><div><strong>{entry.action}</strong><small>{entry.system} · {entry.detail}</small></div><time>{entry.time}</time></article>)}</div></aside></div></div>}
 
         {tab === "api" && <div className="integration-content api-content"><div className="api-section-head"><div className="settings-section-head"><span className="settings-icon"><Key size={20} /></span><div><h2>Credenciales de integración</h2><p>Claves para servicios que consumen o publican información en CAM5.</p></div></div><button className="primary-button" onClick={() => setShowApiForm((current) => !current)}><Plus size={16} /> {showApiForm ? "Cancelar" : "Nueva clave"}</button></div>{showApiForm && <form className="api-key-form" onSubmit={createApiKey}><label><span>Nombre de la integración</span><input required value={apiForm.name} onChange={(event) => setApiForm({ ...apiForm, name: event.target.value })} placeholder="Ej.: Panel de confiabilidad" /></label><label><span>Alcance</span><select value={apiForm.scope} onChange={(event) => setApiForm({ ...apiForm, scope: event.target.value })}><option>Solo lectura</option><option>Telemetría · lectura</option><option>Eventos · escritura</option></select></label><button type="submit"><Key size={15} /> Crear clave</button></form>}{newApiKey && <div className="api-key-reveal"><ShieldCheck size={19} /><div><strong>Copia la nueva clave ahora</strong><code>{newApiKey}</code><small>Por seguridad, no volverá a mostrarse completa.</small></div><button onClick={copyApiKey}>{copied ? <CheckCircle2 size={15} /> : <Copy size={15} />}{copied ? "Copiada" : "Copiar"}</button></div>}<div className="api-layout"><section className="api-key-list"><div className="report-library-head"><div><span className="eyebrow">Credenciales</span><h2>Claves registradas</h2></div><span>{apiKeys.filter((key) => key.active).length} activas</span></div>{apiKeys.map((key) => <article key={key.id}><span className={`api-key-icon ${key.active ? "active" : ""}`}><Key size={18} /></span><div><strong>{key.name}</strong><code>{key.token}</code><small>{key.scope} · Creada {key.created} · Uso: {key.lastUse}</small></div><button className="ghost-button" onClick={() => revokeApiKey(key.id)}>{key.active ? "Revocar" : "Reactivar"}</button></article>)}</section><aside className="api-endpoints"><span className="eyebrow">Endpoints disponibles</span><h3>API CAM5 v1</h3><p>Rutas propuestas para la futura integración con servicios autorizados.</p><dl><div><dt>GET</dt><dd>/api/v1/assets/mcc-01/readings</dd></div><div><dt>GET</dt><dd>/api/v1/assets/mcc-01/events</dd></div><div><dt>POST</dt><dd>/api/v1/work-orders</dd></div><div><dt>POST</dt><dd>/api/v1/webhooks/events</dd></div></dl><div className="configuration-note"><Webhook size={16} /><p>Los endpoints son parte del diseño del frontend; todavía no exponen información real.</p></div></aside></div></div>}
       </article>
@@ -915,11 +917,21 @@ function SettingsView() {
   const [connection, setConnection] = useState<"idle" | "testing" | "success">("idle");
   const [assetConfig, setAssetConfig] = usePersistentState("cam5.front.asset-config", defaultAssetConfig);
   const [gatewayConfig, setGatewayConfig] = usePersistentState("cam5.front.gateway-config", { gateway: "CAM5-GW-01", controller: "CAM5-CTRL-01", protocol: "Modbus TCP", controllerIp: "192.168.10.42", gatewayIp: "192.168.10.40", port: "502", unit: "1", polling: "2", uplink: "Ethernet / HTTPS" });
-  const [channels, setChannels] = usePersistentState("cam5.front.channel-config", defaultChannelConfiguration());
-  const [registerMap, setRegisterMap] = usePersistentState("cam5.front.register-map", sensors.map((sensor) => ({ id: sensor.id, label: sensor.label, reference: sensor.register.replace("HR ", ""), functionCode: "03", dataType: (sensor.type === "Temperatura" ? "Int16" : "UInt16") as ModbusDataType, scale: sensor.type === "Temperatura" ? "0.1" : "1", byteOrder: "AB" as ModbusByteOrder, unit: sensor.unit, value: sensor.value })));
+  const [channels, setChannels] = usePersistentState("cam5.front.channel-config.v2", defaultChannelConfiguration());
+  const [registerMap, setRegisterMap] = usePersistentState("cam5.front.register-map.v2", cam5RegisterCatalog.map((register) => {
+    const liveChannel = sensors.find((sensor) => sensor.nativeRegister === register.register);
+    return { id: String(register.register), label: register.description, reference: register.reference, nativeRegister: register.register, functionCode: "03", dataType: register.dataType as ModbusDataType, scale: register.scale, byteOrder: "AB" as ModbusByteOrder, unit: register.unit, value: liveChannel?.value ?? "—", errorCode: register.errorCode, group: register.group };
+  }));
+  const [registerGroup, setRegisterGroup] = useState("Todos");
   const [mapValidation, setMapValidation] = useState<"idle" | "validating" | "success" | "error">("idle");
+  const registerGroups = ["Todos", ...new Set(registerMap.map((row) => row.group))];
+  const visibleRegisterMap = registerMap.filter((row) => registerGroup === "Todos" || row.group === registerGroup);
   const duplicateReferences = new Set(registerMap.filter((row, index, rows) => rows.findIndex((candidate) => candidate.reference === row.reference) !== index).map((row) => row.reference));
-  const invalidReferences = registerMap.filter((row) => !/^4\d{4}$/.test(row.reference) || Number(row.reference) < 40001 || Number(row.reference) > 49999).map((row) => row.id);
+  const invalidReferences = registerMap.filter((row) => {
+    if (!/^400\d{3}$/.test(row.reference)) return true;
+    const native = Number(row.reference.slice(3));
+    return native < 418 || native > 522 || native !== row.nativeRegister;
+  }).map((row) => row.id);
   const mappingIssues = duplicateReferences.size + invalidReferences.length;
   const thresholdIssues = channels.filter((channel) => !Number.isFinite(Number(channel.warning)) || !Number.isFinite(Number(channel.critical)) || Number(channel.warning) >= Number(channel.critical));
   const validIp = (value: string) => { const parts = value.split(".").map(Number); return parts.length === 4 && parts.every((part) => Number.isInteger(part) && part >= 0 && part <= 255); };
@@ -951,19 +963,19 @@ function SettingsView() {
       {tab === "registers" && <div className="settings-content register-settings">
         <div className="register-settings-head">
           <div className="settings-section-head"><span className="settings-icon"><Database size={20} /></span><div><h2>Mapa de registros Modbus</h2><p>Define cómo CAM5-CTRL-01 expone cada señal al gateway único.</p></div></div>
-          <button className={`register-validate-button ${mapValidation}`} onClick={validateRegisterMap} disabled={mapValidation === "validating"}>{mapValidation === "validating" ? <><Refresh size={15} /> Validando…</> : mapValidation === "success" ? <><CheckCircle2 size={15} /> Mapa válido</> : mapValidation === "error" ? <><AlertTriangle size={15} /> Revisar mapa</> : <><ShieldCheck size={15} /> Validar mapa</>}</button>
+          <div className="register-header-actions"><label><span>Grupo</span><select value={registerGroup} onChange={(event) => setRegisterGroup(event.target.value)}>{registerGroups.map((group) => <option key={group}>{group}</option>)}</select><ChevronDown size={12} /></label><button className={`register-validate-button ${mapValidation}`} onClick={validateRegisterMap} disabled={mapValidation === "validating"}>{mapValidation === "validating" ? <><Refresh size={15} /> Validando…</> : mapValidation === "success" ? <><CheckCircle2 size={15} /> Mapa válido</> : mapValidation === "error" ? <><AlertTriangle size={15} /> Revisar mapa</> : <><ShieldCheck size={15} /> Validar mapa</>}</button></div>
         </div>
         <div className="register-map-summary">
-          <article><small>Registros configurados</small><strong>{registerMap.length}</strong><span>{channels.filter((channel) => channel.enabled).length} canales activos</span></article>
+          <article><small>Registros documentados</small><strong>{registerMap.length}</strong><span>Bloque nativo completo 418–522</span></article>
           <article><small>Función de lectura</small><strong>FC 03</strong><span>Holding Registers</span></article>
           <article className={mappingIssues ? "has-issues" : "is-valid"}><small>Conflictos detectados</small><strong>{mappingIssues}</strong><span>{mappingIssues ? "Corregir antes de conectar" : "Referencias únicas y válidas"}</span></article>
         </div>
-        <div className="modbus-address-note"><CircuitBoard size={17} /><div><strong>Referencia visible versus offset del protocolo</strong><p>El portal muestra la referencia 4xxxx para facilitar la lectura técnica. El driver utilizará el offset base 0; por ejemplo, 40001 corresponde al offset 0.</p></div></div>
+        <div className="modbus-address-note"><CircuitBoard size={17} /><div><strong>Registro nativo y referencia humana</strong><p>El manual identifica el registro 418 como referencia 400418 y dirección 0x01A2 en la trama. El gateway debe conservar esta convención o declarar explícitamente cualquier remapeo.</p></div></div>
         <div className="register-map-scroll"><div className="register-map-table">
-          <div className="register-map-row register-map-header"><span>Canal</span><span>Referencia 4xxxx</span><span>Offset base 0</span><span>Función</span><span>Tipo de dato</span><span>Escala</span><span>Orden</span><span>Lectura actual</span></div>
-          {registerMap.map((row) => { const invalid = invalidReferences.includes(row.id) || duplicateReferences.has(row.reference); const offset = /^4\d{4}$/.test(row.reference) ? Number(row.reference) - 40001 : null; return <div className={`register-map-row ${invalid ? "row-invalid" : ""}`} key={row.id}><span className="register-channel"><b className={`sensor-code sensor-${sensors.find((sensor) => sensor.id === row.id)?.state ?? "normal"}`}>{row.id}</b><span><strong>{row.label}</strong><small>{row.unit}</small></span></span><label><input value={row.reference} onChange={(event) => updateRegister(row.id, "reference", event.target.value)} aria-label={`Referencia Modbus ${row.id}`} />{invalid && <small>Referencia inválida o duplicada</small>}</label><span className="register-offset">{offset !== null && offset >= 0 ? offset : "—"}</span><span className="register-function"><b>03</b><small>Holding</small></span><label><select value={row.dataType} onChange={(event) => updateRegister(row.id, "dataType", event.target.value)} aria-label={`Tipo de dato ${row.id}`}><option>Int16</option><option>UInt16</option></select></label><label className="register-scale"><input value={row.scale} onChange={(event) => updateRegister(row.id, "scale", event.target.value)} aria-label={`Escala ${row.id}`} /><b>×</b></label><label><select value={row.byteOrder} onChange={(event) => updateRegister(row.id, "byteOrder", event.target.value)} aria-label={`Orden de bytes ${row.id}`}><option>AB</option><option>BA</option></select></label><span className="register-live-value"><i /><strong>{row.value} {row.unit}</strong><small>Calidad válida</small></span></div>; })}
+          <div className="register-map-row register-map-header"><span>Variable</span><span>Referencia</span><span>Registro nativo</span><span>Función</span><span>Tipo de dato</span><span>Escala</span><span>Orden</span><span>Lectura / error</span></div>
+          {visibleRegisterMap.map((row) => { const invalid = invalidReferences.includes(row.id) || duplicateReferences.has(row.reference); const liveChannel = sensors.find((sensor) => sensor.nativeRegister === row.nativeRegister); return <div className={`register-map-row ${invalid ? "row-invalid" : ""}`} key={row.id}><span className="register-channel"><b className={`sensor-code sensor-${liveChannel?.state ?? "normal"}`}>R{row.id}</b><span><strong>{row.label}</strong><small>{row.group} · {row.unit}</small></span></span><label><input value={row.reference} onChange={(event) => updateRegister(row.id, "reference", event.target.value)} aria-label={`Referencia Modbus ${row.id}`} />{invalid && <small>Referencia inválida, duplicada o fuera del mapa</small>}</label><span className="register-offset">{row.nativeRegister}</span><span className="register-function"><b>03</b><small>Holding</small></span><label><select value={row.dataType} onChange={(event) => updateRegister(row.id, "dataType", event.target.value)} aria-label={`Tipo de dato ${row.id}`}><option>Int16</option><option>UInt16</option></select></label><label className="register-scale"><input value={row.scale} onChange={(event) => updateRegister(row.id, "scale", event.target.value)} aria-label={`Escala ${row.id}`} /></label><label><select value={row.byteOrder} onChange={(event) => updateRegister(row.id, "byteOrder", event.target.value)} aria-label={`Orden de bytes ${row.id}`}><option>AB</option><option>BA</option></select></label><span className="register-live-value"><i className={liveChannel?.enabled ? "" : "waiting"} /><strong>{liveChannel?.enabled ? `${row.value} ${row.unit}` : "Pendiente"}</strong><small>Error {row.errorCode}</small></span></div>; })}
         </div></div>
-        <div className="configuration-note"><ShieldCheck size={17} /><p><strong>Mapa asumido para el frontend.</strong> Las referencias, tipos y escalas deben confirmarse contra la documentación final del controlador antes de habilitar lecturas reales.</p></div>
+        <div className="configuration-note"><ShieldCheck size={17} /><p><strong>Mapa base incorporado desde el manual CAM-5/IRM-48.</strong> Al conectar el equipo solo será necesario confirmar modelo, versión de datos y convención efectiva del driver del gateway.</p></div>
       </div>}
 
       {tab === "gateway" && <div className="settings-content"><div className="settings-section-head"><span className="settings-icon"><PlugConnected size={20} /></span><div><h2>Gateway y controlador Modbus</h2><p>Arquitectura única de adquisición para Subestación Norte.</p></div></div><div className="single-stack-note"><Radio size={18} /><div><strong>CAM5-CTRL-01 → CAM5-GW-01 → CAM5 CORE</strong><p>El controlador concentra los registros Modbus TCP. El gateway transporta la telemetría hacia la plataforma.</p></div></div><div className="gateway-layout"><div className="form-grid"><label><span>Gateway único</span><input value={gatewayConfig.gateway} readOnly /></label><label><span>IP del gateway</span><input value={gatewayConfig.gatewayIp} onChange={(event) => setGatewayConfig({ ...gatewayConfig, gatewayIp: event.target.value })} /></label><label><span>Enlace hacia CAM5 CORE</span><input value={gatewayConfig.uplink} readOnly /></label><label><span>Controlador Modbus</span><input value={gatewayConfig.controller} readOnly /></label><label><span>Protocolo de campo</span><select value={gatewayConfig.protocol} onChange={(event) => setGatewayConfig({ ...gatewayConfig, protocol: event.target.value })}><option>Modbus TCP</option></select></label><label><span>IP del controlador</span><input value={gatewayConfig.controllerIp} onChange={(event) => setGatewayConfig({ ...gatewayConfig, controllerIp: event.target.value })} /></label><label><span>Puerto Modbus</span><input value={gatewayConfig.port} onChange={(event) => setGatewayConfig({ ...gatewayConfig, port: event.target.value })} /></label><label><span>Unit ID</span><input value={gatewayConfig.unit} onChange={(event) => setGatewayConfig({ ...gatewayConfig, unit: event.target.value })} /></label><label><span>Intervalo de lectura</span><div className="input-unit"><input value={gatewayConfig.polling} onChange={(event) => setGatewayConfig({ ...gatewayConfig, polling: event.target.value })} /><b>s</b></div></label></div><aside className="connection-test-card"><span className={`connection-test-icon ${connection}`}><Radio size={24} /></span><h3>Controlador CAM5-CTRL-01</h3><p>Valida acceso, puerto y respuesta Modbus desde el gateway único.</p><dl><div><dt>Destino</dt><dd>{gatewayConfig.controllerIp}:{gatewayConfig.port}</dd></div><div><dt>Gateway</dt><dd>{gatewayConfig.gateway}</dd></div><div><dt>Timeout</dt><dd>3 segundos</dd></div></dl><button onClick={testConnection} disabled={connection === "testing"}>{connection === "testing" ? "Probando…" : connection === "success" ? <><CheckCircle2 size={15} /> Controlador disponible</> : <><PlugConnected size={15} /> Probar Modbus</>}</button></aside></div></div>}
@@ -1076,12 +1088,13 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    const activeSensorIds = new Set(activeSensorRouteKey.split(","));
     const applyRoute = () => {
       const params = new URLSearchParams(window.location.search);
       const nextView = params.get("view");
       if (nextView && Object.prototype.hasOwnProperty.call(viewTitles, nextView)) setView(nextView as View);
       const channel = params.get("channel");
-      if (channel && sensors.some((sensor) => sensor.id === channel && sensor.enabled)) setTrendSensorId(channel);
+      if (channel && activeSensorIds.has(channel)) setTrendSensorId(channel);
     };
     if (!new URLSearchParams(window.location.search).has("view")) {
       const url = new URL(window.location.href);
@@ -1179,10 +1192,11 @@ export default function Home() {
         <div className="content-scroll">
           <div className="page-content">
             {systemMode !== "normal" && <section className={`operational-banner banner-${systemMode}`} role="alert"><span>{systemMode === "offline" ? <PlugConnected size={19} /> : systemMode === "loading" ? <Refresh className="spin" size={19} /> : <Clock3 size={19} />}</span><div><strong>{systemMode === "offline" ? "Gateway sin comunicación" : systemMode === "loading" ? "Sincronizando datos" : "Las lecturas están atrasadas"}</strong><p>{systemMode === "offline" ? "El portal conserva el último valor conocido. Las acciones operativas siguen disponibles, pero no hay telemetría nueva." : systemMode === "loading" ? "Solicitando la última configuración, lecturas y eventos disponibles." : "Los datos visibles superan el tiempo de frescura configurado. Revisa el enlace antes de tomar una decisión."}</p></div>{systemMode !== "loading" && <button onClick={() => { setSystemMode("normal"); notify("Conexión simulada restablecida."); }}><Refresh size={15} /> Reintentar</button>}</section>}
-            <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> Gestión de activos críticos</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{view !== "assets" && view !== "settings" && view !== "integrations" && view !== "users" && view !== "notifications" && view !== "reports" && view !== "maintenance" && view !== "diagnostics" && <button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button>}<button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{3 - acknowledged.length} alertas abiertas</button></div></section>
+            <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> Gestión de activos críticos</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{view !== "assets" && view !== "settings" && view !== "integrations" && view !== "users" && view !== "notifications" && view !== "reports" && view !== "maintenance" && view !== "diagnostics" && view !== "commissioning" && <button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button>}<button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{3 - acknowledged.length} alertas abiertas</button></div></section>
             {view === "overview" && <Overview onNavigate={navigate} onAcknowledge={acknowledge} acknowledged={acknowledged} />}
             {view === "cabinet" && <CabinetView onOpenTrend={openChannelTrend} />}
             {view === "diagnostics" && <DiagnosticsView />}
+            {view === "commissioning" && <Cam5CommissioningView notify={notify} />}
             {view === "trends" && <TrendsView period={period} setPeriod={setPeriod} selectedId={trendSensorId} onSelectChannel={selectTrendChannel} onBackToMap={() => navigate("cabinet")} />}
             {view === "alarms" && <AlarmsView acknowledged={acknowledged} onAcknowledge={acknowledge} workOrders={workOrders} onOpenWorkOrder={openWorkOrderFromAlarm} closedIds={closedAlarmIds} setClosedIds={setClosedAlarmIds} assignees={alarmAssignees} setAssignees={setAlarmAssignees} notes={alarmNotes} setNotes={setAlarmNotes} />}
             {view === "history" && <HistoryView />}

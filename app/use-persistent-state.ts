@@ -1,46 +1,71 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useMemo, useSyncExternalStore, type Dispatch, type SetStateAction } from "react";
 
 const STORAGE_SYNC_EVENT = "cam5:storage-sync";
+const memoryStore = new Map<string, string>();
+
+function parseStoredValue<T>(serialized: string, fallback: T): T {
+  try {
+    return JSON.parse(serialized) as T;
+  } catch {
+    return fallback;
+  }
+}
 
 /**
  * Persistencia temporal del prototipo. Mantiene el contrato de React.useState
  * para que la futura capa API pueda reemplazarla sin cambiar los componentes.
  */
 export function usePersistentState<T>(key: string, initialValue: T) {
-  const [value, setValue] = useState<T>(initialValue);
-  const [ready, setReady] = useState(false);
+  const fallbackSerialized = useMemo(() => JSON.stringify(initialValue), [initialValue]);
 
-  useEffect(() => {
+  const getClientSnapshot = useCallback(() => {
+    const memoryValue = memoryStore.get(key);
+    if (memoryValue !== undefined) return memoryValue;
+
     try {
-      const stored = window.localStorage.getItem(key);
-      if (stored !== null) setValue(JSON.parse(stored) as T);
+      return window.localStorage.getItem(key) ?? fallbackSerialized;
     } catch {
-      // Si el navegador bloquea el almacenamiento, el front continúa en memoria.
-    } finally {
-      setReady(true);
+      return fallbackSerialized;
     }
-  }, [key]);
+  }, [fallbackSerialized, key]);
 
-  useEffect(() => {
-    const syncValue = (event: Event) => {
-      const detail = (event as CustomEvent<{ key: string; value: T }>).detail;
-      if (detail?.key === key) setValue(detail.value);
+  const subscribe = useCallback((onStoreChange: () => void) => {
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === key) onStoreChange();
     };
-    window.addEventListener(STORAGE_SYNC_EVENT, syncValue);
-    return () => window.removeEventListener(STORAGE_SYNC_EVENT, syncValue);
+    const handleLocalSync = (event: Event) => {
+      if ((event as CustomEvent<{ key: string }>).detail?.key === key) onStoreChange();
+    };
+
+    window.addEventListener("storage", handleStorage);
+    window.addEventListener(STORAGE_SYNC_EVENT, handleLocalSync);
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener(STORAGE_SYNC_EVENT, handleLocalSync);
+    };
   }, [key]);
 
-  useEffect(() => {
-    if (!ready) return;
+  const serialized = useSyncExternalStore(subscribe, getClientSnapshot, () => fallbackSerialized);
+  const value = useMemo(() => parseStoredValue(serialized, initialValue), [initialValue, serialized]);
+
+  const setValue = useCallback<Dispatch<SetStateAction<T>>>((nextValue) => {
+    const previousValue = parseStoredValue(getClientSnapshot(), initialValue);
+    const resolvedValue = typeof nextValue === "function"
+      ? (nextValue as (previous: T) => T)(previousValue)
+      : nextValue;
+    const nextSerialized = JSON.stringify(resolvedValue);
+    if (nextSerialized === undefined) return;
+
+    memoryStore.set(key, nextSerialized);
     try {
-      window.localStorage.setItem(key, JSON.stringify(value));
-      window.dispatchEvent(new CustomEvent(STORAGE_SYNC_EVENT, { detail: { key, value } }));
+      window.localStorage.setItem(key, nextSerialized);
     } catch {
       // El modo privado o una cuota agotada no deben bloquear la interfaz.
     }
-  }, [key, ready, value]);
+    window.dispatchEvent(new CustomEvent(STORAGE_SYNC_EVENT, { detail: { key } }));
+  }, [getClientSnapshot, initialValue, key]);
 
   return [value, setValue] as const;
 }

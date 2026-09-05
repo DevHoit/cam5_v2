@@ -1,98 +1,66 @@
-# vinext-starter
+# CAM5 CORE
 
-A clean full-stack starter running on
-[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
-Drizzle support.
+Portal web de telemetría y gestión de condición para una instalación IntelliSAW CAM-5.
 
-## Prerequisites
+El alcance inicial es una ubicación, un gateway `CAM5-GW-01` y un controlador/equipo CAM-5 mediante Modbus TCP.
 
-- Node.js `>=22.13.0`
+## Frontend incluido
 
-## Quick Start
+- Resumen operacional y mapa de condición.
+- Tendencias de temperatura, humedad, ambiente, SD y PD.
+- Análisis UHF Total, Alpha, Beta, Phi, ruido y descarga superficial.
+- Centro de alertas, reconocimiento, cierre y órdenes de trabajo.
+- Histórico, reportes y auditoría.
+- Activos, usuarios, roles, notificaciones e integraciones.
+- Configuración de canales, umbrales, gateway y mapa Modbus.
+- Puesta en marcha con identidad, 24 entradas físicas, alarmas, seis relés, red, respaldo y checklist de producción.
+- Catálogo CAM-5/IRM-48 completo: 105 registros nativos entre 418 y 522.
+
+## Desarrollo
+
+Requiere Node.js 22.13 o superior.
 
 ```bash
 npm install
 npm run dev
+```
+
+Abrir `http://localhost:3000`.
+
+Validaciones:
+
+```bash
 npm run build
+npm run lint
 ```
 
-This starter does not use `wrangler.jsonc`.
+## Vercel
 
-## Included Shape
+El proyecto es Next.js nativo.
 
-- edit site code under `app/`
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/schema.ts` starts intentionally empty
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
+- Root Directory: raíz del repositorio (`.`).
+- Build Command: `npm run build`.
+- Output Directory: dejar vacío; Vercel utiliza `.next` automáticamente.
+- Install Command: `npm install`.
+- Framework Preset: Next.js.
 
-## Workspace Auth Headers
+No usar `npm run build:cloudflare` para Vercel, porque genera una salida vinext diferente de `.next`.
 
-OpenAI workspace sites can read the current user's email from
-`oai-authenticated-user-email`.
+## Integración futura
 
-SIWC-authenticated workspace sites may also receive
-`oai-authenticated-user-full-name` when the user's SIWC profile has a non-empty
-`name` claim. The full-name value is percent-encoded UTF-8 and is accompanied by
-`oai-authenticated-user-full-name-encoding: percent-encoded-utf-8`.
+Configurar:
 
-Treat the full name as optional and fall back to email when it is absent:
-
-```tsx
-import { headers } from "next/headers";
-
-export default async function Home() {
-  const requestHeaders = await headers();
-  const email = requestHeaders.get("oai-authenticated-user-email");
-  const encodedFullName = requestHeaders.get("oai-authenticated-user-full-name");
-  const fullName =
-    encodedFullName &&
-    requestHeaders.get("oai-authenticated-user-full-name-encoding") ===
-      "percent-encoded-utf-8"
-      ? decodeURIComponent(encodedFullName)
-      : null;
-
-  const displayName = fullName ?? email;
-  // ...
-}
+```text
+NEXT_PUBLIC_CAM5_API_URL=https://api.ejemplo.cl/api/v1
 ```
 
-## Optional Dispatch-Owned ChatGPT Sign-In
+El cliente tipado está en `app/cam5-api.ts` y el contrato de implementación se encuentra en `BACKEND_HANDOFF.md`.
 
-Import the ready-to-use helpers from `app/chatgpt-auth.ts` when the site needs
-optional or required ChatGPT sign-in:
+## Archivos principales
 
-- Use `getChatGPTUser()` for optional signed-in UI.
-- Use `requireChatGPTUser(returnTo)` for server-rendered pages that should send
-  anonymous visitors through Sign in with ChatGPT.
-- Use `chatGPTSignInPath(returnTo)` and `chatGPTSignOutPath(returnTo)` for
-  browser links or actions.
-- Pass a same-origin relative `returnTo` path for the destination after sign-in
-  or sign-out. The helper validates and safely encodes it.
-- Mark protected pages with `export const dynamic = "force-dynamic"` because
-  they depend on per-request identity headers.
-
-Dispatch owns `/signin-with-chatgpt`, `/signout-with-chatgpt`, `/callback`, the
-OAuth cookies, and identity header injection. Do not implement app routes for
-those reserved paths. Routes that do not import and call the helper remain
-anonymous-compatible.
-
-SIWC establishes identity only; it does not prove workspace membership. Use the
-Sites hosting platform's access policy controls for workspace-wide restrictions,
-or enforce explicit server-side membership or allowlist checks.
-
-Use SIWC for account pages, user-specific dashboards, saved records, and write
-actions tied to the current ChatGPT user. Leave public content anonymous.
-
-## Useful Commands
-
-- `npm run dev`: start local development
-- `npm run build`: verify the vinext build output
-- `npm test`: build the starter and verify its rendered loading skeleton
-- `npm run db:generate`: generate Drizzle migrations after schema changes
-
-## Learn More
-
-- [vinext Documentation](https://github.com/cloudflare/vinext)
-- [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
+- `app/page.tsx`: aplicación y módulos operativos.
+- `app/cam5-engineering.tsx`: puesta en marcha CAM-5.
+- `app/cam5-model.ts`: canales, inventario y catálogo Modbus.
+- `app/cam5-api.ts`: contrato de API.
+- `app/globals.css`: sistema visual y responsive.
+- `BACKEND_HANDOFF.md`: guía de conexión del backend.
