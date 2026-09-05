@@ -63,6 +63,11 @@ Los valores `0x8000` y `0xFFFF` deben convertirse en calidad inválida, no en me
 El cliente tipado está en `app/cam5-api.ts`. Las familias principales son:
 
 - `/health`
+- `/me/access`
+- `/users`
+- `/users/invitations`
+- `/roles`
+- `/reading-profiles`
 - `/gateways/{gatewayId}/devices/discover`
 - `/devices/{deviceId}`
 - `/devices/{deviceId}/modbus/test`
@@ -76,6 +81,14 @@ El cliente tipado está en `app/cam5-api.ts`. Las familias principales son:
 - `/assets/{assetId}/trends`
 - `/alarms/*`
 - `/work-orders/*`
+
+## Persistencia y autorización
+
+La base PostgreSQL, la migración inicial y el seed se encuentran en `db/` y `drizzle/`. El diseño incluye datos crudos, última lectura, agregados históricos, perfiles Modbus y control de acceso por rol, ubicación y activo.
+
+Los perfiles iniciales son Administrador, Ingeniero, Operador y Solo lectura. La autorización se aplica en el backend mediante `db/authorization.ts`; la visibilidad del menú en el frontend es solamente una ayuda visual y no un control de seguridad.
+
+Consultar `DATABASE.md` para el modelo, retención y procedimiento de instalación.
 
 ## Puesta en marcha
 

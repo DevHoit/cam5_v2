@@ -27,11 +27,23 @@ npm run dev
 
 Abrir `http://localhost:3000`.
 
+## Base de datos
+
+La capa de persistencia utiliza PostgreSQL y Drizzle ORM. Incluye telemetría, histórico agregado, alarmas, mantenimiento, auditoría, perfiles de adquisición y cuatro perfiles de acceso al portal.
+
+```bash
+npm run db:migrate
+npm run db:seed
+```
+
+La configuración y el modelo completo están documentados en [`DATABASE.md`](./DATABASE.md).
+
 Validaciones:
 
 ```bash
 npm run build
 npm run lint
+npm run test:db
 ```
 
 ## Vercel

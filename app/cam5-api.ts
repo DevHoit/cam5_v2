@@ -150,6 +150,44 @@ export type ConfigurationSnapshot = {
   checksum?: string;
 };
 
+export type PortalRoleKey = "administrator" | "engineer" | "operator" | "viewer";
+
+export type PortalAccessProfile = {
+  id: string;
+  key: PortalRoleKey;
+  name: string;
+  description: string;
+  permissions: string[];
+};
+
+export type PortalUser = {
+  id: string;
+  email: string;
+  displayName: string;
+  status: "invited" | "active" | "suspended";
+  roles: Array<{ role: PortalRoleKey; siteId: string; expiresAt?: string }>;
+  assetScope?: string[];
+  lastLoginAt?: string;
+};
+
+export type ReadingProfile = {
+  id: string;
+  key: string;
+  name: string;
+  staleAfterSeconds: number;
+  rawRetentionDays: number;
+  aggregateRetentionDays: number;
+  ranges: Array<{
+    name: string;
+    startRegister: number;
+    endRegister: number;
+    functionCode: 3 | 4;
+    intervalMs: number;
+    priority: number;
+    enabled: boolean;
+  }>;
+};
+
 const API_BASE = process.env.NEXT_PUBLIC_CAM5_API_URL ?? "/api/v1";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -171,11 +209,19 @@ const query = (values: Record<string, string | number | undefined>) => {
 
 export const cam5Api = {
   health: () => request<{ status: "ok" | "degraded"; gateway: "online" | "offline"; timestamp: string }>("/health"),
+  myAccess: () => request<{ user: PortalUser; permissions: string[] }>("/me/access"),
+
+  accessProfiles: () => request<PortalAccessProfile[]>("/roles"),
+  users: () => request<PortalUser[]>("/users"),
+  inviteUser: (payload: { email: string; displayName: string; role: PortalRoleKey; siteId: string }) => request<PortalUser>("/users/invitations", { method: "POST", body: JSON.stringify(payload) }),
+  updateUser: (userId: string, payload: Partial<Pick<PortalUser, "displayName" | "status" | "roles" | "assetScope">>) => request<PortalUser>(`/users/${userId}`, { method: "PATCH", body: JSON.stringify(payload) }),
 
   device: (deviceId: string) => request<Cam5Device>(`/devices/${deviceId}`),
   updateDevice: (deviceId: string, payload: Partial<Cam5Device>) => request<Cam5Device>(`/devices/${deviceId}`, { method: "PATCH", body: JSON.stringify(payload) }),
   discoverDevice: (gatewayId: string) => request<Cam5Device>(`/gateways/${gatewayId}/devices/discover`, { method: "POST" }),
   testModbus: (deviceId: string) => request<{ ok: boolean; latencyMs: number; registerCount: number; exceptionCode?: number }>(`/devices/${deviceId}/modbus/test`, { method: "POST" }),
+  readingProfiles: () => request<ReadingProfile[]>("/reading-profiles"),
+  updateReadingProfile: (profileId: string, payload: Partial<ReadingProfile>) => request<ReadingProfile>(`/reading-profiles/${profileId}`, { method: "PATCH", body: JSON.stringify(payload) }),
 
   registerCatalog: (deviceId: string) => request<RegisterDefinition[]>(`/devices/${deviceId}/registers`),
   latestReadings: (assetId: string) => request<TelemetryReading[]>(`/assets/${assetId}/readings/latest`),
