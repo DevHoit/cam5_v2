@@ -90,7 +90,7 @@ El ejemplo muestra dos registros para que sea legible. En operación, `expectedR
 - `schemaVersion`: siempre `1.0`.
 - `batchKey`: identificador único e inmutable del lote, máximo 160 caracteres. Reenviar el mismo lote debe conservar esta clave.
 - `sentAt`: hora UTC en que el gateway envía la solicitud.
-- `gateway.code`: código configurado en CAM5 CORE.
+- `gateway.code`: código configurado en HoitLive Core.
 - `gateway.bootId`: UUID nuevo en cada arranque del servicio.
 - `gateway.sequence`: contador entero ascendente durante ese arranque.
 - `device.code`: código del controlador configurado en el portal.

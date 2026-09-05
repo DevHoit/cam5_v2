@@ -1,11 +1,11 @@
-# CAM5 CORE — contrato para backend
+# HoitLive Core — contrato para backend
 
 El frontend admite varios clientes. Cada cliente contiene uno o más sitios; cada sitio contiene puntos de medición y gateways, y cada equipo CAM-5 relaciona un punto con un gateway del mismo sitio mediante Modbus TCP.
 
 ## Cadena de adquisición
 
 ```text
-Sensores → CAM-5 → CAM5-GW-01 → API CAM5 CORE → Portal
+Sensores → CAM-5 → CAM5-GW-01 → API HoitLive Core → Portal
 ```
 
 - Lectura de campo: Modbus TCP, FC03.

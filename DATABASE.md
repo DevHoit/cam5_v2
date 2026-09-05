@@ -1,4 +1,4 @@
-# Base de datos CAM5 CORE
+# Base de datos HoitLive Core
 
 La base está diseñada para PostgreSQL 15 o superior y soporta una estructura multi-cliente y multi-sitio. Cada sitio puede contener varios puntos de medición y gateways; cada equipo CAM5 enlaza un punto con un gateway del mismo sitio.
 

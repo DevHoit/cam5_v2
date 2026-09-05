@@ -100,7 +100,7 @@ export async function seedCam5Database(
       clientId: client.id,
       code: "SITE-NORTE",
       name: "Subestación Norte",
-      description: "Primera ubicación productiva CAM5 CORE",
+      description: "Primera ubicación productiva HoitLive Core",
       timezone: "America/Santiago",
     }).onConflictDoUpdate({
       target: [sites.clientId, sites.code],

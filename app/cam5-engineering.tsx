@@ -140,7 +140,7 @@ export function Cam5CommissioningView({ notify }: { notify: Notify }) {
             <label className="engineering-span-2"><span>Convención de direcciones</span><select value={device.referenceMode} onChange={(event) => setDevice({ ...device, referenceMode: event.target.value })}><option>Registro nativo + referencia 400xxx</option><option>Solo registro nativo</option><option>Remapeo definido por gateway</option></select></label>
           </div>
           <aside className={`connection-contract connection-${connection}`}>
-            <span><Router size={27} /></span><small>Ruta de adquisición</small><h3>CAM5 → CAM5-GW-01 → CORE</h3>
+            <span><Router size={27} /></span><small>Ruta de adquisición</small><h3>CAM5 → CAM5-GW-01 → HoitLive Core</h3>
             <dl><div><dt>Lectura</dt><dd>FC03</dd></div><div><dt>Rango</dt><dd>418–522</dd></div><div><dt>Escritura</dt><dd>Bloqueada</dd></div><div><dt>Frescura</dt><dd>{alarmEngine.staleSeconds} s</dd></div></dl>
             <button onClick={testConnection} disabled={connection === "testing"}>{connection === "testing" ? <><Refresh className="spin" size={16} /> Preparando…</> : connection === "ready" ? <><Check size={16} /> Contrato validado</> : <><PlugConnected size={16} /> Validar contrato</>}</button>
           </aside>

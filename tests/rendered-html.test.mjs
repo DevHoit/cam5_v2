@@ -14,14 +14,14 @@ async function render() {
   });
 }
 
-test("server-renders the protected CAM5 access gate", async () => {
+test("server-renders the protected HoitLive Core access gate", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /<title>CAM5 CORE \| Monitoreo de condición eléctrica<\/title>/i);
-  assert.match(html, /CAM5 CORE/);
+  assert.match(html, /<title>HoitLive Core \| Monitoreo de condición eléctrica<\/title>/i);
+  assert.match(html, /HoitLive Core/);
   assert.match(html, /Validando sesión/);
   assert.match(html, /Consultando sesión/);
 });
@@ -83,7 +83,7 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(model, /cam5RegisterCatalog/);
   assert.match(model, /cam5InputInventory/);
   assert.doesNotMatch(page, /CAM5-GW-0[234]|Subestación Auxiliar|2 subestaciones/);
-  assert.match(layout, /CAM5 CORE \| Monitoreo de condición eléctrica/);
+  assert.match(layout, /HoitLive Core \| Monitoreo de condición eléctrica/);
   assert.match(css, /\.report-builder/);
   assert.match(css, /\.asset-management-layout/);
   assert.match(css, /\.maintenance-plan-grid/);

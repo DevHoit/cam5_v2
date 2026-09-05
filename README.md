@@ -1,4 +1,4 @@
-# CAM5 CORE
+# HoitLive Core
 
 Portal web multi-cliente de telemetría y gestión de condición para instalaciones IntelliSAW CAM-5.
 
