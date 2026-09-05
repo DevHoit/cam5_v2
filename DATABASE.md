@@ -4,7 +4,7 @@ La base está diseñada para PostgreSQL 15 o superior y soporta una estructura m
 
 ## Componentes incluidos
 
-Las migraciones crean 41 tablas agrupadas de esta forma:
+Las migraciones crean 43 tablas agrupadas de esta forma:
 
 - Identidad y acceso: usuarios, identidades, sesiones, invitaciones, perfiles, permisos y alcances por cliente, sitio y punto.
 - Inventario OT: clientes, sitios, puntos de medición, gateways, modelos CAM5, equipos, entradas físicas y señales operativas.
@@ -118,4 +118,5 @@ El host `192.168.10.42` del seed es provisional. Debe reemplazarse por la direcc
 - `drizzle/0000_cam5_initial_schema.sql`: migración SQL inicial.
 - `drizzle/0001_eager_blockbuster.sql`: clientes, sitio activo y consistencia de la cadena OT.
 - `drizzle/0002_sparkling_wallow.sql`: membresías de usuario por cliente.
+- `drizzle/0003_rich_charles_xavier.sql`: credenciales del gateway y muestras de los 105 registros CAM5.
 - `tests/database-schema.test.mjs`: prueba en PostgreSQL embebido.

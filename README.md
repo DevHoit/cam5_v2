@@ -14,6 +14,7 @@ La estructura operacional admite uno o varios clientes, sitios, puntos de medici
 - Login/logout persistente, usuarios, roles y auditoría conectados a PostgreSQL.
 - Búsqueda, filtros y paginación en los listados operativos y administrativos.
 - Histórico consultable por rango de fechas, canal y texto.
+- Ingestión autenticada e idempotente desde gateways, con valores crudos, calidad y buffer de reenvío.
 - Estructura operacional de clientes, sitios, puntos, gateways y controladores.
 - Notificaciones e integraciones.
 - Configuración de canales, umbrales, gateway y mapa Modbus.
@@ -73,6 +74,8 @@ NEXT_PUBLIC_CAM5_API_URL=https://api.ejemplo.cl/api/v1
 ```
 
 La autenticación, los usuarios, la jerarquía operacional y el histórico utilizan rutas internas `/api/v1` conectadas a PostgreSQL. El dashboard, tendencias en vivo, alarmas operativas, configuración, reportes y mantenimiento conservan datos de referencia hasta conectar el servicio del gateway.
+
+El contrato que debe implementar el gateway está en [`gateway/CAM5_GATEWAY_PROTOCOL.md`](./gateway/CAM5_GATEWAY_PROTOCOL.md). Incluye frecuencias, payload JSON, códigos de calidad, reintentos y un emisor Python de referencia.
 
 `NEXT_PUBLIC_CAM5_API_URL` se reserva para ese servicio de telemetría. El cliente tipado está en `app/cam5-api.ts` y el contrato de implementación se encuentra en `BACKEND_HANDOFF.md`.
 

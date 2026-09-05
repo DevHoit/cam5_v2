@@ -94,6 +94,34 @@ type PortalHierarchy = {
   gateways: Array<{ id: string; siteId: string; code: string; name: string; serialNumber: string | null; softwareVersion: string | null; state: "pending" | "online" | "degraded" | "offline"; lastSeenAt: string | null; ipAddress: string | null }>;
   controllers: Array<{ id: string; pointId: string; gatewayId: string; code: string; name: string; model: string; serialNumber: string | null; state: string; protocol: string; host: string; port: number; unitId: number; lastReadAt: string | null }>;
 };
+type PortalLiveTelemetry = {
+  serverTime: string;
+  point: { id: string; code: string; name: string; state: PortalHierarchy["points"][number]["state"] };
+  gateway: { id: string; code: string; state: PortalHierarchy["gateways"][number]["state"]; lastSeenAt: string | null } | null;
+  device: { id: string; code: string; state: string; lastReadAt: string | null } | null;
+  staleAfterSeconds: number;
+  items: Array<{
+    id: string;
+    code: string;
+    name: string;
+    zone: string | null;
+    metric: string;
+    unit: string;
+    enabled: boolean;
+    register: number;
+    rawValue: number | null;
+    value: number | null;
+    quality: "good" | "stale" | "bad" | "disabled";
+    qualityFlags: string[];
+    recordedAt: string | null;
+    receivedAt: string | null;
+    sequence: number | null;
+    warningThreshold: number | null;
+    criticalThreshold: number | null;
+    severity: SensorState;
+  }>;
+};
+type PortalTelemetryState = { status: "preview" | "loading" | "ready" | "error"; data: PortalLiveTelemetry | null };
 type PaginationMeta = { page: number; pageSize: number; total: number; totalPages: number };
 type NoticeTone = "success" | "info" | "warning";
 type SystemMode = "normal" | "loading" | "stale" | "offline";
@@ -105,6 +133,7 @@ const ConfirmContext = createContext<(request: ConfirmRequest) => void>(() => un
 const useConfirm = () => useContext(ConfirmContext);
 const RoleContext = createContext<UserRole>("Administrador");
 const useActiveRole = () => useContext(RoleContext);
+const TelemetryContext = createContext<PortalTelemetryState>({ status: "preview", data: null });
 
 async function portalRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -138,17 +167,55 @@ function defaultChannelConfiguration() {
   }));
 }
 
-function useSensorData() {
+function telemetryAge(recordedAt: string | null) {
+  if (!recordedAt) return "Sin lecturas recibidas";
+  const seconds = Math.max(0, Math.round((Date.now() - new Date(recordedAt).getTime()) / 1000));
+  if (seconds < 60) return `Actualizado hace ${seconds} s`;
+  return `Actualizado hace ${Math.round(seconds / 60)} min`;
+}
+
+function formatTelemetryValue(value: number | null, unit: string) {
+  if (value === null || !Number.isFinite(value)) return "—";
+  return unit === "°C" || unit === "%RH" ? value.toFixed(1) : Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+function useSensorData(override?: PortalTelemetryState) {
   const [configuration] = usePersistentState("cam5.front.channel-config.v2", defaultChannelConfiguration());
+  const context = useContext(TelemetryContext);
+  const telemetry = override ?? context;
   return sensors.map((sensor) => {
     const configured = configuration.find((item) => item.id === sensor.id);
-    const warning = Number(configured?.warning ?? sensor.threshold.split(" ")[0]);
-    const critical = Number(configured?.critical ?? warning + 10);
-    const reading = Number(sensor.value);
-    const enabled = configured?.enabled ?? sensor.configured;
-    const state: SensorState = enabled && Number.isFinite(reading) ? reading >= critical ? "critical" : reading >= warning ? "warning" : "normal" : "normal";
+    const live = telemetry.data?.items.find((item) => item.code === sensor.id);
+    const warning = live?.warningThreshold ?? Number(configured?.warning ?? sensor.threshold.split(" ")[0]);
+    const critical = live?.criticalThreshold ?? Number(configured?.critical ?? warning + 10);
+    const reading = live ? live.value : telemetry.status === "preview" ? Number(sensor.value) : null;
+    const enabled = live?.enabled ?? configured?.enabled ?? sensor.configured;
+    const state: SensorState = live?.severity ?? (enabled && reading !== null && Number.isFinite(reading) ? reading >= critical ? "critical" : reading >= warning ? "warning" : "normal" : "normal");
     const activeThreshold = state === "critical" ? critical : warning;
-    return { ...sensor, enabled, warning, critical, state, threshold: `${activeThreshold} ${sensor.unit}`, quality: enabled ? sensor.quality : "Deshabilitado" };
+    const quality = !enabled
+      ? "Deshabilitado"
+      : live?.quality === "good"
+        ? "Válida"
+        : live?.quality === "stale"
+          ? "Atrasada"
+          : live?.quality === "bad"
+            ? "Inválida"
+            : telemetry.status === "loading"
+              ? "Esperando datos"
+              : telemetry.status === "error"
+                ? "Sin comunicación"
+                : sensor.quality;
+    return {
+      ...sensor,
+      enabled,
+      warning,
+      critical,
+      state,
+      value: live ? formatTelemetryValue(live.value, sensor.unit) : telemetry.status === "preview" ? sensor.value : "—",
+      threshold: `${activeThreshold} ${sensor.unit}`,
+      quality,
+      trend: live ? telemetryAge(live.recordedAt) : telemetry.status === "preview" ? sensor.trend : "Sin telemetría",
+    };
   });
 }
 
@@ -230,7 +297,7 @@ const viewTitles: Record<View, { title: string; description: string }> = {
   notifications: { title: "Notificaciones", description: "Canales de entrega, reglas de escalamiento y trazabilidad." },
 };
 
-function StatusPill({ state, children }: { state: SensorState | Severity | "online"; children: React.ReactNode }) {
+function StatusPill({ state, children }: { state: SensorState | Severity | "online" | "offline"; children: React.ReactNode }) {
   return <span className={`status-pill status-${state}`}><span className="status-dot" />{children}</span>;
 }
 
@@ -290,6 +357,8 @@ function SensorMarker({ id, selectedId, onSelect }: { id: string; selectedId?: s
 }
 
 function CabinetDiagram({ selectedId, onSelect }: { selectedId?: string; onSelect?: (id: string) => void }) {
+  const telemetry = useContext(TelemetryContext).data;
+  const gatewayOnline = telemetry?.gateway?.state === "online";
   return (
     <div className="condition-map" aria-label="Mapa de condición de la cabina MCC-01">
       <div className="condition-map-header"><span className="map-asset-icon"><CircuitBoard size={20} /></span><div><strong>MCC-01</strong><small>13.8 kV · Alimentador Norte</small></div><b>CAM5-01</b></div>
@@ -328,7 +397,7 @@ function CabinetDiagram({ selectedId, onSelect }: { selectedId?: string; onSelec
         </section>
       </div>
 
-      <div className="condition-map-footer"><span><Wifi size={15} /><span><strong>CAM5-CTRL-01</strong><small>Modbus TCP · vía CAM5-GW-01 · último dato hace 2 s</small></span></span><StatusPill state="online">En línea</StatusPill></div>
+      <div className="condition-map-footer"><span><Wifi size={15} /><span><strong>{telemetry?.device?.code ?? "CAM5-CTRL-01"}</strong><small>Modbus TCP · vía {telemetry?.gateway?.code ?? "CAM5-GW-01"} · {telemetryAge(telemetry?.device?.lastReadAt ?? null).toLowerCase()}</small></span></span><StatusPill state={gatewayOnline ? "online" : "offline"}>{gatewayOnline ? "En línea" : "Sin conexión"}</StatusPill></div>
     </div>
   );
 }
@@ -1291,7 +1360,8 @@ function LoginScreen({ checking, onAuthenticated }: { checking: boolean; onAuthe
 }
 
 export default function Home() {
-  const sensors = useSensorData();
+  const [telemetryState, setTelemetryState] = useState<PortalTelemetryState>({ status: "loading", data: null });
+  const sensors = useSensorData(telemetryState);
   const activeSensorRouteKey = sensors.filter((sensor) => sensor.enabled).map((sensor) => sensor.id).join(",");
   const [view, setView] = useState<View>("overview");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -1303,7 +1373,8 @@ export default function Home() {
   const [closedAlarmIds, setClosedAlarmIds] = usePersistentState<string[]>("cam5.front.closed-alarms", []);
   const [alarmAssignees, setAlarmAssignees] = usePersistentState<Record<string, string>>("cam5.front.alarm-assignees", { "AL-260811-031": "Emerson Allende", "AL-260811-028": "Paula Rojas", "AL-260811-019": "Felipe Soto" });
   const [alarmNotes, setAlarmNotes] = usePersistentState<Record<string, string[]>>("cam5.front.alarm-notes", {});
-  const [systemMode, setSystemMode] = usePersistentState<SystemMode>("cam5.front.system-mode", "normal");
+  const [systemMode, setSystemMode] = useState<SystemMode>("loading");
+  const [telemetryRefreshKey, setTelemetryRefreshKey] = useState(0);
   const [sessionUser, setSessionUser] = useState<PortalSessionUser | null>(null);
   const [hierarchy, setHierarchy] = useState<PortalHierarchy | null>(null);
   const [hierarchyLoading, setHierarchyLoading] = useState(false);
@@ -1346,6 +1417,31 @@ export default function Home() {
       .catch(() => { if (active) setAuthState("anonymous"); });
     return () => { active = false; };
   }, []);
+
+  useEffect(() => {
+    if (authState !== "authenticated" || !hierarchy) return;
+    const pointId = activePointId || hierarchy.points[0]?.id;
+    if (!pointId) return;
+    let active = true;
+    const refresh = async () => {
+      try {
+        const data = await portalRequest<PortalLiveTelemetry>(`/api/v1/telemetry/latest?pointId=${encodeURIComponent(pointId)}`);
+        if (!active) return;
+        setTelemetryState({ status: "ready", data });
+        const enabled = data.items.filter((item) => item.enabled);
+        const hasReadings = enabled.some((item) => item.recordedAt !== null);
+        const allStale = hasReadings && enabled.every((item) => item.quality === "stale" || item.quality === "bad");
+        setSystemMode(data.gateway?.state !== "online" || !hasReadings ? "offline" : allStale ? "stale" : "normal");
+      } catch {
+        if (!active) return;
+        setTelemetryState((current) => ({ status: "error", data: current.data }));
+        setSystemMode("offline");
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 2_000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [activePointId, authState, hierarchy, telemetryRefreshKey]);
 
   const loadHierarchy = async () => {
     setHierarchyLoading(true);
@@ -1426,6 +1522,8 @@ export default function Home() {
     try {
       const response = await portalRequest<{ user: PortalSessionUser }>("/api/v1/auth/context", { method: "PATCH", body: JSON.stringify({ siteId }) });
       setSessionUser(response.user);
+      setTelemetryState({ status: "loading", data: null });
+      setSystemMode("loading");
       setActivePointId("");
       await loadHierarchy();
       notify(`Contexto cambiado a ${response.user.siteName}.`, "info");
@@ -1439,11 +1537,14 @@ export default function Home() {
   const activePoint = hierarchy?.points.find((point) => point.id === activePointId) ?? hierarchy?.points[0];
   const activeGateway = hierarchy?.gateways[0];
   const activeController = hierarchy?.controllers.find((controller) => controller.pointId === activePoint?.id) ?? hierarchy?.controllers[0];
+  const gatewayState = telemetryState.data?.gateway?.state ?? activeGateway?.state;
+  const gatewayCode = telemetryState.data?.gateway?.code ?? activeGateway?.code;
 
   return (
     <FeedbackContext.Provider value={notify}>
     <ConfirmContext.Provider value={setConfirmRequest}>
     <RoleContext.Provider value={activeRole}>
+    <TelemetryContext.Provider value={telemetryState}>
     <div className="app-shell">
       {menuOpen && <button className="mobile-scrim" aria-label="Cerrar navegación" onClick={() => setMenuOpen(false)} />}
       <aside className={`sidebar ${menuOpen ? "open" : ""}`}>
@@ -1474,7 +1575,7 @@ export default function Home() {
           ))}
         </nav>
         <div className="sidebar-status">
-          <div className="gateway-badge"><span className="gateway-icon"><Server size={17} /></span><span><strong>{activeGateway?.state === "online" ? "Cadena OT operativa" : "Cadena OT en puesta en marcha"}</strong><small>{activeController?.code ?? "Controlador pendiente"} → {activeGateway?.code ?? "Gateway pendiente"}</small></span><i className={activeGateway?.state === "online" ? "" : "pending"} /></div>
+          <div className="gateway-badge"><span className="gateway-icon"><Server size={17} /></span><span><strong>{gatewayState === "online" ? "Cadena OT operativa" : "Cadena OT en puesta en marcha"}</strong><small>{activeController?.code ?? "Controlador pendiente"} → {gatewayCode ?? "Gateway pendiente"}</small></span><i className={gatewayState === "online" ? "" : "pending"} /></div>
           <button className="user-card" onClick={() => navigate("users")} aria-label="Abrir usuarios y roles"><span className="user-avatar">{sessionUser.displayName.split(" ").map((part) => part[0]).slice(0, 2).join("").toUpperCase()}</span><span className="user-copy"><strong>{sessionUser.displayName}</strong><small>{sessionUser.roleName}</small></span><ChevronRight size={16} /></button>
           <button className="sidebar-logout" onClick={logout}><LogOut size={17} /> Cerrar sesión</button>
         </div>
@@ -1483,12 +1584,12 @@ export default function Home() {
       <main className="main-shell">
         <header className="topbar">
           <div className="topbar-left"><button className="menu-button" aria-label="Abrir navegación" onClick={() => setMenuOpen(true)}><Menu size={22} /></button><span className="mobile-brand"><Zap size={18} fill="currentColor" /></span><div className="operational-context"><Building2 size={17} /><label><span>Cliente</span><select value={sessionUser.clientId} onChange={(event) => { const firstSite = hierarchy?.sites.find((site) => site.clientId === event.target.value); if (firstSite) void switchSite(firstSite.id); }} aria-label="Cliente activo">{hierarchy?.clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>) ?? <option value={sessionUser.clientId}>{sessionUser.clientName}</option>}</select></label><ChevronRight size={14} /><label><span>Sitio</span><select value={sessionUser.siteId} onChange={(event) => void switchSite(event.target.value)} aria-label="Sitio activo">{(hierarchy?.sites ?? sessionUser.sites).filter((site) => site.clientId === sessionUser.clientId).map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}</select></label><ChevronRight size={14} /><label><span>Punto de medición</span><select value={activePoint?.id ?? ""} onChange={(event) => setActivePointId(event.target.value)} aria-label="Punto de medición activo"><option value="">Sin punto seleccionado</option>{hierarchy?.points.map((point) => <option key={point.id} value={point.id}>{point.code} · {point.name}</option>)}</select></label></div></div>
-          <div className="topbar-right"><span className="authenticated-role"><ShieldCheck size={15} /><span><small>Sesión activa</small><strong>{sessionUser.roleName}</strong></span></span><div className={`live-state live-${activeGateway?.state === "online" ? "normal" : "offline"}`}><span /><div><strong>{activeGateway?.state === "online" ? "Adquisición operativa" : "Adquisición pendiente"}</strong><small>{activeGateway ? `${activeGateway.code} · ${activeGateway.state === "online" ? "en línea" : "sin telemetría"}` : "Gateway no configurado"}</small></div></div><button className="topbar-logout" onClick={logout} aria-label="Cerrar sesión"><LogOut size={18} /></button></div>
+          <div className="topbar-right"><span className="authenticated-role"><ShieldCheck size={15} /><span><small>Sesión activa</small><strong>{sessionUser.roleName}</strong></span></span><div className={`live-state live-${gatewayState === "online" ? "normal" : "offline"}`}><span /><div><strong>{gatewayState === "online" ? "Adquisición operativa" : "Adquisición pendiente"}</strong><small>{gatewayCode ? `${gatewayCode} · ${gatewayState === "online" ? "en línea" : "sin telemetría"}` : "Gateway no configurado"}</small></div></div><button className="topbar-logout" onClick={logout} aria-label="Cerrar sesión"><LogOut size={18} /></button></div>
         </header>
 
         <div className="content-scroll">
           <div className="page-content">
-            {systemMode !== "normal" && <section className={`operational-banner banner-${systemMode}`} role="alert"><span>{systemMode === "offline" ? <PlugConnected size={19} /> : systemMode === "loading" ? <Refresh className="spin" size={19} /> : <Clock3 size={19} />}</span><div><strong>{systemMode === "offline" ? "Gateway sin comunicación" : systemMode === "loading" ? "Sincronizando datos" : "Las lecturas están atrasadas"}</strong><p>{systemMode === "offline" ? "El portal conserva el último valor conocido. Las acciones operativas siguen disponibles, pero no hay telemetría nueva." : systemMode === "loading" ? "Solicitando la última configuración, lecturas y eventos disponibles." : "Los datos visibles superan el tiempo de frescura configurado. Revisa el enlace antes de tomar una decisión."}</p></div>{systemMode !== "loading" && <button onClick={() => { setSystemMode("normal"); notify("Solicitud de reconexión enviada."); }}><Refresh size={15} /> Reintentar</button>}</section>}
+            {systemMode !== "normal" && <section className={`operational-banner banner-${systemMode}`} role="alert"><span>{systemMode === "offline" ? <PlugConnected size={19} /> : systemMode === "loading" ? <Refresh className="spin" size={19} /> : <Clock3 size={19} />}</span><div><strong>{systemMode === "offline" ? "Gateway sin comunicación" : systemMode === "loading" ? "Sincronizando datos" : "Las lecturas están atrasadas"}</strong><p>{systemMode === "offline" ? "El portal muestra el último valor recibido cuando existe. Las funciones administrativas siguen disponibles, pero no hay telemetría nueva." : systemMode === "loading" ? "Solicitando la última configuración, lecturas y eventos disponibles." : "Los datos visibles superan el tiempo de frescura configurado. Revisa el enlace antes de tomar una decisión."}</p></div>{systemMode !== "loading" && <button onClick={() => { setSystemMode("loading"); setTelemetryRefreshKey((current) => current + 1); notify("Consultando nuevamente la telemetría.", "info"); }}><Refresh size={15} /> Reintentar</button>}</section>}
             <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> Gestión de activos críticos</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{view !== "assets" && view !== "settings" && view !== "integrations" && view !== "users" && view !== "notifications" && view !== "reports" && view !== "maintenance" && view !== "diagnostics" && view !== "commissioning" && <button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button>}<button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{3 - acknowledged.length} alertas abiertas</button></div></section>
             {view === "overview" && <Overview onNavigate={navigate} onAcknowledge={acknowledge} acknowledged={acknowledged} />}
             {view === "cabinet" && <CabinetView onOpenTrend={openChannelTrend} />}
@@ -1510,6 +1611,7 @@ export default function Home() {
       {notice && <div className={`portal-notice notice-${notice.tone}`} role="status" aria-live="polite" key={notice.id}><CheckCircle2 size={18} /><span>{notice.message}</span><button onClick={() => setNotice(null)} aria-label="Cerrar notificación"><X size={16} /></button></div>}
       {confirmRequest && <div className="confirm-backdrop" role="presentation" onMouseDown={() => setConfirmRequest(null)}><section className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-title" onMouseDown={(event) => event.stopPropagation()}><span className={`confirm-icon ${confirmRequest.tone === "danger" ? "danger" : ""}`}>{confirmRequest.tone === "danger" ? <AlertTriangle size={22} /> : <ShieldCheck size={22} />}</span><div><span className="eyebrow">Confirmación requerida</span><h2 id="confirm-title">{confirmRequest.title}</h2><p>{confirmRequest.detail}</p></div><div className="confirm-actions"><button className="secondary-button" onClick={() => setConfirmRequest(null)}>Cancelar</button><button className={confirmRequest.tone === "danger" ? "danger-button" : "primary-button"} onClick={() => { const action = confirmRequest.onConfirm; setConfirmRequest(null); action(); }}>{confirmRequest.confirmLabel}</button></div></section></div>}
     </div>
+    </TelemetryContext.Provider>
     </RoleContext.Provider>
     </ConfirmContext.Provider>
     </FeedbackContext.Provider>

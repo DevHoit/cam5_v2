@@ -68,6 +68,8 @@ El cliente tipado está en `app/cam5-api.ts`. Las familias principales son:
 - `/auth/session`
 - `/auth/context`
 - `/hierarchy`
+- `/gateway/config`
+- `/gateway/ingest`
 - `/history`
 - `/me/access`
 - `/users`

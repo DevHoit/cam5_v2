@@ -123,6 +123,7 @@ button { cursor: pointer; }
 .status-pill { min-height: 25px; padding: 4px 9px; border-radius: 999px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-size: 10px; font-weight: 650; border: 1px solid currentColor; }
 .status-pill .status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .status-normal, .status-online { color: #059669; background: #ecfdf5; border-color: #a7f3d0; }
+.status-offline { color: #64748b; background: #f1f5f9; border-color: #cbd5e1; }
 .status-warning { color: #b45309; background: #fffbeb; border-color: #fde68a; }
 .status-critical { color: #dc2626; background: #fef2f2; border-color: #fecaca; }
 .status-info { color: #4f46e5; background: #eef2ff; border-color: #c7d2fe; }

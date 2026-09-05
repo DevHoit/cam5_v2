@@ -146,6 +146,22 @@ export const authIdentities = pgTable("auth_identities", {
   check("auth_identities_password_chk", sql`(${table.provider} = 'local' AND ${table.passwordHash} IS NOT NULL) OR (${table.provider} <> 'local' AND ${table.passwordHash} IS NULL)`),
 ]);
 
+export const gatewayApiCredentials = pgTable("gateway_api_credentials", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  gatewayId: uuid("gateway_id").notNull().references(() => gateways.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 120 }).notNull(),
+  tokenPrefix: varchar("token_prefix", { length: 24 }).notNull(),
+  tokenHash: varchar("token_hash", { length: 64 }).notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("gateway_api_credentials_token_hash_uidx").on(table.tokenHash),
+  index("gateway_api_credentials_gateway_idx").on(table.gatewayId, table.revokedAt),
+]);
+
 export const roles = pgTable("roles", {
   id: uuid("id").defaultRandom().primaryKey(),
   key: varchar("key", { length: 60 }).notNull(),
@@ -424,6 +440,24 @@ export const ingestionBatches = pgTable("ingestion_batches", {
   uniqueIndex("ingestion_batches_gateway_key_uidx").on(table.gatewayId, table.batchKey),
   index("ingestion_batches_device_started_idx").on(table.deviceId, table.startedAt),
   check("ingestion_batches_counts_chk", sql`${table.expectedRegisters} > 0 AND ${table.receivedRegisters} >= 0 AND ${table.receivedRegisters} <= ${table.expectedRegisters}`),
+]);
+
+export const deviceRegisterSamples = pgTable("device_register_samples", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  batchId: uuid("batch_id").notNull().references(() => ingestionBatches.id, { onDelete: "cascade" }),
+  deviceId: uuid("device_id").notNull().references(() => devices.id, { onDelete: "restrict" }),
+  registerDefinitionId: uuid("register_definition_id").notNull().references(() => registerDefinitions.id, { onDelete: "restrict" }),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+  rawValue: integer("raw_value"),
+  value: numeric("value", { precision: 18, scale: 6 }),
+  quality: dataQualityEnum("quality").notNull(),
+  qualityFlags: jsonb("quality_flags").$type<string[]>().default(sql`'[]'::jsonb`).notNull(),
+  sequence: bigint("sequence", { mode: "number" }),
+  receivedAt: timestamp("received_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("device_register_samples_batch_register_uidx").on(table.batchId, table.registerDefinitionId),
+  index("device_register_samples_device_time_idx").on(table.deviceId, table.recordedAt),
+  index("device_register_samples_register_time_idx").on(table.registerDefinitionId, table.recordedAt),
 ]);
 
 export const readings = pgTable("readings", {
