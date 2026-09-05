@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 
 API_BASE = os.environ.get("CAM5_API_BASE", "https://cam5v2.vercel.app/api/v1").rstrip("/")
 TOKEN = os.environ.get("CAM5_GATEWAY_TOKEN", "")
+RUN_ONCE = os.environ.get("CAM5_RUN_ONCE", "").lower() in ("1", "true", "yes")
 BOOT_ID = str(uuid.uuid4())
 STARTED_MONOTONIC = time.monotonic()
 
@@ -122,6 +123,8 @@ def main():
             }
             send_with_retry(payload)
             next_run[item["name"]] = time.monotonic() + item["intervalMs"] / 1000.0
+        if RUN_ONCE:
+            return
         time.sleep(0.1)
 
 

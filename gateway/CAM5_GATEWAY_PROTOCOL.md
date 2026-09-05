@@ -15,6 +15,15 @@ Este contrato es idéntico para una fuente de datos simulada y para un CAM5 fís
 
 El token identifica al gateway y no debe guardarse en el repositorio. Se recomienda almacenarlo como variable de entorno `CAM5_GATEWAY_TOKEN`, con permisos de lectura limitados al servicio.
 
+Para comprobar el circuito completo con el emisor de referencia incluido:
+
+```bash
+export CAM5_GATEWAY_TOKEN='token-entregado-fuera-del-repositorio'
+CAM5_RUN_ONCE=1 python3 gateway/examples/cam5_gateway_simulator.py
+```
+
+Sin `CAM5_RUN_ONCE=1`, el emisor permanece ejecutándose y respeta los intervalos de la configuración remota.
+
 ## Frecuencias
 
 | Rango nativo | Contenido | Frecuencia recomendada |
