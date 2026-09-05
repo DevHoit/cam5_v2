@@ -11,7 +11,10 @@ El alcance inicial es una ubicación, un gateway `CAM5-GW-01` y un controlador/e
 - Análisis UHF Total, Alpha, Beta, Phi, ruido y descarga superficial.
 - Centro de alertas, reconocimiento, cierre y órdenes de trabajo.
 - Histórico, reportes y auditoría.
-- Activos, usuarios, roles, notificaciones e integraciones.
+- Login/logout persistente, usuarios, roles y auditoría conectados a PostgreSQL.
+- Búsqueda, filtros y paginación en los listados operativos y administrativos.
+- Histórico consultable por rango de fechas, canal y texto.
+- Activos, notificaciones e integraciones.
 - Configuración de canales, umbrales, gateway y mapa Modbus.
 - Puesta en marcha con identidad, 24 entradas físicas, alarmas, seis relés, red, respaldo y checklist de producción.
 - Catálogo CAM-5/IRM-48 completo: 105 registros nativos entre 418 y 522.
@@ -30,6 +33,8 @@ Abrir `http://localhost:3000`.
 ## Base de datos
 
 La capa de persistencia utiliza PostgreSQL y Drizzle ORM. Incluye telemetría, histórico agregado, alarmas, mantenimiento, auditoría, perfiles de adquisición y cuatro perfiles de acceso al portal.
+
+Antes del primer ingreso, configurar `DATABASE_URL`, `CAM5_ADMIN_EMAIL`, `CAM5_ADMIN_NAME` y `CAM5_ADMIN_PASSWORD`. La contraseña debe tener al menos 10 caracteres.
 
 ```bash
 npm run db:migrate
@@ -66,7 +71,9 @@ Configurar:
 NEXT_PUBLIC_CAM5_API_URL=https://api.ejemplo.cl/api/v1
 ```
 
-El cliente tipado está en `app/cam5-api.ts` y el contrato de implementación se encuentra en `BACKEND_HANDOFF.md`.
+La autenticación, los usuarios y el histórico ya utilizan rutas internas `/api/v1` conectadas a PostgreSQL. El dashboard, tendencias en vivo, alarmas operativas, configuración, reportes y mantenimiento todavía conservan datos demostrativos hasta conectar el servicio del gateway.
+
+`NEXT_PUBLIC_CAM5_API_URL` se reserva para ese servicio de telemetría. El cliente tipado está en `app/cam5-api.ts` y el contrato de implementación se encuentra en `BACKEND_HANDOFF.md`.
 
 ## Archivos principales
 
@@ -74,5 +81,6 @@ El cliente tipado está en `app/cam5-api.ts` y el contrato de implementación se
 - `app/cam5-engineering.tsx`: puesta en marcha CAM-5.
 - `app/cam5-model.ts`: canales, inventario y catálogo Modbus.
 - `app/cam5-api.ts`: contrato de API.
+- `app/api/v1/`: login, logout, sesión, usuarios e histórico PostgreSQL.
 - `app/globals.css`: sistema visual y responsive.
 - `BACKEND_HANDOFF.md`: guía de conexión del backend.

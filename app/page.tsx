@@ -5,6 +5,7 @@ import type { ComponentType } from "react";
 import { usePersistentState } from "./use-persistent-state";
 import { Cam5CommissioningView } from "./cam5-engineering";
 import { cam5OperationalChannels, cam5PdMetrics, cam5RegisterCatalog } from "./cam5-model";
+import { Pagination, useClientPagination } from "./pagination";
 import {
   IconActivity as Activity,
   IconAlertTriangle as AlertTriangle,
@@ -35,6 +36,8 @@ import {
   IconMail as Mail,
   IconMapPin as MapPin,
   IconMenu2 as Menu,
+  IconLogout as LogOut,
+  IconPencil as Pencil,
   IconPlugConnected as PlugConnected,
   IconPlus as Plus,
   IconPrinter as Printer,
@@ -47,6 +50,7 @@ import {
   IconTemperature as Thermometer,
   IconTimeline as Timeline,
   IconTool as Tool,
+  IconTrash as Trash,
   IconTrendingUp as TrendingUp,
   IconUserPlus as UserPlus,
   IconUsers as Users,
@@ -66,6 +70,8 @@ type UserRole = "Administrador" | "Ingeniero" | "Operador" | "Solo lectura";
 type WorkStatus = "Pendiente" | "En curso" | "Completada";
 type WorkPriority = "Crítica" | "Alta" | "Normal";
 type WorkOrder = { id: string; title: string; source: string; sourceAlarmId?: string; due: string; priority: WorkPriority; assignee: string; status: WorkStatus };
+type PortalSessionUser = { id: string; email: string; displayName: string; roleKey: "administrator" | "engineer" | "operator" | "viewer"; roleName: UserRole; siteId: string; permissions: string[] };
+type PaginationMeta = { page: number; pageSize: number; total: number; totalPages: number };
 type NoticeTone = "success" | "info" | "warning";
 type SystemMode = "normal" | "loading" | "stale" | "offline";
 type ConfirmRequest = { title: string; detail: string; confirmLabel: string; tone?: "default" | "danger"; onConfirm: () => void };
@@ -76,6 +82,25 @@ const ConfirmContext = createContext<(request: ConfirmRequest) => void>(() => un
 const useConfirm = () => useContext(ConfirmContext);
 const RoleContext = createContext<UserRole>("Administrador");
 const useActiveRole = () => useContext(RoleContext);
+
+async function portalRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(path, {
+    ...init,
+    credentials: "include",
+    headers: { "Content-Type": "application/json", ...init?.headers },
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null) as { error?: string } | null;
+    throw new Error(payload?.error || "No fue posible completar la solicitud.");
+  }
+  if (response.status === 204) return undefined as T;
+  return response.json() as Promise<T>;
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return "Sin acceso";
+  return new Intl.DateTimeFormat("es-CL", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+}
 
 const sensors = cam5OperationalChannels;
 
@@ -122,20 +147,6 @@ const chartData = [
   [42, 16], [44, 18], [43, 17], [46, 19], [48, 21], [47, 22], [50, 24], [51, 27],
   [53, 31], [52, 30], [55, 36], [57, 39], [58, 42], [60, 46], [62, 51], [61, 50],
   [63, 55], [65, 59], [64, 61], [66, 66], [67, 70], [68, 72], [67, 71], [68, 74],
-];
-
-const auditEntries = [
-  { time: "Hoy 11:48", user: "Emerson Allende", action: "Umbral crítico actualizado", target: "PD1 · 65 → 60 idx", origin: "Portal web" },
-  { time: "Hoy 09:22", user: "Paula Rojas", action: "Alarma reconocida", target: "AL-260811-028 · T01", origin: "Portal web" },
-  { time: "Ayer 18:43", user: "Sistema", action: "Gateway reconectado", target: "CAM5-GW-01", origin: "Servicio OT" },
-  { time: "Ayer 16:15", user: "Emerson Allende", action: "Registro Modbus modificado", target: "H01 · HR 400431", origin: "Portal web" },
-  { time: "10 ago 14:06", user: "Felipe Soto", action: "Informe exportado", target: "MCC-01 · 30 días", origin: "Portal web" },
-];
-
-const closedAlarms = [
-  ...initialAlarms,
-  { id: "AL-260809-087", severity: "warning" as Severity, title: "Latencia de gateway elevada", detail: "CAM5-GW-01 · Comunicaciones", since: "9 ago 13:22", value: "218 ms", acknowledged: true },
-  { id: "AL-260807-044", severity: "info" as Severity, title: "Reinicio programado", detail: "CAM5-GW-01 · Firmware", since: "7 ago 02:00", value: "Completado", acknowledged: true },
 ];
 
 const navGroups = [
@@ -504,6 +515,7 @@ function AlarmsView({ acknowledged, onAcknowledge, workOrders, onOpenWorkOrder, 
   const [noteInput, setNoteInput] = useState("");
   const getWorkflowStatus = (alarm: (typeof initialAlarms)[number]) => closedIds.includes(alarm.id) ? "closed" : alarm.acknowledged || acknowledged.includes(alarm.id) ? "acknowledged" : "open";
   const filtered = initialAlarms.filter((alarm) => (severity === "all" || alarm.severity === severity) && (workflowStatus === "all" || getWorkflowStatus(alarm) === workflowStatus) && `${alarm.title} ${alarm.detail}`.toLowerCase().includes(query.toLowerCase()));
+  const alarmPage = useClientPagination(filtered, 6);
   const selected = filtered.find((alarm) => alarm.id === selectedId) ?? filtered[0] ?? initialAlarms[0];
   const selectedStatus = getWorkflowStatus(selected);
   const selectedNotes = notes[selected.id] ?? [];
@@ -523,12 +535,12 @@ function AlarmsView({ acknowledged, onAcknowledge, workOrders, onOpenWorkOrder, 
       </section>
       <article className={`panel alarm-table-panel ${role === "Solo lectura" ? "role-readonly" : ""}`}>
         <div className="alarm-toolbar">
-          <label className="search-field"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filtrar mensaje, sensor o zona…" /></label>
-          <div className="alarm-filters"><label className="status-filter"><span>Estado</span><select value={workflowStatus} onChange={(event) => setWorkflowStatus(event.target.value as typeof workflowStatus)}><option value="all">Todos</option><option value="open">Abiertas</option><option value="acknowledged">Reconocidas</option><option value="closed">Cerradas</option></select><ChevronDown size={13} /></label><div className="segmented">{(["all", "critical", "warning", "info"] as const).map((item) => <button key={item} className={severity === item ? "active" : ""} onClick={() => setSeverity(item)}>{item === "all" ? "Todas" : item === "critical" ? "Críticas" : item === "warning" ? "Advertencias" : "Info"}</button>)}</div></div>
+          <label className="search-field"><Search size={17} /><input value={query} onChange={(event) => { setQuery(event.target.value); alarmPage.setPage(1); }} placeholder="Filtrar mensaje, sensor o zona…" /></label>
+          <div className="alarm-filters"><label className="status-filter"><span>Estado</span><select value={workflowStatus} onChange={(event) => { setWorkflowStatus(event.target.value as typeof workflowStatus); alarmPage.setPage(1); }}><option value="all">Todos</option><option value="open">Abiertas</option><option value="acknowledged">Reconocidas</option><option value="closed">Cerradas</option></select><ChevronDown size={13} /></label><div className="segmented">{(["all", "critical", "warning", "info"] as const).map((item) => <button key={item} className={severity === item ? "active" : ""} onClick={() => { setSeverity(item); alarmPage.setPage(1); }}>{item === "all" ? "Todas" : item === "critical" ? "Críticas" : item === "warning" ? "Advertencias" : "Info"}</button>)}</div></div>
         </div>
         <div className="alarm-table-wrap"><div className="alarm-table">
           <div className="alarm-table-head"><span>Severidad</span><span>Evento / activo</span><span>Tiempo activo</span><span>Valor</span><span>Estado</span><span>Acción</span></div>
-          {filtered.map((alarm) => {
+          {alarmPage.pageItems.map((alarm) => {
             const status = getWorkflowStatus(alarm);
             return <div className={`alarm-table-row ${selected.id === alarm.id ? "selected" : ""}`} key={alarm.id}>
               <span><StatusPill state={alarm.severity}>{alarm.severity === "critical" ? "Crítica" : alarm.severity === "warning" ? "Advertencia" : "Informativa"}</StatusPill></span>
@@ -540,6 +552,7 @@ function AlarmsView({ acknowledged, onAcknowledge, workOrders, onOpenWorkOrder, 
           })}
           {filtered.length === 0 && <TableEmptyState title="No hay eventos con estos filtros" detail="Ajusta el estado, la severidad o el texto de búsqueda." />}
         </div></div>
+        <Pagination page={alarmPage.page} totalPages={alarmPage.totalPages} total={alarmPage.total} pageSize={alarmPage.pageSize} onPageChange={alarmPage.setPage} itemLabel="eventos" />
         {filtered.length > 0 && <section className={`event-detail-panel event-${selected.severity}`}>
           <div className="event-detail-header"><span className="event-detail-icon"><AlertTriangle size={20} /></span><div><span className="eyebrow">Evento seleccionado · {selected.id}</span><h2>{selected.title}</h2><p>{selected.detail}</p></div><span className={`workflow-badge workflow-${selectedStatus}`}>{selectedStatus === "closed" ? "Cerrada" : selectedStatus === "acknowledged" ? "Reconocida" : "Abierta"}</span></div>
           <div className="event-workspace">
@@ -560,44 +573,78 @@ function AlarmsView({ acknowledged, onAcknowledge, workOrders, onOpenWorkOrder, 
 function HistoryView() {
   const sensors = useSensorData();
   const [tab, setTab] = useState<HistoryTab>("measurements");
-  const [range, setRange] = useState("24 h");
+  const [today] = useState(() => new Date().toISOString().slice(0, 10));
+  const [from, setFrom] = useState(() => new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10));
+  const [to, setTo] = useState(() => new Date().toISOString().slice(0, 10));
   const [channel, setChannel] = useState("all");
+  const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const [result, setResult] = useState<(PaginationMeta & { items: Array<Record<string, unknown>> }) | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const activeSensors = sensors.filter((sensor) => sensor.enabled);
-  const estimatedRecords = activeSensors.length * (range === "24 h" ? 43200 : range === "7 días" ? 302400 : range === "30 días" ? 1296000 : 3888000);
-  const visibleSensors = channel === "all" ? activeSensors : activeSensors.filter((sensor) => sensor.id === channel);
+
+  useEffect(() => {
+    let active = true;
+    const timeout = window.setTimeout(async () => {
+      setLoading(true);
+      setError("");
+      try {
+        const params = new URLSearchParams({ tab, from: `${from}T00:00:00.000Z`, to: `${to}T23:59:59.999Z`, page: String(page), pageSize: "8" });
+        if (query.trim()) params.set("q", query.trim());
+        if (tab === "measurements" && channel !== "all") params.set("channel", channel);
+        const data = await portalRequest<PaginationMeta & { items: Array<Record<string, unknown>> }>(`/api/v1/history?${params}`);
+        if (active) setResult(data);
+      } catch (requestError) {
+        if (active) setError(requestError instanceof Error ? requestError.message : "No fue posible consultar el histórico.");
+      } finally {
+        if (active) setLoading(false);
+      }
+    }, 250);
+    return () => { active = false; window.clearTimeout(timeout); };
+  }, [tab, from, to, page, query, channel]);
+
+  const changeTab = (next: HistoryTab) => { setTab(next); setPage(1); };
+  const total = result?.total ?? 0;
 
   return (
     <>
       <section className="module-summary-grid">
-        <article><span className="module-summary-icon blue"><Database size={19} /></span><div><small>Registros del periodo</small><strong>{estimatedRecords.toLocaleString("es-CL")}</strong><span>{activeSensors.length} canales · {range}</span></div></article>
-        <article><span className="module-summary-icon green"><ShieldCheck size={19} /></span><div><small>Integridad de datos</small><strong>99.98%</strong><span>69 muestras estimadas</span></div></article>
-        <article><span className="module-summary-icon amber"><BellRing size={19} /></span><div><small>Eventos registrados</small><strong>6</strong><span>1 crítico · 3 advertencias</span></div></article>
+        <article><span className="module-summary-icon blue"><Database size={19} /></span><div><small>Registros encontrados</small><strong>{total.toLocaleString("es-CL")}</strong><span>{from} → {to}</span></div></article>
+        <article><span className="module-summary-icon green"><ShieldCheck size={19} /></span><div><small>Fuente de información</small><strong>PostgreSQL</strong><span>Consulta protegida por perfil</span></div></article>
+        <article><span className="module-summary-icon amber"><Timeline size={19} /></span><div><small>Vista actual</small><strong>{tab === "measurements" ? "Mediciones" : tab === "alarms" ? "Alarmas" : "Auditoría"}</strong><span>Página {result?.page ?? page} de {result?.totalPages ?? 1}</span></div></article>
       </section>
 
       <article className="panel module-panel">
         <div className="module-toolbar">
           <div className="module-tabs" role="tablist" aria-label="Tipo de histórico">
-            <button className={tab === "measurements" ? "active" : ""} onClick={() => setTab("measurements")}><Timeline size={16} /> Mediciones</button>
-            <button className={tab === "alarms" ? "active" : ""} onClick={() => setTab("alarms")}><BellRing size={16} /> Alarmas</button>
-            <button className={tab === "audit" ? "active" : ""} onClick={() => setTab("audit")}><ShieldCheck size={16} /> Auditoría</button>
-          </div>
-          <div className="history-filters">
-            {tab === "measurements" && <label><span>Canal</span><select value={channel} onChange={(event) => setChannel(event.target.value)}><option value="all">Todos los canales</option>{activeSensors.map((sensor) => <option key={sensor.id} value={sensor.id}>{sensor.id} · {sensor.label}</option>)}</select><ChevronDown size={13} /></label>}
-            <label><span>Periodo</span><select value={range} onChange={(event) => setRange(event.target.value)}><option>24 h</option><option>7 días</option><option>30 días</option><option>90 días</option></select><ChevronDown size={13} /></label>
+            <button className={tab === "measurements" ? "active" : ""} onClick={() => changeTab("measurements")}><Timeline size={16} /> Mediciones</button>
+            <button className={tab === "alarms" ? "active" : ""} onClick={() => changeTab("alarms")}><BellRing size={16} /> Alarmas</button>
+            <button className={tab === "audit" ? "active" : ""} onClick={() => changeTab("audit")}><ShieldCheck size={16} /> Auditoría</button>
           </div>
         </div>
+        <div className="history-search-bar">
+          <label className="search-field"><Search size={17} /><input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder={tab === "audit" ? "Buscar acción o recurso…" : "Buscar canal, código o evento…"} /></label>
+          {tab === "measurements" && <label><span>Canal</span><select value={channel} onChange={(event) => { setChannel(event.target.value); setPage(1); }}><option value="all">Todos los canales</option>{activeSensors.map((sensor) => <option key={sensor.id} value={sensor.id}>{sensor.id} · {sensor.label}</option>)}</select><ChevronDown size={13} /></label>}
+          <label><span>Desde</span><input type="date" value={from} max={to} onChange={(event) => { setFrom(event.target.value); setPage(1); }} /></label>
+          <label><span>Hasta</span><input type="date" value={to} min={from} max={today} onChange={(event) => { setTo(event.target.value); setPage(1); }} /></label>
+        </div>
 
-        {tab === "measurements" && <div className="module-table-wrap"><div className="history-table measurement-history"><div className="module-table-head"><span>Canal</span><span>Última lectura</span><span>Promedio</span><span>Mínimo</span><span>Máximo</span><span>Calidad</span></div>{visibleSensors.map((sensor) => {
-          const value = Number(sensor.value);
-          const spread = sensor.metric === "pd" || sensor.metric === "sd" ? 8 : sensor.type === "Humedad" ? 5 : 4;
-          return <div className="module-table-row" key={sensor.id}><span className="history-channel"><b className={`sensor-code sensor-${sensor.state}`}>{sensor.id}</b><span><strong>{sensor.label}</strong><small>{sensor.zone}</small></span></span><span className="mono-cell">{sensor.value} {sensor.unit}</span><span className="mono-cell">{(value - spread * .35).toFixed(1)} {sensor.unit}</span><span className="mono-cell">{(value - spread).toFixed(1)} {sensor.unit}</span><span className="mono-cell">{(value + (sensor.state === "normal" ? 1.2 : 2.4)).toFixed(1)} {sensor.unit}</span><span className="quality-ok"><CheckCircle2 size={14} /> Válida</span></div>;
-        })}</div></div>}
+        {error && <div className="data-error"><AlertTriangle size={18} /><div><strong>No se pudo cargar el histórico</strong><p>{error}</p></div></div>}
+        {loading && <div className="data-loading"><Refresh className="spin" size={18} /> Consultando PostgreSQL…</div>}
 
-        {tab === "alarms" && <div className="module-table-wrap"><div className="history-table alarm-history"><div className="module-table-head"><span>Fecha</span><span>Severidad</span><span>Evento</span><span>Valor</span><span>Estado</span></div>{closedAlarms.map((alarm, index) => <div className="module-table-row" key={alarm.id}><span>{index < 3 ? alarm.since : alarm.since}</span><span><StatusPill state={alarm.severity}>{alarm.severity === "critical" ? "Crítica" : alarm.severity === "warning" ? "Advertencia" : "Info"}</StatusPill></span><span className="event-cell"><strong>{alarm.title}</strong><small>{alarm.detail} · {alarm.id}</small></span><span className="mono-cell">{alarm.value}</span><span className={alarm.acknowledged ? "quality-ok" : "unack-state"}>{alarm.acknowledged ? <><CheckCircle2 size={14} /> Cerrada</> : <><Clock3 size={14} /> Abierta</>}</span></div>)}</div></div>}
+        {!loading && !error && tab === "measurements" && <div className="module-table-wrap"><div className="history-table measurement-history"><div className="module-table-head"><span>Canal</span><span>Última lectura</span><span>Promedio</span><span>Mínimo</span><span>Máximo</span><span>Calidad</span></div>{result?.items.map((raw) => {
+          const item = raw as { id: string; code: string; name: string; zone?: string; unit: string; lastValue?: string | null; averageValue?: string | null; minimumValue?: string | null; maximumValue?: string | null; qualityPercent?: number | null; lastRecordedAt?: string | null };
+          const value = (entry?: string | null) => entry === null || entry === undefined ? "—" : `${Number(entry).toFixed(1)} ${item.unit}`;
+          return <div className="module-table-row" key={item.id}><span className="history-channel"><b className="sensor-code sensor-normal">{item.code}</b><span><strong>{item.name}</strong><small>{item.zone || "Sin zona"}</small></span></span><span className="mono-cell">{value(item.lastValue)}<small>{item.lastRecordedAt ? formatDateTime(item.lastRecordedAt) : "Sin muestras"}</small></span><span className="mono-cell">{value(item.averageValue)}</span><span className="mono-cell">{value(item.minimumValue)}</span><span className="mono-cell">{value(item.maximumValue)}</span><span className={item.qualityPercent === null ? "muted-state" : "quality-ok"}>{item.qualityPercent === null ? "Sin datos" : <><CheckCircle2 size={14} /> {item.qualityPercent}%</>}</span></div>;
+        })}{result?.items.length === 0 && <TableEmptyState title="No hay mediciones en este rango" detail="Ajusta las fechas o espera la primera ingestión del CAM-5." />}</div></div>}
 
-        {tab === "audit" && <div className="module-table-wrap"><div className="history-table audit-history"><div className="module-table-head"><span>Fecha</span><span>Usuario</span><span>Acción</span><span>Detalle</span><span>Origen</span></div>{auditEntries.map((entry) => <div className="module-table-row" key={`${entry.time}-${entry.action}`}><span>{entry.time}</span><span><strong>{entry.user}</strong></span><span>{entry.action}</span><span className="mono-cell">{entry.target}</span><span>{entry.origin}</span></div>)}</div></div>}
+        {!loading && !error && tab === "alarms" && <div className="module-table-wrap"><div className="history-table alarm-history"><div className="module-table-head"><span>Fecha</span><span>Severidad</span><span>Evento</span><span>Valor</span><span>Estado</span></div>{result?.items.map((raw) => { const item = raw as { id: string; code: string; openedAt: string; severity: Severity; status: string; title: string; detail?: string; triggerValue?: string; channelCode?: string; unit?: string }; return <div className="module-table-row" key={item.id}><span>{formatDateTime(item.openedAt)}</span><span><StatusPill state={item.severity}>{item.severity === "critical" ? "Crítica" : item.severity === "warning" ? "Advertencia" : "Normal"}</StatusPill></span><span className="event-cell"><strong>{item.title}</strong><small>{item.detail || item.code}</small></span><span className="mono-cell">{item.triggerValue ? `${Number(item.triggerValue).toFixed(1)} ${item.unit || ""}` : "—"}</span><span className={item.status === "closed" ? "quality-ok" : "unack-state"}>{item.status === "closed" ? <><CheckCircle2 size={14} /> Cerrada</> : <><Clock3 size={14} /> {item.status === "acknowledged" ? "Reconocida" : "Abierta"}</>}</span></div>; })}{result?.items.length === 0 && <TableEmptyState title="No hay alarmas en este rango" detail="No se encontraron eventos con los filtros indicados." />}</div></div>}
 
-        <div className="module-footer"><span><Database size={14} /> Retención configurada: 24 meses</span><small>Fuente actual: simulador local · fuente futura: historiador CAM5.</small></div>
+        {!loading && !error && tab === "audit" && <div className="module-table-wrap"><div className="history-table audit-history"><div className="module-table-head"><span>Fecha</span><span>Usuario</span><span>Acción</span><span>Recurso</span><span>Resultado</span></div>{result?.items.map((raw) => { const item = raw as { id: number; createdAt: string; actor: string; action: string; resourceType: string; resourceId?: string; outcome: string }; return <div className="module-table-row" key={item.id}><span>{formatDateTime(item.createdAt)}</span><span><strong>{item.actor}</strong></span><span>{item.action}</span><span className="mono-cell">{item.resourceType}{item.resourceId ? ` · ${item.resourceId}` : ""}</span><span className={item.outcome === "success" ? "quality-ok" : "unack-state"}>{item.outcome === "success" ? "Correcto" : item.outcome}</span></div>; })}{result?.items.length === 0 && <TableEmptyState title="No hay movimientos auditados" detail="No existen acciones registradas para este periodo." />}</div></div>}
+
+        {!loading && !error && result && <Pagination page={result.page} totalPages={result.totalPages} total={result.total} pageSize={result.pageSize} onPageChange={setPage} itemLabel={tab === "measurements" ? "canales" : tab === "alarms" ? "eventos" : "acciones"} />}
+        <div className="module-footer"><span><Database size={14} /> Retención: 30 días crudos · 5 años agregados</span><small>Fuente actual: PostgreSQL · rango consultado inclusive.</small></div>
       </article>
     </>
   );
@@ -623,6 +670,7 @@ function AssetsView({ onNavigate }: { onNavigate: (view: View) => void }) {
   const storedSelected = assets.find((asset) => asset.id === selectedId) ?? assets[0];
   const selected = storedSelected.id === "MCC-01" ? { ...storedSelected, configured: activeInputCount } : storedSelected;
   const filtered = assets.filter((asset) => (statusFilter === "all" || asset.state === statusFilter) && `${asset.id} ${asset.name} ${asset.type} ${asset.site} ${asset.area}`.toLowerCase().includes(query.toLowerCase()));
+  const assetPage = useClientPagination(filtered, 8);
   const locations = ["Subestación Norte"];
   const totalConfigured = assets.reduce((sum, asset) => sum + (asset.id === "MCC-01" ? activeInputCount : asset.configured), 0);
   const totalCapacity = assets.reduce((sum, asset) => sum + asset.capacity, 0);
@@ -661,7 +709,7 @@ function AssetsView({ onNavigate }: { onNavigate: (view: View) => void }) {
 
         {tab === "hierarchy" && <div className="asset-management-layout"><aside className="asset-tree"><div className="asset-tree-head"><span className="asset-tree-icon"><Factory size={20} /></span><div><span className="eyebrow">Instalación única</span><strong>Subestación Norte</strong></div></div><div className="asset-tree-content">{locations.map((location) => <section key={location}><div className="tree-location"><span><Building2 size={17} /></span><div><strong>{location}</strong><small>{assets.filter((asset) => asset.site === location).length} activos</small></div></div><div className="tree-assets">{assets.filter((asset) => asset.site === location).map((asset) => <button key={asset.id} className={selected.id === asset.id ? "selected" : ""} onClick={() => openAsset(asset.id)}><span className={`tree-state state-${asset.state}`} /><span><strong>{asset.id}</strong><small>{asset.name}</small></span><ChevronRight size={15} /></button>)}</div></section>)}</div><div className="asset-tree-footer"><MapPin size={15} /><span>1 ubicación · 1 gateway · {assets.length} activos</span></div></aside><section className="asset-detail"><div className="asset-detail-header"><span className={`asset-detail-icon state-${selected.state}`}><CircuitBoard size={23} /></span><div><span className="eyebrow">Activo seleccionado · {selected.id}</span><h2>{selected.name}</h2><p><MapPin size={14} /> {selected.site} · {selected.area}</p></div><StatusPill state={selected.state}>{stateLabel(selected.state)}</StatusPill></div><div className="asset-detail-actions"><span>Ficha actualizada {selected.updated}</span><button className="secondary-button" onClick={() => setEditing((current) => !current)}>{editing ? <><CheckCircle2 size={15} /> Finalizar edición</> : <><Settings size={15} /> Editar ficha</>}</button></div>{editing ? <div className="asset-edit-grid"><label><span>Nombre operacional</span><input value={selected.name} onChange={(event) => updateSelected("name", event.target.value)} /></label><label><span>Área</span><input value={selected.area} onChange={(event) => updateSelected("area", event.target.value)} /></label><label><span>Gateway único</span><input value={selected.gateway} readOnly /></label><label><span>Responsable</span><select value={selected.owner} onChange={(event) => updateSelected("owner", event.target.value)}><option>Sin asignar</option><option>Emerson Allende</option><option>Paula Rojas</option><option>Felipe Soto</option></select></label><label><span>Tensión nominal</span><input value={selected.voltage} onChange={(event) => updateSelected("voltage", event.target.value)} /></label></div> : <dl className="asset-facts"><div><dt>Tipo</dt><dd>{selected.type}</dd></div><div><dt>Tensión nominal</dt><dd>{selected.voltage}</dd></div><div><dt>Gateway único</dt><dd>{selected.gateway}</dd></div><div><dt>Responsable</dt><dd>{selected.owner}</dd></div></dl>}<div className="asset-detail-grid"><section className="asset-coverage-card"><div><span className="eyebrow">Cobertura de instrumentación</span><strong>{coverage}%</strong></div><p>{selected.capacity ? `${selected.configured} canales configurados de ${selected.capacity} disponibles.` : "Activo nuevo sin capacidad de instrumentación definida."}</p><span className="asset-coverage-bar"><i style={{ width: `${coverage}%` }} /></span><dl><div><dt>Temperatura</dt><dd>{selected.id === "MCC-01" ? "5 canales" : "Configuración base"}</dd></div><div><dt>Descarga parcial</dt><dd>{selected.id === "MCC-01" ? "2 canales" : "No configurada"}</dd></div><div><dt>Ambiental</dt><dd>{selected.id === "MCC-01" ? "1 canal" : "No configurada"}</dd></div></dl></section><section className={`asset-condition-card condition-${selected.state}`}><span className="eyebrow">Condición actual</span><div><AlertTriangle size={20} /><strong>{stateLabel(selected.state)}</strong></div><p>{selected.state === "critical" ? "Descarga parcial acelerada en el compartimiento de cables. Requiere diagnóstico priorizado." : selected.state === "warning" ? "Existen variables sobre nivel preventivo. Mantener seguimiento de tendencia." : "No se observan condiciones fuera de los límites definidos."}</p><button onClick={() => openAsset(selected.id)}>{selected.state === "normal" ? "Revisar cobertura" : "Revisar hallazgos"} <ChevronRight size={15} /></button></section></div><div className="asset-channel-preview"><div className="report-library-head"><div><span className="eyebrow">Instrumentación</span><h2>Canales asociados</h2></div><span>{selectedSensors.length || selected.configured} canales</span></div>{selectedSensors.length ? <div className="asset-channel-grid">{selectedSensors.map((sensor) => <span key={sensor.id}><b className={`sensor-code sensor-${sensor.state}`}>{sensor.id}</b><span><strong>{sensor.label}</strong><small>{sensor.value} {sensor.unit} · {sensor.quality}</small></span></span>)}</div> : <div className="asset-empty-state"><Activity size={22} /><div><strong>Instrumentación sin detalle demostrativo</strong><p>La ficha está creada, pero sus canales se definirán desde Configuración.</p></div></div>}</div></section></div>}
 
-        {tab === "directory" && <div className="asset-directory"><div className="asset-directory-toolbar"><label className="search-field"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar código, nombre, tipo o ubicación…" /></label><label className="status-filter"><span>Condición</span><select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}><option value="all">Todas</option><option value="normal">Normal</option><option value="warning">Advertencia</option><option value="critical">Crítico</option></select><ChevronDown size={13} /></label></div><div className="module-table-wrap"><div className="asset-directory-table"><div className="module-table-head"><span>Activo</span><span>Tipo</span><span>Ubicación</span><span>Cobertura</span><span>Gateway</span><span>Condición</span><span>Acción</span></div>{filtered.map((asset) => <div className="module-table-row" key={asset.id}><span className="asset-directory-name"><b><CircuitBoard size={17} /></b><span><strong>{asset.id}</strong><small>{asset.name}</small></span></span><span>{asset.type}</span><span>{asset.site}<small>{asset.area}</small></span><span>{asset.configured} / {asset.capacity || "—"} canales</span><span className="mono-cell">{asset.gateway}</span><span><StatusPill state={asset.state}>{stateLabel(asset.state)}</StatusPill></span><span><button className="ghost-button" onClick={() => openAsset(asset.id)}>Abrir ficha</button></span></div>)}</div></div></div>}
+        {tab === "directory" && <div className="asset-directory"><div className="asset-directory-toolbar"><label className="search-field"><Search size={17} /><input value={query} onChange={(event) => { setQuery(event.target.value); assetPage.setPage(1); }} placeholder="Buscar código, nombre, tipo o ubicación…" /></label><label className="status-filter"><span>Condición</span><select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value as typeof statusFilter); assetPage.setPage(1); }}><option value="all">Todas</option><option value="normal">Normal</option><option value="warning">Advertencia</option><option value="critical">Crítico</option></select><ChevronDown size={13} /></label></div><div className="module-table-wrap"><div className="asset-directory-table"><div className="module-table-head"><span>Activo</span><span>Tipo</span><span>Ubicación</span><span>Cobertura</span><span>Gateway</span><span>Condición</span><span>Acción</span></div>{assetPage.pageItems.map((asset) => <div className="module-table-row" key={asset.id}><span className="asset-directory-name"><b><CircuitBoard size={17} /></b><span><strong>{asset.id}</strong><small>{asset.name}</small></span></span><span>{asset.type}</span><span>{asset.site}<small>{asset.area}</small></span><span>{asset.configured} / {asset.capacity || "—"} canales</span><span className="mono-cell">{asset.gateway}</span><span><StatusPill state={asset.state}>{stateLabel(asset.state)}</StatusPill></span><span><button className="ghost-button" onClick={() => openAsset(asset.id)}>Abrir ficha</button></span></div>)}</div></div><Pagination page={assetPage.page} totalPages={assetPage.totalPages} total={assetPage.total} pageSize={assetPage.pageSize} onPageChange={assetPage.setPage} itemLabel="activos" /></div>}
         {tab === "directory" && filtered.length === 0 && <TableEmptyState title="No hay activos con estos filtros" detail="Prueba con otra condición o modifica el texto de búsqueda." />}
         <div className="module-footer"><span><ShieldCheck size={14} /> Inventario con trazabilidad de cambios.</span><small>Cambios conservados localmente · listo para conectar al inventario central.</small></div>
       </article>
@@ -689,11 +737,13 @@ function ReportsView() {
     { id: "RPT-260804-011", name: "Eventos críticos · Semana 32", period: "29 jul – 4 ago", created: "4 ago 18:10", format: "PDF", owner: "Sistema" },
     { id: "RPT-260801-010", name: "Resumen ejecutivo · Julio", period: "1 – 31 jul", created: "1 ago 08:00", format: "XLSX", owner: "Sistema" },
   ]);
+  const reportPage = useClientPagination(reports, 8);
   const selectedTemplate = templates.find((template) => template.id === templateId) ?? templates[0];
   const generateReport = () => {
     setGenerating(true);
     window.setTimeout(() => {
       setReports((current) => [{ id: `RPT-${Date.now().toString().slice(-9)}`, name: `${selectedTemplate.name} · MCC-01`, period, created: "Ahora", format, owner: "Emerson Allende" }, ...current]);
+      reportPage.setPage(1);
       setGenerating(false);
       setPreviewOpen(true);
       notify(`${selectedTemplate.name} generado y agregado a la biblioteca.`);
@@ -736,7 +786,8 @@ function ReportsView() {
         {previewOpen && <section className="report-preview" aria-label="Vista previa del informe"><div className="report-preview-toolbar"><div><span className="eyebrow">Vista previa · {format}</span><h2>{selectedTemplate.name}</h2></div><div><button className="secondary-button" onClick={() => setPreviewOpen(false)}><X size={15} /> Cerrar</button><button className="primary-button" onClick={() => window.print()}><Printer size={15} /> Imprimir / guardar PDF</button></div></div><div className="report-sheet"><header><span className="brand-mark"><Zap size={21} /></span><div><strong>CAM5 CORE</strong><small>Informe de condición de activo crítico</small></div><time>Subestación Norte · MCC-01</time></header><section><span className="eyebrow">Resumen del periodo · {period}</span><h1>{selectedTemplate.name}</h1><p>Evaluación consolidada de temperatura, descarga parcial, humedad y disponibilidad de comunicaciones.</p></section><div className="report-kpi-row"><article><small>Condición</small><strong>Atención prioritaria</strong></article><article><small>Canales incluidos</small><strong>{sensors.filter((sensor) => sensor.enabled).length} de {sensors.length}</strong></article><article><small>Integridad</small><strong>99.98%</strong></article></div><section className="report-finding"><AlertTriangle size={20} /><div><strong>Hallazgo principal</strong><h2>Descarga parcial en aceleración · PD1</h2><p>El índice actual supera el umbral crítico configurado. Se recomienda inspección dirigida del compartimiento de cables.</p></div><b>72 idx</b></section><section className="report-channel-summary"><h2>Lecturas incluidas</h2><div>{sensors.filter((sensor) => sensor.enabled).map((sensor) => <span key={sensor.id}><b className={`sensor-code sensor-${sensor.state}`}>{sensor.id}</b><span><strong>{sensor.label}</strong><small>{sensor.zone}</small></span><em>{sensor.value} {sensor.unit}</em></span>)}</div></section><footer><ShieldCheck size={16} /><span>Documento generado desde datos simulados. La fuente definitiva será proporcionada por el historiador CAM5.</span></footer></div></section>}
 
         <div className="report-library-head"><div><span className="eyebrow">Biblioteca</span><h2>Informes recientes</h2></div><span>{reports.length} documentos</span></div>
-        <div className="module-table-wrap"><div className="report-table"><div className="module-table-head"><span>Informe</span><span>Periodo</span><span>Generado</span><span>Formato</span><span>Responsable</span><span>Datos</span></div>{reports.map((report) => <div className="module-table-row" key={report.id}><span className="report-name-cell"><b><FileReport size={16} /></b><span><strong>{report.name}</strong><small>{report.id}</small></span></span><span>{report.period}</span><span>{report.created}</span><span><i className="report-format">{report.format}</i></span><span>{report.owner}</span><span><button className="ghost-button" onClick={() => downloadReportData(report.name)}><Download size={14} /> Descargar datos</button></span></div>)}</div></div>
+        <div className="module-table-wrap"><div className="report-table"><div className="module-table-head"><span>Informe</span><span>Periodo</span><span>Generado</span><span>Formato</span><span>Responsable</span><span>Datos</span></div>{reportPage.pageItems.map((report) => <div className="module-table-row" key={report.id}><span className="report-name-cell"><b><FileReport size={16} /></b><span><strong>{report.name}</strong><small>{report.id}</small></span></span><span>{report.period}</span><span>{report.created}</span><span><i className="report-format">{report.format}</i></span><span>{report.owner}</span><span><button className="ghost-button" onClick={() => downloadReportData(report.name)}><Download size={14} /> Descargar datos</button></span></div>)}</div></div>
+        <Pagination page={reportPage.page} totalPages={reportPage.totalPages} total={reportPage.total} pageSize={reportPage.pageSize} onPageChange={reportPage.setPage} itemLabel="informes" />
       </article>
     </>
   );
@@ -756,11 +807,13 @@ function MaintenanceView({ orders, setOrders, focusOrderId }: { orders: WorkOrde
     { code: "PM-04", name: "Verificación de gateway y registros", frequency: "Mensual", next: "31 ago 2026", progress: 36, state: "En plazo" },
   ];
   const openOrders = orders.filter((order) => order.status !== "Completada").length;
+  const orderPage = useClientPagination(orders, 8);
   const createOrder = (event: React.FormEvent) => {
     event.preventDefault();
     if (!form.title.trim()) return;
     const id = `OT-${Date.now().toString().slice(-9)}`;
     setOrders((current) => [{ id, title: form.title.trim(), source: "Creación manual · Portal web", due: "Sin programar", priority: form.priority as WorkPriority, assignee: form.assignee, status: "Pendiente" }, ...current]);
+    orderPage.setPage(1);
     notify(`Orden ${id} creada correctamente.`);
     setForm({ title: "", priority: "Alta", assignee: "Paula Rojas" }); setShowCreate(false); setTab("orders");
   };
@@ -782,7 +835,7 @@ function MaintenanceView({ orders, setOrders, focusOrderId }: { orders: WorkOrde
 
         {tab === "plan" && <div className="maintenance-plan-content"><div className="settings-section-head"><span className="settings-icon"><CalendarEvent size={20} /></span><div><h2>Plan basado en condición</h2><p>La frecuencia se complementa con los hallazgos de telemetría y eventos activos.</p></div></div><div className="maintenance-plan-grid">{plans.map((plan) => <article className={`maintenance-plan-card plan-${plan.state.toLowerCase().replace(" ", "-")}`} key={plan.code}><div className="maintenance-plan-head"><span>{plan.code}</span><i>{plan.state}</i></div><h3>{plan.name}</h3><dl><div><dt>Frecuencia</dt><dd>{plan.frequency}</dd></div><div><dt>Próxima ejecución</dt><dd>{plan.next}</dd></div></dl><div className="maintenance-progress"><span><i style={{ width: `${plan.progress}%` }} /></span><small>{plan.progress}% del intervalo consumido</small></div><button onClick={() => { setForm({ title: plan.name, priority: plan.state === "Vencida" ? "Alta" : "Normal", assignee: "Paula Rojas" }); setShowCreate(true); }}><Plus size={14} /> Crear orden desde el plan</button></article>)}</div><div className="maintenance-recommendation"><AlertTriangle size={19} /><div><strong>Recomendación prioritaria</strong><p>Adelantar el diagnóstico UHF de PD1 y coordinar una ventana de inspección antes de cualquier intervención invasiva.</p></div><button onClick={() => setTab("orders")}>Revisar órdenes <ChevronRight size={15} /></button></div></div>}
 
-        {tab === "orders" && <div className="maintenance-orders">{focusOrderId && <div className="work-order-focus-banner"><ClipboardCheck size={17} /><div><strong>Orden abierta desde el Centro de alertas</strong><p>{focusOrderId} quedó seleccionada para mantener la trazabilidad del evento.</p></div></div>}<div className="report-library-head"><div><span className="eyebrow">Ejecución</span><h2>Órdenes de trabajo</h2></div><span>{openOrders} abiertas</span></div><div className="module-table-wrap"><div className="work-order-table"><div className="module-table-head"><span>Orden / trabajo</span><span>Origen</span><span>Vencimiento</span><span>Prioridad</span><span>Responsable</span><span>Estado</span></div>{orders.map((order) => <div className={`module-table-row ${order.id === focusOrderId ? "focused-order" : ""}`} key={order.id}><span className="event-cell"><strong>{order.title}</strong><small>{order.id}</small></span><span>{order.source}</span><span>{order.due}</span><span><i className={`maintenance-priority priority-${order.priority.toLowerCase()}`}>{order.priority}</i></span><span>{order.assignee}</span><span><select className={`work-status status-${order.status.toLowerCase().replace(" ", "-")}`} value={order.status} onChange={(event) => updateOrder(order.id, event.target.value as WorkStatus)}><option>Pendiente</option><option>En curso</option><option>Completada</option></select></span></div>)}</div></div></div>}
+        {tab === "orders" && <div className="maintenance-orders">{focusOrderId && <div className="work-order-focus-banner"><ClipboardCheck size={17} /><div><strong>Orden abierta desde el Centro de alertas</strong><p>{focusOrderId} quedó seleccionada para mantener la trazabilidad del evento.</p></div></div>}<div className="report-library-head"><div><span className="eyebrow">Ejecución</span><h2>Órdenes de trabajo</h2></div><span>{openOrders} abiertas</span></div><div className="module-table-wrap"><div className="work-order-table"><div className="module-table-head"><span>Orden / trabajo</span><span>Origen</span><span>Vencimiento</span><span>Prioridad</span><span>Responsable</span><span>Estado</span></div>{orderPage.pageItems.map((order) => <div className={`module-table-row ${order.id === focusOrderId ? "focused-order" : ""}`} key={order.id}><span className="event-cell"><strong>{order.title}</strong><small>{order.id}</small></span><span>{order.source}</span><span>{order.due}</span><span><i className={`maintenance-priority priority-${order.priority.toLowerCase()}`}>{order.priority}</i></span><span>{order.assignee}</span><span><select className={`work-status status-${order.status.toLowerCase().replace(" ", "-")}`} value={order.status} onChange={(event) => updateOrder(order.id, event.target.value as WorkStatus)}><option>Pendiente</option><option>En curso</option><option>Completada</option></select></span></div>)}</div></div><Pagination page={orderPage.page} totalPages={orderPage.totalPages} total={orderPage.total} pageSize={orderPage.pageSize} onPageChange={orderPage.setPage} itemLabel="órdenes" /></div>}
         <div className="module-footer"><span><ShieldCheck size={14} /> Toda modificación queda asociada al usuario y al activo.</span><small>Estado local sincronizado · preparado para integración con CMMS.</small></div>
       </article>
     </>
@@ -926,6 +979,8 @@ function SettingsView() {
   const [mapValidation, setMapValidation] = useState<"idle" | "validating" | "success" | "error">("idle");
   const registerGroups = ["Todos", ...new Set(registerMap.map((row) => row.group))];
   const visibleRegisterMap = registerMap.filter((row) => registerGroup === "Todos" || row.group === registerGroup);
+  const channelPage = useClientPagination(channels, 10);
+  const registerPage = useClientPagination(visibleRegisterMap, 12);
   const duplicateReferences = new Set(registerMap.filter((row, index, rows) => rows.findIndex((candidate) => candidate.reference === row.reference) !== index).map((row) => row.reference));
   const invalidReferences = registerMap.filter((row) => {
     if (!/^400\d{3}$/.test(row.reference)) return true;
@@ -958,12 +1013,12 @@ function SettingsView() {
 
       {tab === "asset" && <div className="settings-content"><div className="settings-section-head"><span className="settings-icon"><Building2 size={20} /></span><div><h2>Identificación del activo</h2><p>Datos utilizados en navegación, reportes y trazabilidad.</p></div></div><div className="form-grid"><label><span>Código del activo</span><input value={assetConfig.name} onChange={(event) => setAssetConfig({ ...assetConfig, name: event.target.value })} /></label><label><span>Descripción</span><input value={assetConfig.description} onChange={(event) => setAssetConfig({ ...assetConfig, description: event.target.value })} /></label><label><span>Tensión nominal</span><div className="input-unit"><input value={assetConfig.voltage} onChange={(event) => setAssetConfig({ ...assetConfig, voltage: event.target.value })} /><b>kV</b></div></label><label><span>Ubicación fija</span><input value={assetConfig.location} readOnly /></label><label className="form-span-2"><span>Zona horaria</span><select value={assetConfig.timezone} onChange={(event) => setAssetConfig({ ...assetConfig, timezone: event.target.value })}><option>America/Santiago</option><option>UTC</option></select></label></div><div className="configuration-note"><ShieldCheck size={17} /><p><strong>Despliegue monositio.</strong> Todos los activos pertenecen a Subestación Norte y comparten el gateway CAM5-GW-01.</p></div></div>}
 
-      {tab === "channels" && <div className="settings-content channels-settings"><div className="settings-section-head"><span className="settings-icon"><Activity size={20} /></span><div><h2>Canales y umbrales</h2><p>Habilita señales y define niveles operativos de alarma.</p></div></div><div className="channel-config-table"><div className="channel-config-head"><span>Canal</span><span>Registro</span><span>Advertencia</span><span>Crítico</span><span>Estado</span></div>{channels.map((channel) => <div className="channel-config-row" key={channel.id}><span className="history-channel"><b className={`sensor-code sensor-${channel.state}`}>{channel.id}</b><span><strong>{channel.label}</strong><small>{channel.type}</small></span></span><span className="mono-cell">{channel.register}</span><label className="compact-input"><input value={channel.warning} onChange={(event) => updateChannel(channel.id, "warning", event.target.value)} /><b>{channel.unit}</b></label><label className="compact-input"><input value={channel.critical} onChange={(event) => updateChannel(channel.id, "critical", event.target.value)} /><b>{channel.unit}</b></label><button className={`channel-toggle ${channel.enabled ? "on" : ""}`} onClick={() => updateChannel(channel.id, "enabled", !channel.enabled)}><i />{channel.enabled ? "Activo" : "Inactivo"}</button></div>)}</div></div>}
+      {tab === "channels" && <div className="settings-content channels-settings"><div className="settings-section-head"><span className="settings-icon"><Activity size={20} /></span><div><h2>Canales y umbrales</h2><p>Habilita señales y define niveles operativos de alarma.</p></div></div><div className="channel-config-table"><div className="channel-config-head"><span>Canal</span><span>Registro</span><span>Advertencia</span><span>Crítico</span><span>Estado</span></div>{channelPage.pageItems.map((channel) => <div className="channel-config-row" key={channel.id}><span className="history-channel"><b className={`sensor-code sensor-${channel.state}`}>{channel.id}</b><span><strong>{channel.label}</strong><small>{channel.type}</small></span></span><span className="mono-cell">{channel.register}</span><label className="compact-input"><input value={channel.warning} onChange={(event) => updateChannel(channel.id, "warning", event.target.value)} /><b>{channel.unit}</b></label><label className="compact-input"><input value={channel.critical} onChange={(event) => updateChannel(channel.id, "critical", event.target.value)} /><b>{channel.unit}</b></label><button className={`channel-toggle ${channel.enabled ? "on" : ""}`} onClick={() => updateChannel(channel.id, "enabled", !channel.enabled)}><i />{channel.enabled ? "Activo" : "Inactivo"}</button></div>)}</div><Pagination page={channelPage.page} totalPages={channelPage.totalPages} total={channelPage.total} pageSize={channelPage.pageSize} onPageChange={channelPage.setPage} itemLabel="canales" /></div>}
 
       {tab === "registers" && <div className="settings-content register-settings">
         <div className="register-settings-head">
           <div className="settings-section-head"><span className="settings-icon"><Database size={20} /></span><div><h2>Mapa de registros Modbus</h2><p>Define cómo CAM5-CTRL-01 expone cada señal al gateway único.</p></div></div>
-          <div className="register-header-actions"><label><span>Grupo</span><select value={registerGroup} onChange={(event) => setRegisterGroup(event.target.value)}>{registerGroups.map((group) => <option key={group}>{group}</option>)}</select><ChevronDown size={12} /></label><button className={`register-validate-button ${mapValidation}`} onClick={validateRegisterMap} disabled={mapValidation === "validating"}>{mapValidation === "validating" ? <><Refresh size={15} /> Validando…</> : mapValidation === "success" ? <><CheckCircle2 size={15} /> Mapa válido</> : mapValidation === "error" ? <><AlertTriangle size={15} /> Revisar mapa</> : <><ShieldCheck size={15} /> Validar mapa</>}</button></div>
+          <div className="register-header-actions"><label><span>Grupo</span><select value={registerGroup} onChange={(event) => { setRegisterGroup(event.target.value); registerPage.setPage(1); }}>{registerGroups.map((group) => <option key={group}>{group}</option>)}</select><ChevronDown size={12} /></label><button className={`register-validate-button ${mapValidation}`} onClick={validateRegisterMap} disabled={mapValidation === "validating"}>{mapValidation === "validating" ? <><Refresh size={15} /> Validando…</> : mapValidation === "success" ? <><CheckCircle2 size={15} /> Mapa válido</> : mapValidation === "error" ? <><AlertTriangle size={15} /> Revisar mapa</> : <><ShieldCheck size={15} /> Validar mapa</>}</button></div>
         </div>
         <div className="register-map-summary">
           <article><small>Registros documentados</small><strong>{registerMap.length}</strong><span>Bloque nativo completo 418–522</span></article>
@@ -973,8 +1028,8 @@ function SettingsView() {
         <div className="modbus-address-note"><CircuitBoard size={17} /><div><strong>Registro nativo y referencia humana</strong><p>El manual identifica el registro 418 como referencia 400418 y dirección 0x01A2 en la trama. El gateway debe conservar esta convención o declarar explícitamente cualquier remapeo.</p></div></div>
         <div className="register-map-scroll"><div className="register-map-table">
           <div className="register-map-row register-map-header"><span>Variable</span><span>Referencia</span><span>Registro nativo</span><span>Función</span><span>Tipo de dato</span><span>Escala</span><span>Orden</span><span>Lectura / error</span></div>
-          {visibleRegisterMap.map((row) => { const invalid = invalidReferences.includes(row.id) || duplicateReferences.has(row.reference); const liveChannel = sensors.find((sensor) => sensor.nativeRegister === row.nativeRegister); return <div className={`register-map-row ${invalid ? "row-invalid" : ""}`} key={row.id}><span className="register-channel"><b className={`sensor-code sensor-${liveChannel?.state ?? "normal"}`}>R{row.id}</b><span><strong>{row.label}</strong><small>{row.group} · {row.unit}</small></span></span><label><input value={row.reference} onChange={(event) => updateRegister(row.id, "reference", event.target.value)} aria-label={`Referencia Modbus ${row.id}`} />{invalid && <small>Referencia inválida, duplicada o fuera del mapa</small>}</label><span className="register-offset">{row.nativeRegister}</span><span className="register-function"><b>03</b><small>Holding</small></span><label><select value={row.dataType} onChange={(event) => updateRegister(row.id, "dataType", event.target.value)} aria-label={`Tipo de dato ${row.id}`}><option>Int16</option><option>UInt16</option></select></label><label className="register-scale"><input value={row.scale} onChange={(event) => updateRegister(row.id, "scale", event.target.value)} aria-label={`Escala ${row.id}`} /></label><label><select value={row.byteOrder} onChange={(event) => updateRegister(row.id, "byteOrder", event.target.value)} aria-label={`Orden de bytes ${row.id}`}><option>AB</option><option>BA</option></select></label><span className="register-live-value"><i className={liveChannel?.enabled ? "" : "waiting"} /><strong>{liveChannel?.enabled ? `${row.value} ${row.unit}` : "Pendiente"}</strong><small>Error {row.errorCode}</small></span></div>; })}
-        </div></div>
+          {registerPage.pageItems.map((row) => { const invalid = invalidReferences.includes(row.id) || duplicateReferences.has(row.reference); const liveChannel = sensors.find((sensor) => sensor.nativeRegister === row.nativeRegister); return <div className={`register-map-row ${invalid ? "row-invalid" : ""}`} key={row.id}><span className="register-channel"><b className={`sensor-code sensor-${liveChannel?.state ?? "normal"}`}>R{row.id}</b><span><strong>{row.label}</strong><small>{row.group} · {row.unit}</small></span></span><label><input value={row.reference} onChange={(event) => updateRegister(row.id, "reference", event.target.value)} aria-label={`Referencia Modbus ${row.id}`} />{invalid && <small>Referencia inválida, duplicada o fuera del mapa</small>}</label><span className="register-offset">{row.nativeRegister}</span><span className="register-function"><b>03</b><small>Holding</small></span><label><select value={row.dataType} onChange={(event) => updateRegister(row.id, "dataType", event.target.value)} aria-label={`Tipo de dato ${row.id}`}><option>Int16</option><option>UInt16</option></select></label><label className="register-scale"><input value={row.scale} onChange={(event) => updateRegister(row.id, "scale", event.target.value)} aria-label={`Escala ${row.id}`} /></label><label><select value={row.byteOrder} onChange={(event) => updateRegister(row.id, "byteOrder", event.target.value)} aria-label={`Orden de bytes ${row.id}`}><option>AB</option><option>BA</option></select></label><span className="register-live-value"><i className={liveChannel?.enabled ? "" : "waiting"} /><strong>{liveChannel?.enabled ? `${row.value} ${row.unit}` : "Pendiente"}</strong><small>Error {row.errorCode}</small></span></div>; })}
+        </div></div><Pagination page={registerPage.page} totalPages={registerPage.totalPages} total={registerPage.total} pageSize={registerPage.pageSize} onPageChange={registerPage.setPage} itemLabel="registros" />
         <div className="configuration-note"><ShieldCheck size={17} /><p><strong>Mapa base incorporado desde el manual CAM-5/IRM-48.</strong> Al conectar el equipo solo será necesario confirmar modelo, versión de datos y convención efectiva del driver del gateway.</p></div>
       </div>}
 
@@ -983,32 +1038,95 @@ function SettingsView() {
   );
 }
 
-function UsersView() {
+function UsersView({ currentUserId }: { currentUserId: string }) {
   const notify = useFeedback();
   const confirm = useConfirm();
   const currentRole = useActiveRole();
-  const [users, setUsers] = usePersistentState<Array<{ id: number; name: string; email: string; role: UserRole; status: "Activo" | "Suspendido" | "Invitado"; lastAccess: string }>>("cam5.front.users", [
-    { id: 1, name: "Emerson Allende", email: "emerson@cam5.local", role: "Administrador", status: "Activo", lastAccess: "Ahora" },
-    { id: 2, name: "Paula Rojas", email: "paula.rojas@cam5.local", role: "Ingeniero", status: "Activo", lastAccess: "Hace 18 min" },
-    { id: 3, name: "Felipe Soto", email: "felipe.soto@cam5.local", role: "Operador", status: "Activo", lastAccess: "Hace 2 h" },
-    { id: 4, name: "Camila Díaz", email: "camila.diaz@cam5.local", role: "Solo lectura", status: "Invitado", lastAccess: "Pendiente" },
-  ]);
-  const [showInvite, setShowInvite] = useState(false);
-  const [email, setEmail] = useState("");
-  const [role, setRole] = useState<UserRole>("Operador");
-  const inviteUser = (event: React.FormEvent) => { event.preventDefault(); if (!email.trim()) return; if (users.some((user) => user.email.toLowerCase() === email.trim().toLowerCase())) { notify("Ese correo ya pertenece a un usuario registrado.", "warning"); return; } const base = email.split("@")[0].replace(/[._-]+/g, " "); const name = base.replace(/\b\w/g, (letter) => letter.toUpperCase()); setUsers((current) => [...current, { id: Date.now(), name, email: email.trim().toLowerCase(), role, status: "Invitado", lastAccess: "Pendiente" }]); notify(`Invitación preparada para ${email}.`); setEmail(""); setShowInvite(false); };
-  const updateRole = (id: number, nextRole: UserRole) => setUsers((current) => current.map((user) => user.id === id ? { ...user, role: nextRole } : user));
-  const toggleUser = (id: number) => { const user = users.find((item) => item.id === id); const apply = () => { setUsers((current) => current.map((item) => item.id === id ? { ...item, status: item.status === "Activo" ? "Suspendido" : "Activo" } : item)); notify(`${user?.name ?? "Usuario"} ${user?.status === "Activo" ? "suspendido" : "activado"}.`, user?.status === "Activo" ? "warning" : "success"); }; if (user?.status === "Activo") confirm({ title: `Suspender a ${user.name}`, detail: "El usuario perderá acceso operativo hasta que un administrador vuelva a activarlo.", confirmLabel: "Suspender usuario", tone: "danger", onConfirm: apply }); else apply(); };
+  type UserRow = { id: string; displayName: string; email: string; status: "active" | "suspended" | "invited"; lastLoginAt: string | null; createdAt: string; role: { key: "administrator" | "engineer" | "operator" | "viewer"; name: UserRole } };
+  type UserResult = PaginationMeta & { items: UserRow[]; summary: { total: number; active: number; administrators: number; invited: number } };
+  const blankForm = { displayName: "", email: "", password: "", role: "operator" as UserRow["role"]["key"], status: "active" as UserRow["status"] };
+  const [result, setResult] = useState<UserResult | null>(null);
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [form, setForm] = useState(blankForm);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [reload, setReload] = useState(0);
+
+  useEffect(() => {
+    if (currentRole !== "Administrador") return;
+    let active = true;
+    const timeout = window.setTimeout(async () => {
+      setLoading(true);
+      setError("");
+      try {
+        const params = new URLSearchParams({ page: String(page), pageSize: "8", status: statusFilter });
+        if (query.trim()) params.set("q", query.trim());
+        const data = await portalRequest<UserResult>(`/api/v1/users?${params}`);
+        if (active) setResult(data);
+      } catch (requestError) {
+        if (active) setError(requestError instanceof Error ? requestError.message : "No fue posible consultar los usuarios.");
+      } finally {
+        if (active) setLoading(false);
+      }
+    }, 250);
+    return () => { active = false; window.clearTimeout(timeout); };
+  }, [currentRole, page, query, statusFilter, reload]);
+
+  const openCreate = () => { setEditingId(null); setForm(blankForm); setShowForm(true); };
+  const openEdit = (user: UserRow) => { setEditingId(user.id); setForm({ displayName: user.displayName, email: user.email, password: "", role: user.role.key, status: user.status }); setShowForm(true); };
+  const submitUser = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      await portalRequest(editingId ? `/api/v1/users/${editingId}` : "/api/v1/users", {
+        method: editingId ? "PATCH" : "POST",
+        body: JSON.stringify(form),
+      });
+      notify(editingId ? "Usuario actualizado en la base de datos." : "Usuario creado y habilitado para iniciar sesión.");
+      setShowForm(false);
+      setEditingId(null);
+      setForm(blankForm);
+      setReload((value) => value + 1);
+    } catch (requestError) {
+      notify(requestError instanceof Error ? requestError.message : "No fue posible guardar el usuario.", "warning");
+    } finally {
+      setSaving(false);
+    }
+  };
+  const deleteUser = (user: UserRow) => confirm({
+    title: `Eliminar a ${user.displayName}`,
+    detail: "Se eliminarán su identidad local, sesiones y asignaciones de acceso. Esta acción quedará registrada en auditoría.",
+    confirmLabel: "Eliminar usuario",
+    tone: "danger",
+    onConfirm: async () => {
+      try {
+        await portalRequest(`/api/v1/users/${user.id}`, { method: "DELETE" });
+        notify(`${user.displayName} fue eliminado.`);
+        if ((result?.items.length ?? 0) === 1 && page > 1) setPage(page - 1);
+        else setReload((value) => value + 1);
+      } catch (requestError) {
+        notify(requestError instanceof Error ? requestError.message : "No fue posible eliminar el usuario.", "warning");
+      }
+    },
+  });
 
   if (currentRole !== "Administrador") return <PermissionState area="usuarios y roles" />;
 
   return (
     <>
-      <section className="module-summary-grid user-summary-grid"><article><span className="module-summary-icon blue"><Users size={19} /></span><div><small>Usuarios registrados</small><strong>{users.length}</strong><span>{users.filter((user) => user.status === "Activo").length} activos</span></div></article><article><span className="module-summary-icon green"><ShieldCheck size={19} /></span><div><small>Administradores</small><strong>{users.filter((user) => user.role === "Administrador").length}</strong><span>Acceso total</span></div></article><article><span className="module-summary-icon amber"><Mail size={19} /></span><div><small>Invitaciones pendientes</small><strong>{users.filter((user) => user.status === "Invitado").length}</strong><span>Sin primer acceso</span></div></article></section>
+      <section className="module-summary-grid user-summary-grid"><article><span className="module-summary-icon blue"><Users size={19} /></span><div><small>Usuarios registrados</small><strong>{result?.summary.total ?? 0}</strong><span>{result?.summary.active ?? 0} activos</span></div></article><article><span className="module-summary-icon green"><ShieldCheck size={19} /></span><div><small>Administradores</small><strong>{result?.summary.administrators ?? 0}</strong><span>Acceso total</span></div></article><article><span className="module-summary-icon amber"><Mail size={19} /></span><div><small>Invitaciones pendientes</small><strong>{result?.summary.invited ?? 0}</strong><span>Sin primer acceso</span></div></article></section>
       <article className="panel module-panel users-module">
-        <div className="module-toolbar"><div><span className="eyebrow">Control de acceso</span><h2>Equipo con acceso al portal</h2></div><button className="primary-button" onClick={() => setShowInvite((current) => !current)}><UserPlus size={16} />{showInvite ? "Cancelar" : "Invitar usuario"}</button></div>
-        {showInvite && <form className="invite-form" onSubmit={inviteUser}><label><span>Correo electrónico</span><input type="email" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="nombre@empresa.cl" /></label><label><span>Rol inicial</span><select value={role} onChange={(event) => setRole(event.target.value as UserRole)}>{["Administrador", "Ingeniero", "Operador", "Solo lectura"].map((item) => <option key={item}>{item}</option>)}</select></label><button type="submit"><Mail size={15} /> Enviar invitación</button></form>}
-        <div className="module-table-wrap"><div className="users-table"><div className="module-table-head"><span>Usuario</span><span>Rol</span><span>Estado</span><span>Último acceso</span><span>Acción</span></div>{users.map((user) => <div className="module-table-row" key={user.id}><span className="user-identity"><b>{user.name.split(" ").map((part) => part[0]).slice(0, 2).join("")}</b><span><strong>{user.name}</strong><small>{user.email}</small></span></span><span><select value={user.role} onChange={(event) => updateRole(user.id, event.target.value as UserRole)}>{["Administrador", "Ingeniero", "Operador", "Solo lectura"].map((item) => <option key={item}>{item}</option>)}</select></span><span><i className={`user-status status-${user.status.toLowerCase()}`}>{user.status}</i></span><span>{user.lastAccess}</span><span><button className="ghost-button" disabled={user.id === 1} onClick={() => toggleUser(user.id)}>{user.status === "Activo" ? "Suspender" : "Activar"}</button></span></div>)}</div></div>
+        <div className="module-toolbar"><div><span className="eyebrow">Control de acceso</span><h2>Equipo con acceso al portal</h2></div><button className="primary-button" onClick={showForm ? () => setShowForm(false) : openCreate}><UserPlus size={16} />{showForm ? "Cancelar" : "Crear usuario"}</button></div>
+        {showForm && <form className="user-editor-form" onSubmit={submitUser}><div><span className="eyebrow">{editingId ? "Editar acceso" : "Nuevo acceso"}</span><h3>{editingId ? "Actualizar usuario" : "Crear usuario conectado a PostgreSQL"}</h3></div><label><span>Nombre completo</span><input required minLength={3} value={form.displayName} onChange={(event) => setForm({ ...form, displayName: event.target.value })} /></label><label><span>Correo electrónico</span><input type="email" required value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label><label><span>{editingId ? "Nueva contraseña (opcional)" : "Contraseña inicial"}</span><input type="password" required={!editingId} minLength={10} autoComplete="new-password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} placeholder="Mínimo 10 caracteres" /></label><label><span>Perfil</span><select value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value as UserRow["role"]["key"] })}><option value="administrator">Administrador</option><option value="engineer">Ingeniero</option><option value="operator">Operador</option><option value="viewer">Solo lectura</option></select></label><label><span>Estado</span><select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as UserRow["status"] })}><option value="active">Activo</option><option value="suspended">Suspendido</option><option value="invited">Invitado</option></select></label><div className="user-editor-actions"><button type="button" className="secondary-button" onClick={() => setShowForm(false)}>Cancelar</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Guardando…" : editingId ? "Guardar cambios" : "Crear usuario"}</button></div></form>}
+        <div className="user-list-toolbar"><label className="search-field"><Search size={17} /><input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="Buscar por nombre o correo…" /></label><label className="status-filter"><span>Estado</span><select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPage(1); }}><option value="all">Todos</option><option value="active">Activos</option><option value="suspended">Suspendidos</option><option value="invited">Invitados</option></select><ChevronDown size={13} /></label></div>
+        {error && <div className="data-error"><AlertTriangle size={18} /><div><strong>No se pudieron cargar los usuarios</strong><p>{error}</p></div></div>}
+        {loading && <div className="data-loading"><Refresh className="spin" size={18} /> Consultando usuarios…</div>}
+        {!loading && !error && <><div className="module-table-wrap"><div className="users-table"><div className="module-table-head"><span>Usuario</span><span>Rol</span><span>Estado</span><span>Último acceso</span><span>Acciones</span></div>{result?.items.map((user) => <div className="module-table-row" key={user.id}><span className="user-identity"><b>{user.displayName.split(" ").map((part) => part[0]).slice(0, 2).join("").toUpperCase()}</b><span><strong>{user.displayName}{user.id === currentUserId ? " · Tú" : ""}</strong><small>{user.email}</small></span></span><span><i className="role-chip">{user.role.name}</i></span><span><i className={`user-status status-${user.status}`}>{user.status === "active" ? "Activo" : user.status === "suspended" ? "Suspendido" : "Invitado"}</i></span><span>{formatDateTime(user.lastLoginAt)}</span><span className="row-actions"><button className="ghost-button" onClick={() => openEdit(user)}><Pencil size={14} /> Editar</button><button className="icon-danger-button" disabled={user.id === currentUserId} onClick={() => deleteUser(user)} aria-label={`Eliminar a ${user.displayName}`}><Trash size={15} /></button></span></div>)}{result?.items.length === 0 && <TableEmptyState title="No hay usuarios con estos filtros" detail="Cambia la búsqueda o crea un nuevo acceso." />}</div></div>{result && <Pagination page={result.page} totalPages={result.totalPages} total={result.total} pageSize={result.pageSize} onPageChange={setPage} itemLabel="usuarios" />}</>}
         <div className="role-matrix"><div><span className="eyebrow">Matriz de permisos</span><h3>Alcance de cada rol</h3></div><div className="role-matrix-grid"><span><strong>Administrador</strong><small>Configuración, usuarios y operación completa</small></span><span><strong>Ingeniero</strong><small>Diagnóstico, umbrales y reportes</small></span><span><strong>Operador</strong><small>Supervisión y reconocimiento de alarmas</small></span><span><strong>Solo lectura</strong><small>Consulta sin capacidad de modificación</small></span></div></div>
       </article>
     </>
@@ -1057,6 +1175,50 @@ function NotificationsView() {
   );
 }
 
+function LoginScreen({ checking, onAuthenticated }: { checking: boolean; onAuthenticated: (user: PortalSessionUser) => void }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  const login = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSubmitting(true);
+    setError("");
+    try {
+      const response = await portalRequest<{ user: PortalSessionUser }>("/api/v1/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
+      onAuthenticated(response.user);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "No fue posible iniciar sesión.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return <main className="login-shell">
+    <section className="login-brand-panel">
+      <span className="login-brand-mark"><Zap size={28} strokeWidth={2.2} /></span>
+      <div><span className="eyebrow">CAM5 CORE</span><h1>Condición eléctrica bajo control</h1><p>Supervisión, histórico y trazabilidad para la cabina MCC-01 desde un acceso protegido.</p></div>
+      <dl><div><dt>Ubicación</dt><dd>Subestación Norte</dd></div><div><dt>Cadena OT</dt><dd>CAM5 → Gateway → CORE</dd></div><div><dt>Datos</dt><dd>PostgreSQL</dd></div></dl>
+    </section>
+    <section className="login-form-panel">
+      <div className="login-card">
+        <span className="login-security-icon"><ShieldCheck size={24} /></span>
+        <span className="eyebrow">Acceso seguro</span>
+        <h2>{checking ? "Validando sesión" : "Iniciar sesión"}</h2>
+        <p>{checking ? "Estamos comprobando tu acceso al portal." : "Usa el correo y la contraseña creados por el administrador."}</p>
+        {checking ? <div className="login-checking"><Refresh className="spin" size={19} /> Consultando sesión…</div> : <form onSubmit={login}>
+          <label><span>Correo electrónico</span><input type="email" autoComplete="username" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="nombre@empresa.cl" /></label>
+          <label><span>Contraseña</span><input type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Tu contraseña" /></label>
+          {error && <div className="login-error" role="alert"><AlertTriangle size={16} />{error}</div>}
+          <button type="submit" disabled={submitting}>{submitting ? <><Refresh className="spin" size={17} /> Verificando…</> : <><Key size={17} /> Entrar al portal</>}</button>
+        </form>}
+        <small>Las sesiones duran 12 horas y pueden cerrarse desde cualquier módulo.</small>
+      </div>
+    </section>
+  </main>;
+}
+
 export default function Home() {
   const sensors = useSensorData();
   const [assetConfig] = usePersistentState("cam5.front.asset-config", defaultAssetConfig);
@@ -1072,7 +1234,8 @@ export default function Home() {
   const [alarmAssignees, setAlarmAssignees] = usePersistentState<Record<string, string>>("cam5.front.alarm-assignees", { "AL-260811-031": "Emerson Allende", "AL-260811-028": "Paula Rojas", "AL-260811-019": "Felipe Soto" });
   const [alarmNotes, setAlarmNotes] = usePersistentState<Record<string, string[]>>("cam5.front.alarm-notes", {});
   const [systemMode, setSystemMode] = usePersistentState<SystemMode>("cam5.front.system-mode", "normal");
-  const [activeRole, setActiveRole] = usePersistentState<UserRole>("cam5.front.active-role", "Administrador");
+  const [sessionUser, setSessionUser] = useState<PortalSessionUser | null>(null);
+  const [authState, setAuthState] = useState<"checking" | "authenticated" | "anonymous">("checking");
   const [notice, setNotice] = useState<{ id: number; message: string; tone: NoticeTone } | null>(null);
   const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null);
   const noticeTimer = useRef<number | null>(null);
@@ -1085,6 +1248,14 @@ export default function Home() {
 
   useEffect(() => () => {
     if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    portalRequest<{ user: PortalSessionUser }>("/api/v1/auth/session")
+      .then((response) => { if (active) { setSessionUser(response.user); setAuthState("authenticated"); } })
+      .catch(() => { if (active) setAuthState("anonymous"); });
+    return () => { active = false; };
   }, []);
 
   useEffect(() => {
@@ -1143,6 +1314,13 @@ export default function Home() {
     const anchor = document.createElement("a"); anchor.href = url; anchor.download = "cam5-telemetria.csv"; anchor.click(); URL.revokeObjectURL(url);
     notify("Telemetría exportada correctamente.", "info");
   };
+  const logout = async () => {
+    try { await portalRequest("/api/v1/auth/logout", { method: "POST" }); }
+    finally { setSessionUser(null); setAuthState("anonymous"); }
+  };
+
+  if (authState !== "authenticated" || !sessionUser) return <LoginScreen checking={authState === "checking"} onAuthenticated={(user) => { setSessionUser(user); setAuthState("authenticated"); }} />;
+  const activeRole = sessionUser.roleName;
 
   return (
     <FeedbackContext.Provider value={notify}>
@@ -1179,14 +1357,15 @@ export default function Home() {
         </nav>
         <div className="sidebar-status">
           <div className="gateway-badge"><span className="gateway-icon"><Server size={17} /></span><span><strong>Cadena OT operativa</strong><small>CAM5-CTRL-01 → CAM5-GW-01</small></span><i /></div>
-          <button className="user-card" onClick={() => navigate("users")} aria-label="Abrir usuarios y roles"><span className="user-avatar">EA</span><span className="user-copy"><strong>Emerson Allende</strong><small>Administrador OT</small></span><ChevronRight size={16} /></button>
+          <button className="user-card" onClick={() => navigate("users")} aria-label="Abrir usuarios y roles"><span className="user-avatar">{sessionUser.displayName.split(" ").map((part) => part[0]).slice(0, 2).join("").toUpperCase()}</span><span className="user-copy"><strong>{sessionUser.displayName}</strong><small>{sessionUser.roleName}</small></span><ChevronRight size={16} /></button>
+          <button className="sidebar-logout" onClick={logout}><LogOut size={17} /> Cerrar sesión</button>
         </div>
       </aside>
 
       <main className="main-shell">
         <header className="topbar">
           <div className="topbar-left"><button className="menu-button" aria-label="Abrir navegación" onClick={() => setMenuOpen(true)}><Menu size={22} /></button><span className="mobile-brand"><Zap size={18} fill="currentColor" /></span><div className="site-selector"><Building2 size={17} /><div><span>{assetConfig.location}</span><strong className="site-active-asset">{assetConfig.name} · {assetConfig.description}</strong></div><span className="single-site-label">Piloto monositio</span></div></div>
-          <div className="topbar-right"><label className="simulation-mode role-preview"><span>Vista por rol</span><select value={activeRole} onChange={(event) => setActiveRole(event.target.value as UserRole)} aria-label="Simular permisos de usuario"><option>Administrador</option><option>Ingeniero</option><option>Operador</option><option>Solo lectura</option></select></label><label className="simulation-mode"><span>Simulación</span><select value={systemMode} onChange={(event) => setSystemMode(event.target.value as SystemMode)} aria-label="Simular estado de telemetría"><option value="normal">Operativa</option><option value="loading">Actualizando</option><option value="stale">Datos atrasados</option><option value="offline">Sin conexión</option></select></label><div className={`live-state live-${systemMode}`}><span /><div><strong>{systemMode === "offline" ? "Telemetría interrumpida" : systemMode === "stale" ? "Telemetría atrasada" : systemMode === "loading" ? "Actualizando telemetría" : "Telemetría activa"}</strong><small>{systemMode === "offline" ? "Sin datos hace 18 min" : systemMode === "stale" ? "Último dato hace 6 min" : systemMode === "loading" ? "Esperando respuesta" : "Actualizado hace 2 s"}</small></div></div></div>
+          <div className="topbar-right"><span className="authenticated-role"><ShieldCheck size={15} /><span><small>Sesión activa</small><strong>{sessionUser.roleName}</strong></span></span><label className="simulation-mode"><span>Simulación</span><select value={systemMode} onChange={(event) => setSystemMode(event.target.value as SystemMode)} aria-label="Simular estado de telemetría"><option value="normal">Operativa</option><option value="loading">Actualizando</option><option value="stale">Datos atrasados</option><option value="offline">Sin conexión</option></select></label><div className={`live-state live-${systemMode}`}><span /><div><strong>{systemMode === "offline" ? "Telemetría interrumpida" : systemMode === "stale" ? "Telemetría atrasada" : systemMode === "loading" ? "Actualizando telemetría" : "Telemetría activa"}</strong><small>{systemMode === "offline" ? "Sin datos hace 18 min" : systemMode === "stale" ? "Último dato hace 6 min" : systemMode === "loading" ? "Esperando respuesta" : "Actualizado hace 2 s"}</small></div></div><button className="topbar-logout" onClick={logout} aria-label="Cerrar sesión"><LogOut size={18} /></button></div>
         </header>
 
         <div className="content-scroll">
@@ -1205,7 +1384,7 @@ export default function Home() {
             {view === "maintenance" && <MaintenanceView orders={workOrders} setOrders={setWorkOrders} focusOrderId={focusOrderId} />}
             {view === "settings" && <SettingsView />}
             {view === "integrations" && <IntegrationsView />}
-            {view === "users" && <UsersView />}
+            {view === "users" && <UsersView currentUserId={sessionUser.id} />}
             {view === "notifications" && <NotificationsView />}
           </div>
         </div>

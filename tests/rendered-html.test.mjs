@@ -14,21 +14,16 @@ async function render() {
   });
 }
 
-test("server-renders the CAM5 operational portal", async () => {
+test("server-renders the protected CAM5 access gate", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
   assert.match(html, /<title>CAM5 CORE \| Gestión de Activos Críticos<\/title>/i);
-  assert.match(html, /Resumen operativo/);
-  assert.match(html, /Mapa de condición/);
-  assert.match(html, /Centro de alertas/);
-  assert.match(html, /Activos y ubicaciones/);
-  assert.match(html, /Reportes/);
-  assert.match(html, /Mantenimiento/);
-  assert.match(html, /Integraciones/);
-  assert.match(html, /Configuración/);
+  assert.match(html, /CAM5 CORE/);
+  assert.match(html, /Validando sesión/);
+  assert.match(html, /Consultando sesión/);
 });
 
 test("keeps the production portal free of starter preview code", async () => {
@@ -58,11 +53,18 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(page, /portal-notice/);
   assert.match(page, /Piloto monositio/);
   assert.match(page, /function useSensorData/);
+  assert.match(page, /function LoginScreen/);
+  assert.match(page, /\/api\/v1\/auth\/login/);
+  assert.match(page, /\/api\/v1\/auth\/logout/);
+  assert.match(page, /function HistoryView/);
+  assert.match(page, /type="date"/);
+  assert.match(page, /<Pagination/);
+  assert.match(page, /Eliminar usuario/);
   assert.match(page, /URLSearchParams/);
   assert.match(page, /report-preview/);
   assert.match(page, /ConfirmContext/);
   assert.match(page, /Datos atrasados/);
-  assert.match(page, /Vista por rol/);
+  assert.match(page, /Sesión activa/);
   assert.match(page, /CAM5-CTRL-01/);
   assert.match(page, /CAM5-GW-01/);
   assert.match(page, /Subestación Norte/);

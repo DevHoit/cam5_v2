@@ -22,6 +22,7 @@ import {
 } from "@tabler/icons-react";
 import { cam5InputInventory, cam5RegisterCatalog, cam5RelayDefaults } from "./cam5-model";
 import { usePersistentState } from "./use-persistent-state";
+import { Pagination, useClientPagination } from "./pagination";
 
 type CommissioningTab = "device" | "inputs" | "alarms" | "system" | "checklist";
 type Notify = (message: string, tone?: "success" | "info" | "warning") => void;
@@ -90,6 +91,8 @@ export function Cam5CommissioningView({ notify }: { notify: Notify }) {
   const filteredInputs = cam5InputInventory.filter((input) => inputFilter === "Todos" || input.kind === inputFilter);
   const registerGroups = ["Todos", ...new Set(cam5RegisterCatalog.map((register) => register.group))];
   const visibleRegisters = useMemo(() => cam5RegisterCatalog.filter((register) => registerFilter === "Todos" || register.group === registerFilter), [registerFilter]);
+  const inputPage = useClientPagination(filteredInputs, 8);
+  const registerPage = useClientPagination(visibleRegisters, 12);
 
   const testConnection = () => {
     setConnection("testing");
@@ -149,14 +152,15 @@ export function Cam5CommissioningView({ notify }: { notify: Notify }) {
       {tab === "inputs" && <div className="engineering-content edge-to-edge-mobile">
         <div className="engineering-section-top">
           <SectionHeading icon={<AntennaBars5 size={22} />} eyebrow="Inventario de campo" title="24 entradas físicas" detail="Bandas, puertos, calibración e índices listos para ser completados durante la conexión." />
-          <label className="engineering-filter"><span>Tipo</span><select value={inputFilter} onChange={(event) => setInputFilter(event.target.value as typeof inputFilter)}><option>Todos</option><option>Temperatura SAW</option><option>Interfaz UHF</option><option>Humedad</option></select><ChevronDown size={13} /></label>
+          <label className="engineering-filter"><span>Tipo</span><select value={inputFilter} onChange={(event) => { setInputFilter(event.target.value as typeof inputFilter); inputPage.setPage(1); }}><option>Todos</option><option>Temperatura SAW</option><option>Interfaz UHF</option><option>Humedad</option></select><ChevronDown size={13} /></label>
         </div>
         <div className="engineering-table-scroll"><div className="input-inventory-table">
           <div className="input-inventory-head"><span>Entrada</span><span>Ubicación</span><span>Registros</span><span>Asignación</span><span>Calibración</span><span>Señal</span></div>
-          {filteredInputs.map((input) => <div className="input-inventory-row" key={input.id}>
+          {inputPage.pageItems.map((input) => <div className="input-inventory-row" key={input.id}>
             <span><b>{input.id}</b><small>{input.kind}</small></span><span>{input.location}</span><span className="mono-data">{input.register}</span><span>{input.assignment}</span><span>{input.calibration}</span><span className={input.enabled ? input.signal.includes("Media") ? "quality-warning" : "quality-good" : "quality-muted"}><i />{input.signal}</span>
           </div>)}
         </div></div>
+        <Pagination page={inputPage.page} totalPages={inputPage.totalPages} total={inputPage.total} pageSize={inputPage.pageSize} onPageChange={inputPage.setPage} itemLabel="entradas" />
         <div className="engineering-note"><InfoCircle size={17} /><p>Los códigos de calibración, bandas y puertos deben confirmarse físicamente. El frontend ya conserva estos campos; el backend recibirá el inventario mediante la API de configuración.</p></div>
       </div>}
 
@@ -211,12 +215,12 @@ export function Cam5CommissioningView({ notify }: { notify: Notify }) {
 
       <div className="register-reference-drawer">
         <div><Database size={17} /><span><strong>Catálogo de integración</strong><small>Mapa oficial incorporado al frontend</small></span></div>
-        <label><span>Grupo</span><select value={registerFilter} onChange={(event) => setRegisterFilter(event.target.value)}>{registerGroups.map((group) => <option key={group}>{group}</option>)}</select><ChevronDown size={12} /></label>
+        <label><span>Grupo</span><select value={registerFilter} onChange={(event) => { setRegisterFilter(event.target.value); registerPage.setPage(1); }}>{registerGroups.map((group) => <option key={group}>{group}</option>)}</select><ChevronDown size={12} /></label>
         <span className="register-drawer-count">{visibleRegisters.length} registros</span>
         <details><summary>Ver mapa 418–522</summary><div className="register-reference-scroll"><div className="register-reference-table">
           <div className="register-reference-head"><span>Nativo</span><span>Referencia</span><span>Variable</span><span>Tipo</span><span>Escala</span><span>Error</span></div>
-          {visibleRegisters.map((register) => <div className="register-reference-row" key={register.register}><span>{register.register}</span><span>{register.reference}</span><span><strong>{register.description}</strong><small>{register.group} · {register.unit}</small></span><span>{register.dataType}</span><span>{register.scale}</span><span>{register.errorCode}</span></div>)}
-        </div></div></details>
+          {registerPage.pageItems.map((register) => <div className="register-reference-row" key={register.register}><span>{register.register}</span><span>{register.reference}</span><span><strong>{register.description}</strong><small>{register.group} · {register.unit}</small></span><span>{register.dataType}</span><span>{register.scale}</span><span>{register.errorCode}</span></div>)}
+        </div></div><Pagination page={registerPage.page} totalPages={registerPage.totalPages} total={registerPage.total} pageSize={registerPage.pageSize} onPageChange={registerPage.setPage} itemLabel="registros" /></details>
       </div>
     </article>
   </>;

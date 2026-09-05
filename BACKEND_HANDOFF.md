@@ -63,9 +63,13 @@ Los valores `0x8000` y `0xFFFF` deben convertirse en calidad inválida, no en me
 El cliente tipado está en `app/cam5-api.ts`. Las familias principales son:
 
 - `/health`
+- `/auth/login`
+- `/auth/logout`
+- `/auth/session`
+- `/history`
 - `/me/access`
 - `/users`
-- `/users/invitations`
+- `/users/{userId}`
 - `/roles`
 - `/reading-profiles`
 - `/gateways/{gatewayId}/devices/discover`
@@ -85,6 +89,8 @@ El cliente tipado está en `app/cam5-api.ts`. Las familias principales son:
 ## Persistencia y autorización
 
 La base PostgreSQL, la migración inicial y el seed se encuentran en `db/` y `drizzle/`. El diseño incluye datos crudos, última lectura, agregados históricos, perfiles Modbus y control de acceso por rol, ubicación y activo.
+
+Ya están implementadas las sesiones locales, contraseñas con `scrypt`, cookie `HttpOnly` y `SameSite=Strict`, revocación al cerrar sesión, administración paginada de usuarios y consulta histórica paginada. Los endpoints de escritura impiden eliminar o suspender la cuenta propia y protegen al último administrador activo.
 
 Los perfiles iniciales son Administrador, Ingeniero, Operador y Solo lectura. La autorización se aplica en el backend mediante `db/authorization.ts`; la visibilidad del menú en el frontend es solamente una ayuda visual y no un control de seguridad.
 
@@ -113,10 +119,14 @@ La carga de `config.xml`, restauración, firmware y reinicio deben ejecutarse a 
 - registro de auditoría;
 - snapshot recuperable antes del cambio.
 
-## Variable de entorno
+## Variables de entorno
 
 ```text
 NEXT_PUBLIC_CAM5_API_URL=https://api.ejemplo.cl/api/v1
+DATABASE_URL=postgresql://usuario:clave@host:5432/cam5
+CAM5_ADMIN_EMAIL=administrador@empresa.cl
+CAM5_ADMIN_NAME=Nombre del administrador
+CAM5_ADMIN_PASSWORD=una-clave-segura-de-al-menos-10-caracteres
 ```
 
-Mientras no exista esta variable y no se integren los hooks de consulta, el portal conserva fixtures y estado local para demostrar el flujo completo.
+Sin `DATABASE_URL` el portal no permite iniciar sesión. Las variables `CAM5_ADMIN_*` se usan durante `npm run db:seed`; `NEXT_PUBLIC_CAM5_API_URL` será necesaria cuando se conecte la telemetría proveniente del gateway.

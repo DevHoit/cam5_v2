@@ -60,6 +60,7 @@ Copiar las variables necesarias a un archivo `.env.local` o configurarlas en el 
 DATABASE_URL=postgresql://usuario:clave@servidor:5432/cam5
 CAM5_ADMIN_EMAIL=administrador@empresa.cl
 CAM5_ADMIN_NAME=Nombre del administrador
+CAM5_ADMIN_PASSWORD=una-clave-segura-de-al-menos-10-caracteres
 ```
 
 `DATABASE_URL` es un secreto del backend y nunca debe llevar el prefijo `NEXT_PUBLIC_`.
@@ -79,7 +80,7 @@ El seed es repetible y crea:
 - Perfil Modbus equilibrado, reglas de alarma, seis relés y checklist.
 - 30 permisos y cuatro perfiles de portal.
 - Tres plantillas de informe.
-- El administrador inicial, solamente si `CAM5_ADMIN_EMAIL` está definido.
+- El administrador inicial, solamente si `CAM5_ADMIN_EMAIL` está definido. Su acceso local se habilita cuando también se define `CAM5_ADMIN_PASSWORD`.
 
 El host `192.168.10.42` del seed es provisional. Debe reemplazarse por la dirección real del CAM5 durante la puesta en marcha.
 
@@ -93,10 +94,21 @@ El host `192.168.10.42` del seed es provisional. Debe reemplazarse por la direcc
 - Las acciones de configuración, usuarios, alarmas y relés generan un registro inmutable en `audit_logs`.
 - Contraseñas, tokens y secretos externos se almacenan como hashes o referencias a un gestor de secretos; nunca como texto plano.
 
+## Acceso implementado
+
+- Login local validado contra `auth_identities`.
+- Contraseñas derivadas con `scrypt` y sal aleatoria.
+- Sesiones de 12 horas almacenadas en `auth_sessions`; el navegador recibe solo un token aleatorio en una cookie `HttpOnly`, `SameSite=Strict` y `Secure` en producción.
+- Logout con revocación inmediata de la sesión.
+- CRUD de usuarios protegido por `users.manage`, con búsqueda y paginación del lado del servidor.
+- Histórico protegido y paginado con filtros `from`, `to`, `q` y `channel`.
+- Auditoría de inicio de sesión, creación, edición y eliminación de usuarios.
+
 ## Archivos
 
 - `db/schema.ts`: modelo Drizzle.
 - `db/access-control.ts`: permisos y perfiles del portal.
+- `db/auth.ts`: contraseñas, sesiones y resolución del usuario autenticado.
 - `db/authorization.ts`: resolución de acceso para el backend.
 - `db/index.ts`: conexión PostgreSQL mediante `DATABASE_URL`.
 - `db/migrate.ts`: ejecutor de migraciones.

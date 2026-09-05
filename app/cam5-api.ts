@@ -170,6 +170,24 @@ export type PortalUser = {
   lastLoginAt?: string;
 };
 
+export type PortalSessionUser = {
+  id: string;
+  email: string;
+  displayName: string;
+  roleKey: PortalRoleKey;
+  roleName: "Administrador" | "Ingeniero" | "Operador" | "Solo lectura";
+  siteId: string;
+  permissions: string[];
+};
+
+export type Paginated<T> = {
+  items: T[];
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+};
+
 export type ReadingProfile = {
   id: string;
   key: string;
@@ -209,12 +227,17 @@ const query = (values: Record<string, string | number | undefined>) => {
 
 export const cam5Api = {
   health: () => request<{ status: "ok" | "degraded"; gateway: "online" | "offline"; timestamp: string }>("/health"),
+  login: (email: string, password: string) => request<{ user: PortalSessionUser }>("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
+  session: () => request<{ user: PortalSessionUser }>("/auth/session"),
+  logout: () => request<void>("/auth/logout", { method: "POST" }),
   myAccess: () => request<{ user: PortalUser; permissions: string[] }>("/me/access"),
 
   accessProfiles: () => request<PortalAccessProfile[]>("/roles"),
-  users: () => request<PortalUser[]>("/users"),
-  inviteUser: (payload: { email: string; displayName: string; role: PortalRoleKey; siteId: string }) => request<PortalUser>("/users/invitations", { method: "POST", body: JSON.stringify(payload) }),
-  updateUser: (userId: string, payload: Partial<Pick<PortalUser, "displayName" | "status" | "roles" | "assetScope">>) => request<PortalUser>(`/users/${userId}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  users: (page = 1, pageSize = 10, q?: string, status?: string) => request<Paginated<PortalUser>>(`/users?${query({ page, pageSize, q, status })}`),
+  createUser: (payload: { email: string; displayName: string; password: string; role: PortalRoleKey; status?: "active" | "suspended" | "invited" }) => request<PortalUser>("/users", { method: "POST", body: JSON.stringify(payload) }),
+  updateUser: (userId: string, payload: { email?: string; displayName?: string; password?: string; role?: PortalRoleKey; status?: "active" | "suspended" | "invited" }) => request<PortalUser>(`/users/${userId}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteUser: (userId: string) => request<void>(`/users/${userId}`, { method: "DELETE" }),
+  databaseHistory: (tab: "measurements" | "alarms" | "audit", from: string, to: string, page = 1, pageSize = 10, q?: string, channel?: string) => request<Paginated<Record<string, unknown>>>(`/history?${query({ tab, from, to, page, pageSize, q, channel })}`),
 
   device: (deviceId: string) => request<Cam5Device>(`/devices/${deviceId}`),
   updateDevice: (deviceId: string, payload: Partial<Cam5Device>) => request<Cam5Device>(`/devices/${deviceId}`, { method: "PATCH", body: JSON.stringify(payload) }),

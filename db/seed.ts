@@ -2,11 +2,13 @@ import { and, eq, sql } from "drizzle-orm";
 import { pathToFileURL } from "node:url";
 import { cam5InputInventory, cam5OperationalChannels, cam5RegisterCatalog, cam5RelayDefaults } from "../app/cam5-model";
 import { PORTAL_PERMISSIONS, PORTAL_ROLES } from "./access-control";
+import { hashPassword } from "./auth";
 import { closeDb, getDb, type Cam5Database } from "./index";
 import { loadDatabaseEnvironment } from "./load-env";
 import {
   alarmRules,
   assets,
+  authIdentities,
   channels,
   commissioningItems,
   deviceModels,
@@ -70,7 +72,7 @@ function physicalInputCode(sourceId: string): string {
 
 export async function seedCam5Database(
   db: Cam5Database,
-  options: { adminEmail?: string; adminName?: string; log?: boolean } = {},
+  options: { adminEmail?: string; adminName?: string; adminPassword?: string; log?: boolean } = {},
 ) {
   await db.transaction(async (tx) => {
     await tx.insert(sites).values({
@@ -382,12 +384,25 @@ export async function seedCam5Database(
     const adminEmail = configuredAdminEmail?.trim().toLowerCase();
     if (adminEmail) {
       const configuredAdminName = options.adminName === undefined ? process.env.CAM5_ADMIN_NAME : options.adminName;
+      const configuredAdminPassword = options.adminPassword === undefined ? process.env.CAM5_ADMIN_PASSWORD : options.adminPassword;
       const adminName = configuredAdminName?.trim() || "Administrador CAM5";
       await tx.insert(users).values({ email: adminEmail, displayName: adminName, status: "active" }).onConflictDoNothing();
       const [admin] = await tx.select().from(users).where(sql`lower(${users.email}) = ${adminEmail}`).limit(1);
       const [adminRole] = await tx.select().from(roles).where(eq(roles.key, "administrator")).limit(1);
       if (!admin || !adminRole) throw new Error("No fue posible asignar el administrador inicial.");
       await tx.insert(userRoleAssignments).values({ userId: admin.id, roleId: adminRole.id, siteId: site.id }).onConflictDoNothing();
+      if (configuredAdminPassword) {
+        const passwordHash = await hashPassword(configuredAdminPassword);
+        await tx.insert(authIdentities).values({
+          userId: admin.id,
+          provider: "local",
+          providerSubject: adminEmail,
+          passwordHash,
+        }).onConflictDoUpdate({
+          target: [authIdentities.provider, authIdentities.providerSubject],
+          set: { userId: admin.id, passwordHash, updatedAt: new Date() },
+        });
+      }
     }
   });
 
