@@ -1,0 +1,29 @@
+name: Evaluar comunicaciones CAM5
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cam5-alarm-evaluator
+  cancel-in-progress: false
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Evaluar pérdida de comunicación
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          test -n "$CRON_SECRET"
+          curl --fail-with-body --silent --show-error \
+            --retry 2 \
+            --max-time 30 \
+            --header "Authorization: Bearer $CRON_SECRET" \
+            https://cam5v2.vercel.app/api/v1/alarms/evaluate

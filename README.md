@@ -40,7 +40,7 @@ La capa de persistencia utiliza PostgreSQL y Drizzle ORM. Incluye telemetría, h
 
 Antes del primer ingreso, configurar `DATABASE_URL`, `CAM5_ADMIN_EMAIL`, `CAM5_ADMIN_NAME` y `CAM5_ADMIN_PASSWORD`. La contraseña debe tener al menos 10 caracteres.
 
-La revisión de comunicaciones está programada cada minuto mediante `vercel.json`. Requiere `CRON_SECRET`, que Vercel envía como `Authorization: Bearer <CRON_SECRET>` al endpoint `GET /api/v1/alarms/evaluate`. Esa frecuencia requiere Vercel Pro; en Hobby debe retirarse la entrada `crons` y utilizarse un programador externo o la evaluación reactiva al recibir telemetría y consultar alarmas.
+La revisión de comunicaciones se ejecuta con cada lote del gateway, al consultar las alarmas y cada cinco minutos mediante `.github/workflows/alarm-evaluator.yml`. El workflow y Vercel comparten `CRON_SECRET`, enviado como `Authorization: Bearer <CRON_SECRET>` al endpoint `GET /api/v1/alarms/evaluate`. Con Vercel Pro puede reemplazarse por un cron nativo de un minuto.
 
 ```bash
 npm run db:migrate
