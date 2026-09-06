@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Emisor de referencia para el contrato CAM5 Gateway v1.0."""
+"""Emisor de referencia para el contrato CAM5 Gateway v1.1 (ingestión v1.0)."""
 
 import json
 import os
@@ -78,7 +78,7 @@ def main():
     if not configuration["devices"]:
         raise SystemExit("El gateway no tiene controladores asignados.")
     device = configuration["devices"][0]
-    ranges = configuration["devices"][0]["ranges"]
+    ranges = [item for item in configuration["devices"][0]["ranges"] if item.get("enabled", True)]
     next_run = {item["name"]: 0.0 for item in ranges}
     sequence = 0
 

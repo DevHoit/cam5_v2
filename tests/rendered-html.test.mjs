@@ -27,7 +27,7 @@ test("server-renders the protected HoitLive Core access gate", async () => {
 });
 
 test("keeps the production portal free of starter preview code", async () => {
-  const [page, layout, css, packageJson, engineering, model, alarmEngine, trends, notifications, notificationEngine] = await Promise.all([
+  const [page, layout, css, packageJson, engineering, model, alarmEngine, trends, notifications, notificationEngine, settings, configurationApi, gatewayConfigurationApi] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
@@ -38,6 +38,9 @@ test("keeps the production portal free of starter preview code", async () => {
     readFile(new URL("../app/trends-view.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/notifications-view.tsx", import.meta.url), "utf8"),
     readFile(new URL("../db/notification-engine.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/settings-view.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/v1/configuration/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/v1/gateway/config/route.ts", import.meta.url), "utf8"),
   ]);
 
   assert.match(page, /function ReportsView\(\)/);
@@ -79,7 +82,15 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(page, /CAM5-GW-01/);
   assert.match(page, /Subestación Norte/);
   assert.match(page, /Modbus TCP/);
-  assert.match(page, /Mapa de registros Modbus/);
+  assert.match(settings, /Mapa oficial de registros CAM5/);
+  assert.match(settings, new RegExp("/api/v1/configuration"));
+  assert.match(settings, /Versiones de configuración/);
+  assert.match(configurationApi, /configurationSnapshots/);
+  assert.match(configurationApi, /settings\.write/);
+  assert.match(configurationApi, /pg_advisory_xact_lock/);
+  assert.match(gatewayConfigurationApi, /checksumSha256/);
+  assert.doesNotMatch(settings, /usePersistentState|setTimeout\(.*Prueba Modbus/);
+  assert.doesNotMatch(page, /cam5\.front\.(asset-config|gateway-config|channel-config|register-map)/);
   assert.match(engineering, /Mapa oficial incorporado al frontend/);
   assert.match(engineering, /Ver mapa 418–522/);
   assert.match(model, /const humanReference/);

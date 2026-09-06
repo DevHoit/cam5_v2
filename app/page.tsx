@@ -4,9 +4,10 @@ import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { ComponentType } from "react";
 import { usePersistentState } from "./use-persistent-state";
 import { Cam5CommissioningView } from "./cam5-engineering";
-import { cam5OperationalChannels, cam5RegisterCatalog } from "./cam5-model";
+import { cam5OperationalChannels } from "./cam5-model";
 import { Pagination, useClientPagination } from "./pagination";
 import { NotificationsView as DatabaseNotificationsView } from "./notifications-view";
+import { SettingsView as DatabaseSettingsView } from "./settings-view";
 import { TrendsView } from "./trends-view";
 import {
   IconActivity as Activity,
@@ -65,9 +66,6 @@ type View = "overview" | "cabinet" | "diagnostics" | "commissioning" | "trends" 
 type Severity = "critical" | "warning" | "info";
 type SensorState = "normal" | "warning" | "critical";
 type HistoryTab = "measurements" | "alarms" | "audit";
-type SettingsTab = "asset" | "channels" | "registers" | "gateway";
-type ModbusDataType = "Int16" | "UInt16";
-type ModbusByteOrder = "AB" | "BA";
 type UserRole = "Administrador" | "Ingeniero" | "Operador" | "Solo lectura";
 type WorkStatus = "Pendiente" | "En curso" | "Completada";
 type WorkPriority = "Crítica" | "Alta" | "Normal";
@@ -241,17 +239,6 @@ function alarmValue(alarm: PortalAlarm) {
 
 const sensors = cam5OperationalChannels;
 
-const defaultAssetConfig = { name: "MCC-01", description: "Alimentador Norte", voltage: "13.8", location: "Subestación Norte", timezone: "America/Santiago" };
-
-function defaultChannelConfiguration() {
-  return sensors.map((sensor) => ({
-    ...sensor,
-    enabled: sensor.configured,
-    warning: String(sensor.warningDefault),
-    critical: String(sensor.criticalDefault),
-  }));
-}
-
 function telemetryAge(recordedAt: string | null) {
   if (!recordedAt) return "Sin lecturas recibidas";
   const seconds = Math.max(0, Math.round((Date.now() - new Date(recordedAt).getTime()) / 1000));
@@ -265,16 +252,14 @@ function formatTelemetryValue(value: number | null, unit: string) {
 }
 
 function useSensorData(override?: PortalTelemetryState) {
-  const [configuration] = usePersistentState("cam5.front.channel-config.v2", defaultChannelConfiguration());
   const context = useContext(TelemetryContext);
   const telemetry = override ?? context;
   return sensors.map((sensor) => {
-    const configured = configuration.find((item) => item.id === sensor.id);
     const live = telemetry.data?.items.find((item) => item.code === sensor.id);
-    const warning = live?.warningThreshold ?? Number(configured?.warning ?? sensor.threshold.split(" ")[0]);
-    const critical = live?.criticalThreshold ?? Number(configured?.critical ?? warning + 10);
+    const warning = live?.warningThreshold ?? sensor.warningDefault;
+    const critical = live?.criticalThreshold ?? sensor.criticalDefault;
     const reading = live ? live.value : telemetry.status === "preview" ? Number(sensor.value) : null;
-    const enabled = live?.enabled ?? configured?.enabled ?? sensor.configured;
+    const enabled = live?.enabled ?? sensor.configured;
     const state: SensorState = live?.severity ?? (enabled && reading !== null && Number.isFinite(reading) ? reading >= critical ? "critical" : reading >= warning ? "warning" : "normal" : "normal");
     const activeThreshold = state === "critical" ? critical : warning;
     const quality = !enabled
@@ -480,9 +465,8 @@ function CabinetDiagram({ selectedId, onSelect }: { selectedId?: string; onSelec
   );
 }
 
-function Overview({ onNavigate, onAcknowledge, activeAlarms }: { onNavigate: (view: View) => void; onAcknowledge: (id: string) => void; activeAlarms: PortalAlarm[] }) {
+function Overview({ onNavigate, onAcknowledge, activeAlarms, point }: { onNavigate: (view: View) => void; onAcknowledge: (id: string) => void; activeAlarms: PortalAlarm[]; point?: PortalHierarchy["points"][number] }) {
   const sensors = useSensorData();
-  const [assetConfig] = usePersistentState("cam5.front.asset-config", defaultAssetConfig);
   const activeSensors = sensors.filter((sensor) => sensor.enabled);
   const activeInputCount = new Set(activeSensors.map((sensor) => sensor.sourceId)).size;
   const temperature = activeSensors.filter((sensor) => sensor.type === "Temperatura").sort((a, b) => Number(b.value) - Number(a.value))[0];
@@ -505,7 +489,7 @@ function Overview({ onNavigate, onAcknowledge, activeAlarms }: { onNavigate: (vi
       <section className="overview-grid">
         <article className="panel asset-summary-panel">
           <div className="panel-header asset-summary-header">
-            <div><span className="eyebrow">Punto de medición prioritario</span><h2>{assetConfig.name} · {assetConfig.description}</h2><p>Cabina de {assetConfig.voltage} kV · condición consolidada</p></div>
+            <div><span className="eyebrow">Punto de medición prioritario</span><h2>{point ? `${point.code} · ${point.name}` : "Punto sin seleccionar"}</h2><p>{point?.nominalVoltageKv ? `Cabina de ${point.nominalVoltageKv} kV` : "Tensión nominal pendiente"} · condición consolidada</p></div>
             <StatusPill state="critical">Atención prioritaria</StatusPill>
           </div>
 
@@ -1384,84 +1368,6 @@ function IntegrationsView() {
   );
 }
 
-function SettingsView() {
-  const notify = useFeedback();
-  const confirm = useConfirm();
-  const sensors = useSensorData();
-  const role = useActiveRole();
-  const [tab, setTab] = useState<SettingsTab>("asset");
-  const [saved, setSaved] = useState(false);
-  const [connection, setConnection] = useState<"idle" | "testing" | "success">("idle");
-  const [assetConfig, setAssetConfig] = usePersistentState("cam5.front.asset-config", defaultAssetConfig);
-  const [gatewayConfig, setGatewayConfig] = usePersistentState("cam5.front.gateway-config", { gateway: "CAM5-GW-01", controller: "CAM5-CTRL-01", protocol: "Modbus TCP", controllerIp: "192.168.10.42", gatewayIp: "192.168.10.40", port: "502", unit: "1", polling: "2", uplink: "Ethernet / HTTPS" });
-  const [channels, setChannels] = usePersistentState("cam5.front.channel-config.v2", defaultChannelConfiguration());
-  const [registerMap, setRegisterMap] = usePersistentState("cam5.front.register-map.v2", cam5RegisterCatalog.map((register) => {
-    const liveChannel = sensors.find((sensor) => sensor.nativeRegister === register.register);
-    return { id: String(register.register), label: register.description, reference: register.reference, nativeRegister: register.register, functionCode: "03", dataType: register.dataType as ModbusDataType, scale: register.scale, byteOrder: "AB" as ModbusByteOrder, unit: register.unit, value: liveChannel?.value ?? "—", errorCode: register.errorCode, group: register.group };
-  }));
-  const [registerGroup, setRegisterGroup] = useState("Todos");
-  const [mapValidation, setMapValidation] = useState<"idle" | "validating" | "success" | "error">("idle");
-  const registerGroups = ["Todos", ...new Set(registerMap.map((row) => row.group))];
-  const visibleRegisterMap = registerMap.filter((row) => registerGroup === "Todos" || row.group === registerGroup);
-  const channelPage = useClientPagination(channels, 10);
-  const registerPage = useClientPagination(visibleRegisterMap, 12);
-  const duplicateReferences = new Set(registerMap.filter((row, index, rows) => rows.findIndex((candidate) => candidate.reference === row.reference) !== index).map((row) => row.reference));
-  const invalidReferences = registerMap.filter((row) => {
-    if (!/^400\d{3}$/.test(row.reference)) return true;
-    const native = Number(row.reference.slice(3));
-    return native < 418 || native > 522 || native !== row.nativeRegister;
-  }).map((row) => row.id);
-  const mappingIssues = duplicateReferences.size + invalidReferences.length;
-  const thresholdIssues = channels.filter((channel) => !Number.isFinite(Number(channel.warning)) || !Number.isFinite(Number(channel.critical)) || Number(channel.warning) >= Number(channel.critical));
-  const validIp = (value: string) => { const parts = value.split(".").map(Number); return parts.length === 4 && parts.every((part) => Number.isInteger(part) && part >= 0 && part <= 255); };
-  const gatewayIssues = [!validIp(gatewayConfig.gatewayIp), !validIp(gatewayConfig.controllerIp), Number(gatewayConfig.port) < 1 || Number(gatewayConfig.port) > 65535, Number(gatewayConfig.unit) < 0 || Number(gatewayConfig.unit) > 247, Number(gatewayConfig.polling) < 1].filter(Boolean).length;
-  const configurationIssues = mappingIssues + thresholdIssues.length + gatewayIssues;
-  const saveChanges = () => { if (configurationIssues) { setTab(thresholdIssues.length ? "channels" : mappingIssues ? "registers" : "gateway"); notify(`Hay ${configurationIssues} campo${configurationIssues === 1 ? "" : "s"} por corregir antes de guardar.`, "warning"); return; } setSaved(true); notify("Configuración validada. La publicación al controlador se habilitará mediante el servicio del gateway."); window.setTimeout(() => setSaved(false), 2400); };
-  const testConnection = () => { setConnection("testing"); window.setTimeout(() => { setConnection("success"); notify("Prueba Modbus completada correctamente."); }, 900); };
-  const updateChannel = (id: string, field: "enabled" | "warning" | "critical", value: boolean | string) => { const apply = () => setChannels((current) => current.map((item) => item.id === id ? { ...item, [field]: value } : item)); if (field === "enabled" && value === false) confirm({ title: `Desactivar canal ${id}`, detail: "El canal dejará de aparecer en tendencias, reportes e indicadores operativos.", confirmLabel: "Desactivar canal", tone: "danger", onConfirm: apply }); else apply(); };
-  const updateRegister = (id: string, field: "reference" | "dataType" | "scale" | "byteOrder", value: string) => { setMapValidation("idle"); setRegisterMap((current) => current.map((row) => row.id === id ? { ...row, [field]: value } : row)); };
-  const validateRegisterMap = () => { setMapValidation("validating"); window.setTimeout(() => { setMapValidation(mappingIssues ? "error" : "success"); notify(mappingIssues ? `${mappingIssues} conflicto${mappingIssues === 1 ? "" : "s"} en el mapa Modbus.` : "Mapa Modbus validado sin conflictos.", mappingIssues ? "warning" : "success"); }, 700); };
-
-  return (
-    <article className={`panel module-panel settings-module ${role === "Solo lectura" ? "role-readonly" : ""}`}>
-      <div className="module-toolbar">
-        <div className="module-tabs" role="tablist" aria-label="Secciones de configuración">
-          <button className={tab === "asset" ? "active" : ""} onClick={() => setTab("asset")}><Building2 size={16} /> Activo</button>
-          <button className={tab === "channels" ? "active" : ""} onClick={() => setTab("channels")}><Activity size={16} /> Canales y umbrales</button>
-          <button className={tab === "registers" ? "active" : ""} onClick={() => setTab("registers")}><Database size={16} /> Mapa Modbus</button>
-          <button className={tab === "gateway" ? "active" : ""} onClick={() => setTab("gateway")}><PlugConnected size={16} /> Gateway + Modbus</button>
-        </div>
-        <button className={`save-config-button ${saved ? "saved" : ""}`} onClick={saveChanges}>{saved ? <CheckCircle2 size={16} /> : <Save size={16} />}{saved ? "Cambios guardados" : "Guardar cambios"}</button>
-      </div>
-      {configurationIssues > 0 && <div className="validation-summary" role="alert"><AlertTriangle size={17} /><div><strong>Configuración pendiente de validar</strong><p>{thresholdIssues.length} umbrales · {mappingIssues} conflictos Modbus · {gatewayIssues} parámetros de comunicación.</p></div></div>}
-
-      {tab === "asset" && <div className="settings-content"><div className="settings-section-head"><span className="settings-icon"><Building2 size={20} /></span><div><h2>Identificación del punto de medición</h2><p>Datos utilizados en navegación, reportes y trazabilidad.</p></div></div><div className="form-grid"><label><span>Código del punto</span><input value={assetConfig.name} onChange={(event) => setAssetConfig({ ...assetConfig, name: event.target.value })} /></label><label><span>Descripción</span><input value={assetConfig.description} onChange={(event) => setAssetConfig({ ...assetConfig, description: event.target.value })} /></label><label><span>Tensión nominal</span><div className="input-unit"><input value={assetConfig.voltage} onChange={(event) => setAssetConfig({ ...assetConfig, voltage: event.target.value })} /><b>kV</b></div></label><label><span>Sitio activo</span><input value={assetConfig.location} readOnly /></label><label className="form-span-2"><span>Zona horaria</span><select value={assetConfig.timezone} onChange={(event) => setAssetConfig({ ...assetConfig, timezone: event.target.value })}><option>America/Santiago</option><option>UTC</option></select></label></div><div className="configuration-note"><ShieldCheck size={17} /><p><strong>Configuración contextual.</strong> El punto de medición se administra dentro del sitio seleccionado y puede asociarse a uno de sus gateways.</p></div></div>}
-
-      {tab === "channels" && <div className="settings-content channels-settings"><div className="settings-section-head"><span className="settings-icon"><Activity size={20} /></span><div><h2>Canales y umbrales</h2><p>Habilita señales y define niveles operativos de alarma.</p></div></div><div className="channel-config-table"><div className="channel-config-head"><span>Canal</span><span>Registro</span><span>Advertencia</span><span>Crítico</span><span>Estado</span></div>{channelPage.pageItems.map((channel) => <div className="channel-config-row" key={channel.id}><span className="history-channel"><b className={`sensor-code sensor-${channel.state}`}>{channel.id}</b><span><strong>{channel.label}</strong><small>{channel.type}</small></span></span><span className="mono-cell">{channel.register}</span><label className="compact-input"><input value={channel.warning} onChange={(event) => updateChannel(channel.id, "warning", event.target.value)} /><b>{channel.unit}</b></label><label className="compact-input"><input value={channel.critical} onChange={(event) => updateChannel(channel.id, "critical", event.target.value)} /><b>{channel.unit}</b></label><button className={`channel-toggle ${channel.enabled ? "on" : ""}`} onClick={() => updateChannel(channel.id, "enabled", !channel.enabled)}><i />{channel.enabled ? "Activo" : "Inactivo"}</button></div>)}</div><Pagination page={channelPage.page} totalPages={channelPage.totalPages} total={channelPage.total} pageSize={channelPage.pageSize} onPageChange={channelPage.setPage} itemLabel="canales" /></div>}
-
-      {tab === "registers" && <div className="settings-content register-settings">
-        <div className="register-settings-head">
-          <div className="settings-section-head"><span className="settings-icon"><Database size={20} /></span><div><h2>Mapa de registros Modbus</h2><p>Define cómo el controlador CAM5 expone cada señal al gateway asignado.</p></div></div>
-          <div className="register-header-actions"><label><span>Grupo</span><select value={registerGroup} onChange={(event) => { setRegisterGroup(event.target.value); registerPage.setPage(1); }}>{registerGroups.map((group) => <option key={group}>{group}</option>)}</select><ChevronDown size={12} /></label><button className={`register-validate-button ${mapValidation}`} onClick={validateRegisterMap} disabled={mapValidation === "validating"}>{mapValidation === "validating" ? <><Refresh size={15} /> Validando…</> : mapValidation === "success" ? <><CheckCircle2 size={15} /> Mapa válido</> : mapValidation === "error" ? <><AlertTriangle size={15} /> Revisar mapa</> : <><ShieldCheck size={15} /> Validar mapa</>}</button></div>
-        </div>
-        <div className="register-map-summary">
-          <article><small>Registros documentados</small><strong>{registerMap.length}</strong><span>Bloque nativo completo 418–522</span></article>
-          <article><small>Función de lectura</small><strong>FC 03</strong><span>Holding Registers</span></article>
-          <article className={mappingIssues ? "has-issues" : "is-valid"}><small>Conflictos detectados</small><strong>{mappingIssues}</strong><span>{mappingIssues ? "Corregir antes de conectar" : "Referencias únicas y válidas"}</span></article>
-        </div>
-        <div className="modbus-address-note"><CircuitBoard size={17} /><div><strong>Registro nativo y referencia humana</strong><p>El manual identifica el registro 418 como referencia 400418 y dirección 0x01A2 en la trama. El gateway debe conservar esta convención o declarar explícitamente cualquier remapeo.</p></div></div>
-        <div className="register-map-scroll"><div className="register-map-table">
-          <div className="register-map-row register-map-header"><span>Variable</span><span>Referencia</span><span>Registro nativo</span><span>Función</span><span>Tipo de dato</span><span>Escala</span><span>Orden</span><span>Lectura / error</span></div>
-          {registerPage.pageItems.map((row) => { const invalid = invalidReferences.includes(row.id) || duplicateReferences.has(row.reference); const liveChannel = sensors.find((sensor) => sensor.nativeRegister === row.nativeRegister); return <div className={`register-map-row ${invalid ? "row-invalid" : ""}`} key={row.id}><span className="register-channel"><b className={`sensor-code sensor-${liveChannel?.state ?? "normal"}`}>R{row.id}</b><span><strong>{row.label}</strong><small>{row.group} · {row.unit}</small></span></span><label><input value={row.reference} onChange={(event) => updateRegister(row.id, "reference", event.target.value)} aria-label={`Referencia Modbus ${row.id}`} />{invalid && <small>Referencia inválida, duplicada o fuera del mapa</small>}</label><span className="register-offset">{row.nativeRegister}</span><span className="register-function"><b>03</b><small>Holding</small></span><label><select value={row.dataType} onChange={(event) => updateRegister(row.id, "dataType", event.target.value)} aria-label={`Tipo de dato ${row.id}`}><option>Int16</option><option>UInt16</option></select></label><label className="register-scale"><input value={row.scale} onChange={(event) => updateRegister(row.id, "scale", event.target.value)} aria-label={`Escala ${row.id}`} /></label><label><select value={row.byteOrder} onChange={(event) => updateRegister(row.id, "byteOrder", event.target.value)} aria-label={`Orden de bytes ${row.id}`}><option>AB</option><option>BA</option></select></label><span className="register-live-value"><i className={liveChannel?.enabled ? "" : "waiting"} /><strong>{liveChannel?.enabled ? `${row.value} ${row.unit}` : "Pendiente"}</strong><small>Error {row.errorCode}</small></span></div>; })}
-        </div></div><Pagination page={registerPage.page} totalPages={registerPage.totalPages} total={registerPage.total} pageSize={registerPage.pageSize} onPageChange={registerPage.setPage} itemLabel="registros" />
-        <div className="configuration-note"><ShieldCheck size={17} /><p><strong>Mapa base incorporado desde el manual CAM-5/IRM-48.</strong> Al conectar el equipo solo será necesario confirmar modelo, versión de datos y convención efectiva del driver del gateway.</p></div>
-      </div>}
-
-      {tab === "gateway" && <div className="settings-content"><div className="settings-section-head"><span className="settings-icon"><PlugConnected size={20} /></span><div><h2>Gateway y controlador Modbus</h2><p>Cadena de adquisición del punto de medición seleccionado.</p></div></div><div className="single-stack-note"><Radio size={18} /><div><strong>CAM5-CTRL-01 → CAM5-GW-01 → HoitLive Core</strong><p>El controlador concentra los registros Modbus TCP. El gateway transporta la telemetría hacia la plataforma.</p></div></div><div className="gateway-layout"><div className="form-grid"><label><span>Gateway asignado</span><input value={gatewayConfig.gateway} readOnly /></label><label><span>IP del gateway</span><input value={gatewayConfig.gatewayIp} onChange={(event) => setGatewayConfig({ ...gatewayConfig, gatewayIp: event.target.value })} /></label><label><span>Enlace hacia HoitLive Core</span><input value={gatewayConfig.uplink} readOnly /></label><label><span>Controlador Modbus</span><input value={gatewayConfig.controller} readOnly /></label><label><span>Protocolo de campo</span><select value={gatewayConfig.protocol} onChange={(event) => setGatewayConfig({ ...gatewayConfig, protocol: event.target.value })}><option>Modbus TCP</option></select></label><label><span>IP del controlador</span><input value={gatewayConfig.controllerIp} onChange={(event) => setGatewayConfig({ ...gatewayConfig, controllerIp: event.target.value })} /></label><label><span>Puerto Modbus</span><input value={gatewayConfig.port} onChange={(event) => setGatewayConfig({ ...gatewayConfig, port: event.target.value })} /></label><label><span>Unit ID</span><input value={gatewayConfig.unit} onChange={(event) => setGatewayConfig({ ...gatewayConfig, unit: event.target.value })} /></label><label><span>Intervalo de lectura</span><div className="input-unit"><input value={gatewayConfig.polling} onChange={(event) => setGatewayConfig({ ...gatewayConfig, polling: event.target.value })} /><b>s</b></div></label></div><aside className="connection-test-card"><span className={`connection-test-icon ${connection}`}><Radio size={24} /></span><h3>Controlador CAM5-CTRL-01</h3><p>Valida acceso, puerto y respuesta Modbus desde el gateway asignado.</p><dl><div><dt>Destino</dt><dd>{gatewayConfig.controllerIp}:{gatewayConfig.port}</dd></div><div><dt>Gateway</dt><dd>{gatewayConfig.gateway}</dd></div><div><dt>Timeout</dt><dd>3 segundos</dd></div></dl><button onClick={testConnection} disabled={connection === "testing"}>{connection === "testing" ? "Probando…" : connection === "success" ? <><CheckCircle2 size={15} /> Controlador disponible</> : <><PlugConnected size={15} /> Probar Modbus</>}</button></aside></div></div>}
-    </article>
-  );
-}
-
 function UsersView({ currentUserId, sites, activeSiteId }: { currentUserId: string; sites: PortalSiteScope[]; activeSiteId: string }) {
   const notify = useFeedback();
   const confirm = useConfirm();
@@ -1888,7 +1794,7 @@ export default function Home() {
           <div className="page-content">
             {systemMode !== "normal" && <section className={`operational-banner banner-${systemMode}`} role="alert"><span>{systemMode === "offline" ? <PlugConnected size={19} /> : systemMode === "loading" ? <Refresh className="spin" size={19} /> : <Clock3 size={19} />}</span><div><strong>{systemMode === "offline" ? "Gateway sin comunicación" : systemMode === "loading" ? "Sincronizando datos" : "Las lecturas están atrasadas"}</strong><p>{systemMode === "offline" ? "El portal muestra el último valor recibido cuando existe. Las funciones administrativas siguen disponibles, pero no hay telemetría nueva." : systemMode === "loading" ? "Solicitando la última configuración, lecturas y eventos disponibles." : "Los datos visibles superan el tiempo de frescura configurado. Revisa el enlace antes de tomar una decisión."}</p></div>{systemMode !== "loading" && <button onClick={() => { setSystemMode("loading"); setTelemetryRefreshKey((current) => current + 1); notify("Consultando nuevamente la telemetría.", "info"); }}><Refresh size={15} /> Reintentar</button>}</section>}
             <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> Gestión de activos críticos</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{view !== "assets" && view !== "settings" && view !== "integrations" && view !== "users" && view !== "notifications" && view !== "reports" && view !== "maintenance" && view !== "diagnostics" && view !== "commissioning" && view !== "trends" && view !== "history" && <button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button>}<button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{alarmSummary.critical + alarmSummary.warning} alertas activas</button></div></section>
-            {view === "overview" && <Overview onNavigate={navigate} onAcknowledge={acknowledge} activeAlarms={alarmPreview} />}
+            {view === "overview" && <Overview onNavigate={navigate} onAcknowledge={acknowledge} activeAlarms={alarmPreview} point={activePoint} />}
             {view === "cabinet" && <CabinetView onOpenTrend={openChannelTrend} />}
             {view === "diagnostics" && <DiagnosticsView />}
             {view === "commissioning" && <Cam5CommissioningView notify={notify} />}
@@ -1898,7 +1804,7 @@ export default function Home() {
             {view === "assets" && <OperationalHierarchyView hierarchy={hierarchy} loading={hierarchyLoading} permissions={sessionUser.permissions} onReload={loadHierarchy} onSwitchSite={switchSite} />}
             {view === "reports" && <ReportsView />}
             {view === "maintenance" && <MaintenanceView orders={workOrders} setOrders={setWorkOrders} focusOrderId={focusOrderId} />}
-            {view === "settings" && <SettingsView />}
+            {view === "settings" && <DatabaseSettingsView assetId={activePoint?.id ?? ""} canWrite={sessionUser.permissions.includes("settings.write")} notify={notify} confirm={(request) => setConfirmRequest(request)} onReloadHierarchy={loadHierarchy} />}
             {view === "integrations" && <IntegrationsView />}
             {view === "users" && <UsersView currentUserId={sessionUser.id} sites={sessionUser.sites} activeSiteId={sessionUser.siteId} />}
             {view === "notifications" && <NotificationsView canWrite={sessionUser.permissions.includes("notifications.write")} />}

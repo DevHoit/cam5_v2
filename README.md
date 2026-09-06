@@ -19,7 +19,7 @@ La estructura operacional admite uno o varios clientes, sitios, puntos de medici
 - Ingestión autenticada e idempotente desde gateways, con valores crudos, calidad y buffer de reenvío.
 - Estructura operacional administrable de clientes, sitios, puntos, gateways y controladores, con edición, desactivación reversible y eliminación protegida por dependencias.
 - Notificaciones conectadas a PostgreSQL: canales de correo, Teams y webhook, políticas por severidad/tipo, recuperación, repetición, pruebas, historial, reintentos y auditoría.
-- Configuración de canales, umbrales, gateway y mapa Modbus.
+- Configuración técnica conectada a PostgreSQL por punto: identidad, gateway/controlador, perfil de lectura, retención, canales, umbrales, histéresis, mapa Modbus protegido y versiones SHA-256 auditables.
 - Puesta en marcha con identidad, 24 entradas físicas, alarmas, seis relés, red, respaldo y checklist de producción.
 - Catálogo CAM-5/IRM-48 completo: 105 registros nativos entre 418 y 522.
 
@@ -79,7 +79,7 @@ Configurar:
 NEXT_PUBLIC_CAM5_API_URL=https://api.ejemplo.cl/api/v1
 ```
 
-La autenticación, los usuarios, la jerarquía operacional, el histórico, las tendencias, la última telemetría y el ciclo completo de alarmas utilizan rutas internas `/api/v1` conectadas a PostgreSQL. Parte de la configuración del equipo, reportes y el tablero general de mantenimiento todavía conservan datos de referencia mientras se implementan sus servicios de backend.
+La autenticación, los usuarios, la jerarquía operacional, la configuración técnica, el histórico, las tendencias, la última telemetría y el ciclo completo de alarmas utilizan rutas internas `/api/v1` conectadas a PostgreSQL. Los reportes y el tablero general de mantenimiento todavía conservan datos de referencia mientras se implementan sus servicios de backend.
 
 El contrato que debe implementar el gateway está en [`gateway/CAM5_GATEWAY_PROTOCOL.md`](./gateway/CAM5_GATEWAY_PROTOCOL.md). Incluye frecuencias, payload JSON, códigos de calidad, reintentos y un emisor Python de referencia.
 
@@ -89,9 +89,10 @@ El contrato que debe implementar el gateway está en [`gateway/CAM5_GATEWAY_PROT
 
 - `app/page.tsx`: aplicación y módulos operativos.
 - `app/cam5-engineering.tsx`: puesta en marcha CAM-5.
+- `app/settings-view.tsx`: configuración técnica persistente y versionada por punto de medición.
 - `app/cam5-model.ts`: canales, inventario y catálogo Modbus.
 - `app/cam5-api.ts`: contrato de API.
-- `app/api/v1/`: login, logout, contexto activo, jerarquía, usuarios, histórico, tendencias, telemetría, alarmas, reglas y notificaciones PostgreSQL.
+- `app/api/v1/`: login, logout, contexto activo, jerarquía, configuración, usuarios, histórico, tendencias, telemetría, alarmas, reglas y notificaciones PostgreSQL.
 - `db/alarm-engine.ts`: evaluación automática de umbrales, calidad y comunicaciones.
 - `db/notification-engine.ts`: encolado, deduplicación, repetición, entrega y reintentos de notificaciones.
 - `db/telemetry-aggregation.ts`: agregados temporales y aplicación de retención.

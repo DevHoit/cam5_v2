@@ -1,4 +1,4 @@
-# Contrato de ingestión CAM5 Gateway v1.0
+# Contrato de ingestión CAM5 Gateway v1.1
 
 Este contrato es idéntico para una fuente de datos simulada y para un CAM5 físico. El backend no recibe ni necesita una marca que identifique el origen como simulación.
 
@@ -180,4 +180,20 @@ Errores `400`, `403`, `404`, `413` o `422` indican que el lote no debe repetirse
 
 ## Configuración remota
 
-`GET /gateway/config` devuelve los controladores autorizados, host, puerto, Unit ID, rangos, intervalos, tipos, escalas, unidades y códigos de error. El script debe consultar esta ruta al iniciar y luego cada 15 minutos. Si la consulta falla, debe continuar con la última configuración válida almacenada localmente.
+`GET /gateway/config` devuelve los controladores autorizados, host, puerto, Unit ID, rangos, intervalos, tipos, escalas, unidades, códigos de error y políticas de canal. El script debe consultar esta ruta al iniciar y luego cada 15 minutos. Si la consulta falla, debe continuar con la última configuración válida almacenada localmente. Los rangos con `enabled: false` no deben consultarse.
+
+Desde la versión `1.1`, cada controlador incluye la revisión vigente:
+
+```json
+{
+  "configuration": {
+    "version": 7,
+    "checksumSha256": "5a7f…64-caracteres…9c2d",
+    "createdAt": "2026-09-06T18:42:16.325Z"
+  }
+}
+```
+
+El gateway debe conservar el último `checksumSha256` aplicado. Cuando cambie, reemplaza su configuración local de forma atómica después de validar que todos los rangos, funciones e intervalos sean utilizables. Si todavía no existe una versión, `configuration` será `null` y deberá aplicar igualmente el contenido completo recibido.
+
+La colección `channels` incluye los canales habilitados, registro, unidad, umbrales, histéresis y muestras consecutivas. Puede utilizarse para una alarma local futura en el gateway, pero el backend continúa siendo la autoridad del estado, la deduplicación y el flujo de atención. El gateway no debe crear alarmas de portal directamente ni omitir la telemetría que originó la condición.

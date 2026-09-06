@@ -112,6 +112,9 @@ El host `192.168.10.42` del seed es provisional. Debe reemplazarse por la direcc
 - Alarmas persistentes con búsqueda, filtros, paginación, asignación, notas, reconocimiento, atención, cierre y órdenes de trabajo vinculadas.
 - Reglas de alarma editables por canal, con histéresis, muestras de activación/recuperación, tiempo de dato atrasado y auditoría.
 - Canales de notificación administrables para correo, Microsoft Teams y webhook HTTPS; reglas por severidad y tipo, demora, repetición, recuperación, prueba de conexión, historial paginado, filtros por fecha y reintento manual.
+- Configuración técnica por punto protegida por `settings.read` y `settings.write`: controlador, gateway asignado, red Modbus, perfil y rangos de lectura, retención, canales y umbrales. Cada cambio genera auditoría y una versión con checksum SHA-256 en `configuration_snapshots`.
+- Los perfiles de lectura se separan automáticamente antes de editarse cuando son compartidos por varios controladores, evitando cambios cruzados entre puntos.
+- El catálogo de 105 registros se expone como referencia oficial de solo lectura; las direcciones, escalas y tipos del fabricante no se modifican desde la operación diaria.
 - Auditoría de inicio de sesión, creación, edición y eliminación de usuarios.
 
 ## Archivos
@@ -131,4 +134,5 @@ El host `192.168.10.42` del seed es provisional. Debe reemplazarse por la direcc
 - `drizzle/0005_milky_caretaker.sql`: flujo de alarmas atendidas, responsable y estado persistente del motor.
 - `drizzle/0006_smiling_frightful_four.sql`: contenido, programación, deduplicación y reintentos de entregas de notificación.
 - `db/notification-engine.ts`: motor de políticas, adaptadores de proveedor y cola de entrega.
+- `app/api/v1/configuration/route.ts`: lectura, validación, actualización y versionado de la configuración técnica.
 - `tests/database-schema.test.mjs`: prueba en PostgreSQL embebido.
