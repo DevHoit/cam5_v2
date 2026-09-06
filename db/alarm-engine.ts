@@ -1,5 +1,6 @@
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Cam5Database } from "./index";
+import { queueAlarmNotifications } from "./notification-engine";
 import {
   alarmEvents,
   alarmRules,
@@ -9,9 +10,6 @@ import {
   channels,
   devices,
   gateways,
-  notificationDeliveries,
-  notificationEndpoints,
-  notificationPolicies,
   readingProfiles,
 } from "./schema";
 
@@ -97,27 +95,6 @@ function alarmCopy(input: {
   };
 }
 
-async function queueNotifications(db: Cam5Database, siteId: string, alarmId: string, severity: AlarmSeverity) {
-  if (severity === "normal") return;
-  const policies = await db.select({
-    endpointId: notificationPolicies.endpointId,
-    minimumSeverity: notificationPolicies.minimumSeverity,
-  }).from(notificationPolicies)
-    .innerJoin(notificationEndpoints, eq(notificationEndpoints.id, notificationPolicies.endpointId))
-    .where(and(
-      eq(notificationPolicies.siteId, siteId),
-      eq(notificationPolicies.active, true),
-      eq(notificationEndpoints.enabled, true),
-    ));
-  const eligible = policies.filter((policy) => severityRank[severity] >= severityRank[policy.minimumSeverity]);
-  if (!eligible.length) return;
-  await db.insert(notificationDeliveries).values(eligible.map((policy) => ({
-    endpointId: policy.endpointId,
-    alarmId,
-    status: "queued",
-  })));
-}
-
 export async function evaluateAlarmReadings(
   db: Cam5Database,
   assetId: string,
@@ -174,10 +151,11 @@ export async function evaluateAlarmReadings(
     let activeAlarmId = row.activeAlarmId;
 
     if (observed.severity === "normal" && activeAlarmId && recoveryCount >= row.recoverySamples) {
-      const [activeAlarm] = await db.select({ id: alarms.id, status: alarms.status }).from(alarms).where(eq(alarms.id, activeAlarmId)).limit(1);
+      const [activeAlarm] = await db.select({ id: alarms.id, status: alarms.status, severity: alarms.severity, kind: alarms.kind, siteId: alarms.siteId }).from(alarms).where(eq(alarms.id, activeAlarmId)).limit(1);
       if (activeAlarm && activeAlarm.status !== "closed" && activeAlarm.status !== "resolved") {
         await db.update(alarms).set({ status: "resolved", resolvedAt: evaluatedAt, resolvedBy: null, lastObservedAt: evaluatedAt }).where(eq(alarms.id, activeAlarm.id));
-        await db.insert(alarmEvents).values({ alarmId: activeAlarm.id, eventType: "resolved_automatically", payload: { reason: "recovery_samples", recoverySamples: row.recoverySamples } });
+        const [alarmEvent] = await db.insert(alarmEvents).values({ alarmId: activeAlarm.id, eventType: "resolved_automatically", payload: { reason: "recovery_samples", recoverySamples: row.recoverySamples } }).returning({ id: alarmEvents.id });
+        await queueAlarmNotifications(db, { siteId: activeAlarm.siteId, alarmId: activeAlarm.id, alarmEventId: alarmEvent.id, severity: activeAlarm.severity, kind: activeAlarm.kind as AlarmKind, eventType: "resolved_automatically", occurredAt: evaluatedAt });
         resolved += 1;
       }
       recoveryCount = 0;
@@ -216,8 +194,8 @@ export async function evaluateAlarmReadings(
           context: { quality: reading.quality, qualityFlags: reading.qualityFlags },
         }).returning({ id: alarms.id });
         activeAlarmId = created.id;
-        await db.insert(alarmEvents).values({ alarmId: created.id, eventType: "opened", payload: { severity: observed.severity, kind: observed.kind, value: reading.value, threshold: observed.threshold } });
-        await queueNotifications(db, row.siteId, created.id, observed.severity);
+        const [alarmEvent] = await db.insert(alarmEvents).values({ alarmId: created.id, eventType: "opened", payload: { severity: observed.severity, kind: observed.kind, value: reading.value, threshold: observed.threshold } }).returning({ id: alarmEvents.id });
+        await queueAlarmNotifications(db, { siteId: row.siteId, alarmId: created.id, alarmEventId: alarmEvent.id, severity: observed.severity, kind: observed.kind, eventType: "opened", occurredAt: evaluatedAt });
         opened += 1;
       } else {
         const escalated = severityRank[observed.severity] > severityRank[activeAlarm.severity];
@@ -238,8 +216,9 @@ export async function evaluateAlarmReadings(
           context: { quality: reading.quality, qualityFlags: reading.qualityFlags },
         }).where(eq(alarms.id, activeAlarm.id));
         if (reopened || escalated || activeAlarm.kind !== observed.kind) {
-          await db.insert(alarmEvents).values({ alarmId: activeAlarm.id, eventType: reopened ? "reopened_automatically" : escalated ? "escalated" : "source_changed", payload: { severity: observed.severity, kind: observed.kind, value: reading.value, threshold: observed.threshold } });
-          await queueNotifications(db, row.siteId, activeAlarm.id, observed.severity);
+          const eventType = reopened ? "reopened_automatically" : escalated ? "escalated" : "source_changed";
+          const [alarmEvent] = await db.insert(alarmEvents).values({ alarmId: activeAlarm.id, eventType, payload: { severity: observed.severity, kind: observed.kind, value: reading.value, threshold: observed.threshold } }).returning({ id: alarmEvents.id });
+          await queueAlarmNotifications(db, { siteId: row.siteId, alarmId: activeAlarm.id, alarmEventId: alarmEvent.id, severity: observed.severity, kind: observed.kind, eventType, occurredAt: evaluatedAt });
         }
         updated += 1;
       }
@@ -321,8 +300,8 @@ export async function evaluateStaleCommunications(db: Cam5Database, siteId: stri
           lastObservedAt: evaluatedAt,
           context: { deviceCode: device.deviceCode, ageSeconds, staleAfterSeconds },
         }).returning({ id: alarms.id });
-        await db.insert(alarmEvents).values({ alarmId: created.id, eventType: "opened", payload: { kind: "communication", ageSeconds, staleAfterSeconds } });
-        await queueNotifications(db, siteId, created.id, severity);
+        const [alarmEvent] = await db.insert(alarmEvents).values({ alarmId: created.id, eventType: "opened", payload: { kind: "communication", ageSeconds, staleAfterSeconds } }).returning({ id: alarmEvents.id });
+        await queueAlarmNotifications(db, { siteId, alarmId: created.id, alarmEventId: alarmEvent.id, severity, kind: "communication", eventType: "opened", occurredAt: evaluatedAt });
       } else {
         const escalated = severityRank[severity] > severityRank[active.severity];
         await db.update(alarms).set({
@@ -337,13 +316,15 @@ export async function evaluateStaleCommunications(db: Cam5Database, siteId: stri
           context: { deviceCode: device.deviceCode, ageSeconds, staleAfterSeconds },
         }).where(eq(alarms.id, active.id));
         if (active.status === "resolved" || escalated) {
-          await db.insert(alarmEvents).values({ alarmId: active.id, eventType: active.status === "resolved" ? "reopened_automatically" : "escalated", payload: { severity, ageSeconds, staleAfterSeconds } });
-          await queueNotifications(db, siteId, active.id, severity);
+          const eventType = active.status === "resolved" ? "reopened_automatically" : "escalated";
+          const [alarmEvent] = await db.insert(alarmEvents).values({ alarmId: active.id, eventType, payload: { severity, ageSeconds, staleAfterSeconds } }).returning({ id: alarmEvents.id });
+          await queueAlarmNotifications(db, { siteId, alarmId: active.id, alarmEventId: alarmEvent.id, severity, kind: "communication", eventType, occurredAt: evaluatedAt });
         }
       }
     } else if (active && active.status !== "resolved") {
       await db.update(alarms).set({ status: "resolved", resolvedAt: evaluatedAt, resolvedBy: null, lastObservedAt: evaluatedAt }).where(eq(alarms.id, active.id));
-      await db.insert(alarmEvents).values({ alarmId: active.id, eventType: "resolved_automatically", payload: { reason: "communication_recovered", ageSeconds } });
+      const [alarmEvent] = await db.insert(alarmEvents).values({ alarmId: active.id, eventType: "resolved_automatically", payload: { reason: "communication_recovered", ageSeconds } }).returning({ id: alarmEvents.id });
+      await queueAlarmNotifications(db, { siteId, alarmId: active.id, alarmEventId: alarmEvent.id, severity: active.severity, kind: "communication", eventType: "resolved_automatically", occurredAt: evaluatedAt });
     }
   }
 }

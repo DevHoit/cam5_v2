@@ -92,7 +92,9 @@ El host `192.168.10.42` del seed es provisional. Debe reemplazarse por la direcc
 - Los códigos `0x8000` y `0xFFFF` se almacenan como valor crudo, con valor procesado nulo y calidad `bad`.
 - El backend actualiza `latest_readings` en la misma transacción que el histórico.
 - Después de aceptar cada lote, el motor evalúa umbrales, calidad e histéresis; su progreso por regla se conserva en `alarm_rule_states`.
+- Los eventos de apertura, escalamiento, reapertura y recuperación generan entregas según las políticas activas; cada entrega queda deduplicada y conserva contenido, destino, intentos y respuesta del proveedor.
 - Las alarmas de comunicación se revisan al recibir telemetría, al consultar el centro de alarmas y mediante el endpoint protegido `/api/v1/alarms/evaluate` para un programador externo.
+- La cola de notificaciones se procesa mediante `/api/v1/notifications/process`, protegido con `CRON_SECRET`; los fallos se reintentan con espera exponencial hasta cuatro veces y también pueden reintentarse de forma auditada desde el portal.
 - Cada cinco minutos, el proceso programado genera agregados de 1 minuto, 5 minutos, 1 hora y 1 día, y elimina datos crudos o agregados vencidos según el perfil asignado al controlador.
 - Las acciones de configuración, usuarios, alarmas y relés generan un registro inmutable en `audit_logs`.
 - Contraseñas, tokens y secretos externos se almacenan como hashes o referencias a un gestor de secretos; nunca como texto plano.
@@ -109,6 +111,7 @@ El host `192.168.10.42` del seed es provisional. Debe reemplazarse por la direcc
 - Tendencias reales con resolución automática o explícita, hasta cuatro canales compatibles, umbrales, calidad, tramos faltantes y CSV; los rangos largos utilizan `reading_aggregates`.
 - Alarmas persistentes con búsqueda, filtros, paginación, asignación, notas, reconocimiento, atención, cierre y órdenes de trabajo vinculadas.
 - Reglas de alarma editables por canal, con histéresis, muestras de activación/recuperación, tiempo de dato atrasado y auditoría.
+- Canales de notificación administrables para correo, Microsoft Teams y webhook HTTPS; reglas por severidad y tipo, demora, repetición, recuperación, prueba de conexión, historial paginado, filtros por fecha y reintento manual.
 - Auditoría de inicio de sesión, creación, edición y eliminación de usuarios.
 
 ## Archivos
@@ -126,4 +129,6 @@ El host `192.168.10.42` del seed es provisional. Debe reemplazarse por la direcc
 - `drizzle/0003_rich_charles_xavier.sql`: credenciales del gateway y muestras de los 105 registros CAM5.
 - `drizzle/0004_windy_gauntlet.sql`: estado activo reversible para puntos, gateways y controladores.
 - `drizzle/0005_milky_caretaker.sql`: flujo de alarmas atendidas, responsable y estado persistente del motor.
+- `drizzle/0006_smiling_frightful_four.sql`: contenido, programación, deduplicación y reintentos de entregas de notificación.
+- `db/notification-engine.ts`: motor de políticas, adaptadores de proveedor y cola de entrega.
 - `tests/database-schema.test.mjs`: prueba en PostgreSQL embebido.

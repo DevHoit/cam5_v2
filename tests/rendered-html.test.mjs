@@ -27,7 +27,7 @@ test("server-renders the protected HoitLive Core access gate", async () => {
 });
 
 test("keeps the production portal free of starter preview code", async () => {
-  const [page, layout, css, packageJson, engineering, model, alarmEngine, trends] = await Promise.all([
+  const [page, layout, css, packageJson, engineering, model, alarmEngine, trends, notifications, notificationEngine] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
@@ -36,6 +36,8 @@ test("keeps the production portal free of starter preview code", async () => {
     readFile(new URL("../app/cam5-model.ts", import.meta.url), "utf8"),
     readFile(new URL("../db/alarm-engine.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/trends-view.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/notifications-view.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../db/notification-engine.ts", import.meta.url), "utf8"),
   ]);
 
   assert.match(page, /function ReportsView\(\)/);
@@ -105,6 +107,14 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(trends, /Exportar CSV/);
   assert.match(trends, /Comparar con/);
   assert.match(css, /\.trend-chart-panel/);
+  assert.match(notifications, /PostgreSQL · trazabilidad activa/);
+  assert.match(notifications, /Enviar prueba/);
+  assert.match(notifications, /Reintentar/);
+  assert.match(notifications, /RESEND_API_KEY/);
+  assert.match(notificationEngine, /queueAlarmNotifications/);
+  assert.match(notificationEngine, /processNotificationQueue/);
+  assert.match(notificationEngine, /X-HoitLive-Signature/);
+  assert.doesNotMatch(notifications, /usePersistentState/);
   assert.doesNotMatch(page, /SkeletonPreview|codex-preview/);
   assert.doesNotMatch(layout, /SkeletonPreview|codex-preview/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);

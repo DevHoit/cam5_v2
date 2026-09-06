@@ -703,6 +703,7 @@ export const notificationEndpoints = pgTable("notification_endpoints", {
   enabled: boolean("enabled").default(true).notNull(),
   verifiedAt: timestamp("verified_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [uniqueIndex("notification_endpoint_site_name_uidx").on(table.siteId, table.name)]);
 
 export const notificationPolicies = pgTable("notification_policies", {
@@ -715,6 +716,8 @@ export const notificationPolicies = pgTable("notification_policies", {
   repeatIntervalMinutes: integer("repeat_interval_minutes"),
   active: boolean("active").default(true).notNull(),
   filters: jsonb("filters").$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   index("notification_policy_site_active_idx").on(table.siteId, table.active),
   check("notification_policy_delays_chk", sql`${table.escalationDelayMinutes} >= 0 AND (${table.repeatIntervalMinutes} IS NULL OR ${table.repeatIntervalMinutes} > 0)`),
@@ -723,18 +726,31 @@ export const notificationPolicies = pgTable("notification_policies", {
 export const notificationDeliveries = pgTable("notification_deliveries", {
   id: bigserial("id", { mode: "number" }).primaryKey(),
   endpointId: uuid("endpoint_id").notNull().references(() => notificationEndpoints.id, { onDelete: "restrict" }),
+  policyId: uuid("policy_id").references(() => notificationPolicies.id, { onDelete: "set null" }),
   alarmId: uuid("alarm_id").references(() => alarms.id, { onDelete: "set null" }),
+  alarmEventId: bigint("alarm_event_id", { mode: "number" }).references(() => alarmEvents.id, { onDelete: "set null" }),
+  eventType: varchar("event_type", { length: 60 }).default("alarm").notNull(),
+  subject: varchar("subject", { length: 240 }).default("Notificación HoitLive Core").notNull(),
+  payload: jsonb("payload").$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
   recipient: varchar("recipient", { length: 320 }),
   status: varchar("status", { length: 32 }).default("queued").notNull(),
   attemptCount: smallint("attempt_count").default(0).notNull(),
+  maxAttempts: smallint("max_attempts").default(4).notNull(),
   providerMessageId: varchar("provider_message_id", { length: 180 }),
   errorMessage: text("error_message"),
   queuedAt: timestamp("queued_at", { withTimezone: true }).defaultNow().notNull(),
+  scheduledAt: timestamp("scheduled_at", { withTimezone: true }).defaultNow().notNull(),
+  nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).defaultNow().notNull(),
+  lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }),
   sentAt: timestamp("sent_at", { withTimezone: true }),
+  dedupeKey: varchar("dedupe_key", { length: 220 }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   index("notification_deliveries_status_queued_idx").on(table.status, table.queuedAt),
+  index("notification_deliveries_due_idx").on(table.status, table.nextAttemptAt),
   index("notification_deliveries_alarm_idx").on(table.alarmId),
-  check("notification_deliveries_attempt_chk", sql`${table.attemptCount} >= 0`),
+  uniqueIndex("notification_deliveries_dedupe_uidx").on(table.dedupeKey),
+  check("notification_deliveries_attempt_chk", sql`${table.attemptCount} >= 0 AND ${table.maxAttempts} > 0 AND ${table.attemptCount} <= ${table.maxAttempts}`),
   check("notification_deliveries_status_chk", sql`${table.status} IN ('queued', 'sending', 'delivered', 'failed')`),
 ]);
 
