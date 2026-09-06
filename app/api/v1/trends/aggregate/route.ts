@@ -25,8 +25,9 @@ export async function GET(request: NextRequest) {
     const activeSites = await db.select({ id: sites.id }).from(sites).where(eq(sites.active, true));
     const evaluatedAt = new Date();
     const results = await Promise.allSettled(activeSites.map((site) => refreshTelemetryAggregates(db, site.id, evaluatedAt)));
-    const failed = results.filter((result) => result.status === "rejected").length;
-    return Response.json({ ok: failed === 0, evaluatedAt: evaluatedAt.toISOString(), sites: activeSites.length, failed }, { status: failed === 0 ? 200 : 207, headers: { "Cache-Control": "no-store" } });
+    const failures = results.flatMap((result, index) => result.status === "rejected" ? [{ siteId: activeSites[index].id, reason: result.reason instanceof Error ? result.reason.message : "Error desconocido" }] : []);
+    if (failures.length) console.error("Falló la agregación de uno o más sitios", failures);
+    return Response.json({ ok: failures.length === 0, evaluatedAt: evaluatedAt.toISOString(), sites: activeSites.length, failed: failures.length }, { status: failures.length === 0 ? 200 : 500, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("No fue posible generar los agregados históricos", error);
     return Response.json({ error: "No fue posible generar los agregados históricos." }, { status: 500, headers: { "Cache-Control": "no-store" } });
