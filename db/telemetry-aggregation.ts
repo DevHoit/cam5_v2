@@ -11,8 +11,10 @@ const AGGREGATION_WINDOWS = [
 
 export async function refreshTelemetryAggregates(db: Cam5Database, siteId: string, evaluatedAt = new Date()) {
   let bucketsUpdated = 0;
+  const evaluatedAtIso = evaluatedAt.toISOString();
   for (const aggregation of AGGREGATION_WINDOWS) {
     const from = new Date(evaluatedAt.getTime() - aggregation.lookbackMs);
+    const fromIso = from.toISOString();
     const bucketSeconds = sql.raw(String(aggregation.bucketSeconds));
     await db.execute(sql`
       insert into ${readingAggregates} (
@@ -30,13 +32,13 @@ export async function refreshTelemetryAggregates(db: Cam5Database, siteId: strin
         avg(${readings.value}) filter (where ${readings.quality} = 'good'),
         (array_agg(${readings.value} order by ${readings.recordedAt}) filter (where ${readings.quality} = 'good' and ${readings.value} is not null))[1],
         (array_agg(${readings.value} order by ${readings.recordedAt} desc) filter (where ${readings.quality} = 'good' and ${readings.value} is not null))[1],
-        ${evaluatedAt}
+        ${evaluatedAtIso}::timestamptz
       from ${readings}
       inner join ${channels} on ${channels.id} = ${readings.channelId}
       inner join ${assets} on ${assets.id} = ${channels.assetId}
       where ${assets.siteId} = ${siteId}
-        and ${readings.recordedAt} >= ${from}
-        and ${readings.recordedAt} <= ${evaluatedAt}
+        and ${readings.recordedAt} >= ${fromIso}::timestamptz
+        and ${readings.recordedAt} <= ${evaluatedAtIso}::timestamptz
       group by ${readings.channelId}, date_bin(make_interval(secs => ${bucketSeconds}), ${readings.recordedAt}, '1970-01-01 00:00:00+00'::timestamptz)
       on conflict (channel_id, bucket_start, bucket_seconds) do update set
         sample_count = excluded.sample_count,
@@ -58,7 +60,7 @@ export async function refreshTelemetryAggregates(db: Cam5Database, siteId: strin
       and ${devices.assetId} = ${assets.id}
       and ${devices.readingProfileId} = ${readingProfiles.id}
       and ${assets.siteId} = ${siteId}
-      and ${readings.recordedAt} < ${evaluatedAt}::timestamptz - make_interval(days => ${readingProfiles.rawRetentionDays})
+      and ${readings.recordedAt} < ${evaluatedAtIso}::timestamptz - make_interval(days => ${readingProfiles.rawRetentionDays})
   `);
   await db.execute(sql`
     delete from ${readingAggregates}
@@ -68,7 +70,7 @@ export async function refreshTelemetryAggregates(db: Cam5Database, siteId: strin
       and ${devices.assetId} = ${assets.id}
       and ${devices.readingProfileId} = ${readingProfiles.id}
       and ${assets.siteId} = ${siteId}
-      and ${readingAggregates.bucketStart} < ${evaluatedAt}::timestamptz - make_interval(days => ${readingProfiles.aggregateRetentionDays})
+      and ${readingAggregates.bucketStart} < ${evaluatedAtIso}::timestamptz - make_interval(days => ${readingProfiles.aggregateRetentionDays})
   `);
   return { bucketsUpdated, retentionApplied: true };
 }
