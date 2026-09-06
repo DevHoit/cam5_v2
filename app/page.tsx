@@ -4,8 +4,9 @@ import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { ComponentType } from "react";
 import { usePersistentState } from "./use-persistent-state";
 import { Cam5CommissioningView } from "./cam5-engineering";
-import { cam5OperationalChannels, cam5PdMetrics, cam5RegisterCatalog } from "./cam5-model";
+import { cam5OperationalChannels, cam5RegisterCatalog } from "./cam5-model";
 import { Pagination, useClientPagination } from "./pagination";
+import { TrendsView } from "./trends-view";
 import {
   IconActivity as Activity,
   IconAlertTriangle as AlertTriangle,
@@ -122,6 +123,7 @@ type AlarmRuleRecord = {
   lastQuality: string | null;
   lastEvaluatedAt: string | null;
 };
+type TrendWindow = { from: string; to: string };
 type PortalSiteScope = { id: string; code: string; name: string; clientId: string; clientCode: string; clientName: string; roleKey: "administrator" | "engineer" | "operator" | "viewer"; roleName: UserRole };
 type PortalSessionUser = {
   id: string;
@@ -199,6 +201,22 @@ async function portalRequest<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
+}
+
+async function downloadAuthenticatedCsv(path: string, fallbackName: string) {
+  const response = await fetch(path, { credentials: "include" });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null) as { error?: string } | null;
+    throw new Error(payload?.error || "No fue posible generar la exportación.");
+  }
+  const disposition = response.headers.get("content-disposition") || "";
+  const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] || fallbackName;
+  const url = URL.createObjectURL(await response.blob());
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
 
 function formatDateTime(value?: string | null) {
@@ -599,63 +617,7 @@ function CabinetView({ onOpenTrend }: { onOpenTrend: (id: string) => void }) {
   );
 }
 
-function TrendsView({ period, setPeriod, selectedId, onSelectChannel, onBackToMap }: { period: string; setPeriod: (period: string) => void; selectedId: string; onSelectChannel: (id: string) => void; onBackToMap: () => void }) {
-  const sensors = useSensorData();
-  const [pdMetric, setPdMetric] = useState<(typeof cam5PdMetrics)[number]["key"]>("total");
-  const [pdScale, setPdScale] = useState<"lineal" | "log">("lineal");
-  const activeSensors = sensors.filter((sensor) => sensor.enabled);
-  const selected = activeSensors.find((sensor) => sensor.id === selectedId) ?? activeSensors[0] ?? sensors[0];
-  const isDischarge = selected.metric === "pd" || selected.metric === "sd";
-  const supportsUhfMetrics = selected.metric === "pd";
-  const pdMetricDefinition = cam5PdMetrics.find((metric) => metric.key === pdMetric) ?? cam5PdMetrics[0];
-  const currentValue = supportsUhfMetrics && selected.id === "PD1" ? pdMetricDefinition.value : Number(selected.value);
-  const displayUnit = supportsUhfMetrics && pdMetric === "phi" ? "×" : selected.unit;
-  const thresholdValue = supportsUhfMetrics && pdMetric === "phi" ? 2 : Number.parseFloat(selected.threshold);
-  const amplitude = isDischarge ? (selected.state === "critical" ? Math.max(2, currentValue * .66) : 8) : selected.type === "Humedad" ? 14 : selected.state === "warning" ? 17 : 5;
-  const profile = [-1, -.96, -.98, -.9, -.84, -.87, -.78, -.73, -.68, -.7, -.62, -.56, -.5, -.45, -.38, -.4, -.3, -.25, -.27, -.18, -.12, -.08, -.05, 0];
-  const series = profile.map((point) => Math.max(0, Number((currentValue + point * amplitude).toFixed(1))));
-  const chartMax = Math.ceil(Math.max(currentValue, thresholdValue, ...series) * 1.15 / 10) * 10;
-  const variation = currentValue - series[0];
-  const stateLabel = selected.state === "critical" ? "Crítico" : selected.state === "warning" ? "Advertencia" : "Normal";
-  const stateTone = selected.state === "critical" ? "red" : selected.state === "warning" ? "amber" : "green";
-  const SelectedIcon = selected.metric === "temperature" || selected.metric === "ambient" ? Thermometer : selected.metric === "humidity" ? Droplets : Activity;
-  const insight = selected.state === "critical"
-    ? `${selected.id} mantiene crecimiento sostenido y supera el umbral configurado. Se recomienda inspección prioritaria de ${selected.zone.toLowerCase()}.`
-    : selected.state === "warning"
-      ? `${selected.id} se encuentra sobre el umbral operativo y presenta una tendencia ascendente. Conviene verificar el activo durante el próximo ciclo de carga.`
-      : `${selected.id} permanece dentro del rango esperado y sin cambios relevantes durante el periodo seleccionado.`;
-
-  return (
-    <>
-      <section className="toolbar-row">
-        <div className="trend-toolbar-controls">
-          <label className="channel-select"><Activity size={16} /><span><small>Canal</small><select value={selected.id} onChange={(event) => onSelectChannel(event.target.value)} aria-label="Seleccionar canal de tendencia">{activeSensors.map((sensor) => <option key={sensor.id} value={sensor.id}>{sensor.id} · {sensor.label}</option>)}</select></span><ChevronDown size={14} /></label>
-          <div className="segmented" aria-label="Rango temporal">{["24 h", "7 días", "30 días"].map((item) => <button key={item} className={period === item ? "active" : ""} onClick={() => setPeriod(item)}>{item}</button>)}</div>
-        </div>
-      </section>
-      {supportsUhfMetrics && <section className="pd-analysis-toolbar"><div><span>Variable UHF</span>{cam5PdMetrics.map((metric) => <button key={metric.key} className={pdMetric === metric.key ? "active" : ""} onClick={() => setPdMetric(metric.key)}>{metric.label}</button>)}</div><label><span>Escala</span><select value={pdScale} onChange={(event) => setPdScale(event.target.value as typeof pdScale)}><option value="lineal">Lineal</option><option value="log">Logarítmica</option></select><ChevronDown size={12} /></label><p>{pdMetricDefinition.description} · magnitud UHF aproximada y no lineal</p></section>}
-      <section className="metrics-grid compact-metrics">
-        <MetricCard label={supportsUhfMetrics ? pdMetricDefinition.label : "Lectura actual"} value={String(currentValue)} unit={displayUnit} note={`${selected.id} · ${selected.label}`} tone={stateTone} icon={SelectedIcon} />
-        <MetricCard label="Umbral configurado" value={String(thresholdValue)} unit={displayUnit} note={currentValue > thresholdValue ? "Umbral superado" : "Dentro del rango"} tone={currentValue > thresholdValue ? "amber" : "green"} icon={Gauge} />
-        <MetricCard label="Variación del periodo" value={`${variation >= 0 ? "+" : ""}${variation.toFixed(1)}`} unit={displayUnit} note={selected.trend} tone="blue" icon={TrendingUp} />
-        <MetricCard label="Calidad del dato" value="100" unit="%" note={`${selected.quality} · actualizado hace 2 s`} tone="green" icon={ShieldCheck} />
-      </section>
-      <article className="panel chart-panel">
-        <div className="panel-header"><div><span className="eyebrow">{selected.id} · Resolución 1 hora · {period}</span><h2>{selected.label}{supportsUhfMetrics ? ` · ${pdMetricDefinition.label}` : ""}</h2><p>{selected.zone} · {selected.type}{supportsUhfMetrics ? ` · escala ${pdScale}` : ""}</p></div><StatusPill state={selected.state}>{stateLabel}</StatusPill></div>
-        <div className="chart-scale"><span>{chartMax}</span><span>{Math.round(chartMax * .75)}</span><span>{Math.round(chartMax * .5)}</span><span>{Math.round(chartMax * .25)}</span><span>0</span></div>
-        <div className={`large-chart channel-chart chart-${selected.state}`}>
-          <div className="threshold-line" style={{ bottom: `${Math.min(100, thresholdValue / chartMax * 100)}%` }}><span>Umbral {thresholdValue} {displayUnit}</span></div>
-          {series.map((value, index) => <span key={index} title={`${String(index).padStart(2, "0")}:00 · ${value} ${displayUnit}`}><i style={{ height: `${Math.max(3, value / chartMax * 100)}%` }} /></span>)}
-        </div>
-        <div className="chart-axis"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>23:00</span></div>
-        <div className="chart-legend centered"><span><i className={`legend-channel legend-${selected.state}`} />{selected.id} · {supportsUhfMetrics ? pdMetricDefinition.label : displayUnit}</span><span><i className="legend-threshold" />Umbral {thresholdValue} {displayUnit}</span></div>
-      </article>
-      <article className={`panel insight-panel insight-${selected.state}`}><span className="insight-icon"><TrendingUp size={20} /></span><div><strong>Interpretación del canal</strong><p>{insight}</p></div><button onClick={onBackToMap}><CircuitBoard size={15} /> Volver al mapa</button></article>
-    </>
-  );
-}
-
-function AlarmsView({ assetId, permissions, onWorkOrderCreated, onSummaryChange }: { assetId: string; permissions: string[]; onWorkOrderCreated: (order: WorkOrder) => void; onSummaryChange: (summary: { critical: number; warning: number }) => void }) {
+function AlarmsView({ assetId, permissions, onWorkOrderCreated, onSummaryChange, onOpenTrend }: { assetId: string; permissions: string[]; onWorkOrderCreated: (order: WorkOrder) => void; onSummaryChange: (summary: { critical: number; warning: number }) => void; onOpenTrend: (channelId: string, openedAt: string) => void }) {
   const notify = useFeedback();
   const confirm = useConfirm();
   const [tab, setTab] = useState<"events" | "rules">("events");
@@ -839,14 +801,15 @@ function AlarmsView({ assetId, permissions, onWorkOrderCreated, onSummaryChange 
         <div className="alarm-toolbar"><label className="search-field"><Search size={17} /><input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="Buscar código, canal, activo o mensaje…" /></label><div className="alarm-filters"><label className="status-filter"><span>Estado</span><select value={workflowStatus} onChange={(event) => { setWorkflowStatus(event.target.value as typeof workflowStatus); setPage(1); }}><option value="all">Todos</option><option value="open">Abiertas</option><option value="acknowledged">Reconocidas</option><option value="resolved">Atendidas</option><option value="closed">Cerradas</option></select><ChevronDown size={13} /></label><div className="segmented">{(["all", "critical", "warning", "normal"] as const).map((item) => <button key={item} className={severity === item ? "active" : ""} onClick={() => { setSeverity(item); setPage(1); }}>{item === "all" ? "Todas" : item === "critical" ? "Críticas" : item === "warning" ? "Advertencias" : "Informativas"}</button>)}</div></div></div>
         {error ? <div className="load-error"><AlertTriangle size={18} />{error}<button onClick={() => void loadAlarms()}>Reintentar</button></div> : <div className="alarm-table-wrap"><div className="alarm-table"><div className="alarm-table-head"><span>Severidad</span><span>Evento / activo</span><span>Tiempo activo</span><span>Valor</span><span>Estado</span><span>Acción</span></div>{loading ? <TableEmptyState title="Cargando eventos" detail="Consultando alarmas y trazabilidad del punto activo." /> : result?.items.map((alarm) => <div className={`alarm-table-row ${selectedId === alarm.id ? "selected" : ""}`} key={alarm.id}><span><StatusPill state={alarm.severity === "normal" ? "info" : alarm.severity}>{alarm.severity === "critical" ? "Crítica" : alarm.severity === "warning" ? "Advertencia" : "Informativa"}</StatusPill></span><span className="event-cell"><strong>{alarm.title}</strong><small>{alarm.code} · {alarm.assetCode}{alarm.channelCode ? ` · ${alarm.channelCode}` : ""}</small></span><span>{formatRelativeTime(alarm.openedAt)}</span><span><strong>{alarmValue(alarm)}</strong></span><span className={`workflow-state workflow-${alarm.status}`}>{statusText(alarm.status)}</span><span><button className={selectedId === alarm.id ? "ack-button" : "ghost-button"} onClick={() => setSelectedId(alarm.id)}>Gestionar</button></span></div>)}{!loading && !result?.items.length && <TableEmptyState title="No hay eventos con estos filtros" detail="El motor conservará aquí las alarmas que genere la telemetría." />}</div></div>}
         {result && <Pagination page={result.page} totalPages={result.totalPages} total={result.total} pageSize={result.pageSize} onPageChange={setPage} itemLabel="eventos" />}
-        {selected && <section className={`event-detail-panel event-${selected.severity}`}><div className="event-detail-header"><span className="event-detail-icon"><AlertTriangle size={20} /></span><div><span className="eyebrow">{selected.kind === "communication" ? "Comunicación" : selected.kind === "data_quality" ? "Calidad de datos" : "Umbral"} · {selected.code}</span><h2>{selected.title}</h2><p>{selected.detail || `${selected.assetCode} · ${selected.channelName ?? "Punto de medición"}`}</p></div><span className={`workflow-badge workflow-${selected.status}`}>{statusText(selected.status)}</span></div><div className="event-workspace"><div className="event-management"><dl className="event-facts"><div><dt>Valor detectado</dt><dd>{alarmValue(selected)}</dd></div><div><dt>Última observación</dt><dd>{formatDateTime(selected.lastObservedAt)}</dd></div><div><dt>Responsable</dt><dd><select disabled={!canOperate || busyAction !== ""} value={selected.assignedToId ?? ""} onChange={(event) => void updateAlarm("assign", { assignedTo: event.target.value || null })}><option value="">Sin asignar</option>{result?.assignees.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</select></dd></div></dl><div className="event-actions">{selected.status === "open" && canOperate && <button className="primary-button" disabled={busyAction !== ""} onClick={() => void updateAlarm("acknowledge")}><CheckCircle2 size={15} /> Reconocer</button>}{selected.status !== "closed" && selected.status !== "resolved" && canClose && <button className="secondary-button" disabled={busyAction !== ""} onClick={() => void updateAlarm("resolve")}><ShieldCheck size={15} /> Marcar atendida</button>}{selected.status === "resolved" && canClose && <button className="secondary-button" disabled={busyAction !== "" || noteInput.trim().length < 3} onClick={() => confirm({ title: `Cerrar ${selected.code}`, detail: "La nota escrita se guardará como evidencia del cierre.", confirmLabel: "Cerrar evento", tone: "danger", onConfirm: () => void updateAlarm("close", { note: noteInput }) })}><ShieldCheck size={15} /> Cerrar</button>}{(selected.status === "closed" || selected.status === "resolved") && canClose && <button className="secondary-button" disabled={busyAction !== ""} onClick={() => void updateAlarm("reopen")}>Reabrir</button>}{canCreateWorkOrder && <button className={`work-order-action ${selected.workOrder ? "linked" : ""}`} disabled={busyAction !== ""} onClick={() => void createWorkOrder()}><ClipboardCheck size={15} /> {selected.workOrder ? `Abrir ${selected.workOrder.code}` : "Crear orden de trabajo"}</button>}</div>{!canOperate && <p className="permission-note"><ShieldCheck size={15} /> Tu perfil puede consultar la trazabilidad, sin modificarla.</p>}</div><div className="event-timeline"><h3>Línea de tiempo</h3>{detailLoading ? <p>Cargando trazabilidad…</p> : events.map((event) => <div key={event.id}><span className={`timeline-dot ${event.type.includes("resolved") || event.type === "closed" ? "normal" : event.type === "opened" ? selected.severity : "info"}`} /><p><strong>{eventText(event.type)}</strong><small>{formatDateTime(event.createdAt)} · {event.actorName}{event.note ? ` · ${event.note}` : ""}</small></p></div>)}</div></div>{canOperate && <form className="event-note-form" onSubmit={(event) => { event.preventDefault(); if (noteInput.trim().length >= 3) void updateAlarm("add_note", { note: noteInput }); }}><input value={noteInput} onChange={(event) => setNoteInput(event.target.value)} placeholder={selected.status === "resolved" ? "Nota de cierre obligatoria…" : "Agregar una nota de seguimiento…"} /><button type="submit" disabled={busyAction !== "" || noteInput.trim().length < 3}>Agregar nota</button></form>}</section>}
+        {selected && <section className={`event-detail-panel event-${selected.severity}`}><div className="event-detail-header"><span className="event-detail-icon"><AlertTriangle size={20} /></span><div><span className="eyebrow">{selected.kind === "communication" ? "Comunicación" : selected.kind === "data_quality" ? "Calidad de datos" : "Umbral"} · {selected.code}</span><h2>{selected.title}</h2><p>{selected.detail || `${selected.assetCode} · ${selected.channelName ?? "Punto de medición"}`}</p></div><span className={`workflow-badge workflow-${selected.status}`}>{statusText(selected.status)}</span></div><div className="event-workspace"><div className="event-management"><dl className="event-facts"><div><dt>Valor detectado</dt><dd>{alarmValue(selected)}</dd></div><div><dt>Última observación</dt><dd>{formatDateTime(selected.lastObservedAt)}</dd></div><div><dt>Responsable</dt><dd><select disabled={!canOperate || busyAction !== ""} value={selected.assignedToId ?? ""} onChange={(event) => void updateAlarm("assign", { assignedTo: event.target.value || null })}><option value="">Sin asignar</option>{result?.assignees.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</select></dd></div></dl><div className="event-actions">{selected.channelCode && <button className="secondary-button" onClick={() => onOpenTrend(selected.channelCode!, selected.openedAt)}><TrendingUp size={15} /> Ver tendencia de origen</button>}{selected.status === "open" && canOperate && <button className="primary-button" disabled={busyAction !== ""} onClick={() => void updateAlarm("acknowledge")}><CheckCircle2 size={15} /> Reconocer</button>}{selected.status !== "closed" && selected.status !== "resolved" && canClose && <button className="secondary-button" disabled={busyAction !== ""} onClick={() => void updateAlarm("resolve")}><ShieldCheck size={15} /> Marcar atendida</button>}{selected.status === "resolved" && canClose && <button className="secondary-button" disabled={busyAction !== "" || noteInput.trim().length < 3} onClick={() => confirm({ title: `Cerrar ${selected.code}`, detail: "La nota escrita se guardará como evidencia del cierre.", confirmLabel: "Cerrar evento", tone: "danger", onConfirm: () => void updateAlarm("close", { note: noteInput }) })}><ShieldCheck size={15} /> Cerrar</button>}{(selected.status === "closed" || selected.status === "resolved") && canClose && <button className="secondary-button" disabled={busyAction !== ""} onClick={() => void updateAlarm("reopen")}>Reabrir</button>}{canCreateWorkOrder && <button className={`work-order-action ${selected.workOrder ? "linked" : ""}`} disabled={busyAction !== ""} onClick={() => void createWorkOrder()}><ClipboardCheck size={15} /> {selected.workOrder ? `Abrir ${selected.workOrder.code}` : "Crear orden de trabajo"}</button>}</div>{!canOperate && <p className="permission-note"><ShieldCheck size={15} /> Tu perfil puede consultar la trazabilidad, sin modificarla.</p>}</div><div className="event-timeline"><h3>Línea de tiempo</h3>{detailLoading ? <p>Cargando trazabilidad…</p> : events.map((event) => <div key={event.id}><span className={`timeline-dot ${event.type.includes("resolved") || event.type === "closed" ? "normal" : event.type === "opened" ? selected.severity : "info"}`} /><p><strong>{eventText(event.type)}</strong><small>{formatDateTime(event.createdAt)} · {event.actorName}{event.note ? ` · ${event.note}` : ""}</small></p></div>)}</div></div>{canOperate && <form className="event-note-form" onSubmit={(event) => { event.preventDefault(); if (noteInput.trim().length >= 3) void updateAlarm("add_note", { note: noteInput }); }}><input value={noteInput} onChange={(event) => setNoteInput(event.target.value)} placeholder={selected.status === "resolved" ? "Nota de cierre obligatoria…" : "Agregar una nota de seguimiento…"} /><button type="submit" disabled={busyAction !== "" || noteInput.trim().length < 3}>Agregar nota</button></form>}</section>}
       </article>
     </> : <article className="panel alarm-rules-panel"><div className="alarm-rule-summary"><div><span>Reglas configuradas</span><strong>{ruleResult?.summary.total ?? 0}</strong></div><div><span>Activas</span><strong>{ruleResult?.summary.enabled ?? 0}</strong></div><div><span>Evaluadas por telemetría</span><strong>{ruleResult?.summary.evaluating ?? 0}</strong></div><div><span>En estado crítico</span><strong>{ruleResult?.summary.critical ?? 0}</strong></div></div><div className="alarm-toolbar"><label className="search-field"><Search size={17} /><input value={ruleQuery} onChange={(event) => { setRuleQuery(event.target.value); setRulePage(1); }} placeholder="Buscar canal, nombre o zona…" /></label><label className="status-filter"><span>Regla</span><select value={ruleEnabled} onChange={(event) => { setRuleEnabled(event.target.value as typeof ruleEnabled); setRulePage(1); }}><option value="all">Todas</option><option value="true">Activas</option><option value="false">Desactivadas</option></select><ChevronDown size={13} /></label></div><div className="alarm-rule-table-wrap"><div className="alarm-rule-table"><div className="alarm-rule-head"><span>Canal</span><span>Estado</span><span>Advertencia</span><span>Crítico</span><span>Histéresis</span><span>Activación</span><span>Recuperación</span><span>Dato atrasado</span><span>Acción</span></div>{ruleLoading ? <TableEmptyState title="Cargando reglas" detail="Consultando umbrales persistentes." /> : ruleResult?.items.map((rule) => { const draft = ruleDrafts[rule.id]; if (!draft) return null; return <div className="alarm-rule-row" key={rule.id}><span className="rule-channel"><strong>{rule.channelCode}</strong><small>{rule.channelName} · {rule.zone ?? rule.assetCode}</small></span><span><label className="rule-switch"><input type="checkbox" checked={draft.enabled} disabled={!canConfigure} onChange={(event) => updateRuleDraft(rule.id, "enabled", event.target.checked)} /><i /><small>{draft.enabled ? "Activa" : "Inactiva"}</small></label></span><span><input type="number" step="0.1" value={draft.warningThreshold} disabled={!canConfigure} onChange={(event) => updateRuleDraft(rule.id, "warningThreshold", Number(event.target.value))} /><small>{rule.unit}</small></span><span><input type="number" step="0.1" value={draft.criticalThreshold} disabled={!canConfigure} onChange={(event) => updateRuleDraft(rule.id, "criticalThreshold", Number(event.target.value))} /><small>{rule.unit}</small></span><span><input type="number" step="0.1" min="0" value={draft.hysteresis} disabled={!canConfigure} onChange={(event) => updateRuleDraft(rule.id, "hysteresis", Number(event.target.value))} /></span><span><input type="number" min="1" max="100" value={draft.activationSamples} disabled={!canConfigure} onChange={(event) => updateRuleDraft(rule.id, "activationSamples", Number(event.target.value))} /><small>muestras</small></span><span><input type="number" min="1" max="100" value={draft.recoverySamples} disabled={!canConfigure} onChange={(event) => updateRuleDraft(rule.id, "recoverySamples", Number(event.target.value))} /><small>muestras</small></span><span><input type="number" min="1" max="86400" value={draft.staleAfterSeconds} disabled={!canConfigure} onChange={(event) => updateRuleDraft(rule.id, "staleAfterSeconds", Number(event.target.value))} /><small>segundos</small></span><span><button className="ghost-button" disabled={!canConfigure || savingRule === rule.id} onClick={() => void saveRule(rule)}>{savingRule === rule.id ? <Refresh className="spin" size={15} /> : <Save size={15} />} Guardar</button></span></div>})}{!ruleLoading && !ruleResult?.items.length && <TableEmptyState title="No hay reglas configuradas" detail="Configura los canales del punto antes de habilitar alarmas." />}</div></div>{ruleResult && <Pagination page={ruleResult.page} totalPages={ruleResult.totalPages} total={ruleResult.total} pageSize={ruleResult.pageSize} onPageChange={setRulePage} itemLabel="reglas" />}<div className="alarm-rule-note"><ShieldCheck size={18} /><p><strong>Control contra falsos positivos</strong><span>La regla exige muestras consecutivas, aplica histéresis para recuperar y conserva el estado del motor en la base de datos.</span></p></div></article>}
   </>;
 }
 
-function HistoryView() {
+function HistoryView({ assetId, canExport, onOpenTrend }: { assetId: string; canExport: boolean; onOpenTrend: (channelId: string, from: string, to: string) => void }) {
   const sensors = useSensorData();
+  const notify = useFeedback();
   const [tab, setTab] = useState<HistoryTab>("measurements");
   const [today] = useState(() => new Date().toISOString().slice(0, 10));
   const [from, setFrom] = useState(() => new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10));
@@ -858,6 +821,8 @@ function HistoryView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const activeSensors = sensors.filter((sensor) => sensor.enabled);
+  const fromIso = new Date(`${from}T00:00:00`).toISOString();
+  const toIso = new Date(`${to}T23:59:59.999`).toISOString();
 
   useEffect(() => {
     let active = true;
@@ -865,7 +830,8 @@ function HistoryView() {
       setLoading(true);
       setError("");
       try {
-        const params = new URLSearchParams({ tab, from: `${from}T00:00:00.000Z`, to: `${to}T23:59:59.999Z`, page: String(page), pageSize: "8" });
+        const params = new URLSearchParams({ tab, from: fromIso, to: toIso, page: String(page), pageSize: "8" });
+        if (assetId) params.set("assetId", assetId);
         if (query.trim()) params.set("q", query.trim());
         if (tab === "measurements" && channel !== "all") params.set("channel", channel);
         const data = await portalRequest<PaginationMeta & { items: Array<Record<string, unknown>> }>(`/api/v1/history?${params}`);
@@ -877,10 +843,22 @@ function HistoryView() {
       }
     }, 250);
     return () => { active = false; window.clearTimeout(timeout); };
-  }, [tab, from, to, page, query, channel]);
+  }, [assetId, tab, fromIso, toIso, page, query, channel]);
 
   const changeTab = (next: HistoryTab) => { setTab(next); setPage(1); };
   const total = result?.total ?? 0;
+  const exportHistory = async () => {
+    try {
+      const params = new URLSearchParams({ tab, from: fromIso, to: toIso, format: "csv" });
+      if (assetId) params.set("assetId", assetId);
+      if (query.trim()) params.set("q", query.trim());
+      if (tab === "measurements" && channel !== "all") params.set("channel", channel);
+      await downloadAuthenticatedCsv(`/api/v1/history?${params}`, `hoitlive-historico-${tab}.csv`);
+      notify("Histórico exportado con los filtros visibles.", "info");
+    } catch (requestError) {
+      notify(requestError instanceof Error ? requestError.message : "No fue posible exportar el histórico.", "warning");
+    }
+  };
 
   return (
     <>
@@ -897,6 +875,7 @@ function HistoryView() {
             <button className={tab === "alarms" ? "active" : ""} onClick={() => changeTab("alarms")}><BellRing size={16} /> Alarmas</button>
             <button className={tab === "audit" ? "active" : ""} onClick={() => changeTab("audit")}><ShieldCheck size={16} /> Auditoría</button>
           </div>
+          {canExport && <button className="primary-button history-export-button" onClick={() => void exportHistory()} disabled={loading}><Download size={16} /> Exportar CSV</button>}
         </div>
         <div className="history-search-bar">
           <label className="search-field"><Search size={17} /><input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder={tab === "audit" ? "Buscar acción o recurso…" : "Buscar canal, código o evento…"} /></label>
@@ -908,13 +887,13 @@ function HistoryView() {
         {error && <div className="data-error"><AlertTriangle size={18} /><div><strong>No se pudo cargar el histórico</strong><p>{error}</p></div></div>}
         {loading && <div className="data-loading"><Refresh className="spin" size={18} /> Consultando PostgreSQL…</div>}
 
-        {!loading && !error && tab === "measurements" && <div className="module-table-wrap"><div className="history-table measurement-history"><div className="module-table-head"><span>Canal</span><span>Última lectura</span><span>Promedio</span><span>Mínimo</span><span>Máximo</span><span>Calidad</span></div>{result?.items.map((raw) => {
+        {!loading && !error && tab === "measurements" && <div className="module-table-wrap"><div className="history-table measurement-history"><div className="module-table-head"><span>Canal</span><span>Última lectura</span><span>Promedio</span><span>Mínimo</span><span>Máximo</span><span>Calidad</span><span>Acción</span></div>{result?.items.map((raw) => {
           const item = raw as { id: string; code: string; name: string; zone?: string; unit: string; lastValue?: string | null; averageValue?: string | null; minimumValue?: string | null; maximumValue?: string | null; qualityPercent?: number | null; lastRecordedAt?: string | null };
           const value = (entry?: string | null) => entry === null || entry === undefined ? "—" : `${Number(entry).toFixed(1)} ${item.unit}`;
-          return <div className="module-table-row" key={item.id}><span className="history-channel"><b className="sensor-code sensor-normal">{item.code}</b><span><strong>{item.name}</strong><small>{item.zone || "Sin zona"}</small></span></span><span className="mono-cell">{value(item.lastValue)}<small>{item.lastRecordedAt ? formatDateTime(item.lastRecordedAt) : "Sin muestras"}</small></span><span className="mono-cell">{value(item.averageValue)}</span><span className="mono-cell">{value(item.minimumValue)}</span><span className="mono-cell">{value(item.maximumValue)}</span><span className={item.qualityPercent === null ? "muted-state" : "quality-ok"}>{item.qualityPercent === null ? "Sin datos" : <><CheckCircle2 size={14} /> {item.qualityPercent}%</>}</span></div>;
+          return <div className="module-table-row" key={item.id}><span className="history-channel"><b className="sensor-code sensor-normal">{item.code}</b><span><strong>{item.name}</strong><small>{item.zone || "Sin zona"}</small></span></span><span className="mono-cell">{value(item.lastValue)}<small>{item.lastRecordedAt ? formatDateTime(item.lastRecordedAt) : "Sin muestras"}</small></span><span className="mono-cell">{value(item.averageValue)}</span><span className="mono-cell">{value(item.minimumValue)}</span><span className="mono-cell">{value(item.maximumValue)}</span><span className={item.qualityPercent === null ? "muted-state" : "quality-ok"}>{item.qualityPercent === null ? "Sin datos" : <><CheckCircle2 size={14} /> {item.qualityPercent}%</>}</span><span><button className="ghost-button" onClick={() => onOpenTrend(item.code, fromIso, toIso)}><TrendingUp size={15} /> Tendencia</button></span></div>;
         })}{result?.items.length === 0 && <TableEmptyState title="No hay mediciones en este rango" detail="Ajusta las fechas o espera la primera ingestión del CAM-5." />}</div></div>}
 
-        {!loading && !error && tab === "alarms" && <div className="module-table-wrap"><div className="history-table alarm-history"><div className="module-table-head"><span>Fecha</span><span>Severidad</span><span>Evento</span><span>Valor</span><span>Estado</span></div>{result?.items.map((raw) => { const item = raw as { id: string; code: string; openedAt: string; severity: Severity; status: string; title: string; detail?: string; triggerValue?: string; channelCode?: string; unit?: string }; return <div className="module-table-row" key={item.id}><span>{formatDateTime(item.openedAt)}</span><span><StatusPill state={item.severity}>{item.severity === "critical" ? "Crítica" : item.severity === "warning" ? "Advertencia" : "Normal"}</StatusPill></span><span className="event-cell"><strong>{item.title}</strong><small>{item.detail || item.code}</small></span><span className="mono-cell">{item.triggerValue ? `${Number(item.triggerValue).toFixed(1)} ${item.unit || ""}` : "—"}</span><span className={item.status === "closed" ? "quality-ok" : "unack-state"}>{item.status === "closed" ? <><CheckCircle2 size={14} /> Cerrada</> : <><Clock3 size={14} /> {item.status === "acknowledged" ? "Reconocida" : "Abierta"}</>}</span></div>; })}{result?.items.length === 0 && <TableEmptyState title="No hay alarmas en este rango" detail="No se encontraron eventos con los filtros indicados." />}</div></div>}
+        {!loading && !error && tab === "alarms" && <div className="module-table-wrap"><div className="history-table alarm-history"><div className="module-table-head"><span>Fecha</span><span>Severidad</span><span>Evento</span><span>Valor</span><span>Estado</span><span>Acción</span></div>{result?.items.map((raw) => { const item = raw as { id: string; code: string; openedAt: string; severity: Severity; status: string; title: string; detail?: string; triggerValue?: string; channelCode?: string; unit?: string }; const closed = item.status === "closed"; const resolved = item.status === "resolved"; return <div className="module-table-row" key={item.id}><span>{formatDateTime(item.openedAt)}</span><span><StatusPill state={item.severity}>{item.severity === "critical" ? "Crítica" : item.severity === "warning" ? "Advertencia" : "Normal"}</StatusPill></span><span className="event-cell"><strong>{item.title}</strong><small>{item.detail || item.code}</small></span><span className="mono-cell">{item.triggerValue ? `${Number(item.triggerValue).toFixed(1)} ${item.unit || ""}` : "—"}</span><span className={closed || resolved ? "quality-ok" : "unack-state"}>{closed || resolved ? <><CheckCircle2 size={14} /> {closed ? "Cerrada" : "Atendida"}</> : <><Clock3 size={14} /> {item.status === "acknowledged" ? "Reconocida" : "Abierta"}</>}</span><span>{item.channelCode ? <button className="ghost-button" onClick={() => onOpenTrend(item.channelCode!, new Date(new Date(item.openedAt).getTime() - 12 * 3600_000).toISOString(), new Date(Math.min(Date.now(), new Date(item.openedAt).getTime() + 12 * 3600_000)).toISOString())}><TrendingUp size={15} /> Tendencia</button> : "—"}</span></div>; })}{result?.items.length === 0 && <TableEmptyState title="No hay alarmas en este rango" detail="No se encontraron eventos con los filtros indicados." />}</div></div>}
 
         {!loading && !error && tab === "audit" && <div className="module-table-wrap"><div className="history-table audit-history"><div className="module-table-head"><span>Fecha</span><span>Usuario</span><span>Acción</span><span>Recurso</span><span>Resultado</span></div>{result?.items.map((raw) => { const item = raw as { id: number; createdAt: string; actor: string; action: string; resourceType: string; resourceId?: string; outcome: string }; return <div className="module-table-row" key={item.id}><span>{formatDateTime(item.createdAt)}</span><span><strong>{item.actor}</strong></span><span>{item.action}</span><span className="mono-cell">{item.resourceType}{item.resourceId ? ` · ${item.resourceId}` : ""}</span><span className={item.outcome === "success" ? "quality-ok" : "unack-state"}>{item.outcome === "success" ? "Correcto" : item.outcome}</span></div>; })}{result?.items.length === 0 && <TableEmptyState title="No hay movimientos auditados" detail="No existen acciones registradas para este periodo." />}</div></div>}
 
@@ -1673,6 +1652,7 @@ export default function Home() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [period, setPeriod] = useState("24 h");
   const [trendSensorId, setTrendSensorId] = useState("T01");
+  const [trendWindow, setTrendWindow] = useState<TrendWindow | null>(null);
   const [workOrders, setWorkOrders] = usePersistentState<WorkOrder[]>("cam5.front.work-orders", initialWorkOrders);
   const [focusOrderId, setFocusOrderId] = useState<string | null>(null);
   const [alarmSummary, setAlarmSummary] = useState({ critical: 0, warning: 0 });
@@ -1789,6 +1769,19 @@ export default function Home() {
       if (nextView && Object.prototype.hasOwnProperty.call(viewTitles, nextView)) setView(nextView as View);
       const channel = params.get("channel");
       if (channel && activeSensorIds.has(channel)) setTrendSensorId(channel);
+      const routeFrom = params.get("from");
+      const routeTo = params.get("to");
+      if (nextView === "trends" && routeFrom && routeTo) {
+        const fromDate = new Date(routeFrom);
+        const toDate = new Date(routeTo);
+        if (Number.isFinite(fromDate.getTime()) && Number.isFinite(toDate.getTime()) && fromDate < toDate) {
+          setTrendWindow({ from: fromDate.toISOString(), to: toDate.toISOString() });
+          setPeriod("Personalizado");
+        }
+      } else if (nextView === "trends") {
+        setTrendWindow(null);
+        setPeriod("24 h");
+      }
     };
     if (!new URLSearchParams(window.location.search).has("view")) {
       const url = new URL(window.location.href);
@@ -1808,10 +1801,23 @@ export default function Home() {
     url.searchParams.set("view", next);
     url.searchParams.delete("channel");
     url.searchParams.delete("record");
+    url.searchParams.delete("from");
+    url.searchParams.delete("to");
     Object.entries(parameters ?? {}).forEach(([key, value]) => url.searchParams.set(key, value));
     window.history.pushState({}, "", url);
   };
-  const openChannelTrend = (id: string) => { setTrendSensorId(id); navigate("trends", { channel: id }); };
+  const openChannelTrend = (id: string) => { setTrendWindow(null); setPeriod("24 h"); setTrendSensorId(id); navigate("trends", { channel: id }); };
+  const openTrendRange = (id: string, from: string, to: string) => {
+    const range = { from: new Date(from).toISOString(), to: new Date(to).toISOString() };
+    setTrendSensorId(id);
+    setTrendWindow(range);
+    setPeriod("Personalizado");
+    navigate("trends", { channel: id, ...range });
+  };
+  const openAlarmTrend = (id: string, openedAt: string) => {
+    const eventTime = new Date(openedAt).getTime();
+    openTrendRange(id, new Date(eventTime - 12 * 3600_000).toISOString(), new Date(Math.min(Date.now(), eventTime + 12 * 3600_000)).toISOString());
+  };
   const selectTrendChannel = (id: string) => {
     setTrendSensorId(id);
     const url = new URL(window.location.href);
@@ -1917,14 +1923,14 @@ export default function Home() {
         <div className="content-scroll">
           <div className="page-content">
             {systemMode !== "normal" && <section className={`operational-banner banner-${systemMode}`} role="alert"><span>{systemMode === "offline" ? <PlugConnected size={19} /> : systemMode === "loading" ? <Refresh className="spin" size={19} /> : <Clock3 size={19} />}</span><div><strong>{systemMode === "offline" ? "Gateway sin comunicación" : systemMode === "loading" ? "Sincronizando datos" : "Las lecturas están atrasadas"}</strong><p>{systemMode === "offline" ? "El portal muestra el último valor recibido cuando existe. Las funciones administrativas siguen disponibles, pero no hay telemetría nueva." : systemMode === "loading" ? "Solicitando la última configuración, lecturas y eventos disponibles." : "Los datos visibles superan el tiempo de frescura configurado. Revisa el enlace antes de tomar una decisión."}</p></div>{systemMode !== "loading" && <button onClick={() => { setSystemMode("loading"); setTelemetryRefreshKey((current) => current + 1); notify("Consultando nuevamente la telemetría.", "info"); }}><Refresh size={15} /> Reintentar</button>}</section>}
-            <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> Gestión de activos críticos</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{view !== "assets" && view !== "settings" && view !== "integrations" && view !== "users" && view !== "notifications" && view !== "reports" && view !== "maintenance" && view !== "diagnostics" && view !== "commissioning" && <button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button>}<button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{alarmSummary.critical + alarmSummary.warning} alertas activas</button></div></section>
+            <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> Gestión de activos críticos</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{view !== "assets" && view !== "settings" && view !== "integrations" && view !== "users" && view !== "notifications" && view !== "reports" && view !== "maintenance" && view !== "diagnostics" && view !== "commissioning" && view !== "trends" && view !== "history" && <button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button>}<button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{alarmSummary.critical + alarmSummary.warning} alertas activas</button></div></section>
             {view === "overview" && <Overview onNavigate={navigate} onAcknowledge={acknowledge} activeAlarms={alarmPreview} />}
             {view === "cabinet" && <CabinetView onOpenTrend={openChannelTrend} />}
             {view === "diagnostics" && <DiagnosticsView />}
             {view === "commissioning" && <Cam5CommissioningView notify={notify} />}
-            {view === "trends" && <TrendsView period={period} setPeriod={setPeriod} selectedId={trendSensorId} onSelectChannel={selectTrendChannel} onBackToMap={() => navigate("cabinet")} />}
-            {view === "alarms" && <AlarmsView assetId={activePoint?.id ?? ""} permissions={sessionUser.permissions} onWorkOrderCreated={openPersistedWorkOrder} onSummaryChange={setAlarmSummary} />}
-            {view === "history" && <HistoryView />}
+            {view === "trends" && <TrendsView assetId={activePoint?.id ?? ""} channels={sensors.map((sensor) => ({ id: sensor.id, label: sensor.label, zone: sensor.zone, unit: sensor.unit, state: sensor.state, enabled: sensor.enabled }))} period={period} setPeriod={setPeriod} selectedId={trendSensorId} onSelectChannel={selectTrendChannel} onBackToMap={() => navigate("cabinet")} rangeWindow={trendWindow} setRangeWindow={setTrendWindow} canExport={sessionUser.permissions.includes("history.export")} notify={notify} />}
+            {view === "alarms" && <AlarmsView assetId={activePoint?.id ?? ""} permissions={sessionUser.permissions} onWorkOrderCreated={openPersistedWorkOrder} onSummaryChange={setAlarmSummary} onOpenTrend={openAlarmTrend} />}
+            {view === "history" && <HistoryView assetId={activePoint?.id ?? ""} canExport={sessionUser.permissions.includes("history.export")} onOpenTrend={openTrendRange} />}
             {view === "assets" && <OperationalHierarchyView hierarchy={hierarchy} loading={hierarchyLoading} permissions={sessionUser.permissions} onReload={loadHierarchy} onSwitchSite={switchSite} />}
             {view === "reports" && <ReportsView />}
             {view === "maintenance" && <MaintenanceView orders={workOrders} setOrders={setWorkOrders} focusOrderId={focusOrderId} />}

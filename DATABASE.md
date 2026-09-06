@@ -51,7 +51,7 @@ El backend debe usar `resolvePortalAccess` o `requirePortalPermission` de `db/au
 
 Una lectura se considera atrasada después de 30 segundos. El perfil guarda datos crudos durante 30 días y agregados de 1 minuto, 5 minutos, 1 hora o 1 día hasta por cinco años.
 
-`latest_readings` mantiene solo la lectura más reciente de cada señal para que el dashboard no consulte el histórico completo. `reading_aggregates` alimentará las vistas de 7 días, 30 días y periodos mayores.
+`latest_readings` mantiene solo la lectura más reciente de cada señal para que el dashboard no consulte el histórico completo. `reading_aggregates` alimenta las vistas de 7 días, 30 días y periodos mayores; el portal agrupa dinámicamente la ventana cruda y combina ambos orígenes cuando el rango cruza la retención.
 
 ## Preparación
 
@@ -93,7 +93,7 @@ El host `192.168.10.42` del seed es provisional. Debe reemplazarse por la direcc
 - El backend actualiza `latest_readings` en la misma transacción que el histórico.
 - Después de aceptar cada lote, el motor evalúa umbrales, calidad e histéresis; su progreso por regla se conserva en `alarm_rule_states`.
 - Las alarmas de comunicación se revisan al recibir telemetría, al consultar el centro de alarmas y mediante el endpoint protegido `/api/v1/alarms/evaluate` para un programador externo.
-- Un proceso programado genera agregados y elimina datos crudos vencidos según el perfil.
+- Cada cinco minutos, el proceso programado genera agregados de 1 minuto, 5 minutos, 1 hora y 1 día, y elimina datos crudos o agregados vencidos según el perfil asignado al controlador.
 - Las acciones de configuración, usuarios, alarmas y relés generan un registro inmutable en `audit_logs`.
 - Contraseñas, tokens y secretos externos se almacenan como hashes o referencias a un gestor de secretos; nunca como texto plano.
 
@@ -105,7 +105,8 @@ El host `192.168.10.42` del seed es provisional. Debe reemplazarse por la direcc
 - Logout con revocación inmediata de la sesión.
 - Administración de usuarios protegida por `users.manage`, con acceso multi-sitio, búsqueda y paginación del lado del servidor.
 - API de jerarquía para crear, editar, desactivar, reactivar y eliminar de forma segura clientes, sitios, puntos de medición, gateways y controladores, con validación de pertenencia, dependencias y auditoría.
-- Histórico protegido y paginado con filtros `from`, `to`, `q` y `channel`.
+- Histórico protegido, paginado y exportable con filtros `assetId`, `from`, `to`, `q` y `channel`.
+- Tendencias reales con resolución automática o explícita, hasta cuatro canales compatibles, umbrales, calidad, tramos faltantes y CSV; los rangos largos utilizan `reading_aggregates`.
 - Alarmas persistentes con búsqueda, filtros, paginación, asignación, notas, reconocimiento, atención, cierre y órdenes de trabajo vinculadas.
 - Reglas de alarma editables por canal, con histéresis, muestras de activación/recuperación, tiempo de dato atrasado y auditoría.
 - Auditoría de inicio de sesión, creación, edición y eliminación de usuarios.

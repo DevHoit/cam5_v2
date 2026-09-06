@@ -1,4 +1,4 @@
-name: Evaluar comunicaciones CAM5
+name: Mantener telemetría CAM5
 
 on:
   schedule:
@@ -27,3 +27,13 @@ jobs:
             --max-time 30 \
             --header "Authorization: Bearer $CRON_SECRET" \
             https://cam5v2.vercel.app/api/v1/alarms/evaluate
+      - name: Actualizar agregados históricos
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          test -n "$CRON_SECRET"
+          curl --fail-with-body --silent --show-error \
+            --retry 2 \
+            --max-time 60 \
+            --header "Authorization: Bearer $CRON_SECRET" \
+            https://cam5v2.vercel.app/api/v1/trends/aggregate

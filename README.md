@@ -7,7 +7,7 @@ La estructura operacional admite uno o varios clientes, sitios, puntos de medici
 ## Frontend incluido
 
 - Resumen operacional y mapa de condición.
-- Tendencias de temperatura, humedad, ambiente, SD y PD.
+- Tendencias reales de temperatura, humedad, ambiente, SD y PD, con comparación de canales compatibles, zoom, rangos personalizados, umbrales y calidad de datos.
 - Análisis UHF Total, Alpha, Beta, Phi, ruido y descarga superficial.
 - Centro de alarmas conectado a PostgreSQL, con reconocimiento, asignación, notas, atención, cierre y órdenes de trabajo vinculadas.
 - Motor automático de reglas por lectura con persistencia, histéresis, muestras consecutivas y detección de pérdida de comunicación.
@@ -15,7 +15,7 @@ La estructura operacional admite uno o varios clientes, sitios, puntos de medici
 - Histórico, reportes y auditoría.
 - Login/logout persistente, usuarios, roles y auditoría conectados a PostgreSQL.
 - Búsqueda, filtros y paginación en los listados operativos y administrativos.
-- Histórico consultable por rango de fechas, canal y texto.
+- Histórico consultable y exportable por punto, rango de fechas, canal y texto, con acceso directo a la tendencia de cada registro.
 - Ingestión autenticada e idempotente desde gateways, con valores crudos, calidad y buffer de reenvío.
 - Estructura operacional administrable de clientes, sitios, puntos, gateways y controladores, con edición, desactivación reversible y eliminación protegida por dependencias.
 - Notificaciones e integraciones.
@@ -40,7 +40,7 @@ La capa de persistencia utiliza PostgreSQL y Drizzle ORM. Incluye telemetría, h
 
 Antes del primer ingreso, configurar `DATABASE_URL`, `CAM5_ADMIN_EMAIL`, `CAM5_ADMIN_NAME` y `CAM5_ADMIN_PASSWORD`. La contraseña debe tener al menos 10 caracteres.
 
-La revisión de comunicaciones se ejecuta con cada lote del gateway, al consultar las alarmas y cada cinco minutos mediante `.github/workflows/alarm-evaluator.yml`. El workflow y Vercel comparten `CRON_SECRET`, enviado como `Authorization: Bearer <CRON_SECRET>` al endpoint `GET /api/v1/alarms/evaluate`. Con Vercel Pro puede reemplazarse por un cron nativo de un minuto.
+El mantenimiento de la telemetría se ejecuta cada cinco minutos mediante `.github/workflows/alarm-evaluator.yml`. El workflow y Vercel comparten `CRON_SECRET`: revisa comunicaciones en `GET /api/v1/alarms/evaluate` y actualiza agregados/retención en `GET /api/v1/trends/aggregate`. Con Vercel Pro puede reemplazarse por un cron nativo de un minuto.
 
 ```bash
 npm run db:migrate
@@ -77,7 +77,7 @@ Configurar:
 NEXT_PUBLIC_CAM5_API_URL=https://api.ejemplo.cl/api/v1
 ```
 
-La autenticación, los usuarios, la jerarquía operacional, el histórico, la última telemetría y el ciclo completo de alarmas utilizan rutas internas `/api/v1` conectadas a PostgreSQL. Las curvas históricas de tendencias, parte de la configuración del equipo, reportes y el tablero general de mantenimiento todavía conservan datos de referencia mientras se implementan sus servicios de backend.
+La autenticación, los usuarios, la jerarquía operacional, el histórico, las tendencias, la última telemetría y el ciclo completo de alarmas utilizan rutas internas `/api/v1` conectadas a PostgreSQL. Parte de la configuración del equipo, reportes y el tablero general de mantenimiento todavía conservan datos de referencia mientras se implementan sus servicios de backend.
 
 El contrato que debe implementar el gateway está en [`gateway/CAM5_GATEWAY_PROTOCOL.md`](./gateway/CAM5_GATEWAY_PROTOCOL.md). Incluye frecuencias, payload JSON, códigos de calidad, reintentos y un emisor Python de referencia.
 
@@ -89,7 +89,8 @@ El contrato que debe implementar el gateway está en [`gateway/CAM5_GATEWAY_PROT
 - `app/cam5-engineering.tsx`: puesta en marcha CAM-5.
 - `app/cam5-model.ts`: canales, inventario y catálogo Modbus.
 - `app/cam5-api.ts`: contrato de API.
-- `app/api/v1/`: login, logout, contexto activo, jerarquía, usuarios, histórico, telemetría, alarmas y reglas PostgreSQL.
+- `app/api/v1/`: login, logout, contexto activo, jerarquía, usuarios, histórico, tendencias, telemetría, alarmas y reglas PostgreSQL.
 - `db/alarm-engine.ts`: evaluación automática de umbrales, calidad y comunicaciones.
+- `db/telemetry-aggregation.ts`: agregados temporales y aplicación de retención.
 - `app/globals.css`: sistema visual y responsive.
 - `BACKEND_HANDOFF.md`: guía de conexión del backend.

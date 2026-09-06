@@ -11,7 +11,7 @@
     "start": "next start",
     "build:cloudflare": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext build",
     "test": "npm run build && node --test tests/*.test.mjs",
-    "test:db": "tsx --test tests/database-schema.test.mjs tests/database-seed.test.ts tests/gateway-auth.test.ts tests/alarm-engine.test.ts",
+    "test:db": "tsx --test tests/database-schema.test.mjs tests/database-seed.test.ts tests/gateway-auth.test.ts tests/alarm-engine.test.ts tests/trends.test.ts tests/telemetry-aggregation.test.ts",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx db/migrate.ts",

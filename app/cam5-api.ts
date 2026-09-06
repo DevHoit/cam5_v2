@@ -216,6 +216,35 @@ export type Paginated<T> = {
   totalPages: number;
 };
 
+export type TrendPoint = {
+  timestamp: string;
+  value: number | null;
+  minimum: number | null;
+  maximum: number | null;
+  quality: "good" | "stale" | "bad";
+  validSamples: number;
+  totalSamples: number;
+};
+
+export type TrendResponse = {
+  asset: { id: string; code: string; name: string };
+  from: string;
+  to: string;
+  resolution: { key: string; bucketSeconds: number; label: string; source: "raw" | "raw_grouped" | "stored_aggregate" | "hybrid"; expectedStepSeconds: number };
+  series: Array<{
+    id: string;
+    code: string;
+    name: string;
+    zone: string | null;
+    metric: string;
+    unit: string;
+    warningThreshold: number | null;
+    criticalThreshold: number | null;
+    stats: { firstValue: number | null; lastValue: number | null; minimum: number | null; maximum: number | null; average: number | null; variation: number | null; qualityPercent: number | null; validSamples: number; totalSamples: number };
+    points: TrendPoint[];
+  }>;
+};
+
 export type ReadingProfile = {
   id: string;
   key: string;
@@ -265,7 +294,7 @@ export const cam5Api = {
   createUser: (payload: { email: string; displayName: string; password: string; role: PortalRoleKey; status?: "active" | "suspended" | "invited" }) => request<PortalUser>("/users", { method: "POST", body: JSON.stringify(payload) }),
   updateUser: (userId: string, payload: { email?: string; displayName?: string; password?: string; role?: PortalRoleKey; status?: "active" | "suspended" | "invited" }) => request<PortalUser>(`/users/${userId}`, { method: "PATCH", body: JSON.stringify(payload) }),
   deleteUser: (userId: string) => request<void>(`/users/${userId}`, { method: "DELETE" }),
-  databaseHistory: (tab: "measurements" | "alarms" | "audit", from: string, to: string, page = 1, pageSize = 10, q?: string, channel?: string) => request<Paginated<Record<string, unknown>>>(`/history?${query({ tab, from, to, page, pageSize, q, channel })}`),
+  databaseHistory: (tab: "measurements" | "alarms" | "audit", from: string, to: string, page = 1, pageSize = 10, q?: string, channel?: string, assetId?: string) => request<Paginated<Record<string, unknown>>>(`/history?${query({ tab, from, to, page, pageSize, q, channel, assetId })}`),
 
   device: (deviceId: string) => request<Cam5Device>(`/devices/${deviceId}`),
   updateDevice: (deviceId: string, payload: Partial<Cam5Device>) => request<Cam5Device>(`/devices/${deviceId}`, { method: "PATCH", body: JSON.stringify(payload) }),
@@ -276,7 +305,7 @@ export const cam5Api = {
 
   registerCatalog: (deviceId: string) => request<RegisterDefinition[]>(`/devices/${deviceId}/registers`),
   latestReadings: (assetId: string) => request<TelemetryReading[]>(`/assets/${assetId}/readings/latest`),
-  trend: (assetId: string, channelId: string, from: string, to: string, aggregation = "raw") => request<TelemetryReading[]>(`/assets/${assetId}/trends?${query({ channelId, from, to, aggregation })}`),
+  trend: (assetId: string, channels: string[], from: string, to: string, resolution = "auto") => request<TrendResponse>(`/trends?${query({ assetId, channels: channels.join(","), from, to, resolution })}`),
   history: (assetId: string, from: string, to: string, cursor?: string) => request<{ items: TelemetryReading[]; nextCursor?: string }>(`/assets/${assetId}/readings?${query({ from, to, cursor })}`),
 
   channels: (deviceId: string) => request<ChannelConfiguration[]>(`/devices/${deviceId}/channels`),
