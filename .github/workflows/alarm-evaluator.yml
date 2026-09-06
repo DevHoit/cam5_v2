@@ -47,3 +47,13 @@ jobs:
             --max-time 60 \
             --header "Authorization: Bearer $CRON_SECRET" \
             https://cam5v2.vercel.app/api/v1/notifications/process
+      - name: Generar reportes programados
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          test -n "$CRON_SECRET"
+          curl --fail-with-body --silent --show-error \
+            --retry 2 \
+            --max-time 60 \
+            --header "Authorization: Bearer $CRON_SECRET" \
+            https://cam5v2.vercel.app/api/v1/reports/process

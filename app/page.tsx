@@ -7,6 +7,7 @@ import { Cam5CommissioningView } from "./cam5-engineering";
 import { cam5OperationalChannels } from "./cam5-model";
 import { Pagination, useClientPagination } from "./pagination";
 import { NotificationsView as DatabaseNotificationsView } from "./notifications-view";
+import { ReportsView as DatabaseReportsView } from "./reports-view";
 import { SettingsView as DatabaseSettingsView } from "./settings-view";
 import { TrendsView } from "./trends-view";
 import {
@@ -30,8 +31,6 @@ import {
   IconDownload as Download,
   IconDroplet as Droplets,
   IconFileReport as FileReport,
-  IconFileTypePdf as FileTypePdf,
-  IconGauge as Gauge,
   IconHistory as History,
   IconHierarchy3 as Hierarchy,
   IconKey as Key,
@@ -43,7 +42,6 @@ import {
   IconPencil as Pencil,
   IconPlugConnected as PlugConnected,
   IconPlus as Plus,
-  IconPrinter as Printer,
   IconRadio as Radio,
   IconRefresh as Refresh,
   IconSearch as Search,
@@ -1125,82 +1123,6 @@ function OperationalHierarchyView({
   </>;
 }
 
-function ReportsView() {
-  const notify = useFeedback();
-  const sensors = useSensorData();
-  const activeChannelCount = sensors.filter((sensor) => sensor.enabled).length;
-  const templates = [
-    { id: "condition", name: "Condición del activo", detail: "Salud general, hallazgos y recomendación técnica", icon: "condition", accent: "blue" },
-    { id: "events", name: "Eventos y alarmas", detail: "Tiempos de atención, causas y trazabilidad operativa", icon: "events", accent: "amber" },
-    { id: "executive", name: "Resumen ejecutivo", detail: "Indicadores consolidados para jefatura y confiabilidad", icon: "executive", accent: "green" },
-  ];
-  const [templateId, setTemplateId] = useState("condition");
-  const [period, setPeriod] = useState("30 días");
-  const [format, setFormat] = useState("PDF");
-  const [automatic, setAutomatic] = usePersistentState("cam5.front.report-schedule", true);
-  const [generating, setGenerating] = useState(false);
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const [reports, setReports] = usePersistentState("cam5.front.reports", [
-    { id: "RPT-260811-012", name: "Condición mensual MCC-01", period: "12 jul – 11 ago", created: "Hoy 11:50", format: "PDF", owner: "Emerson Allende" },
-    { id: "RPT-260804-011", name: "Eventos críticos · Semana 32", period: "29 jul – 4 ago", created: "4 ago 18:10", format: "PDF", owner: "Sistema" },
-    { id: "RPT-260801-010", name: "Resumen ejecutivo · Julio", period: "1 – 31 jul", created: "1 ago 08:00", format: "XLSX", owner: "Sistema" },
-  ]);
-  const reportPage = useClientPagination(reports, 8);
-  const selectedTemplate = templates.find((template) => template.id === templateId) ?? templates[0];
-  const generateReport = () => {
-    setGenerating(true);
-    window.setTimeout(() => {
-      setReports((current) => [{ id: `RPT-${Date.now().toString().slice(-9)}`, name: `${selectedTemplate.name} · MCC-01`, period, created: "Ahora", format, owner: "Emerson Allende" }, ...current]);
-      reportPage.setPage(1);
-      setGenerating(false);
-      setPreviewOpen(true);
-      notify(`${selectedTemplate.name} generado y agregado a la biblioteca.`);
-    }, 850);
-  };
-  const downloadReportData = (name: string) => {
-    const rows = ["reporte,activo,canal,valor,unidad,estado", ...sensors.filter((sensor) => sensor.enabled).map((sensor) => [name, "MCC-01", sensor.id, sensor.value, sensor.unit, sensor.state].join(","))];
-    const url = URL.createObjectURL(new Blob([rows.join("\n")], { type: "text/csv;charset=utf-8" }));
-    const anchor = document.createElement("a"); anchor.href = url; anchor.download = "cam5-datos-reporte.csv"; anchor.click(); URL.revokeObjectURL(url);
-    notify("Datos del reporte exportados correctamente.", "info");
-  };
-
-  return (
-    <>
-      <section className="module-summary-grid report-summary-grid">
-        <article><span className="module-summary-icon blue"><FileReport size={19} /></span><div><small>Informes disponibles</small><strong>{reports.length}</strong><span>Últimos 90 días</span></div></article>
-        <article><span className="module-summary-icon green"><CalendarEvent size={19} /></span><div><small>Programaciones activas</small><strong>{automatic ? 3 : 2}</strong><span>Próximo: lunes 08:00</span></div></article>
-        <article><span className="module-summary-icon amber"><Database size={19} /></span><div><small>Cobertura de datos</small><strong>99.98%</strong><span>{activeChannelCount} canales incluidos</span></div></article>
-      </section>
-
-      <article className="panel module-panel report-module">
-        <div className="module-toolbar"><div><span className="eyebrow">Constructor de informes</span><h2>Crear un reporte operacional</h2></div><span className="autosave-state"><ShieldCheck size={14} /> Trazabilidad habilitada</span></div>
-        <div className="report-builder">
-          <section className="report-template-section">
-            <div className="settings-section-head"><span className="settings-icon"><FileReport size={20} /></span><div><h2>Tipo de informe</h2><p>Selecciona la estructura según la audiencia y el objetivo.</p></div></div>
-            <div className="report-template-list">{templates.map((template) => <button key={template.id} className={`report-template-card ${templateId === template.id ? "selected" : ""}`} onClick={() => setTemplateId(template.id)}><span className={`report-template-icon ${template.accent}`}>{template.icon === "events" ? <BellRing size={19} /> : template.icon === "executive" ? <Gauge size={19} /> : <CircuitBoard size={19} />}</span><span><strong>{template.name}</strong><small>{template.detail}</small></span><i>{templateId === template.id && <CheckCircle2 size={16} />}</i></button>)}</div>
-          </section>
-          <aside className="report-config-card">
-            <span className="eyebrow">Parámetros del reporte</span>
-            <h3>{selectedTemplate.name}</h3>
-            <p>El informe se genera para MCC-01 · Alimentador Norte con los canales activos.</p>
-            <div className="report-config-fields"><label><span>Periodo</span><select value={period} onChange={(event) => setPeriod(event.target.value)}><option>24 horas</option><option>7 días</option><option>30 días</option><option>90 días</option></select></label><label><span>Formato</span><select value={format} onChange={(event) => setFormat(event.target.value)}><option>PDF</option><option>XLSX</option></select></label></div>
-            <button className={`report-schedule ${automatic ? "active" : ""}`} onClick={() => setAutomatic((current) => !current)}><span><CalendarEvent size={17} /><span><strong>Programación automática</strong><small>Primer lunes de cada mes · 08:00</small></span></span><i>{automatic ? "Activa" : "Inactiva"}</i></button>
-            <button className="report-preview-button" onClick={() => setPreviewOpen(true)}><MonitorDot size={17} /> Vista previa</button>
-            <button className="generate-report-button" onClick={generateReport} disabled={generating}>{generating ? <><Timeline size={17} /> Generando informe…</> : <><FileTypePdf size={17} /> Generar informe</>}</button>
-            <small className="report-disclaimer">La vista previa utiliza el mismo contrato que consumirá el servicio definitivo de reportes.</small>
-          </aside>
-        </div>
-
-        {previewOpen && <section className="report-preview" aria-label="Vista previa del informe"><div className="report-preview-toolbar"><div><span className="eyebrow">Vista previa · {format}</span><h2>{selectedTemplate.name}</h2></div><div><button className="secondary-button" onClick={() => setPreviewOpen(false)}><X size={15} /> Cerrar</button><button className="primary-button" onClick={() => window.print()}><Printer size={15} /> Imprimir / guardar PDF</button></div></div><div className="report-sheet"><header><span className="brand-mark"><Zap size={21} /></span><div><strong>HoitLive Core</strong><small>Informe de condición del punto de medición</small></div><time>Subestación Norte · MCC-01</time></header><section><span className="eyebrow">Resumen del periodo · {period}</span><h1>{selectedTemplate.name}</h1><p>Evaluación consolidada de temperatura, descarga parcial, humedad y disponibilidad de comunicaciones.</p></section><div className="report-kpi-row"><article><small>Condición</small><strong>Atención prioritaria</strong></article><article><small>Canales incluidos</small><strong>{sensors.filter((sensor) => sensor.enabled).length} de {sensors.length}</strong></article><article><small>Integridad</small><strong>99.98%</strong></article></div><section className="report-finding"><AlertTriangle size={20} /><div><strong>Hallazgo principal</strong><h2>Descarga parcial en aceleración · PD1</h2><p>El índice actual supera el umbral crítico configurado. Se recomienda inspección dirigida del compartimiento de cables.</p></div><b>72 idx</b></section><section className="report-channel-summary"><h2>Lecturas incluidas</h2><div>{sensors.filter((sensor) => sensor.enabled).map((sensor) => <span key={sensor.id}><b className={`sensor-code sensor-${sensor.state}`}>{sensor.id}</b><span><strong>{sensor.label}</strong><small>{sensor.zone}</small></span><em>{sensor.value} {sensor.unit}</em></span>)}</div></section><footer><ShieldCheck size={16} /><span>Documento preliminar hasta completar la conexión del historiador CAM5.</span></footer></div></section>}
-
-        <div className="report-library-head"><div><span className="eyebrow">Biblioteca</span><h2>Informes recientes</h2></div><span>{reports.length} documentos</span></div>
-        <div className="module-table-wrap"><div className="report-table"><div className="module-table-head"><span>Informe</span><span>Periodo</span><span>Generado</span><span>Formato</span><span>Responsable</span><span>Datos</span></div>{reportPage.pageItems.map((report) => <div className="module-table-row" key={report.id}><span className="report-name-cell"><b><FileReport size={16} /></b><span><strong>{report.name}</strong><small>{report.id}</small></span></span><span>{report.period}</span><span>{report.created}</span><span><i className="report-format">{report.format}</i></span><span>{report.owner}</span><span><button className="ghost-button" onClick={() => downloadReportData(report.name)}><Download size={14} /> Descargar datos</button></span></div>)}</div></div>
-        <Pagination page={reportPage.page} totalPages={reportPage.totalPages} total={reportPage.total} pageSize={reportPage.pageSize} onPageChange={reportPage.setPage} itemLabel="informes" />
-      </article>
-    </>
-  );
-}
-
 function MaintenanceView({ orders, setOrders, focusOrderId }: { orders: WorkOrder[]; setOrders: React.Dispatch<React.SetStateAction<WorkOrder[]>>; focusOrderId: string | null }) {
   const notify = useFeedback();
   const confirm = useConfirm();
@@ -1802,7 +1724,7 @@ export default function Home() {
             {view === "alarms" && <AlarmsView assetId={activePoint?.id ?? ""} permissions={sessionUser.permissions} onWorkOrderCreated={openPersistedWorkOrder} onSummaryChange={setAlarmSummary} onOpenTrend={openAlarmTrend} />}
             {view === "history" && <HistoryView assetId={activePoint?.id ?? ""} canExport={sessionUser.permissions.includes("history.export")} onOpenTrend={openTrendRange} />}
             {view === "assets" && <OperationalHierarchyView hierarchy={hierarchy} loading={hierarchyLoading} permissions={sessionUser.permissions} onReload={loadHierarchy} onSwitchSite={switchSite} />}
-            {view === "reports" && <ReportsView />}
+            {view === "reports" && <DatabaseReportsView assetId={activePoint?.id ?? ""} assetLabel={activePoint ? `${activePoint.code} · ${activePoint.name}` : "Sin punto seleccionado"} timezone={hierarchy?.sites.find((site) => site.id === sessionUser.siteId)?.timezone ?? "America/Santiago"} canGenerate={sessionUser.permissions.includes("reports.generate")} canSchedule={sessionUser.permissions.includes("reports.schedule")} notify={notify} confirm={(request) => setConfirmRequest(request)} />}
             {view === "maintenance" && <MaintenanceView orders={workOrders} setOrders={setWorkOrders} focusOrderId={focusOrderId} />}
             {view === "settings" && <DatabaseSettingsView assetId={activePoint?.id ?? ""} canWrite={sessionUser.permissions.includes("settings.write")} notify={notify} confirm={(request) => setConfirmRequest(request)} onReloadHierarchy={loadHierarchy} />}
             {view === "integrations" && <IntegrationsView />}

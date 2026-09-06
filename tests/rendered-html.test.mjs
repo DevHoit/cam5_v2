@@ -27,7 +27,7 @@ test("server-renders the protected HoitLive Core access gate", async () => {
 });
 
 test("keeps the production portal free of starter preview code", async () => {
-  const [page, layout, css, packageJson, engineering, model, alarmEngine, trends, notifications, notificationEngine, settings, configurationApi, gatewayConfigurationApi] = await Promise.all([
+  const [page, layout, css, packageJson, engineering, model, alarmEngine, trends, notifications, notificationEngine, settings, configurationApi, gatewayConfigurationApi, reports, reportsApi, reportEngine] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
@@ -41,9 +41,12 @@ test("keeps the production portal free of starter preview code", async () => {
     readFile(new URL("../app/settings-view.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/v1/configuration/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/v1/gateway/config/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/reports-view.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/v1/reports/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../db/report-engine.ts", import.meta.url), "utf8"),
   ]);
 
-  assert.match(page, /function ReportsView\(\)/);
+  assert.match(page, /ReportsView as DatabaseReportsView/);
   assert.match(page, /function OperationalHierarchyView\(/);
   assert.match(page, /function MaintenanceView\(/);
   assert.match(page, /function IntegrationsView\(\)/);
@@ -74,7 +77,7 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(page, /<Pagination/);
   assert.match(page, /Quitar acceso/);
   assert.match(page, /URLSearchParams/);
-  assert.match(page, /report-preview/);
+  assert.match(reports, /report-preview/);
   assert.match(page, /ConfirmContext/);
   assert.match(page, /Las lecturas están atrasadas/);
   assert.match(page, /Sesión activa/);
@@ -88,6 +91,12 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(configurationApi, /configurationSnapshots/);
   assert.match(configurationApi, /settings\.write/);
   assert.match(configurationApi, /pg_advisory_xact_lock/);
+  assert.match(reports, /Biblioteca documental/);
+  assert.match(reports, /Programaciones/);
+  assert.match(reports, /\/api\/v1\/reports/);
+  assert.match(reportsApi, /reports\.generate/);
+  assert.match(reportsApi, /createReportRun/);
+  assert.match(reportEngine, /payload: snapshot/);
   assert.match(gatewayConfigurationApi, /checksumSha256/);
   assert.doesNotMatch(settings, /usePersistentState|setTimeout\(.*Prueba Modbus/);
   assert.doesNotMatch(page, /cam5\.front\.(asset-config|gateway-config|channel-config|register-map)/);

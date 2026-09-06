@@ -53,7 +53,7 @@ const expectedTables = [
 test("applies the CAM5 PostgreSQL migration with access profiles and telemetry constraints", async () => {
   const database = new PGlite();
   try {
-    for (const filename of ["0000_cam5_initial_schema.sql", "0001_eager_blockbuster.sql", "0002_sparkling_wallow.sql", "0003_rich_charles_xavier.sql", "0004_windy_gauntlet.sql", "0005_milky_caretaker.sql", "0006_smiling_frightful_four.sql"]) {
+    for (const filename of ["0000_cam5_initial_schema.sql", "0001_eager_blockbuster.sql", "0002_sparkling_wallow.sql", "0003_rich_charles_xavier.sql", "0004_windy_gauntlet.sql", "0005_milky_caretaker.sql", "0006_smiling_frightful_four.sql", "0007_big_frightful_four.sql"]) {
       const migration = await readFile(new URL(`../drizzle/${filename}`, import.meta.url), "utf8");
       await database.exec(migration.replaceAll("--> statement-breakpoint", ""));
     }
@@ -100,6 +100,19 @@ test("applies the CAM5 PostgreSQL migration with access profiles and telemetry c
       order by column_name
     `);
     assert.deepEqual(deliveryColumns.rows.map((row) => row.column_name), ["alarm_event_id", "dedupe_key", "event_type", "max_attempts", "next_attempt_at", "payload", "policy_id", "subject"]);
+
+    const reportRunColumns = await database.query(`
+      select column_name, is_nullable
+      from information_schema.columns
+      where table_schema = 'public' and table_name = 'report_runs'
+        and column_name in ('title', 'format', 'payload')
+      order by column_name
+    `);
+    assert.deepEqual(reportRunColumns.rows, [
+      { column_name: "format", is_nullable: "NO" },
+      { column_name: "payload", is_nullable: "NO" },
+      { column_name: "title", is_nullable: "NO" },
+    ]);
 
     await assert.rejects(
       database.query(`

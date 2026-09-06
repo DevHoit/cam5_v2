@@ -674,6 +674,8 @@ export const reportSchedules = pgTable("report_schedules", {
   active: boolean("active").default(true).notNull(),
   nextRunAt: timestamp("next_run_at", { withTimezone: true }),
   createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [index("report_schedules_next_run_idx").on(table.active, table.nextRunAt)]);
 
 export const reportRuns = pgTable("report_runs", {
@@ -681,9 +683,12 @@ export const reportRuns = pgTable("report_runs", {
   templateId: uuid("template_id").notNull().references(() => reportTemplates.id, { onDelete: "restrict" }),
   assetId: uuid("asset_id").references(() => assets.id, { onDelete: "set null" }),
   requestedBy: uuid("requested_by").references(() => users.id, { onDelete: "set null" }),
+  title: varchar("title", { length: 220 }).notNull(),
+  format: varchar("format", { length: 12 }).default("pdf").notNull(),
   status: reportRunStatusEnum("status").default("queued").notNull(),
   periodStart: timestamp("period_start", { withTimezone: true }).notNull(),
   periodEnd: timestamp("period_end", { withTimezone: true }).notNull(),
+  payload: jsonb("payload").$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
   storageKey: text("storage_key"),
   errorMessage: text("error_message"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -691,6 +696,7 @@ export const reportRuns = pgTable("report_runs", {
 }, (table) => [
   index("report_runs_status_created_idx").on(table.status, table.createdAt),
   check("report_runs_period_chk", sql`${table.periodEnd} > ${table.periodStart}`),
+  check("report_runs_format_chk", sql`${table.format} IN ('pdf', 'csv')`),
 ]);
 
 export const notificationEndpoints = pgTable("notification_endpoints", {
