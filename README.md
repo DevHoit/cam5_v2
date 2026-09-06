@@ -9,7 +9,9 @@ La estructura operacional admite uno o varios clientes, sitios, puntos de medici
 - Resumen operacional y mapa de condición.
 - Tendencias de temperatura, humedad, ambiente, SD y PD.
 - Análisis UHF Total, Alpha, Beta, Phi, ruido y descarga superficial.
-- Centro de alertas, reconocimiento, cierre y órdenes de trabajo.
+- Centro de alarmas conectado a PostgreSQL, con reconocimiento, asignación, notas, atención, cierre y órdenes de trabajo vinculadas.
+- Motor automático de reglas por lectura con persistencia, histéresis, muestras consecutivas y detección de pérdida de comunicación.
+- Administración paginada de umbrales por canal con autorización y auditoría.
 - Histórico, reportes y auditoría.
 - Login/logout persistente, usuarios, roles y auditoría conectados a PostgreSQL.
 - Búsqueda, filtros y paginación en los listados operativos y administrativos.
@@ -37,6 +39,8 @@ Abrir `http://localhost:3000`.
 La capa de persistencia utiliza PostgreSQL y Drizzle ORM. Incluye telemetría, histórico agregado, alarmas, mantenimiento, auditoría, perfiles de adquisición y cuatro perfiles de acceso al portal.
 
 Antes del primer ingreso, configurar `DATABASE_URL`, `CAM5_ADMIN_EMAIL`, `CAM5_ADMIN_NAME` y `CAM5_ADMIN_PASSWORD`. La contraseña debe tener al menos 10 caracteres.
+
+Para ejecutar la revisión de comunicaciones desde un programador externo, configurar también `CRON_SECRET` y llamar `GET /api/v1/alarms/evaluate` con `Authorization: Bearer <CRON_SECRET>` cada minuto. En Vercel, la frecuencia de un minuto requiere plan Pro; en Hobby el portal continúa evaluando al recibir telemetría y al consultar alarmas.
 
 ```bash
 npm run db:migrate
@@ -73,7 +77,7 @@ Configurar:
 NEXT_PUBLIC_CAM5_API_URL=https://api.ejemplo.cl/api/v1
 ```
 
-La autenticación, los usuarios, la jerarquía operacional, el histórico y la última telemetría utilizan rutas internas `/api/v1` conectadas a PostgreSQL. Las curvas históricas de tendencias, alarmas operativas, configuración, reportes y mantenimiento todavía conservan datos de referencia mientras se implementan sus servicios de backend.
+La autenticación, los usuarios, la jerarquía operacional, el histórico, la última telemetría y el ciclo completo de alarmas utilizan rutas internas `/api/v1` conectadas a PostgreSQL. Las curvas históricas de tendencias, parte de la configuración del equipo, reportes y el tablero general de mantenimiento todavía conservan datos de referencia mientras se implementan sus servicios de backend.
 
 El contrato que debe implementar el gateway está en [`gateway/CAM5_GATEWAY_PROTOCOL.md`](./gateway/CAM5_GATEWAY_PROTOCOL.md). Incluye frecuencias, payload JSON, códigos de calidad, reintentos y un emisor Python de referencia.
 
@@ -85,6 +89,7 @@ El contrato que debe implementar el gateway está en [`gateway/CAM5_GATEWAY_PROT
 - `app/cam5-engineering.tsx`: puesta en marcha CAM-5.
 - `app/cam5-model.ts`: canales, inventario y catálogo Modbus.
 - `app/cam5-api.ts`: contrato de API.
-- `app/api/v1/`: login, logout, contexto activo, jerarquía, usuarios e histórico PostgreSQL.
+- `app/api/v1/`: login, logout, contexto activo, jerarquía, usuarios, histórico, telemetría, alarmas y reglas PostgreSQL.
+- `db/alarm-engine.ts`: evaluación automática de umbrales, calidad y comunicaciones.
 - `app/globals.css`: sistema visual y responsive.
 - `BACKEND_HANDOFF.md`: guía de conexión del backend.

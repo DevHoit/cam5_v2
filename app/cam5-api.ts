@@ -1,6 +1,6 @@
 export type ApiQuality = "good" | "stale" | "bad" | "disabled";
 export type ApiSeverity = "normal" | "warning" | "critical";
-export type AlarmStatus = "open" | "acknowledged" | "closed";
+export type AlarmStatus = "open" | "acknowledged" | "resolved" | "closed";
 
 export type TelemetryReading = {
   channelId: string;
@@ -94,19 +94,47 @@ export type InputAssignment = {
 
 export type AlarmRecord = {
   id: string;
+  code: string;
+  kind: "threshold" | "communication" | "data_quality";
   assetId: string;
-  channelId: string;
+  assetCode: string;
+  assetName: string;
+  channelId: string | null;
+  channelCode: string | null;
+  channelName: string | null;
   title: string;
-  severity: "info" | "warning" | "critical";
+  detail: string | null;
+  severity: ApiSeverity;
   status: AlarmStatus;
-  triggerValue: number;
-  threshold?: number;
-  consecutiveSamples: number;
+  triggerValue: number | null;
+  thresholdValue: number | null;
+  unit: string | null;
+  occurrenceCount: number;
   openedAt: string;
-  acknowledgedAt?: string;
-  acknowledgedBy?: string;
-  closedAt?: string;
-  note?: string;
+  lastObservedAt: string;
+  acknowledgedAt: string | null;
+  resolvedAt: string | null;
+  closedAt: string | null;
+  assignedToId: string | null;
+  assignedToName: string | null;
+  workOrder: { id: string; code: string; status: string } | null;
+};
+
+export type AlarmRuleRecord = {
+  id: string;
+  channelId: string;
+  channelCode: string;
+  channelName: string;
+  zone: string | null;
+  unit: string;
+  assetId: string;
+  enabled: boolean;
+  warningThreshold: number;
+  criticalThreshold: number;
+  hysteresis: number;
+  activationSamples: number;
+  recoverySamples: number;
+  staleAfterSeconds: number;
 };
 
 export type RelayConfiguration = {
@@ -256,9 +284,12 @@ export const cam5Api = {
   inputAssignments: (deviceId: string) => request<InputAssignment[]>(`/devices/${deviceId}/inputs`),
   updateInputAssignments: (deviceId: string, inputs: InputAssignment[]) => request<InputAssignment[]>(`/devices/${deviceId}/inputs`, { method: "PUT", body: JSON.stringify({ inputs }) }),
 
-  alarms: (status?: AlarmStatus) => request<AlarmRecord[]>(`/alarms${status ? `?status=${status}` : ""}`),
-  acknowledgeAlarm: (alarmId: string, note?: string) => request<AlarmRecord>(`/alarms/${alarmId}/acknowledge`, { method: "POST", body: JSON.stringify({ note }) }),
-  closeAlarm: (alarmId: string, note: string) => request<AlarmRecord>(`/alarms/${alarmId}/close`, { method: "POST", body: JSON.stringify({ note }) }),
+  alarms: (assetId: string, page = 1, pageSize = 10, status: AlarmStatus | "active" | "all" = "all", severity: ApiSeverity | "all" = "all", q?: string) => request<Paginated<AlarmRecord> & { summary: { critical: number; warning: number; resolved: number; unassigned: number; mttaMinutes: number } }>(`/alarms?${query({ assetId, page, pageSize, status, severity, q })}`),
+  alarm: (alarmId: string) => request<{ item: AlarmRecord; events: Array<{ id: number; type: string; note: string | null; createdAt: string; actorName: string }>; workOrders: WorkOrderRecord[] }>(`/alarms/${alarmId}`),
+  updateAlarm: (alarmId: string, action: "acknowledge" | "resolve" | "close" | "reopen" | "assign" | "add_note", payload?: { note?: string; assignedTo?: string | null }) => request<{ ok: true }>(`/alarms/${alarmId}`, { method: "PATCH", body: JSON.stringify({ action, ...payload }) }),
+  createWorkOrderFromAlarm: (alarmId: string, assignedTo?: string | null) => request<{ item: WorkOrderRecord; existing: boolean }>(`/alarms/${alarmId}/work-order`, { method: "POST", body: JSON.stringify({ assignedTo }) }),
+  alarmRules: (assetId: string, page = 1, pageSize = 10, q?: string, enabled?: "true" | "false" | "all") => request<Paginated<AlarmRuleRecord>>(`/alarm-rules?${query({ assetId, page, pageSize, q, enabled })}`),
+  updateAlarmRule: (ruleId: string, payload: Partial<Pick<AlarmRuleRecord, "enabled" | "warningThreshold" | "criticalThreshold" | "hysteresis" | "activationSamples" | "recoverySamples" | "staleAfterSeconds">>) => request<{ item: AlarmRuleRecord }>(`/alarm-rules/${ruleId}`, { method: "PATCH", body: JSON.stringify(payload) }),
   relayConfiguration: (deviceId: string) => request<RelayConfiguration[]>(`/devices/${deviceId}/relays`),
   updateRelays: (deviceId: string, relays: RelayConfiguration[]) => request<RelayConfiguration[]>(`/devices/${deviceId}/relays`, { method: "PUT", body: JSON.stringify({ relays }) }),
 

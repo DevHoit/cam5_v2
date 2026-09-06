@@ -55,7 +55,8 @@ Los valores `0x8000` y `0xFFFF` deben convertirse en calidad inválida, no en me
 - La activación requiere tres lecturas consecutivas por defecto.
 - La recuperación requiere persistencia e histéresis.
 - Los límites pueden tener una base global y una excepción por canal.
-- Toda alarma conserva apertura, reconocimiento, cierre, responsable, notas y orden de trabajo relacionada.
+- Toda alarma conserva apertura, reconocimiento, atención, cierre, responsable, notas y orden de trabajo relacionada.
+- El motor de alarmas se ejecuta después de cada lote de ingestión y guarda contadores, severidad, calidad y última evaluación en `alarm_rule_states`.
 - La matriz de seis relés se configura y audita mediante el backend.
 
 ## Endpoints previstos
@@ -88,13 +89,14 @@ El cliente tipado está en `app/cam5-api.ts`. Las familias principales son:
 - `/assets/{assetId}/readings/*`
 - `/assets/{assetId}/trends`
 - `/alarms/*`
+- `/alarm-rules/*`
 - `/work-orders/*`
 
 ## Persistencia y autorización
 
 La base PostgreSQL, sus migraciones y el seed se encuentran en `db/` y `drizzle/`. El diseño incluye datos crudos, última lectura, agregados históricos, perfiles Modbus y control de acceso por rol, cliente, sitio y punto de medición.
 
-Ya están implementadas las sesiones locales con contexto de sitio activo, contraseñas con `scrypt`, cookie `HttpOnly` y `SameSite=Strict`, revocación al cerrar sesión, jerarquía operacional administrable, administración paginada de usuarios con asignación multi-sitio y consulta histórica paginada. La jerarquía permite editar, desactivar/reactivar y eliminar solo elementos sin dependencias; toda mutación se audita. Los endpoints de escritura impiden suspender la cuenta propia y protegen al último administrador activo de cada sitio.
+Ya están implementadas las sesiones locales con contexto de sitio activo, contraseñas con `scrypt`, cookie `HttpOnly` y `SameSite=Strict`, revocación al cerrar sesión, jerarquía operacional administrable, administración paginada de usuarios, consulta histórica paginada y el ciclo operativo de alarmas. El gateway ingresa telemetría idempotente y el backend evalúa reglas, abre o normaliza alarmas, conserva su línea de tiempo y permite vincular una orden de trabajo real. La jerarquía permite editar, desactivar/reactivar y eliminar solo elementos sin dependencias; toda mutación se audita. Los endpoints de escritura impiden suspender la cuenta propia y protegen al último administrador activo de cada sitio.
 
 Los perfiles iniciales son Administrador, Ingeniero, Operador y Solo lectura. La autorización se aplica en el backend mediante `db/authorization.ts`; la visibilidad del menú en el frontend es solamente una ayuda visual y no un control de seguridad.
 

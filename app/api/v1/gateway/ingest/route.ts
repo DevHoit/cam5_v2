@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { and, eq, sql } from "drizzle-orm";
+import { evaluateAlarmReadings, evaluateStaleCommunications } from "../../../../../db/alarm-engine";
 import {
   assets,
   channels,
@@ -317,12 +318,28 @@ export async function POST(request: NextRequest) {
       return Response.json({ status: "duplicate", batchId: result.id, accepted: result.accepted, success: result.success, serverTime: receivedAt.toISOString() }, { headers: { "Cache-Control": "no-store" } });
     }
 
+    let alarmEvaluation = { opened: 0, updated: 0, resolved: 0 };
+    try {
+      alarmEvaluation = await evaluateAlarmReadings(db, device.assetId, transformed
+        .filter((entry) => entry.definition.channelId)
+        .map((entry) => ({
+          channelId: entry.definition.channelId!,
+          value: entry.definition.channelEnabled ? entry.value : null,
+          quality: entry.definition.channelEnabled ? entry.quality : "disabled",
+          qualityFlags: entry.flags,
+        })), receivedAt);
+      await evaluateStaleCommunications(db, credential.siteId, receivedAt);
+    } catch (alarmError) {
+      console.error("No fue posible evaluar las alarmas del lote", alarmError);
+    }
+
     return Response.json({
       status: "accepted",
       batchId: result.id,
       accepted: transformed.length,
       operationalReadings: transformed.filter((entry) => entry.definition.channelId).length,
       success: complete,
+      alarms: alarmEvaluation,
       serverTime: receivedAt.toISOString(),
       nextUploadInMs: complete ? 2_000 : 10_000,
     }, { status: 202, headers: { "Cache-Control": "no-store" } });

@@ -42,7 +42,7 @@ export const channelMetricEnum = pgEnum("channel_metric", [
 export const registerDataTypeEnum = pgEnum("register_data_type", ["int16", "uint16"]);
 export const dataQualityEnum = pgEnum("data_quality", ["good", "stale", "bad", "disabled"]);
 export const severityEnum = pgEnum("severity", ["normal", "warning", "critical"]);
-export const alarmStatusEnum = pgEnum("alarm_status", ["open", "acknowledged", "closed"]);
+export const alarmStatusEnum = pgEnum("alarm_status", ["open", "acknowledged", "resolved", "closed"]);
 export const workOrderStatusEnum = pgEnum("work_order_status", ["pending", "in_progress", "completed", "cancelled"]);
 export const workOrderPriorityEnum = pgEnum("work_order_priority", ["normal", "high", "critical"]);
 export const commissioningStatusEnum = pgEnum("commissioning_status", ["pending", "passed", "failed", "not_applicable"]);
@@ -537,6 +537,7 @@ export const alarms = pgTable("alarms", {
   channelId: uuid("channel_id").references(() => channels.id, { onDelete: "set null" }),
   ruleId: uuid("rule_id").references(() => alarmRules.id, { onDelete: "set null" }),
   code: varchar("code", { length: 80 }).notNull(),
+  kind: varchar("kind", { length: 40 }).default("threshold").notNull(),
   severity: severityEnum("severity").notNull(),
   status: alarmStatusEnum("status").default("open").notNull(),
   title: varchar("title", { length: 220 }).notNull(),
@@ -547,6 +548,9 @@ export const alarms = pgTable("alarms", {
   lastObservedAt: timestamp("last_observed_at", { withTimezone: true }).notNull(),
   acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true }),
   acknowledgedBy: uuid("acknowledged_by").references(() => users.id, { onDelete: "set null" }),
+  assignedTo: uuid("assigned_to").references(() => users.id, { onDelete: "set null" }),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  resolvedBy: uuid("resolved_by").references(() => users.id, { onDelete: "set null" }),
   closedAt: timestamp("closed_at", { withTimezone: true }),
   closedBy: uuid("closed_by").references(() => users.id, { onDelete: "set null" }),
   occurrenceCount: integer("occurrence_count").default(1).notNull(),
@@ -556,6 +560,8 @@ export const alarms = pgTable("alarms", {
   index("alarms_site_status_severity_idx").on(table.siteId, table.status, table.severity),
   index("alarms_asset_opened_idx").on(table.assetId, table.openedAt),
   index("alarms_channel_opened_idx").on(table.channelId, table.openedAt),
+  index("alarms_assignee_status_idx").on(table.assignedTo, table.status),
+  index("alarms_kind_status_idx").on(table.kind, table.status),
   check("alarms_occurrence_positive_chk", sql`${table.occurrenceCount} > 0`),
   check("alarms_observation_time_chk", sql`${table.lastObservedAt} >= ${table.openedAt}`),
 ]);
@@ -569,6 +575,23 @@ export const alarmEvents = pgTable("alarm_events", {
   payload: jsonb("payload").$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [index("alarm_events_alarm_created_idx").on(table.alarmId, table.createdAt)]);
+
+export const alarmRuleStates = pgTable("alarm_rule_states", {
+  ruleId: uuid("rule_id").primaryKey().references(() => alarmRules.id, { onDelete: "cascade" }),
+  activeAlarmId: uuid("active_alarm_id").references(() => alarms.id, { onDelete: "set null" }),
+  currentSeverity: severityEnum("current_severity").default("normal").notNull(),
+  currentKind: varchar("current_kind", { length: 40 }).default("threshold").notNull(),
+  breachCount: integer("breach_count").default(0).notNull(),
+  recoveryCount: integer("recovery_count").default(0).notNull(),
+  lastValue: numeric("last_value", { precision: 18, scale: 6 }),
+  lastQuality: dataQualityEnum("last_quality"),
+  lastEvaluatedAt: timestamp("last_evaluated_at", { withTimezone: true }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("alarm_rule_states_active_alarm_uidx").on(table.activeAlarmId),
+  index("alarm_rule_states_evaluated_idx").on(table.lastEvaluatedAt),
+  check("alarm_rule_states_counts_chk", sql`${table.breachCount} >= 0 AND ${table.recoveryCount} >= 0`),
+]);
 
 export const workOrders = pgTable("work_orders", {
   id: uuid("id").defaultRandom().primaryKey(),

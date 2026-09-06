@@ -70,6 +70,58 @@ type UserRole = "Administrador" | "Ingeniero" | "Operador" | "Solo lectura";
 type WorkStatus = "Pendiente" | "En curso" | "Completada";
 type WorkPriority = "Crítica" | "Alta" | "Normal";
 type WorkOrder = { id: string; title: string; source: string; sourceAlarmId?: string; due: string; priority: WorkPriority; assignee: string; status: WorkStatus };
+type AlarmWorkflowStatus = "open" | "acknowledged" | "resolved" | "closed";
+type PortalAlarm = {
+  id: string;
+  code: string;
+  kind: "threshold" | "communication" | "data_quality";
+  severity: "normal" | "warning" | "critical";
+  status: AlarmWorkflowStatus;
+  title: string;
+  detail: string | null;
+  triggerValue: number | null;
+  thresholdValue: number | null;
+  openedAt: string;
+  lastObservedAt: string;
+  acknowledgedAt: string | null;
+  resolvedAt: string | null;
+  closedAt: string | null;
+  occurrenceCount: number;
+  assignedToId: string | null;
+  assignedToName: string | null;
+  assetId: string;
+  assetCode: string;
+  assetName: string;
+  channelId: string | null;
+  channelCode: string | null;
+  channelName: string | null;
+  unit: string | null;
+  workOrder: { id: string; code: string; status: string } | null;
+};
+type PortalAlarmEvent = { id: number; type: string; note: string | null; payload: Record<string, unknown>; createdAt: string; actorId: string | null; actorName: string };
+type AlarmRuleRecord = {
+  id: string;
+  channelId: string;
+  channelCode: string;
+  channelName: string;
+  zone: string | null;
+  unit: string;
+  assetId: string;
+  assetCode: string;
+  enabled: boolean;
+  warningThreshold: number;
+  criticalThreshold: number;
+  hysteresis: number;
+  activationSamples: number;
+  recoverySamples: number;
+  staleAfterSeconds: number;
+  currentSeverity: "normal" | "warning" | "critical" | null;
+  breachCount: number | null;
+  recoveryCount: number | null;
+  lastValue: number | null;
+  lastQuality: string | null;
+  lastEvaluatedAt: string | null;
+};
 type PortalSiteScope = { id: string; code: string; name: string; clientId: string; clientCode: string; clientName: string; roleKey: "administrator" | "engineer" | "operator" | "viewer"; roleName: UserRole };
 type PortalSessionUser = {
   id: string;
@@ -154,6 +206,20 @@ function formatDateTime(value?: string | null) {
   return new Intl.DateTimeFormat("es-CL", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
+function formatRelativeTime(value: string) {
+  const seconds = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 1000));
+  if (seconds < 60) return `Hace ${seconds} s`;
+  if (seconds < 3_600) return `Hace ${Math.round(seconds / 60)} min`;
+  if (seconds < 86_400) return `Hace ${Math.round(seconds / 3_600)} h`;
+  return `Hace ${Math.round(seconds / 86_400)} d`;
+}
+
+function alarmValue(alarm: PortalAlarm) {
+  if (alarm.triggerValue === null) return "—";
+  if (alarm.kind === "communication") return `${Math.round(alarm.triggerValue)} s`;
+  return `${Number(alarm.triggerValue.toFixed(1))} ${alarm.unit || ""}`.trim();
+}
+
 const sensors = cam5OperationalChannels;
 
 const defaultAssetConfig = { name: "MCC-01", description: "Alimentador Norte", voltage: "13.8", location: "Subestación Norte", timezone: "America/Santiago" };
@@ -218,13 +284,6 @@ function useSensorData(override?: PortalTelemetryState) {
     };
   });
 }
-
-const initialAlarms = [
-  { id: "AL-260811-031", severity: "critical" as Severity, title: "Aceleración de descarga parcial", detail: "PD1 · Compartimiento de cables", since: "Hace 12 min", value: "Φ 2.8×", acknowledged: false },
-  { id: "AL-260811-028", severity: "warning" as Severity, title: "Diferencial térmico elevado", detail: "T01 Barra L1 vs. L2/L3", since: "Hace 34 min", value: "+15.6 °C", acknowledged: false },
-  { id: "AL-260811-019", severity: "warning" as Severity, title: "Humedad sobre umbral", detail: "H01 Ambiente cabina", since: "Hace 2 h", value: "78 %RH", acknowledged: false },
-  { id: "AL-260810-104", severity: "info" as Severity, title: "Sincronización recuperada", detail: "Gateway CAM5-GW-01", since: "Ayer 18:42", value: "Resuelta", acknowledged: true },
-];
 
 const initialWorkOrders: WorkOrder[] = [
   { id: "OT-260811-018", title: "Diagnóstico de descarga parcial", source: "PD1 · Evento AL-260811-031", sourceAlarmId: "AL-260811-031", due: "Hoy · 16:00", priority: "Crítica", assignee: "Emerson Allende", status: "En curso" },
@@ -402,7 +461,7 @@ function CabinetDiagram({ selectedId, onSelect }: { selectedId?: string; onSelec
   );
 }
 
-function Overview({ onNavigate, onAcknowledge, acknowledged }: { onNavigate: (view: View) => void; onAcknowledge: (id: string) => void; acknowledged: string[] }) {
+function Overview({ onNavigate, onAcknowledge, activeAlarms }: { onNavigate: (view: View) => void; onAcknowledge: (id: string) => void; activeAlarms: PortalAlarm[] }) {
   const sensors = useSensorData();
   const [assetConfig] = usePersistentState("cam5.front.asset-config", defaultAssetConfig);
   const activeSensors = sensors.filter((sensor) => sensor.enabled);
@@ -415,7 +474,6 @@ function Overview({ onNavigate, onAcknowledge, acknowledged }: { onNavigate: (vi
     warning: activeSensors.filter((sensor) => sensor.state === "warning").length,
     normal: activeSensors.filter((sensor) => sensor.state === "normal").length,
   };
-  const activeAlarms = initialAlarms.filter((alarm) => !alarm.acknowledged && !acknowledged.includes(alarm.id));
   return (
     <>
       <section className="metrics-grid">
@@ -473,10 +531,11 @@ function Overview({ onNavigate, onAcknowledge, acknowledged }: { onNavigate: (vi
             {activeAlarms.slice(0, 3).map((alarm) => (
               <div className={`alarm-item alarm-${alarm.severity}`} key={alarm.id}>
                 <div className="alarm-indicator"><AlertTriangle size={17} /></div>
-                <div className="alarm-copy"><strong>{alarm.title}</strong><span>{alarm.detail}</span><small>{alarm.since}</small></div>
-                <div className="alarm-side"><b>{alarm.value}</b><button onClick={() => onAcknowledge(alarm.id)}>Reconocer</button></div>
+                <div className="alarm-copy"><strong>{alarm.title}</strong><span>{alarm.detail || `${alarm.assetCode} · ${alarm.channelCode ?? "Comunicación"}`}</span><small>{formatRelativeTime(alarm.openedAt)}</small></div>
+                <div className="alarm-side"><b>{alarmValue(alarm)}</b>{alarm.status === "open" ? <button onClick={() => onAcknowledge(alarm.id)}>Reconocer</button> : <small>Reconocida</small>}</div>
               </div>
             ))}
+            {activeAlarms.length === 0 && <TableEmptyState title="Sin alarmas activas" detail="No existen eventos abiertos o reconocidos para el punto seleccionado." />}
           </div>
           <button className="text-action" onClick={() => onNavigate("alarms")}>Ver todas las alertas <span>→</span></button>
         </article>
@@ -596,70 +655,194 @@ function TrendsView({ period, setPeriod, selectedId, onSelectChannel, onBackToMa
   );
 }
 
-function AlarmsView({ acknowledged, onAcknowledge, workOrders, onOpenWorkOrder, closedIds, setClosedIds, assignees, setAssignees, notes, setNotes }: { acknowledged: string[]; onAcknowledge: (id: string) => void; workOrders: WorkOrder[]; onOpenWorkOrder: (alarm: (typeof initialAlarms)[number], assignee: string) => void; closedIds: string[]; setClosedIds: React.Dispatch<React.SetStateAction<string[]>>; assignees: Record<string, string>; setAssignees: React.Dispatch<React.SetStateAction<Record<string, string>>>; notes: Record<string, string[]>; setNotes: React.Dispatch<React.SetStateAction<Record<string, string[]>>> }) {
+function AlarmsView({ assetId, permissions, onWorkOrderCreated, onSummaryChange }: { assetId: string; permissions: string[]; onWorkOrderCreated: (order: WorkOrder) => void; onSummaryChange: (summary: { critical: number; warning: number }) => void }) {
   const notify = useFeedback();
   const confirm = useConfirm();
-  const role = useActiveRole();
-  const [severity, setSeverity] = useState<"all" | Severity>("all");
-  const [workflowStatus, setWorkflowStatus] = useState<"all" | "open" | "acknowledged" | "closed">("all");
+  const [tab, setTab] = useState<"events" | "rules">("events");
   const [query, setQuery] = useState("");
-  const [selectedId, setSelectedId] = useState(initialAlarms[0].id);
+  const [severity, setSeverity] = useState<"all" | PortalAlarm["severity"]>("all");
+  const [workflowStatus, setWorkflowStatus] = useState<"all" | AlarmWorkflowStatus>("all");
+  const [page, setPage] = useState(1);
+  const [result, setResult] = useState<(PaginationMeta & { items: PortalAlarm[]; summary: { critical: number; warning: number; resolved: number; unassigned: number; mttaMinutes: number }; assignees: Array<{ id: string; name: string }> }) | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [selectedId, setSelectedId] = useState("");
+  const [events, setEvents] = useState<PortalAlarmEvent[]>([]);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [noteInput, setNoteInput] = useState("");
-  const getWorkflowStatus = (alarm: (typeof initialAlarms)[number]) => closedIds.includes(alarm.id) ? "closed" : alarm.acknowledged || acknowledged.includes(alarm.id) ? "acknowledged" : "open";
-  const filtered = initialAlarms.filter((alarm) => (severity === "all" || alarm.severity === severity) && (workflowStatus === "all" || getWorkflowStatus(alarm) === workflowStatus) && `${alarm.title} ${alarm.detail}`.toLowerCase().includes(query.toLowerCase()));
-  const alarmPage = useClientPagination(filtered, 6);
-  const selected = filtered.find((alarm) => alarm.id === selectedId) ?? filtered[0] ?? initialAlarms[0];
-  const selectedStatus = getWorkflowStatus(selected);
-  const selectedNotes = notes[selected.id] ?? [];
-  const linkedOrder = workOrders.find((order) => order.sourceAlarmId === selected.id);
-  const interventionComplete = linkedOrder?.status === "Completada";
-  const addNote = (event: React.FormEvent) => { event.preventDefault(); if (!noteInput.trim()) return; setNotes((current) => ({ ...current, [selected.id]: [...(current[selected.id] ?? []), noteInput.trim()] })); setNoteInput(""); };
-  const closeEvent = () => confirm({ title: `Cerrar ${selected.id}`, detail: "Confirma que la condición fue revisada y que no requiere seguimiento operativo adicional.", confirmLabel: "Cerrar evento", tone: "danger", onConfirm: () => { if (selectedStatus === "open") onAcknowledge(selected.id); setClosedIds((current) => current.includes(selected.id) ? current : [...current, selected.id]); notify(`Evento ${selected.id} cerrado.`); } });
-  const reopenEvent = () => { setClosedIds((current) => current.filter((id) => id !== selected.id)); notify(`Evento ${selected.id} reabierto.`, "warning"); };
-  const openCritical = initialAlarms.filter((alarm) => alarm.severity === "critical" && !closedIds.includes(alarm.id)).length;
-  const openWarnings = initialAlarms.filter((alarm) => alarm.severity === "warning" && !closedIds.includes(alarm.id)).length;
-  return (
-    <>
+  const [busyAction, setBusyAction] = useState("");
+  const [ruleQuery, setRuleQuery] = useState("");
+  const [ruleEnabled, setRuleEnabled] = useState<"all" | "true" | "false">("all");
+  const [rulePage, setRulePage] = useState(1);
+  const [ruleResult, setRuleResult] = useState<(PaginationMeta & { items: AlarmRuleRecord[]; summary: { total: number; enabled: number; evaluating: number; critical: number } }) | null>(null);
+  const [ruleDrafts, setRuleDrafts] = useState<Record<string, Pick<AlarmRuleRecord, "enabled" | "warningThreshold" | "criticalThreshold" | "hysteresis" | "activationSamples" | "recoverySamples" | "staleAfterSeconds">>>({});
+  const [ruleLoading, setRuleLoading] = useState(false);
+  const [savingRule, setSavingRule] = useState("");
+  const canOperate = permissions.includes("alarms.acknowledge");
+  const canClose = permissions.includes("alarms.close");
+  const canCreateWorkOrder = permissions.includes("maintenance.write");
+  const canConfigure = permissions.includes("settings.write");
+
+  const loadAlarms = async (silent = false) => {
+    if (!assetId) return;
+    if (!silent) setLoading(true);
+    setError("");
+    try {
+      const params = new URLSearchParams({ assetId, page: String(page), pageSize: "8", status: workflowStatus, severity });
+      if (query.trim()) params.set("q", query.trim());
+      const data = await portalRequest<PaginationMeta & { items: PortalAlarm[]; summary: { critical: number; warning: number; resolved: number; unassigned: number; mttaMinutes: number }; assignees: Array<{ id: string; name: string }> }>(`/api/v1/alarms?${params}`);
+      setResult(data);
+      onSummaryChange({ critical: data.summary.critical, warning: data.summary.warning });
+      setSelectedId((current) => data.items.some((item) => item.id === current) ? current : data.items[0]?.id ?? "");
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "No fue posible cargar las alarmas.");
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => void loadAlarms(), 250);
+    const polling = window.setInterval(() => void loadAlarms(true), 30_000);
+    return () => { window.clearTimeout(timeout); window.clearInterval(polling); };
+    // La recarga depende únicamente de los filtros visibles y del punto activo.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assetId, page, query, severity, workflowStatus]);
+
+  useEffect(() => {
+    if (!selectedId) return;
+    let active = true;
+    Promise.resolve()
+      .then(() => { if (active) setDetailLoading(true); })
+      .then(() => portalRequest<{ events: PortalAlarmEvent[] }>(`/api/v1/alarms/${encodeURIComponent(selectedId)}`))
+      .then((data) => { if (active) setEvents(data.events); })
+      .catch(() => { if (active) setEvents([]); })
+      .finally(() => { if (active) setDetailLoading(false); });
+    return () => { active = false; };
+  }, [selectedId]);
+
+  const loadRules = async () => {
+    if (!assetId) return;
+    setRuleLoading(true);
+    try {
+      const params = new URLSearchParams({ assetId, page: String(rulePage), pageSize: "10", enabled: ruleEnabled });
+      if (ruleQuery.trim()) params.set("q", ruleQuery.trim());
+      const data = await portalRequest<PaginationMeta & { items: AlarmRuleRecord[]; summary: { total: number; enabled: number; evaluating: number; critical: number } }>(`/api/v1/alarm-rules?${params}`);
+      setRuleResult(data);
+      setRuleDrafts(Object.fromEntries(data.items.map((rule) => [rule.id, {
+        enabled: rule.enabled,
+        warningThreshold: rule.warningThreshold,
+        criticalThreshold: rule.criticalThreshold,
+        hysteresis: rule.hysteresis,
+        activationSamples: rule.activationSamples,
+        recoverySamples: rule.recoverySamples,
+        staleAfterSeconds: rule.staleAfterSeconds,
+      }])));
+    } catch (requestError) {
+      notify(requestError instanceof Error ? requestError.message : "No fue posible cargar las reglas.", "warning");
+    } finally {
+      setRuleLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (tab !== "rules") return;
+    const timeout = window.setTimeout(() => void loadRules(), 250);
+    return () => window.clearTimeout(timeout);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assetId, ruleEnabled, rulePage, ruleQuery, tab]);
+
+  const selected = result?.items.find((alarm) => alarm.id === selectedId) ?? null;
+  const statusText = (status: AlarmWorkflowStatus) => status === "open" ? "Abierta" : status === "acknowledged" ? "Reconocida" : status === "resolved" ? "Atendida" : "Cerrada";
+  const eventText = (type: string) => ({
+    opened: "Alarma creada por el motor de reglas",
+    observed: "Condición observada nuevamente",
+    acknowledged: "Evento reconocido",
+    resolved_automatically: "Condición normalizada automáticamente",
+    resolved_manually: "Marcada como atendida",
+    resolved_rule_disabled: "Atendida al desactivar la regla",
+    closed: "Evento cerrado",
+    reopened_automatically: "Evento reabierto por recurrencia",
+    reopened_manually: "Evento reabierto manualmente",
+    assigned: "Responsable asignado",
+    unassigned: "Responsable eliminado",
+    note_added: "Nota operativa agregada",
+    work_order_created: "Orden de trabajo vinculada",
+    escalated: "Severidad escalada",
+    source_changed: "Origen de la alarma actualizado",
+  }[type] ?? type.replaceAll("_", " "));
+
+  const updateAlarm = async (action: string, body: Record<string, unknown> = {}) => {
+    if (!selected) return;
+    setBusyAction(action);
+    try {
+      await portalRequest(`/api/v1/alarms/${encodeURIComponent(selected.id)}`, { method: "PATCH", body: JSON.stringify({ action, ...body }) });
+      notify(action === "add_note" ? "Nota agregada a la trazabilidad." : `Alarma ${selected.code} actualizada.`);
+      setNoteInput("");
+      await loadAlarms(true);
+      const detail = await portalRequest<{ events: PortalAlarmEvent[] }>(`/api/v1/alarms/${encodeURIComponent(selected.id)}`);
+      setEvents(detail.events);
+    } catch (requestError) {
+      notify(requestError instanceof Error ? requestError.message : "No fue posible actualizar la alarma.", "warning");
+    } finally {
+      setBusyAction("");
+    }
+  };
+
+  const createWorkOrder = async () => {
+    if (!selected) return;
+    if (selected.workOrder) {
+      onWorkOrderCreated({ id: selected.workOrder.code, sourceAlarmId: selected.id, title: selected.title, source: `Alarma ${selected.code}`, due: "Programación registrada", priority: selected.severity === "critical" ? "Crítica" : selected.severity === "warning" ? "Alta" : "Normal", assignee: selected.assignedToName ?? "Sin asignar", status: selected.workOrder.status === "completed" ? "Completada" : selected.workOrder.status === "in_progress" ? "En curso" : "Pendiente" });
+      return;
+    }
+    setBusyAction("work_order");
+    try {
+      const response = await portalRequest<{ item: { id: string; code: string; title: string; status: string; priority: string; dueAt: string | null } }>(`/api/v1/alarms/${encodeURIComponent(selected.id)}/work-order`, { method: "POST", body: JSON.stringify({ assignedTo: selected.assignedToId }) });
+      const item = response.item;
+      onWorkOrderCreated({ id: item.code, sourceAlarmId: selected.id, title: item.title, source: `Alarma ${selected.code} · ${selected.assetCode}`, due: item.dueAt ? formatDateTime(item.dueAt) : "Sin programar", priority: item.priority === "critical" ? "Crítica" : item.priority === "high" ? "Alta" : "Normal", assignee: selected.assignedToName ?? "Sin asignar", status: item.status === "completed" ? "Completada" : item.status === "in_progress" ? "En curso" : "Pendiente" });
+      notify(`Orden ${item.code} creada y vinculada.`);
+      await loadAlarms(true);
+    } catch (requestError) {
+      notify(requestError instanceof Error ? requestError.message : "No fue posible crear la orden de trabajo.", "warning");
+    } finally {
+      setBusyAction("");
+    }
+  };
+
+  const updateRuleDraft = (id: string, key: keyof (typeof ruleDrafts)[string], value: number | boolean) => setRuleDrafts((current) => ({ ...current, [id]: { ...current[id], [key]: value } }));
+  const saveRule = async (rule: AlarmRuleRecord) => {
+    const draft = ruleDrafts[rule.id];
+    if (!draft) return;
+    setSavingRule(rule.id);
+    try {
+      await portalRequest(`/api/v1/alarm-rules/${encodeURIComponent(rule.id)}`, { method: "PATCH", body: JSON.stringify(draft) });
+      notify(`Regla de ${rule.channelCode} guardada.`);
+      await loadRules();
+    } catch (requestError) {
+      notify(requestError instanceof Error ? requestError.message : "No fue posible guardar la regla.", "warning");
+    } finally {
+      setSavingRule("");
+    }
+  };
+
+  if (!assetId) return <article className="panel"><TableEmptyState title="Selecciona un punto de medición" detail="Las alarmas y reglas se administran dentro del contexto operacional activo." /></article>;
+  return <>
+    <div className="alarm-module-tabs" role="tablist" aria-label="Alarmas y reglas"><button className={tab === "events" ? "active" : ""} onClick={() => setTab("events")}><BellRing size={17} /> Eventos</button><button className={tab === "rules" ? "active" : ""} onClick={() => setTab("rules")}><Settings size={17} /> Reglas y umbrales</button><span>Evaluación automática sobre cada lectura recibida</span></div>
+    {tab === "events" ? <>
       <section className="alarm-summary">
-        <div className="summary-tile critical"><span>Críticas abiertas</span><strong>{openCritical}</strong><AlertTriangle size={24} /></div>
-        <div className="summary-tile warning"><span>Advertencias abiertas</span><strong>{openWarnings}</strong><BellRing size={24} /></div>
-        <div className="summary-tile normal"><span>MTTA promedio</span><strong>8.5<small> min</small></strong><Clock3 size={24} /></div>
+        <div className="summary-tile critical"><span>Críticas activas</span><strong>{result?.summary.critical ?? 0}</strong><AlertTriangle size={24} /></div>
+        <div className="summary-tile warning"><span>Advertencias activas</span><strong>{result?.summary.warning ?? 0}</strong><BellRing size={24} /></div>
+        <div className="summary-tile normal"><span>MTTA promedio</span><strong>{result?.summary.mttaMinutes ?? 0}<small> min</small></strong><Clock3 size={24} /></div>
+        <div className="summary-tile info"><span>Sin responsable</span><strong>{result?.summary.unassigned ?? 0}</strong><Users size={24} /></div>
       </section>
-      <article className={`panel alarm-table-panel ${role === "Solo lectura" ? "role-readonly" : ""}`}>
-        <div className="alarm-toolbar">
-          <label className="search-field"><Search size={17} /><input value={query} onChange={(event) => { setQuery(event.target.value); alarmPage.setPage(1); }} placeholder="Filtrar mensaje, sensor o zona…" /></label>
-          <div className="alarm-filters"><label className="status-filter"><span>Estado</span><select value={workflowStatus} onChange={(event) => { setWorkflowStatus(event.target.value as typeof workflowStatus); alarmPage.setPage(1); }}><option value="all">Todos</option><option value="open">Abiertas</option><option value="acknowledged">Reconocidas</option><option value="closed">Cerradas</option></select><ChevronDown size={13} /></label><div className="segmented">{(["all", "critical", "warning", "info"] as const).map((item) => <button key={item} className={severity === item ? "active" : ""} onClick={() => { setSeverity(item); alarmPage.setPage(1); }}>{item === "all" ? "Todas" : item === "critical" ? "Críticas" : item === "warning" ? "Advertencias" : "Info"}</button>)}</div></div>
-        </div>
-        <div className="alarm-table-wrap"><div className="alarm-table">
-          <div className="alarm-table-head"><span>Severidad</span><span>Evento / activo</span><span>Tiempo activo</span><span>Valor</span><span>Estado</span><span>Acción</span></div>
-          {alarmPage.pageItems.map((alarm) => {
-            const status = getWorkflowStatus(alarm);
-            return <div className={`alarm-table-row ${selected.id === alarm.id ? "selected" : ""}`} key={alarm.id}>
-              <span><StatusPill state={alarm.severity}>{alarm.severity === "critical" ? "Crítica" : alarm.severity === "warning" ? "Advertencia" : "Informativa"}</StatusPill></span>
-              <span className="event-cell"><strong>{alarm.title}</strong><small>{alarm.detail} · {alarm.id}</small></span>
-              <span>{alarm.since}</span><span><strong>{alarm.value}</strong></span>
-              <span>{status === "closed" ? <span className="closed-state"><CheckCircle2 size={15} /> Cerrada</span> : status === "acknowledged" ? <span className="ack-state"><CheckCircle2 size={15} /> Reconocida</span> : <span className="unack-state"><Clock3 size={15} /> Sin reconocer</span>}</span>
-              <span><button className={selected.id === alarm.id ? "ack-button" : "ghost-button"} onClick={() => setSelectedId(alarm.id)}>Gestionar</button></span>
-            </div>;
-          })}
-          {filtered.length === 0 && <TableEmptyState title="No hay eventos con estos filtros" detail="Ajusta el estado, la severidad o el texto de búsqueda." />}
-        </div></div>
-        <Pagination page={alarmPage.page} totalPages={alarmPage.totalPages} total={alarmPage.total} pageSize={alarmPage.pageSize} onPageChange={alarmPage.setPage} itemLabel="eventos" />
-        {filtered.length > 0 && <section className={`event-detail-panel event-${selected.severity}`}>
-          <div className="event-detail-header"><span className="event-detail-icon"><AlertTriangle size={20} /></span><div><span className="eyebrow">Evento seleccionado · {selected.id}</span><h2>{selected.title}</h2><p>{selected.detail}</p></div><span className={`workflow-badge workflow-${selectedStatus}`}>{selectedStatus === "closed" ? "Cerrada" : selectedStatus === "acknowledged" ? "Reconocida" : "Abierta"}</span></div>
-          <div className="event-workspace">
-            <div className="event-management">
-              <dl className="event-facts"><div><dt>Valor detectado</dt><dd>{selected.value}</dd></div><div><dt>Inicio</dt><dd>{selected.since}</dd></div><div><dt>Responsable</dt><dd><select value={assignees[selected.id] ?? "Sin asignar"} onChange={(event) => setAssignees((current) => ({ ...current, [selected.id]: event.target.value }))}><option>Sin asignar</option><option>Emerson Allende</option><option>Paula Rojas</option><option>Felipe Soto</option></select></dd></div></dl>
-              {interventionComplete && selectedStatus !== "closed" && <div className="event-remediation-state"><CheckCircle2 size={17} /><div><strong>Intervención completada</strong><p>{linkedOrder.id} finalizó. Verifica que la condición se haya normalizado antes de cerrar el evento.</p></div></div>}
-              <div className="event-actions">{selectedStatus === "open" && <button className="primary-button" onClick={() => onAcknowledge(selected.id)}><CheckCircle2 size={15} /> Reconocer evento</button>}<button className={`work-order-action ${linkedOrder ? "linked" : ""}`} onClick={() => onOpenWorkOrder(selected, assignees[selected.id] ?? "Sin asignar")}><ClipboardCheck size={15} /> {linkedOrder ? `Abrir ${linkedOrder.id}` : "Crear orden de trabajo"}</button>{selectedStatus === "closed" ? <button className="secondary-button" onClick={reopenEvent}>Reabrir evento</button> : <button className="secondary-button" onClick={closeEvent}><ShieldCheck size={15} /> Cerrar evento</button>}</div>
-            </div>
-            <div className="event-timeline"><h3>Línea de tiempo</h3><div><span className="timeline-dot critical" /><p><strong>Evento detectado</strong><small>{selected.since} · Motor de reglas HoitLive Core</small></p></div>{selectedStatus !== "open" && <div><span className="timeline-dot normal" /><p><strong>Evento reconocido</strong><small>Emerson Allende · Portal web</small></p></div>}{linkedOrder && <div><span className={`timeline-dot ${interventionComplete ? "normal" : "info"}`} /><p><strong>{interventionComplete ? "Orden de trabajo completada" : "Orden de trabajo vinculada"}</strong><small>{linkedOrder.id} · {linkedOrder.status}</small></p></div>}{selectedNotes.map((note, index) => <div key={`${selected.id}-${index}`}><span className="timeline-dot info" /><p><strong>Nota operativa</strong><small>{note}</small></p></div>)}{selectedStatus === "closed" && <div><span className="timeline-dot normal" /><p><strong>Evento cerrado</strong><small>Condición revisada por el operador</small></p></div>}</div>
-          </div>
-          <form className="event-note-form" onSubmit={addNote}><input value={noteInput} onChange={(event) => setNoteInput(event.target.value)} placeholder="Agregar una nota de seguimiento…" /><button type="submit">Agregar nota</button></form>
-        </section>}
+      <article className="panel alarm-table-panel">
+        <div className="alarm-toolbar"><label className="search-field"><Search size={17} /><input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="Buscar código, canal, activo o mensaje…" /></label><div className="alarm-filters"><label className="status-filter"><span>Estado</span><select value={workflowStatus} onChange={(event) => { setWorkflowStatus(event.target.value as typeof workflowStatus); setPage(1); }}><option value="all">Todos</option><option value="open">Abiertas</option><option value="acknowledged">Reconocidas</option><option value="resolved">Atendidas</option><option value="closed">Cerradas</option></select><ChevronDown size={13} /></label><div className="segmented">{(["all", "critical", "warning", "normal"] as const).map((item) => <button key={item} className={severity === item ? "active" : ""} onClick={() => { setSeverity(item); setPage(1); }}>{item === "all" ? "Todas" : item === "critical" ? "Críticas" : item === "warning" ? "Advertencias" : "Informativas"}</button>)}</div></div></div>
+        {error ? <div className="load-error"><AlertTriangle size={18} />{error}<button onClick={() => void loadAlarms()}>Reintentar</button></div> : <div className="alarm-table-wrap"><div className="alarm-table"><div className="alarm-table-head"><span>Severidad</span><span>Evento / activo</span><span>Tiempo activo</span><span>Valor</span><span>Estado</span><span>Acción</span></div>{loading ? <TableEmptyState title="Cargando eventos" detail="Consultando alarmas y trazabilidad del punto activo." /> : result?.items.map((alarm) => <div className={`alarm-table-row ${selectedId === alarm.id ? "selected" : ""}`} key={alarm.id}><span><StatusPill state={alarm.severity === "normal" ? "info" : alarm.severity}>{alarm.severity === "critical" ? "Crítica" : alarm.severity === "warning" ? "Advertencia" : "Informativa"}</StatusPill></span><span className="event-cell"><strong>{alarm.title}</strong><small>{alarm.code} · {alarm.assetCode}{alarm.channelCode ? ` · ${alarm.channelCode}` : ""}</small></span><span>{formatRelativeTime(alarm.openedAt)}</span><span><strong>{alarmValue(alarm)}</strong></span><span className={`workflow-state workflow-${alarm.status}`}>{statusText(alarm.status)}</span><span><button className={selectedId === alarm.id ? "ack-button" : "ghost-button"} onClick={() => setSelectedId(alarm.id)}>Gestionar</button></span></div>)}{!loading && !result?.items.length && <TableEmptyState title="No hay eventos con estos filtros" detail="El motor conservará aquí las alarmas que genere la telemetría." />}</div></div>}
+        {result && <Pagination page={result.page} totalPages={result.totalPages} total={result.total} pageSize={result.pageSize} onPageChange={setPage} itemLabel="eventos" />}
+        {selected && <section className={`event-detail-panel event-${selected.severity}`}><div className="event-detail-header"><span className="event-detail-icon"><AlertTriangle size={20} /></span><div><span className="eyebrow">{selected.kind === "communication" ? "Comunicación" : selected.kind === "data_quality" ? "Calidad de datos" : "Umbral"} · {selected.code}</span><h2>{selected.title}</h2><p>{selected.detail || `${selected.assetCode} · ${selected.channelName ?? "Punto de medición"}`}</p></div><span className={`workflow-badge workflow-${selected.status}`}>{statusText(selected.status)}</span></div><div className="event-workspace"><div className="event-management"><dl className="event-facts"><div><dt>Valor detectado</dt><dd>{alarmValue(selected)}</dd></div><div><dt>Última observación</dt><dd>{formatDateTime(selected.lastObservedAt)}</dd></div><div><dt>Responsable</dt><dd><select disabled={!canOperate || busyAction !== ""} value={selected.assignedToId ?? ""} onChange={(event) => void updateAlarm("assign", { assignedTo: event.target.value || null })}><option value="">Sin asignar</option>{result?.assignees.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</select></dd></div></dl><div className="event-actions">{selected.status === "open" && canOperate && <button className="primary-button" disabled={busyAction !== ""} onClick={() => void updateAlarm("acknowledge")}><CheckCircle2 size={15} /> Reconocer</button>}{selected.status !== "closed" && selected.status !== "resolved" && canClose && <button className="secondary-button" disabled={busyAction !== ""} onClick={() => void updateAlarm("resolve")}><ShieldCheck size={15} /> Marcar atendida</button>}{selected.status === "resolved" && canClose && <button className="secondary-button" disabled={busyAction !== "" || noteInput.trim().length < 3} onClick={() => confirm({ title: `Cerrar ${selected.code}`, detail: "La nota escrita se guardará como evidencia del cierre.", confirmLabel: "Cerrar evento", tone: "danger", onConfirm: () => void updateAlarm("close", { note: noteInput }) })}><ShieldCheck size={15} /> Cerrar</button>}{(selected.status === "closed" || selected.status === "resolved") && canClose && <button className="secondary-button" disabled={busyAction !== ""} onClick={() => void updateAlarm("reopen")}>Reabrir</button>}{canCreateWorkOrder && <button className={`work-order-action ${selected.workOrder ? "linked" : ""}`} disabled={busyAction !== ""} onClick={() => void createWorkOrder()}><ClipboardCheck size={15} /> {selected.workOrder ? `Abrir ${selected.workOrder.code}` : "Crear orden de trabajo"}</button>}</div>{!canOperate && <p className="permission-note"><ShieldCheck size={15} /> Tu perfil puede consultar la trazabilidad, sin modificarla.</p>}</div><div className="event-timeline"><h3>Línea de tiempo</h3>{detailLoading ? <p>Cargando trazabilidad…</p> : events.map((event) => <div key={event.id}><span className={`timeline-dot ${event.type.includes("resolved") || event.type === "closed" ? "normal" : event.type === "opened" ? selected.severity : "info"}`} /><p><strong>{eventText(event.type)}</strong><small>{formatDateTime(event.createdAt)} · {event.actorName}{event.note ? ` · ${event.note}` : ""}</small></p></div>)}</div></div>{canOperate && <form className="event-note-form" onSubmit={(event) => { event.preventDefault(); if (noteInput.trim().length >= 3) void updateAlarm("add_note", { note: noteInput }); }}><input value={noteInput} onChange={(event) => setNoteInput(event.target.value)} placeholder={selected.status === "resolved" ? "Nota de cierre obligatoria…" : "Agregar una nota de seguimiento…"} /><button type="submit" disabled={busyAction !== "" || noteInput.trim().length < 3}>Agregar nota</button></form>}</section>}
       </article>
-    </>
-  );
+    </> : <article className="panel alarm-rules-panel"><div className="alarm-rule-summary"><div><span>Reglas configuradas</span><strong>{ruleResult?.summary.total ?? 0}</strong></div><div><span>Activas</span><strong>{ruleResult?.summary.enabled ?? 0}</strong></div><div><span>Evaluadas por telemetría</span><strong>{ruleResult?.summary.evaluating ?? 0}</strong></div><div><span>En estado crítico</span><strong>{ruleResult?.summary.critical ?? 0}</strong></div></div><div className="alarm-toolbar"><label className="search-field"><Search size={17} /><input value={ruleQuery} onChange={(event) => { setRuleQuery(event.target.value); setRulePage(1); }} placeholder="Buscar canal, nombre o zona…" /></label><label className="status-filter"><span>Regla</span><select value={ruleEnabled} onChange={(event) => { setRuleEnabled(event.target.value as typeof ruleEnabled); setRulePage(1); }}><option value="all">Todas</option><option value="true">Activas</option><option value="false">Desactivadas</option></select><ChevronDown size={13} /></label></div><div className="alarm-rule-table-wrap"><div className="alarm-rule-table"><div className="alarm-rule-head"><span>Canal</span><span>Estado</span><span>Advertencia</span><span>Crítico</span><span>Histéresis</span><span>Activación</span><span>Recuperación</span><span>Dato atrasado</span><span>Acción</span></div>{ruleLoading ? <TableEmptyState title="Cargando reglas" detail="Consultando umbrales persistentes." /> : ruleResult?.items.map((rule) => { const draft = ruleDrafts[rule.id]; if (!draft) return null; return <div className="alarm-rule-row" key={rule.id}><span className="rule-channel"><strong>{rule.channelCode}</strong><small>{rule.channelName} · {rule.zone ?? rule.assetCode}</small></span><span><label className="rule-switch"><input type="checkbox" checked={draft.enabled} disabled={!canConfigure} onChange={(event) => updateRuleDraft(rule.id, "enabled", event.target.checked)} /><i /><small>{draft.enabled ? "Activa" : "Inactiva"}</small></label></span><span><input type="number" step="0.1" value={draft.warningThreshold} disabled={!canConfigure} onChange={(event) => updateRuleDraft(rule.id, "warningThreshold", Number(event.target.value))} /><small>{rule.unit}</small></span><span><input type="number" step="0.1" value={draft.criticalThreshold} disabled={!canConfigure} onChange={(event) => updateRuleDraft(rule.id, "criticalThreshold", Number(event.target.value))} /><small>{rule.unit}</small></span><span><input type="number" step="0.1" min="0" value={draft.hysteresis} disabled={!canConfigure} onChange={(event) => updateRuleDraft(rule.id, "hysteresis", Number(event.target.value))} /></span><span><input type="number" min="1" max="100" value={draft.activationSamples} disabled={!canConfigure} onChange={(event) => updateRuleDraft(rule.id, "activationSamples", Number(event.target.value))} /><small>muestras</small></span><span><input type="number" min="1" max="100" value={draft.recoverySamples} disabled={!canConfigure} onChange={(event) => updateRuleDraft(rule.id, "recoverySamples", Number(event.target.value))} /><small>muestras</small></span><span><input type="number" min="1" max="86400" value={draft.staleAfterSeconds} disabled={!canConfigure} onChange={(event) => updateRuleDraft(rule.id, "staleAfterSeconds", Number(event.target.value))} /><small>segundos</small></span><span><button className="ghost-button" disabled={!canConfigure || savingRule === rule.id} onClick={() => void saveRule(rule)}>{savingRule === rule.id ? <Refresh className="spin" size={15} /> : <Save size={15} />} Guardar</button></span></div>})}{!ruleLoading && !ruleResult?.items.length && <TableEmptyState title="No hay reglas configuradas" detail="Configura los canales del punto antes de habilitar alarmas." />}</div></div>{ruleResult && <Pagination page={ruleResult.page} totalPages={ruleResult.totalPages} total={ruleResult.total} pageSize={ruleResult.pageSize} onPageChange={setRulePage} itemLabel="reglas" />}<div className="alarm-rule-note"><ShieldCheck size={18} /><p><strong>Control contra falsos positivos</strong><span>La regla exige muestras consecutivas, aplica histéresis para recuperar y conserva el estado del motor en la base de datos.</span></p></div></article>}
+  </>;
 }
 
 function HistoryView() {
@@ -1490,12 +1673,10 @@ export default function Home() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [period, setPeriod] = useState("24 h");
   const [trendSensorId, setTrendSensorId] = useState("T01");
-  const [acknowledged, setAcknowledged] = usePersistentState<string[]>("cam5.front.acknowledged", []);
   const [workOrders, setWorkOrders] = usePersistentState<WorkOrder[]>("cam5.front.work-orders", initialWorkOrders);
   const [focusOrderId, setFocusOrderId] = useState<string | null>(null);
-  const [closedAlarmIds, setClosedAlarmIds] = usePersistentState<string[]>("cam5.front.closed-alarms", []);
-  const [alarmAssignees, setAlarmAssignees] = usePersistentState<Record<string, string>>("cam5.front.alarm-assignees", { "AL-260811-031": "Emerson Allende", "AL-260811-028": "Paula Rojas", "AL-260811-019": "Felipe Soto" });
-  const [alarmNotes, setAlarmNotes] = usePersistentState<Record<string, string[]>>("cam5.front.alarm-notes", {});
+  const [alarmSummary, setAlarmSummary] = useState({ critical: 0, warning: 0 });
+  const [alarmPreview, setAlarmPreview] = useState<PortalAlarm[]>([]);
   const [systemMode, setSystemMode] = useState<SystemMode>("loading");
   const [telemetryRefreshKey, setTelemetryRefreshKey] = useState(0);
   const [sessionUser, setSessionUser] = useState<PortalSessionUser | null>(null);
@@ -1566,6 +1747,27 @@ export default function Home() {
     return () => { active = false; window.clearInterval(timer); };
   }, [activePointId, authState, hierarchy, telemetryRefreshKey]);
 
+  useEffect(() => {
+    if (authState !== "authenticated" || !hierarchy) return;
+    const pointId = activePointId || hierarchy.points.find((point) => point.active)?.id;
+    if (!pointId) return;
+    let active = true;
+    const refresh = async () => {
+      try {
+        const params = new URLSearchParams({ assetId: pointId, status: "active", page: "1", pageSize: "3" });
+        const data = await portalRequest<{ items: PortalAlarm[]; summary: { critical: number; warning: number } }>(`/api/v1/alarms?${params}`);
+        if (!active) return;
+        setAlarmPreview(data.items);
+        setAlarmSummary({ critical: data.summary.critical, warning: data.summary.warning });
+      } catch {
+        if (active) setAlarmPreview([]);
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 30_000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [activePointId, authState, hierarchy]);
+
   const loadHierarchy = async () => {
     setHierarchyLoading(true);
     try {
@@ -1618,16 +1820,18 @@ export default function Home() {
     window.history.replaceState({}, "", url);
   };
   const acknowledge = (id: string) => {
-    setAcknowledged((current) => current.includes(id) ? current : [...current, id]);
-    notify(`Evento ${id} reconocido.`);
+    void portalRequest(`/api/v1/alarms/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ action: "acknowledge" }) })
+      .then(() => {
+        setAlarmPreview((current) => current.map((alarm) => alarm.id === id ? { ...alarm, status: "acknowledged" } : alarm));
+        notify("Alarma reconocida y registrada en la trazabilidad.");
+      })
+      .catch((requestError) => notify(requestError instanceof Error ? requestError.message : "No fue posible reconocer la alarma.", "warning"));
   };
-  const openWorkOrderFromAlarm = (alarm: (typeof initialAlarms)[number], assignee: string) => {
-    const existing = workOrders.find((order) => order.sourceAlarmId === alarm.id);
-    if (existing) { setFocusOrderId(existing.id); navigate("maintenance"); notify(`Orden ${existing.id} abierta.`, "info"); return; }
-    const id = `OT-${Date.now().toString().slice(-9)}`;
-    const signal = alarm.detail.split(" · ")[0];
-    const order: WorkOrder = { id, title: `Atender ${alarm.title.toLowerCase()}`, source: `${signal} · Evento ${alarm.id}`, sourceAlarmId: alarm.id, due: alarm.severity === "critical" ? "Hoy · Prioritario" : alarm.severity === "warning" ? "Próximas 24 h" : "Sin programar", priority: alarm.severity === "critical" ? "Crítica" : alarm.severity === "warning" ? "Alta" : "Normal", assignee: assignee === "Sin asignar" ? "Paula Rojas" : assignee, status: "Pendiente" };
-    setWorkOrders((current) => [order, ...current]); setFocusOrderId(id); navigate("maintenance"); notify(`Orden ${id} creada y vinculada al evento.`);
+  const openPersistedWorkOrder = (order: WorkOrder) => {
+    setWorkOrders((current) => current.some((item) => item.id === order.id) ? current.map((item) => item.id === order.id ? { ...item, ...order } : item) : [order, ...current]);
+    setFocusOrderId(order.id);
+    navigate("maintenance");
+    notify(`Orden ${order.id} abierta.`, "info");
   };
   const exportCsv = () => {
     const rows = ["canal,tipo,ubicacion,valor,unidad,estado", ...sensors.filter((sensor) => sensor.enabled).map((sensor) => [sensor.id, sensor.type, sensor.zone, sensor.value, sensor.unit, sensor.state].join(","))];
@@ -1684,7 +1888,7 @@ export default function Home() {
               <div className="nav-items">
                 {group.items.map((item) => {
                   const Icon = item.icon;
-                  const badgeCount = item.badge ? Math.max(0, Number(item.badge) - acknowledged.length) : null;
+                  const badgeCount = item.id === "alarms" ? alarmSummary.critical + alarmSummary.warning : item.badge ? Number(item.badge) : null;
                   return (
                     <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)} aria-current={view === item.id ? "page" : undefined}>
                       <span className="nav-item-icon"><Icon size={19} strokeWidth={1.8} /></span>
@@ -1713,13 +1917,13 @@ export default function Home() {
         <div className="content-scroll">
           <div className="page-content">
             {systemMode !== "normal" && <section className={`operational-banner banner-${systemMode}`} role="alert"><span>{systemMode === "offline" ? <PlugConnected size={19} /> : systemMode === "loading" ? <Refresh className="spin" size={19} /> : <Clock3 size={19} />}</span><div><strong>{systemMode === "offline" ? "Gateway sin comunicación" : systemMode === "loading" ? "Sincronizando datos" : "Las lecturas están atrasadas"}</strong><p>{systemMode === "offline" ? "El portal muestra el último valor recibido cuando existe. Las funciones administrativas siguen disponibles, pero no hay telemetría nueva." : systemMode === "loading" ? "Solicitando la última configuración, lecturas y eventos disponibles." : "Los datos visibles superan el tiempo de frescura configurado. Revisa el enlace antes de tomar una decisión."}</p></div>{systemMode !== "loading" && <button onClick={() => { setSystemMode("loading"); setTelemetryRefreshKey((current) => current + 1); notify("Consultando nuevamente la telemetría.", "info"); }}><Refresh size={15} /> Reintentar</button>}</section>}
-            <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> Gestión de activos críticos</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{view !== "assets" && view !== "settings" && view !== "integrations" && view !== "users" && view !== "notifications" && view !== "reports" && view !== "maintenance" && view !== "diagnostics" && view !== "commissioning" && <button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button>}<button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{3 - acknowledged.length} alertas abiertas</button></div></section>
-            {view === "overview" && <Overview onNavigate={navigate} onAcknowledge={acknowledge} acknowledged={acknowledged} />}
+            <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> Gestión de activos críticos</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{view !== "assets" && view !== "settings" && view !== "integrations" && view !== "users" && view !== "notifications" && view !== "reports" && view !== "maintenance" && view !== "diagnostics" && view !== "commissioning" && <button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button>}<button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{alarmSummary.critical + alarmSummary.warning} alertas activas</button></div></section>
+            {view === "overview" && <Overview onNavigate={navigate} onAcknowledge={acknowledge} activeAlarms={alarmPreview} />}
             {view === "cabinet" && <CabinetView onOpenTrend={openChannelTrend} />}
             {view === "diagnostics" && <DiagnosticsView />}
             {view === "commissioning" && <Cam5CommissioningView notify={notify} />}
             {view === "trends" && <TrendsView period={period} setPeriod={setPeriod} selectedId={trendSensorId} onSelectChannel={selectTrendChannel} onBackToMap={() => navigate("cabinet")} />}
-            {view === "alarms" && <AlarmsView acknowledged={acknowledged} onAcknowledge={acknowledge} workOrders={workOrders} onOpenWorkOrder={openWorkOrderFromAlarm} closedIds={closedAlarmIds} setClosedIds={setClosedAlarmIds} assignees={alarmAssignees} setAssignees={setAlarmAssignees} notes={alarmNotes} setNotes={setAlarmNotes} />}
+            {view === "alarms" && <AlarmsView assetId={activePoint?.id ?? ""} permissions={sessionUser.permissions} onWorkOrderCreated={openPersistedWorkOrder} onSummaryChange={setAlarmSummary} />}
             {view === "history" && <HistoryView />}
             {view === "assets" && <OperationalHierarchyView hierarchy={hierarchy} loading={hierarchyLoading} permissions={sessionUser.permissions} onReload={loadHierarchy} onSwitchSite={switchSite} />}
             {view === "reports" && <ReportsView />}

@@ -6,6 +6,7 @@ import { PGlite } from "@electric-sql/pglite";
 const expectedTables = [
   "alarm_events",
   "alarm_rules",
+  "alarm_rule_states",
   "alarms",
   "assets",
   "audit_logs",
@@ -52,7 +53,7 @@ const expectedTables = [
 test("applies the CAM5 PostgreSQL migration with access profiles and telemetry constraints", async () => {
   const database = new PGlite();
   try {
-    for (const filename of ["0000_cam5_initial_schema.sql", "0001_eager_blockbuster.sql", "0002_sparkling_wallow.sql", "0003_rich_charles_xavier.sql", "0004_windy_gauntlet.sql"]) {
+    for (const filename of ["0000_cam5_initial_schema.sql", "0001_eager_blockbuster.sql", "0002_sparkling_wallow.sql", "0003_rich_charles_xavier.sql", "0004_windy_gauntlet.sql", "0005_milky_caretaker.sql"]) {
       const migration = await readFile(new URL(`../drizzle/${filename}`, import.meta.url), "utf8");
       await database.exec(migration.replaceAll("--> statement-breakpoint", ""));
     }
@@ -72,6 +73,24 @@ test("applies the CAM5 PostgreSQL migration with access profiles and telemetry c
       where n.nspname = 'public' and t.typtype = 'e'
     `);
     assert.equal(enumResult.rows[0].count, 19);
+
+    const alarmStatuses = await database.query(`
+      select e.enumlabel
+      from pg_type t
+      join pg_enum e on e.enumtypid = t.oid
+      where t.typname = 'alarm_status'
+      order by e.enumsortorder
+    `);
+    assert.deepEqual(alarmStatuses.rows.map((row) => row.enumlabel), ["open", "acknowledged", "resolved", "closed"]);
+
+    const alarmColumns = await database.query(`
+      select column_name
+      from information_schema.columns
+      where table_schema = 'public' and table_name = 'alarms'
+        and column_name in ('kind', 'assigned_to', 'resolved_at', 'resolved_by')
+      order by column_name
+    `);
+    assert.deepEqual(alarmColumns.rows.map((row) => row.column_name), ["assigned_to", "kind", "resolved_at", "resolved_by"]);
 
     await assert.rejects(
       database.query(`

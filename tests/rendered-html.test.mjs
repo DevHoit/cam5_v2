@@ -27,13 +27,14 @@ test("server-renders the protected HoitLive Core access gate", async () => {
 });
 
 test("keeps the production portal free of starter preview code", async () => {
-  const [page, layout, css, packageJson, engineering, model] = await Promise.all([
+  const [page, layout, css, packageJson, engineering, model, alarmEngine] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
     readFile(new URL("../app/cam5-engineering.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/cam5-model.ts", import.meta.url), "utf8"),
+    readFile(new URL("../db/alarm-engine.ts", import.meta.url), "utf8"),
   ]);
 
   assert.match(page, /function ReportsView\(\)/);
@@ -45,10 +46,10 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(page, /Comprobación de extremo a extremo/);
   assert.match(page, /Crear orden de trabajo/);
   assert.match(page, /sourceAlarmId/);
-  assert.match(page, /Orden abierta desde el Centro de alertas/);
-  assert.match(page, /closedAlarmIds/);
-  assert.match(page, /alarmNotes/);
-  assert.match(page, /Intervención completada/);
+  assert.match(page, /Reglas y umbrales/);
+  assert.match(page, /Control contra falsos positivos/);
+  assert.match(page, /\/api\/v1\/alarms/);
+  assert.match(page, /\/api\/v1\/alarm-rules/);
   assert.match(page, /usePersistentState/);
   assert.match(page, /portal-notice/);
   assert.match(page, /Estructura operacional/);
@@ -94,6 +95,10 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(css, /\.register-reference-table/);
   assert.match(css, /\.focused-order/);
   assert.match(css, /\.event-remediation-state/);
+  assert.match(css, /\.alarm-rule-table/);
+  assert.match(alarmEngine, /evaluateAlarmReadings/);
+  assert.match(alarmEngine, /evaluateStaleCommunications/);
+  assert.match(alarmEngine, /recoveryBoundary/);
   assert.doesNotMatch(page, /SkeletonPreview|codex-preview/);
   assert.doesNotMatch(layout, /SkeletonPreview|codex-preview/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);

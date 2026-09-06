@@ -4,13 +4,13 @@ La base está diseñada para PostgreSQL 15 o superior y soporta una estructura m
 
 ## Componentes incluidos
 
-Las migraciones crean 43 tablas agrupadas de esta forma:
+Las migraciones crean 44 tablas agrupadas de esta forma:
 
 - Identidad y acceso: usuarios, identidades, sesiones, invitaciones, perfiles, permisos y alcances por cliente, sitio y punto.
 - Inventario OT: clientes, sitios, puntos de medición, gateways, modelos CAM5, equipos, entradas físicas y señales operativas.
 - Adquisición: perfiles de lectura, rangos Modbus, lotes de ingestión y catálogo de 105 registros.
 - Telemetría: histórico crudo, última lectura por señal y agregados temporales.
-- Condición: reglas, alarmas, eventos de alarma y configuración de seis relés.
+- Condición: reglas, estado persistente del motor, alarmas, eventos de alarma y configuración de seis relés.
 - Operación: puesta en marcha, respaldos, órdenes de trabajo, reportes, notificaciones, integraciones y auditoría.
 
 ```text
@@ -91,6 +91,8 @@ El host `192.168.10.42` del seed es provisional. Debe reemplazarse por la direcc
 - Cada lote admite una sola lectura por señal.
 - Los códigos `0x8000` y `0xFFFF` se almacenan como valor crudo, con valor procesado nulo y calidad `bad`.
 - El backend actualiza `latest_readings` en la misma transacción que el histórico.
+- Después de aceptar cada lote, el motor evalúa umbrales, calidad e histéresis; su progreso por regla se conserva en `alarm_rule_states`.
+- Las alarmas de comunicación se revisan al recibir telemetría, al consultar el centro de alarmas y mediante el endpoint protegido `/api/v1/alarms/evaluate` para un programador externo.
 - Un proceso programado genera agregados y elimina datos crudos vencidos según el perfil.
 - Las acciones de configuración, usuarios, alarmas y relés generan un registro inmutable en `audit_logs`.
 - Contraseñas, tokens y secretos externos se almacenan como hashes o referencias a un gestor de secretos; nunca como texto plano.
@@ -104,6 +106,8 @@ El host `192.168.10.42` del seed es provisional. Debe reemplazarse por la direcc
 - Administración de usuarios protegida por `users.manage`, con acceso multi-sitio, búsqueda y paginación del lado del servidor.
 - API de jerarquía para crear, editar, desactivar, reactivar y eliminar de forma segura clientes, sitios, puntos de medición, gateways y controladores, con validación de pertenencia, dependencias y auditoría.
 - Histórico protegido y paginado con filtros `from`, `to`, `q` y `channel`.
+- Alarmas persistentes con búsqueda, filtros, paginación, asignación, notas, reconocimiento, atención, cierre y órdenes de trabajo vinculadas.
+- Reglas de alarma editables por canal, con histéresis, muestras de activación/recuperación, tiempo de dato atrasado y auditoría.
 - Auditoría de inicio de sesión, creación, edición y eliminación de usuarios.
 
 ## Archivos
@@ -120,4 +124,5 @@ El host `192.168.10.42` del seed es provisional. Debe reemplazarse por la direcc
 - `drizzle/0002_sparkling_wallow.sql`: membresías de usuario por cliente.
 - `drizzle/0003_rich_charles_xavier.sql`: credenciales del gateway y muestras de los 105 registros CAM5.
 - `drizzle/0004_windy_gauntlet.sql`: estado activo reversible para puntos, gateways y controladores.
+- `drizzle/0005_milky_caretaker.sql`: flujo de alarmas atendidas, responsable y estado persistente del motor.
 - `tests/database-schema.test.mjs`: prueba en PostgreSQL embebido.
