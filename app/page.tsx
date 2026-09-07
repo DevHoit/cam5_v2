@@ -27,6 +27,8 @@ import {
   IconDeviceFloppy as Save,
   IconDownload as Download,
   IconDroplet as Droplets,
+  IconEye as Eye,
+  IconEyeOff as EyeOff,
   IconFileReport as FileReport,
   IconHistory as History,
   IconHierarchy3 as Hierarchy,
@@ -1191,6 +1193,7 @@ function NotificationsView({ canWrite }: { canWrite: boolean }) {
 function LoginScreen({ checking, onAuthenticated }: { checking: boolean; onAuthenticated: (user: PortalSessionUser) => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
@@ -1209,24 +1212,23 @@ function LoginScreen({ checking, onAuthenticated }: { checking: boolean; onAuthe
   };
 
   return <main className="login-shell">
-    <section className="login-brand-panel">
-      <span className="login-brand-mark"><Zap size={28} strokeWidth={2.2} /></span>
-      <div><span className="eyebrow">HoitLive Core</span><h1>Condición eléctrica bajo control</h1><p>Supervisión centralizada de clientes, sitios y puntos de medición con trazabilidad operacional.</p></div>
-      <dl><div><dt>Estructura</dt><dd>Cliente → Sitio → Punto</dd></div><div><dt>Adquisición</dt><dd>CAM5 → Gateway → HoitLive Core</dd></div><div><dt>Seguridad</dt><dd>Acceso por sitio y perfil</dd></div></dl>
+    <section className="login-brand-panel" aria-label="HoitLive Core">
+      <header className="login-brand-identity"><span className="login-brand-mark"><Zap size={25} strokeWidth={2.3} /></span><span><strong>HoitLive</strong><b>Core</b></span></header>
+      <div className="login-brand-message"><span className="login-product-label"><i /> Plataforma de monitoreo de condición</span><h1>Visibilidad operacional para activos críticos.</h1><p>Información confiable para supervisar, diagnosticar y actuar con oportunidad.</p></div>
+      <footer className="login-brand-footer"><span>HoitLive Core</span><small>Industrial condition intelligence</small></footer>
     </section>
     <section className="login-form-panel">
       <div className="login-card">
-        <span className="login-security-icon"><ShieldCheck size={24} /></span>
-        <span className="eyebrow">Acceso seguro</span>
-        <h2>{checking ? "Validando sesión" : "Iniciar sesión"}</h2>
-        <p>{checking ? "Estamos comprobando tu acceso al portal." : "Usa el correo y la contraseña creados por el administrador."}</p>
-        {checking ? <div className="login-checking"><Refresh className="spin" size={19} /> Consultando sesión…</div> : <form onSubmit={login}>
-          <label><span>Correo electrónico</span><input type="email" autoComplete="username" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="nombre@empresa.cl" /></label>
-          <label><span>Contraseña</span><input type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Tu contraseña" /></label>
-          {error && <div className="login-error" role="alert"><AlertTriangle size={16} />{error}</div>}
-          <button type="submit" disabled={submitting}>{submitting ? <><Refresh className="spin" size={17} /> Verificando…</> : <><Key size={17} /> Entrar al portal</>}</button>
+        <div className="login-mobile-brand"><span className="login-brand-mark"><Zap size={21} strokeWidth={2.3} /></span><span><strong>HoitLive</strong><b>Core</b></span></div>
+        <header className="login-card-header"><span className="login-security-icon"><ShieldCheck size={21} /></span><span className="eyebrow">Acceso a la plataforma</span><h2>{checking ? "Validando tu sesión" : "Bienvenido"}</h2><p>{checking ? "Estamos comprobando tus credenciales de acceso." : "Ingresa con las credenciales asignadas por tu organización."}</p></header>
+        {checking ? <div className="login-checking"><Refresh className="spin" size={19} /><span><strong>Verificando acceso</strong><small>Esto tomará solo un momento.</small></span></div> : <form onSubmit={login}>
+          <label htmlFor="login-email"><span>Correo electrónico</span><div className="login-input-wrap"><Mail size={18} /><input id="login-email" type="email" inputMode="email" autoCapitalize="none" autoComplete="username" required autoFocus value={email} onChange={(event) => setEmail(event.target.value)} placeholder="nombre@empresa.cl" /></div></label>
+          <label htmlFor="login-password"><span>Contraseña</span><div className="login-input-wrap"><Key size={18} /><input id="login-password" type={showPassword ? "text" : "password"} autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Ingresa tu contraseña" aria-describedby={error ? "login-error" : undefined} /><button type="button" onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></label>
+          {error && <div className="login-error" id="login-error" role="alert"><AlertTriangle size={17} /><span><strong>No pudimos iniciar sesión</strong><small>{error}</small></span></div>}
+          <button className="login-submit" type="submit" disabled={submitting}>{submitting ? <><Refresh className="spin" size={18} /> Verificando acceso…</> : <>Iniciar sesión <ChevronRight size={18} /></>}</button>
         </form>}
-        <small>Las sesiones duran 12 horas y pueden cerrarse desde cualquier módulo.</small>
+        <div className="login-assurance"><ShieldCheck size={16} /><span>Conexión cifrada y sesión protegida</span></div>
+        <small className="login-product-meta">HoitLive Core · Monitoreo de condición eléctrica</small>
       </div>
     </section>
   </main>;

@@ -22,8 +22,8 @@ test("server-renders the protected HoitLive Core access gate", async () => {
   const html = await response.text();
   assert.match(html, /<title>HoitLive Core \| Monitoreo de condición eléctrica<\/title>/i);
   assert.match(html, /HoitLive Core/);
-  assert.match(html, /Validando sesión/);
-  assert.match(html, /Consultando sesión/);
+  assert.match(html, /Validando tu sesión/);
+  assert.match(html, /Estamos comprobando tus credenciales de acceso/);
 });
 
 test("keeps the production portal free of starter preview code", async () => {
@@ -102,6 +102,9 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(page, /function LoginScreen/);
   assert.match(page, /\/api\/v1\/auth\/login/);
   assert.match(page, /\/api\/v1\/auth\/logout/);
+  assert.match(page, /Visibilidad operacional para activos críticos/);
+  assert.match(page, /Mostrar contraseña/);
+  assert.doesNotMatch(page, /Cliente → Sitio → Punto|CAM5 → Gateway → HoitLive Core|Acceso por sitio y perfil/);
   assert.match(page, /function HistoryView/);
   assert.match(page, /type="date"/);
   assert.match(page, /<Pagination/);
