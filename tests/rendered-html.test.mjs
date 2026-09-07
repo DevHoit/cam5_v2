@@ -27,7 +27,7 @@ test("server-renders the protected HoitLive Core access gate", async () => {
 });
 
 test("keeps the production portal free of starter preview code", async () => {
-  const [page, layout, css, packageJson, engineering, commissioningApi, commissioningEngine, model, alarmEngine, trends, notifications, notificationEngine, settings, configurationApi, gatewayConfigurationApi, reports, reportsApi, reportEngine, telemetryApi] = await Promise.all([
+  const [page, layout, css, packageJson, engineering, commissioningApi, commissioningEngine, model, alarmEngine, trends, notifications, notificationEngine, settings, configurationApi, gatewayConfigurationApi, reports, reportsApi, reportEngine, telemetryApi, diagnostics, diagnosticsApi] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
@@ -47,14 +47,25 @@ test("keeps the production portal free of starter preview code", async () => {
     readFile(new URL("../app/api/v1/reports/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../db/report-engine.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/v1/telemetry/latest/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/diagnostics-view.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/v1/diagnostics/route.ts", import.meta.url), "utf8"),
   ]);
 
   assert.match(page, /ReportsView as DatabaseReportsView/);
   assert.match(page, /function OperationalHierarchyView\(/);
   assert.match(page, /function IntegrationsView\(\)/);
-  assert.match(page, /function DiagnosticsView\(\)/);
+  assert.match(page, /DiagnosticsView as DatabaseDiagnosticsView/);
   assert.match(page, /Diagnóstico de comunicación/);
-  assert.match(page, /Comprobación de extremo a extremo/);
+  assert.match(diagnostics, /Estado de extremo a extremo/);
+  assert.match(diagnostics, /\/api\/v1\/diagnostics/);
+  assert.match(diagnostics, /Diagnóstico pasivo y verificable/);
+  assert.match(diagnostics, /<Pagination/);
+  assert.doesNotMatch(diagnostics, /setTimeout|99\.98%|42 ms|86 ms|CAM5-CTRL-01|CAM5-GW-01/);
+  assert.match(diagnosticsApi, /ingestionBatches/);
+  assert.match(diagnosticsApi, /goodRegisters/);
+  assert.match(diagnosticsApi, /percentile_cont/);
+  assert.match(diagnosticsApi, /diagnostics\.refresh/);
+  assert.match(diagnosticsApi, /mode: "passive"/);
   assert.doesNotMatch(page, /Crear orden de trabajo|function MaintenanceView\(|view === "maintenance"/);
   assert.match(page, /Reglas y umbrales/);
   assert.match(page, /Control contra falsos positivos/);
@@ -131,6 +142,8 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(css, /\.integration-card-grid/);
   assert.match(css, /\.register-map-table/);
   assert.match(css, /\.diagnostic-chain/);
+  assert.match(css, /\.diagnostic-profile-strip/);
+  assert.match(css, /\.diagnostic-table-empty/);
   assert.match(css, /\.commissioning-summary/);
   assert.match(css, /\.commissioning-chain/);
   assert.match(css, /\.commissioning-control-list/);

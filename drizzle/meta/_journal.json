@@ -57,6 +57,13 @@
       "when": 1788725364879,
       "tag": "0007_big_frightful_four",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1788745003374,
+      "tag": "0008_sloppy_mister_sinister",
+      "breakpoints": true
     }
   ]
 }

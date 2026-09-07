@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { ComponentType } from "react";
 import { usePersistentState } from "./use-persistent-state";
 import { Cam5CommissioningView } from "./cam5-engineering";
+import { DiagnosticsView as DatabaseDiagnosticsView } from "./diagnostics-view";
 import { Pagination, useClientPagination } from "./pagination";
 import { NotificationsView as DatabaseNotificationsView } from "./notifications-view";
 import { ReportsView as DatabaseReportsView } from "./reports-view";
@@ -1105,55 +1106,6 @@ function OperationalHierarchyView({
   </>;
 }
 
-function DiagnosticsView() {
-  const notify = useFeedback();
-  const [diagnosticState, setDiagnosticState] = useState<"idle" | "running" | "success">("idle");
-  const [lastRun, setLastRun] = useState("No ejecutado en esta sesión");
-  const transactions = [
-    { time: "11:52:08", request: "FC 03", range: "418–445", result: "28 registros", latency: "42 ms" },
-    { time: "11:52:06", request: "FC 03", range: "446–490", result: "45 registros", latency: "38 ms" },
-    { time: "11:52:04", request: "FC 03", range: "491–522", result: "32 registros", latency: "31 ms" },
-  ];
-  const runDiagnostic = () => {
-    setDiagnosticState("running");
-    setLastRun("Comprobación en curso…");
-    window.setTimeout(() => { setDiagnosticState("success"); setLastRun("Ahora · 4 de 4 etapas correctas"); notify("Diagnóstico completado: 4 de 4 etapas correctas."); }, 1200);
-  };
-  const stateClass = diagnosticState === "running" ? "testing" : diagnosticState === "success" ? "passed" : "ready";
-
-  return (
-    <>
-      <section className="module-summary-grid diagnostic-summary-grid">
-        <article><span className="module-summary-icon green"><Radio size={19} /></span><div><small>Cadena de adquisición</small><strong>Operativa</strong><span>Controlador + gateway + HoitLive Core</span></div></article>
-        <article><span className="module-summary-icon blue"><Refresh size={19} /></span><div><small>Ciclo de sondeo</small><strong>2.0 s</strong><span>105 registros documentados</span></div></article>
-        <article><span className="module-summary-icon green"><CheckCircle2 size={19} /></span><div><small>Éxito últimas 24 h</small><strong>99.98%</strong><span>0 excepciones Modbus</span></div></article>
-      </section>
-
-      <article className="panel module-panel diagnostics-module">
-        <div className="diagnostics-toolbar"><div><span className="eyebrow">Puesta en marcha</span><h2>Comprobación de extremo a extremo</h2><p>Verifica cada etapa de la adquisición antes de habilitar datos reales.</p></div><button className={`diagnostic-run-button ${diagnosticState}`} onClick={runDiagnostic} disabled={diagnosticState === "running"}>{diagnosticState === "running" ? <><Refresh size={16} /> Comprobando…</> : diagnosticState === "success" ? <><CheckCircle2 size={16} /> Repetir diagnóstico</> : <><Activity size={16} /> Ejecutar diagnóstico</>}</button></div>
-
-        <div className={`diagnostic-chain ${stateClass}`} aria-live="polite">
-          <article><span><CircuitBoard size={21} /></span><small>Etapa 01</small><strong>CAM5-CTRL-01</strong><p>192.168.10.42:502</p><i>{diagnosticState === "running" ? "Probando" : "Disponible"}</i></article>
-          <b><ChevronRight size={19} /></b>
-          <article><span><Radio size={21} /></span><small>Etapa 02</small><strong>Modbus TCP</strong><p>FC 03 · Unit ID 1</p><i>{diagnosticState === "running" ? "Leyendo" : "105/105 registros"}</i></article>
-          <b><ChevronRight size={19} /></b>
-          <article><span><Server size={21} /></span><small>Etapa 03</small><strong>CAM5-GW-01</strong><p>LAN 192.168.10.40</p><i>{diagnosticState === "running" ? "Enviando" : "En línea"}</i></article>
-          <b><ChevronRight size={19} /></b>
-          <article><span><Zap size={21} /></span><small>Etapa 04</small><strong>HoitLive Core</strong><p>Ingesta y reglas</p><i>{diagnosticState === "running" ? "Validando" : "Actualizado hace 2 s"}</i></article>
-        </div>
-
-        <div className="diagnostics-result-bar"><span className={stateClass}>{diagnosticState === "running" ? <Refresh size={16} /> : <CheckCircle2 size={16} />}</span><div><strong>{diagnosticState === "running" ? "Comprobando la cadena OT" : diagnosticState === "success" ? "Diagnóstico completado sin hallazgos" : "Cadena preparada para comprobar"}</strong><p>{lastRun}</p></div><small>Tiempo objetivo ≤ 3 s</small></div>
-
-        <div className="diagnostics-grid">
-          <section className="diagnostic-health-card"><div className="report-library-head"><div><span className="eyebrow">Salud de comunicación</span><h2>Indicadores actuales</h2></div><StatusPill state="online">En línea</StatusPill></div><dl><div><dt>Latencia controlador</dt><dd>42 ms <small>Normal</small></dd></div><div><dt>Latencia hacia HoitLive Core</dt><dd>86 ms <small>Normal</small></dd></div><div><dt>Última respuesta válida</dt><dd>Hace 2 s <small>FC 03</small></dd></div><div><dt>Reintentos / 24 h</dt><dd>2 <small>0.01%</small></dd></div><div><dt>Excepciones Modbus</dt><dd>0 <small>Sin errores</small></dd></div><div><dt>Calidad de datos</dt><dd>105 / 105 <small>Válidos</small></dd></div></dl></section>
-          <section className="diagnostic-transactions"><div className="report-library-head"><div><span className="eyebrow">Tráfico reciente</span><h2>Últimas lecturas Modbus</h2></div><span>FC 03</span></div><div className="module-table-wrap"><div className="diagnostic-transaction-table"><div className="module-table-head"><span>Hora</span><span>Solicitud</span><span>Rango</span><span>Resultado</span><span>Tiempo</span></div>{transactions.map((transaction) => <div className="module-table-row" key={`${transaction.time}-${transaction.range}`}><span className="mono-cell">{transaction.time}</span><span className="mono-cell">{transaction.request}</span><span className="mono-cell">{transaction.range}</span><span className="quality-ok"><CheckCircle2 size={14} /> {transaction.result}</span><span className="mono-cell">{transaction.latency}</span></div>)}</div></div></section>
-        </div>
-        <div className="configuration-note diagnostics-note"><ShieldCheck size={17} /><p><strong>Adquisición pendiente de conexión.</strong> Esta vista consumirá las respuestas del gateway y las excepciones Modbus del controlador cuando el servicio OT quede habilitado.</p></div>
-      </article>
-    </>
-  );
-}
-
 function IntegrationsView() {
   const notify = useFeedback();
   const confirm = useConfirm();
@@ -1643,7 +1595,7 @@ export default function Home() {
             <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> Gestión de activos críticos</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{view !== "assets" && view !== "settings" && view !== "integrations" && view !== "users" && view !== "notifications" && view !== "reports" && view !== "diagnostics" && view !== "commissioning" && view !== "trends" && view !== "history" && <button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button>}<button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{alarmSummary.critical + alarmSummary.warning} alertas activas</button></div></section>
             {view === "overview" && <Overview onNavigate={navigate} onAcknowledge={acknowledge} activeAlarms={alarmPreview} point={activePoint} />}
             {view === "cabinet" && <CabinetView onOpenTrend={openChannelTrend} />}
-            {view === "diagnostics" && <DiagnosticsView />}
+            {view === "diagnostics" && <DatabaseDiagnosticsView assetId={activePoint?.id ?? ""} canExecute={sessionUser.permissions.includes("diagnostics.execute")} notify={notify} />}
             {view === "commissioning" && <Cam5CommissioningView assetId={activePoint?.id ?? ""} canExecute={sessionUser.permissions.includes("commissioning.execute")} notify={notify} confirm={(request) => setConfirmRequest(request)} onOpenSettings={() => navigate("settings")} onOpenReports={() => navigate("reports")} />}
             {view === "trends" && <TrendsView assetId={activePoint?.id ?? ""} channels={sensors.map((sensor) => ({ id: sensor.id, label: sensor.label, zone: sensor.zone, unit: sensor.unit, state: sensor.state, enabled: sensor.enabled }))} period={period} setPeriod={setPeriod} selectedId={resolvedTrendSensorId} onSelectChannel={selectTrendChannel} onBackToMap={() => navigate("cabinet")} rangeWindow={trendWindow} setRangeWindow={setTrendWindow} canExport={sessionUser.permissions.includes("history.export")} notify={notify} />}
             {view === "alarms" && <AlarmsView assetId={activePoint?.id ?? ""} permissions={sessionUser.permissions} onSummaryChange={setAlarmSummary} onOpenTrend={openAlarmTrend} />}

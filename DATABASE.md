@@ -88,6 +88,7 @@ El host `192.168.10.42` del seed es provisional. Debe reemplazarse por la direcc
 ## Operación y retención
 
 - La API debe insertar un `ingestion_batch` por ciclo para hacer la ingestión idempotente.
+- Cada lote conserva identificador de arranque, secuencia y uptime del gateway; horas de envío/recepción; latencia Modbus; y contadores `good`, `stale` y `bad` para diagnosticar 24 horas sin recorrer millones de muestras.
 - Cada lote admite una sola lectura por señal.
 - Los códigos `0x8000` y `0xFFFF` se almacenan como valor crudo, con valor procesado nulo y calidad `bad`.
 - El backend actualiza `latest_readings` en la misma transacción que el histórico.
@@ -109,6 +110,7 @@ El host `192.168.10.42` del seed es provisional. Debe reemplazarse por la direcc
 - API de jerarquía para crear, editar, desactivar, reactivar y eliminar de forma segura clientes, sitios, puntos de medición, gateways y controladores, con validación de pertenencia, dependencias y auditoría.
 - Histórico protegido, paginado y exportable con filtros `assetId`, `from`, `to`, `q` y `channel`.
 - Tendencias reales con resolución automática o explícita, hasta cuatro canales compatibles, umbrales, calidad, tramos faltantes y CSV; los rangos largos utilizan `reading_aggregates`.
+- Diagnóstico protegido por `diagnostics.read` y `diagnostics.execute`, con frescura de las cuatro etapas, estadísticas de lotes, latencia promedio/P95, calidad agregada, ciclos paginados y recalculo auditado.
 - Alarmas persistentes con búsqueda, filtros, paginación, asignación, notas, reconocimiento, atención, cierre y órdenes de trabajo vinculadas.
 - Reglas de alarma editables por canal, con histéresis, muestras de activación/recuperación, tiempo de dato atrasado y auditoría.
 - Canales de notificación administrables para correo, Microsoft Teams y webhook HTTPS; reglas por severidad y tipo, demora, repetición, recuperación, prueba de conexión, historial paginado, filtros por fecha y reintento manual.

@@ -53,7 +53,7 @@ const expectedTables = [
 test("applies the CAM5 PostgreSQL migration with access profiles and telemetry constraints", async () => {
   const database = new PGlite();
   try {
-    for (const filename of ["0000_cam5_initial_schema.sql", "0001_eager_blockbuster.sql", "0002_sparkling_wallow.sql", "0003_rich_charles_xavier.sql", "0004_windy_gauntlet.sql", "0005_milky_caretaker.sql", "0006_smiling_frightful_four.sql", "0007_big_frightful_four.sql"]) {
+    for (const filename of ["0000_cam5_initial_schema.sql", "0001_eager_blockbuster.sql", "0002_sparkling_wallow.sql", "0003_rich_charles_xavier.sql", "0004_windy_gauntlet.sql", "0005_milky_caretaker.sql", "0006_smiling_frightful_four.sql", "0007_big_frightful_four.sql", "0008_sloppy_mister_sinister.sql"]) {
       const migration = await readFile(new URL(`../drizzle/${filename}`, import.meta.url), "utf8");
       await database.exec(migration.replaceAll("--> statement-breakpoint", ""));
     }
@@ -113,6 +113,15 @@ test("applies the CAM5 PostgreSQL migration with access profiles and telemetry c
       { column_name: "payload", is_nullable: "NO" },
       { column_name: "title", is_nullable: "NO" },
     ]);
+
+    const diagnosticColumns = await database.query(`
+      select column_name
+      from information_schema.columns
+      where table_schema = 'public' and table_name = 'ingestion_batches'
+        and column_name in ('gateway_boot_id', 'gateway_sequence', 'gateway_uptime_seconds', 'sent_at', 'received_at', 'good_registers', 'stale_registers', 'bad_registers')
+      order by column_name
+    `);
+    assert.deepEqual(diagnosticColumns.rows.map((row) => row.column_name), ["bad_registers", "gateway_boot_id", "gateway_sequence", "gateway_uptime_seconds", "good_registers", "received_at", "sent_at", "stale_registers"]);
 
     await assert.rejects(
       database.query(`

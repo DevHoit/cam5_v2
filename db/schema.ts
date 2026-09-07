@@ -432,10 +432,18 @@ export const ingestionBatches = pgTable("ingestion_batches", {
   gatewayId: uuid("gateway_id").notNull().references(() => gateways.id, { onDelete: "restrict" }),
   deviceId: uuid("device_id").notNull().references(() => devices.id, { onDelete: "restrict" }),
   batchKey: varchar("batch_key", { length: 160 }).notNull(),
+  gatewayBootId: varchar("gateway_boot_id", { length: 80 }),
+  gatewaySequence: bigint("gateway_sequence", { mode: "number" }),
+  gatewayUptimeSeconds: bigint("gateway_uptime_seconds", { mode: "number" }),
+  sentAt: timestamp("sent_at", { withTimezone: true }),
+  receivedAt: timestamp("received_at", { withTimezone: true }).defaultNow().notNull(),
   startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
   completedAt: timestamp("completed_at", { withTimezone: true }),
   expectedRegisters: integer("expected_registers").notNull(),
   receivedRegisters: integer("received_registers").default(0).notNull(),
+  goodRegisters: integer("good_registers").default(0).notNull(),
+  staleRegisters: integer("stale_registers").default(0).notNull(),
+  badRegisters: integer("bad_registers").default(0).notNull(),
   latencyMs: integer("latency_ms"),
   success: boolean("success").default(false).notNull(),
   errorMessage: text("error_message"),
@@ -443,6 +451,7 @@ export const ingestionBatches = pgTable("ingestion_batches", {
   uniqueIndex("ingestion_batches_gateway_key_uidx").on(table.gatewayId, table.batchKey),
   index("ingestion_batches_device_started_idx").on(table.deviceId, table.startedAt),
   check("ingestion_batches_counts_chk", sql`${table.expectedRegisters} > 0 AND ${table.receivedRegisters} >= 0 AND ${table.receivedRegisters} <= ${table.expectedRegisters}`),
+  check("ingestion_batches_quality_counts_chk", sql`${table.goodRegisters} >= 0 AND ${table.staleRegisters} >= 0 AND ${table.badRegisters} >= 0 AND ${table.goodRegisters} + ${table.staleRegisters} + ${table.badRegisters} <= ${table.receivedRegisters}`),
 ]);
 
 export const deviceRegisterSamples = pgTable("device_register_samples", {

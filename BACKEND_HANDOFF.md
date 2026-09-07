@@ -74,6 +74,7 @@ El cliente tipado está en `app/cam5-api.ts`. Las familias principales son:
 - `/history`
 - `/trends`
 - `/trends/aggregate`
+- `/diagnostics`
 - `/me/access`
 - `/users`
 - `/users/{userId}`
@@ -91,13 +92,12 @@ El cliente tipado está en `app/cam5-api.ts`. Las familias principales son:
 - `/assets/{assetId}/readings/*`
 - `/alarms/*`
 - `/alarm-rules/*`
-- `/work-orders/*`
 
 ## Persistencia y autorización
 
 La base PostgreSQL, sus migraciones y el seed se encuentran en `db/` y `drizzle/`. El diseño incluye datos crudos, última lectura, agregados históricos, perfiles Modbus y control de acceso por rol, cliente, sitio y punto de medición.
 
-Ya están implementadas las sesiones locales con contexto de sitio activo, contraseñas con `scrypt`, cookie `HttpOnly` y `SameSite=Strict`, revocación al cerrar sesión, jerarquía operacional administrable, administración paginada de usuarios, consulta histórica paginada/exportable, tendencias multicanal y el ciclo operativo de alarmas. El gateway ingresa telemetría idempotente y el backend evalúa reglas, abre o normaliza alarmas, conserva su línea de tiempo y permite vincular una orden de trabajo real. La tarea programada crea agregados, aplica la retención configurada y revisa pérdidas de comunicación. La jerarquía permite editar, desactivar/reactivar y eliminar solo elementos sin dependencias; toda mutación se audita. Los endpoints de escritura impiden suspender la cuenta propia y protegen al último administrador activo de cada sitio.
+Ya están implementadas las sesiones locales con contexto de sitio activo, contraseñas con `scrypt`, cookie `HttpOnly` y `SameSite=Strict`, revocación al cerrar sesión, jerarquía operacional administrable, administración paginada de usuarios, consulta histórica paginada/exportable, tendencias multicanal, diagnóstico de comunicación y el ciclo operativo de alarmas. El gateway ingresa telemetría idempotente y el backend evalúa reglas, abre o normaliza alarmas y conserva su línea de tiempo. La tarea programada crea agregados, aplica la retención configurada y revisa pérdidas de comunicación. La jerarquía permite editar, desactivar/reactivar y eliminar solo elementos sin dependencias; toda mutación se audita. Los endpoints de escritura impiden suspender la cuenta propia y protegen al último administrador activo de cada sitio.
 
 Los perfiles iniciales son Administrador, Ingeniero, Operador y Solo lectura. La autorización se aplica en el backend mediante `db/authorization.ts`; la visibilidad del menú en el frontend es solamente una ayuda visual y no un control de seguridad.
 
