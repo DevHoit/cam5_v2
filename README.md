@@ -14,6 +14,7 @@ La estructura operacional admite uno o varios clientes, sitios, puntos de medici
 - Administración paginada de umbrales por canal con autorización y auditoría.
 - Histórico, reportes y auditoría.
 - Login/logout persistente, usuarios, roles y auditoría conectados a PostgreSQL.
+- Mi cuenta conectada a PostgreSQL, con perfil personal, cambio seguro de contraseña, cierre automático de otras sesiones y revocación de sesiones remotas.
 - Búsqueda, filtros y paginación en los listados operativos y administrativos.
 - Histórico consultable y exportable por punto, rango de fechas, canal y texto, con acceso directo a la tendencia de cada registro.
 - Ingestión autenticada e idempotente desde gateways, con valores crudos, calidad y buffer de reenvío.
@@ -72,7 +73,7 @@ El proyecto es Next.js nativo.
 
 No usar `npm run build:cloudflare` para Vercel, porque genera una salida vinext diferente de `.next`.
 
-## Integración futura
+## Conexión del gateway
 
 Configurar:
 
@@ -80,7 +81,9 @@ Configurar:
 NEXT_PUBLIC_CAM5_API_URL=https://api.ejemplo.cl/api/v1
 ```
 
-La autenticación, los usuarios, la jerarquía operacional, la configuración técnica, el histórico, las tendencias, los reportes, el diagnóstico, la última telemetría y el ciclo completo de alarmas utilizan rutas internas `/api/v1` conectadas a PostgreSQL. El módulo de Integraciones es el siguiente bloque pendiente de persistencia completa.
+La autenticación, las cuentas, los usuarios, la jerarquía operacional, la configuración técnica, el histórico, las tendencias, los reportes, el diagnóstico, la última telemetría y el ciclo completo de alarmas utilizan rutas internas `/api/v1` conectadas a PostgreSQL.
+
+Las integraciones externas con historiadores, CMMS/ERP u otras plataformas quedan fuera del alcance de esta primera versión. La estructura técnica de base de datos se conserva para incorporarlas después sin afectar los módulos operativos actuales.
 
 El contrato que debe implementar el gateway está en [`gateway/CAM5_GATEWAY_PROTOCOL.md`](./gateway/CAM5_GATEWAY_PROTOCOL.md). Incluye frecuencias, payload JSON, códigos de calidad, reintentos y un emisor Python de referencia.
 
@@ -93,7 +96,7 @@ El contrato que debe implementar el gateway está en [`gateway/CAM5_GATEWAY_PROT
 - `app/settings-view.tsx`: configuración técnica persistente y versionada por punto de medición.
 - `app/cam5-model.ts`: canales, inventario y catálogo Modbus.
 - `app/cam5-api.ts`: contrato de API.
-- `app/api/v1/`: login, logout, contexto activo, jerarquía, configuración, usuarios, histórico, tendencias, telemetría, diagnóstico, alarmas, reglas, reportes y notificaciones PostgreSQL.
+- `app/api/v1/`: login, logout, cuenta personal, contexto activo, jerarquía, configuración, usuarios, histórico, tendencias, telemetría, diagnóstico, alarmas, reglas, reportes y notificaciones PostgreSQL.
 - `db/alarm-engine.ts`: evaluación automática de umbrales, calidad y comunicaciones.
 - `db/notification-engine.ts`: encolado, deduplicación, repetición, entrega y reintentos de notificaciones.
 - `db/telemetry-aggregation.ts`: agregados temporales y aplicación de retención.

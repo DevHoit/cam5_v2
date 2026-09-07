@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { ComponentType } from "react";
-import { usePersistentState } from "./use-persistent-state";
+import { AccountView } from "./account-view";
 import { Cam5CommissioningView } from "./cam5-engineering";
 import { DiagnosticsView as DatabaseDiagnosticsView } from "./diagnostics-view";
 import { Pagination, useClientPagination } from "./pagination";
@@ -22,10 +22,8 @@ import {
   IconCircleCheck as CheckCircle2,
   IconCircuitCell as CircuitBoard,
   IconClipboardCheck as ClipboardCheck,
-  IconCopy as Copy,
   IconClock as Clock3,
   IconDatabase as Database,
-  IconDeviceDesktopAnalytics as MonitorDot,
   IconDeviceFloppy as Save,
   IconDownload as Download,
   IconDroplet as Droplets,
@@ -49,17 +47,15 @@ import {
   IconShieldCheck as ShieldCheck,
   IconTemperature as Thermometer,
   IconTimeline as Timeline,
-  IconTool as Tool,
   IconTrash as Trash,
   IconTrendingUp as TrendingUp,
   IconUserPlus as UserPlus,
   IconUsers as Users,
   IconWifi as Wifi,
-  IconWebhook as Webhook,
   IconX as X,
 } from "@tabler/icons-react";
 
-type View = "overview" | "cabinet" | "diagnostics" | "commissioning" | "trends" | "alarms" | "history" | "assets" | "reports" | "settings" | "integrations" | "users" | "notifications";
+type View = "overview" | "cabinet" | "diagnostics" | "commissioning" | "trends" | "alarms" | "history" | "assets" | "reports" | "settings" | "users" | "notifications" | "account";
 type Severity = "critical" | "warning" | "info";
 type SensorState = "normal" | "warning" | "critical";
 type HistoryTab = "measurements" | "alarms" | "audit";
@@ -351,9 +347,9 @@ const navGroups = [
     label: "Administración",
     items: [
       { id: "settings" as View, label: "Configuración", description: "Activo, Modbus y gateway", icon: Settings },
-      { id: "integrations" as View, label: "Integraciones", description: "Datos y sistemas externos", icon: PlugConnected },
       { id: "users" as View, label: "Usuarios y roles", description: "Acceso y permisos", icon: Users },
       { id: "notifications" as View, label: "Notificaciones", description: "Canales y escalamiento", icon: Mail },
+      { id: "account" as View, label: "Mi cuenta", description: "Perfil, contraseña y sesiones", icon: ShieldCheck },
     ],
   },
 ];
@@ -369,9 +365,9 @@ const viewTitles: Record<View, { title: string; description: string }> = {
   assets: { title: "Estructura operacional", description: "Clientes, sitios, puntos de medición, gateways y controladores asociados." },
   reports: { title: "Reportes", description: "Informes de condición, eventos y cumplimiento para operación y confiabilidad." },
   settings: { title: "Configuración", description: "Parámetros del activo, canales de adquisición y comunicaciones." },
-  integrations: { title: "Integraciones", description: "Conexiones, flujo de datos y acceso seguro para sistemas externos." },
   users: { title: "Usuarios y roles", description: "Control de acceso y permisos para la operación técnica." },
   notifications: { title: "Notificaciones", description: "Canales de entrega, reglas de escalamiento y trazabilidad." },
+  account: { title: "Mi cuenta", description: "Perfil personal, credenciales y sesiones activas del portal." },
 };
 
 function StatusPill({ state, children }: { state: SensorState | Severity | "online" | "offline"; children: React.ReactNode }) {
@@ -1106,75 +1102,6 @@ function OperationalHierarchyView({
   </>;
 }
 
-function IntegrationsView() {
-  const notify = useFeedback();
-  const confirm = useConfirm();
-  const role = useActiveRole();
-  const sensors = useSensorData();
-  const activeChannelCount = sensors.filter((sensor) => sensor.enabled).length;
-  const [tab, setTab] = useState<"connections" | "flow" | "api">("connections");
-  const [testingId, setTestingId] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-  const [showApiForm, setShowApiForm] = useState(false);
-  const [apiForm, setApiForm] = useState({ name: "", scope: "Solo lectura" });
-  const [newApiKey, setNewApiKey] = useState<string | null>(null);
-  const [connections, setConnections] = usePersistentState("cam5.front.integrations", [
-    { id: "controller", name: "Controlador CAM5-CTRL-01", role: "Adquisición de campo", protocol: "Modbus TCP", endpoint: "192.168.10.42:502 · Unit ID 1", enabled: true, locked: true, status: "Operativa", freshness: "Hace 2 s" },
-    { id: "gateway", name: "Gateway CAM5-GW-01", role: "Puente OT / plataforma", protocol: "Ethernet · HTTPS/MQTT", endpoint: "LAN 192.168.10.40", enabled: true, locked: true, status: "Operativa", freshness: "Hace 2 s" },
-    { id: "historian", name: "Historiador OT", role: "Integración futura", protocol: "OPC UA", endpoint: "No configurado", enabled: false, locked: false, status: "Fuera del MVP", freshness: "Sin sincronizar" },
-    { id: "cmms", name: "CMMS de mantenimiento", role: "Integración futura", protocol: "REST / Webhook", endpoint: "No configurado", enabled: false, locked: false, status: "Fuera del MVP", freshness: "Sin sincronizar" },
-  ]);
-  const [apiKeys, setApiKeys] = usePersistentState("cam5.front.api-keys", [
-    { id: 1, name: "Integración de pruebas", token: "cam5_test_••••••••7K2P", scope: "Solo lectura", created: "11 ago 2026", lastUse: "Nunca", active: false },
-  ]);
-  const activeConnections = connections.filter((connection) => connection.enabled).length;
-  const testConnection = (id: string) => {
-    setTestingId(id);
-    setConnections((current) => current.map((connection) => connection.id === id ? { ...connection, status: "Probando…" } : connection));
-    window.setTimeout(() => {
-      setConnections((current) => current.map((connection) => connection.id === id ? { ...connection, status: "Operativa", freshness: "Ahora" } : connection));
-      setTestingId(null);
-      notify("Conexión comprobada correctamente.");
-    }, 900);
-  };
-  const toggleConnection = (id: string) => setConnections((current) => current.map((connection) => connection.id === id && !connection.locked ? { ...connection, enabled: !connection.enabled, status: connection.enabled ? "Desactivada" : "Operativa", freshness: connection.enabled ? "Sin sincronizar" : "Ahora" } : connection));
-  const createApiKey = (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!apiForm.name.trim()) return;
-    const rawKey = `cam5_live_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
-    setApiKeys((current) => [{ id: Date.now(), name: apiForm.name.trim(), token: `${rawKey.slice(0, 10)}••••••••${rawKey.slice(-4).toUpperCase()}`, scope: apiForm.scope, created: "Ahora", lastUse: "Nunca", active: true }, ...current]);
-    setNewApiKey(rawKey); setApiForm({ name: "", scope: "Solo lectura" }); setShowApiForm(false); notify("Clave creada. Cópiala antes de abandonar esta sección.", "info");
-  };
-  const revokeApiKey = (id: number) => { const key = apiKeys.find((item) => item.id === id); const apply = () => { setApiKeys((current) => current.map((item) => item.id === id ? { ...item, active: !item.active } : item)); notify(`Clave ${key?.active ? "revocada" : "reactivada"}.`, key?.active ? "warning" : "success"); }; if (key?.active) confirm({ title: `Revocar “${key.name}”`, detail: "Los servicios que utilicen esta credencial dejarán de acceder al sistema inmediatamente.", confirmLabel: "Revocar clave", tone: "danger", onConfirm: apply }); else apply(); };
-  const copyApiKey = async () => { if (!newApiKey) return; await navigator.clipboard?.writeText(newApiKey); setCopied(true); notify("Clave copiada al portapapeles.", "info"); window.setTimeout(() => setCopied(false), 1800); };
-  const syncLog = [
-    { time: "11:52:08", system: "CAM5-CTRL-01", action: "Lectura Modbus completada", detail: `${activeChannelCount} canales · 42 ms`, state: "Correcta" },
-    { time: "11:52:07", system: "CAM5-GW-01", action: "Paquete de telemetría enviado", detail: "Subestación Norte", state: "Correcta" },
-    { time: "11:52:06", system: "HoitLive Core", action: "Reglas de condición evaluadas", detail: `${activeChannelCount} señales`, state: "Correcta" },
-    { time: "11:48:04", system: "Motor de eventos", action: "Evento crítico registrado", detail: "AL-260811-031", state: "Correcta" },
-  ];
-
-  return (
-    <>
-      <section className="module-summary-grid integration-summary-grid">
-        <article><span className="module-summary-icon green"><PlugConnected size={19} /></span><div><small>Enlaces OT operativos</small><strong>{activeConnections}</strong><span>Controlador + gateway</span></div></article>
-        <article><span className="module-summary-icon blue"><Refresh size={19} /></span><div><small>Sincronización</small><strong>99.98%</strong><span>Últimas 24 horas</span></div></article>
-        <article><span className="module-summary-icon amber"><Webhook size={19} /></span><div><small>Integraciones futuras</small><strong>2</strong><span>Historiador + CMMS</span></div></article>
-      </section>
-
-      <article className={`panel module-panel integration-module ${role === "Solo lectura" ? "role-readonly" : ""}`}>
-        <div className="module-toolbar"><div className="module-tabs" role="tablist" aria-label="Secciones de integraciones"><button className={tab === "connections" ? "active" : ""} onClick={() => setTab("connections")}><PlugConnected size={16} /> Conexiones</button><button className={tab === "flow" ? "active" : ""} onClick={() => setTab("flow")}><Timeline size={16} /> Flujo de datos</button><button className={tab === "api" ? "active" : ""} onClick={() => setTab("api")}><Key size={16} /> Acceso API</button></div><span className="autosave-state"><ShieldCheck size={14} /> Configuración local protegida</span></div>
-
-        {tab === "connections" && <div className="integration-content"><div className="settings-section-head"><span className="settings-icon"><PlugConnected size={20} /></span><div><h2>Arquitectura del sitio activo</h2><p>Enlaces configurados entre controladores, gateways y servicios externos.</p></div></div><div className="integration-card-grid">{connections.map((connection) => <article className={`integration-card ${connection.enabled ? "enabled" : "disabled"}`} key={connection.id}><div className="integration-card-head"><span className="integration-card-icon">{connection.id === "controller" ? <Radio size={21} /> : connection.id === "gateway" ? <Server size={21} /> : connection.id === "historian" ? <Database size={21} /> : <Tool size={21} />}</span>{connection.locked ? <span className="core-link-label"><ShieldCheck size={13} /> Requerida</span> : <button className={`switch-control ${connection.enabled ? "on" : ""}`} onClick={() => toggleConnection(connection.id)} aria-label={`${connection.enabled ? "Desactivar" : "Activar"} ${connection.name}`}><i /></button>}</div><span className="eyebrow">{connection.role}</span><h3>{connection.name}</h3><dl><div><dt>Protocolo</dt><dd>{connection.protocol}</dd></div><div><dt>Destino</dt><dd title={connection.endpoint}>{connection.endpoint}</dd></div><div><dt>Última actividad</dt><dd>{connection.freshness}</dd></div></dl><div className="integration-card-footer"><span className={connection.enabled && connection.status === "Operativa" ? "quality-ok" : connection.status === "Probando…" ? "integration-testing" : "muted-state"}>{connection.status === "Operativa" && <CheckCircle2 size={14} />}{connection.status}</span><button onClick={() => testConnection(connection.id)} disabled={!connection.enabled || testingId === connection.id}>{testingId === connection.id ? "Probando…" : "Probar conexión"}</button></div></article>)}</div><div className="configuration-note"><ShieldCheck size={17} /><p><strong>Cadena de adquisición configurada.</strong> Cada sitio puede incorporar uno o más gateways y asociarlos a sus puntos de medición. Historiador y sistemas externos quedan disponibles para integración.</p></div></div>}
-
-        {tab === "flow" && <div className="integration-content flow-content"><div className="settings-section-head"><span className="settings-icon"><Timeline size={20} /></span><div><h2>Ruta de datos del sitio activo</h2><p>Cadena de adquisición y procesamiento desde cada sensor hasta el portal.</p></div></div><div className="data-flow"><article><span><Activity size={21} /></span><small>Origen</small><strong>24 entradas CAM5</strong><p>{activeChannelCount} señales activas · temperatura, UHF y ambiente</p></article><i><ChevronRight size={19} /></i><article><span><CircuitBoard size={21} /></span><small>Controlador</small><strong>CAM5-CTRL-01</strong><p>Modbus TCP · Unit ID 1</p></article><i><ChevronRight size={19} /></i><article><span><Server size={21} /></span><small>Gateway</small><strong>CAM5-GW-01</strong><p>Ethernet · HTTPS/MQTT</p></article><i><ChevronRight size={19} /></i><article className="flow-core"><span><Zap size={21} /></span><small>Procesamiento</small><strong>HoitLive Core</strong><p>Reglas, eventos e histórico</p></article><i><ChevronRight size={19} /></i><article><span><MonitorDot size={21} /></span><small>Aplicación</small><strong>HoitLive Core</strong><p>Dashboard, alertas y reportes</p></article></div><div className="flow-grid"><section><div className="report-library-head"><div><span className="eyebrow">Mapeo Modbus</span><h2>Señales publicadas</h2></div><span>{activeChannelCount} activas</span></div><div className="module-table-wrap"><div className="integration-mapping-table"><div className="module-table-head"><span>Canal</span><span>Registro</span><span>Variable publicada</span><span>Publicación</span><span>Calidad</span></div>{sensors.filter((sensor) => sensor.enabled).map((sensor) => <div className="module-table-row" key={sensor.id}><span><b className={`sensor-code sensor-${sensor.state}`}>{sensor.id}</b></span><span className="mono-cell">{sensor.nativeRegister} · {sensor.register.replace("HR ", "")}</span><span className="mono-cell">cam5.mcc01.{sensor.id.toLowerCase()}</span><span>{sensor.id === "PD1" ? "HoitLive Core + eventos" : "HoitLive Core"}</span><span className="quality-ok"><CheckCircle2 size={14} /> {sensor.quality}</span></div>)}</div></div></section><aside className="sync-activity"><div className="report-library-head"><div><span className="eyebrow">Actividad</span><h2>Últimas sincronizaciones</h2></div></div><div>{syncLog.map((entry) => <article key={`${entry.time}-${entry.system}`}><span className={entry.state === "Correcta" ? "normal" : "warning"}><Refresh size={15} /></span><div><strong>{entry.action}</strong><small>{entry.system} · {entry.detail}</small></div><time>{entry.time}</time></article>)}</div></aside></div></div>}
-
-        {tab === "api" && <div className="integration-content api-content"><div className="api-section-head"><div className="settings-section-head"><span className="settings-icon"><Key size={20} /></span><div><h2>Credenciales de integración</h2><p>Claves para servicios que consumen o publican información en HoitLive Core.</p></div></div><button className="primary-button" onClick={() => setShowApiForm((current) => !current)}><Plus size={16} /> {showApiForm ? "Cancelar" : "Nueva clave"}</button></div>{showApiForm && <form className="api-key-form" onSubmit={createApiKey}><label><span>Nombre de la integración</span><input required value={apiForm.name} onChange={(event) => setApiForm({ ...apiForm, name: event.target.value })} placeholder="Ej.: Panel de confiabilidad" /></label><label><span>Alcance</span><select value={apiForm.scope} onChange={(event) => setApiForm({ ...apiForm, scope: event.target.value })}><option>Solo lectura</option><option>Telemetría · lectura</option><option>Eventos · escritura</option></select></label><button type="submit"><Key size={15} /> Crear clave</button></form>}{newApiKey && <div className="api-key-reveal"><ShieldCheck size={19} /><div><strong>Copia la nueva clave ahora</strong><code>{newApiKey}</code><small>Por seguridad, no volverá a mostrarse completa.</small></div><button onClick={copyApiKey}>{copied ? <CheckCircle2 size={15} /> : <Copy size={15} />}{copied ? "Copiada" : "Copiar"}</button></div>}<div className="api-layout"><section className="api-key-list"><div className="report-library-head"><div><span className="eyebrow">Credenciales</span><h2>Claves registradas</h2></div><span>{apiKeys.filter((key) => key.active).length} activas</span></div>{apiKeys.map((key) => <article key={key.id}><span className={`api-key-icon ${key.active ? "active" : ""}`}><Key size={18} /></span><div><strong>{key.name}</strong><code>{key.token}</code><small>{key.scope} · Creada {key.created} · Uso: {key.lastUse}</small></div><button className="ghost-button" onClick={() => revokeApiKey(key.id)}>{key.active ? "Revocar" : "Reactivar"}</button></article>)}</section><aside className="api-endpoints"><span className="eyebrow">Endpoints disponibles</span><h3>API HoitLive Core v1</h3><p>Rutas propuestas para la futura integración con servicios autorizados.</p><dl><div><dt>GET</dt><dd>/api/v1/assets/mcc-01/readings</dd></div><div><dt>GET</dt><dd>/api/v1/assets/mcc-01/events</dd></div><div><dt>POST</dt><dd>/api/v1/work-orders</dd></div><div><dt>POST</dt><dd>/api/v1/webhooks/events</dd></div></dl><div className="configuration-note"><Webhook size={16} /><p>Los endpoints son parte del diseño del frontend; todavía no exponen información real.</p></div></aside></div></div>}
-      </article>
-    </>
-  );
-}
-
 function UsersView({ currentUserId, sites, activeSiteId }: { currentUserId: string; sites: PortalSiteScope[]; activeSiteId: string }) {
   const notify = useFeedback();
   const confirm = useConfirm();
@@ -1578,7 +1505,7 @@ export default function Home() {
         </nav>
         <div className="sidebar-status">
           <div className="gateway-badge"><span className="gateway-icon"><Server size={17} /></span><span><strong>{gatewayState === "online" ? "Adquisición operativa" : "Adquisición en puesta en marcha"}</strong><small>{activeController?.code ?? "Controlador pendiente"} → {gatewayCode ?? "Gateway pendiente"}</small></span><i className={gatewayState === "online" ? "" : "pending"} /></div>
-          <button className="user-card" onClick={() => navigate("users")} aria-label="Abrir usuarios y roles"><span className="user-avatar">{sessionUser.displayName.split(" ").map((part) => part[0]).slice(0, 2).join("").toUpperCase()}</span><span className="user-copy"><strong>{sessionUser.displayName}</strong><small>{sessionUser.roleName}</small></span><ChevronRight size={16} /></button>
+          <button className="user-card" onClick={() => navigate("account")} aria-label="Abrir mi cuenta"><span className="user-avatar">{sessionUser.displayName.split(" ").map((part) => part[0]).slice(0, 2).join("").toUpperCase()}</span><span className="user-copy"><strong>{sessionUser.displayName}</strong><small>{sessionUser.roleName}</small></span><ChevronRight size={16} /></button>
           <button className="sidebar-logout" onClick={logout}><LogOut size={17} /> Cerrar sesión</button>
         </div>
       </aside>
@@ -1592,7 +1519,7 @@ export default function Home() {
         <div className="content-scroll">
           <div className="page-content">
             {systemMode !== "normal" && <section className={`operational-banner banner-${systemMode}`} role="alert"><span>{systemMode === "offline" ? <PlugConnected size={19} /> : systemMode === "loading" ? <Refresh className="spin" size={19} /> : <Clock3 size={19} />}</span><div><strong>{systemMode === "offline" ? "Gateway sin comunicación" : systemMode === "loading" ? "Sincronizando datos" : "Las lecturas están atrasadas"}</strong><p>{systemMode === "offline" ? "El portal muestra el último valor recibido cuando existe. Las funciones administrativas siguen disponibles, pero no hay telemetría nueva." : systemMode === "loading" ? "Solicitando la última configuración, lecturas y eventos disponibles." : "Los datos visibles superan el tiempo de frescura configurado. Revisa el enlace antes de tomar una decisión."}</p></div>{systemMode !== "loading" && <button onClick={() => { setSystemMode("loading"); setTelemetryRefreshKey((current) => current + 1); notify("Consultando nuevamente la telemetría.", "info"); }}><Refresh size={15} /> Reintentar</button>}</section>}
-            <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> Gestión de activos críticos</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{view !== "assets" && view !== "settings" && view !== "integrations" && view !== "users" && view !== "notifications" && view !== "reports" && view !== "diagnostics" && view !== "commissioning" && view !== "trends" && view !== "history" && <button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button>}<button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{alarmSummary.critical + alarmSummary.warning} alertas activas</button></div></section>
+            <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> Gestión de activos críticos</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{view !== "assets" && view !== "settings" && view !== "users" && view !== "notifications" && view !== "account" && view !== "reports" && view !== "diagnostics" && view !== "commissioning" && view !== "trends" && view !== "history" && <button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button>}<button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{alarmSummary.critical + alarmSummary.warning} alertas activas</button></div></section>
             {view === "overview" && <Overview onNavigate={navigate} onAcknowledge={acknowledge} activeAlarms={alarmPreview} point={activePoint} />}
             {view === "cabinet" && <CabinetView onOpenTrend={openChannelTrend} />}
             {view === "diagnostics" && <DatabaseDiagnosticsView assetId={activePoint?.id ?? ""} canExecute={sessionUser.permissions.includes("diagnostics.execute")} notify={notify} />}
@@ -1603,9 +1530,9 @@ export default function Home() {
             {view === "assets" && <OperationalHierarchyView hierarchy={hierarchy} loading={hierarchyLoading} permissions={sessionUser.permissions} onReload={loadHierarchy} onSwitchSite={switchSite} />}
             {view === "reports" && <DatabaseReportsView assetId={activePoint?.id ?? ""} assetLabel={activePoint ? `${activePoint.code} · ${activePoint.name}` : "Sin punto seleccionado"} timezone={hierarchy?.sites.find((site) => site.id === sessionUser.siteId)?.timezone ?? "America/Santiago"} canGenerate={sessionUser.permissions.includes("reports.generate")} canSchedule={sessionUser.permissions.includes("reports.schedule")} notify={notify} confirm={(request) => setConfirmRequest(request)} />}
             {view === "settings" && <DatabaseSettingsView assetId={activePoint?.id ?? ""} canWrite={sessionUser.permissions.includes("settings.write")} notify={notify} confirm={(request) => setConfirmRequest(request)} onReloadHierarchy={loadHierarchy} />}
-            {view === "integrations" && <IntegrationsView />}
             {view === "users" && <UsersView currentUserId={sessionUser.id} sites={sessionUser.sites} activeSiteId={sessionUser.siteId} />}
             {view === "notifications" && <NotificationsView canWrite={sessionUser.permissions.includes("notifications.write")} />}
+            {view === "account" && <AccountView notify={notify} confirm={(request) => setConfirmRequest(request)} onProfileUpdated={(displayName) => setSessionUser((current) => current ? { ...current, displayName } : current)} />}
           </div>
         </div>
       </main>

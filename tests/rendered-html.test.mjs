@@ -50,10 +50,14 @@ test("keeps the production portal free of starter preview code", async () => {
     readFile(new URL("../app/diagnostics-view.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/v1/diagnostics/route.ts", import.meta.url), "utf8"),
   ]);
+  const [account, accountApi] = await Promise.all([
+    readFile(new URL("../app/account-view.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/v1/account/route.ts", import.meta.url), "utf8"),
+  ]);
 
   assert.match(page, /ReportsView as DatabaseReportsView/);
   assert.match(page, /function OperationalHierarchyView\(/);
-  assert.match(page, /function IntegrationsView\(\)/);
+  assert.doesNotMatch(page, /view === "integrations"|id: "integrations"|function IntegrationsView/);
   assert.match(page, /DiagnosticsView as DatabaseDiagnosticsView/);
   assert.match(page, /Diagnóstico de comunicación/);
   assert.match(diagnostics, /Estado de extremo a extremo/);
@@ -71,7 +75,7 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(page, /Control contra falsos positivos/);
   assert.match(page, /\/api\/v1\/alarms/);
   assert.match(page, /\/api\/v1\/alarm-rules/);
-  assert.match(page, /usePersistentState/);
+  assert.doesNotMatch(page, /usePersistentState|cam5\.front\.integrations|cam5\.front\.api-keys/);
   assert.match(page, /portal-notice/);
   assert.match(page, /Estructura operacional/);
   assert.match(page, /Clientes, sitios y medición/);
@@ -98,10 +102,18 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(page, /ConfirmContext/);
   assert.match(page, /Las lecturas están atrasadas/);
   assert.match(page, /Sesión activa/);
-  assert.match(page, /CAM5-CTRL-01/);
-  assert.match(page, /CAM5-GW-01/);
-  assert.match(page, /Subestación Norte/);
-  assert.match(page, /Modbus TCP/);
+  assert.match(page, /AccountView/);
+  assert.match(account, /Cambiar contraseña/);
+  assert.match(account, /Sesiones activas/);
+  assert.match(account, /Cerrar sesión remota/);
+  assert.match(accountApi, /account\.profile\.update/);
+  assert.match(accountApi, /account\.session\.revoke/);
+  assert.match(accountApi, /verifyPassword/);
+  assert.match(accountApi, /otherSessionsRevoked/);
+  assert.doesNotMatch(page, /CAM5-CTRL-01|CAM5-GW-01|Subestación Norte/);
+  assert.match(page, /activeController\?\.code/);
+  assert.match(page, /gatewayCode/);
+  assert.match(settings, /Modbus TCP/);
   assert.match(settings, /Mapa oficial de registros CAM5/);
   assert.match(settings, new RegExp("/api/v1/configuration"));
   assert.match(settings, /Versiones de configuración/);
@@ -139,7 +151,7 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(layout, /HoitLive Core \| Monitoreo de condición eléctrica/);
   assert.match(css, /\.report-builder/);
   assert.match(css, /\.asset-management-layout/);
-  assert.match(css, /\.integration-card-grid/);
+  assert.match(css, /\.account-layout/);
   assert.match(css, /\.register-map-table/);
   assert.match(css, /\.diagnostic-chain/);
   assert.match(css, /\.diagnostic-profile-strip/);
