@@ -93,7 +93,10 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(page, /function useSensorData/);
   assert.match(page, /telemetry\.data\?\.items/);
   assert.match(page, /zone-channel-grid/);
-  assert.match(page, /El gráfico aparecerá cuando PostgreSQL tenga muestras/);
+  assert.match(page, /Lecturas comparadas con sus umbrales/);
+  assert.match(page, /El portal conserva el último dato recibido, pero no lo presenta como una lectura actual/);
+  assert.match(page, /Canales vigentes/);
+  assert.doesNotMatch(page, /normalizedSeries|mini-chart/);
   assert.match(page, /inputSummary\.total/);
   assert.doesNotMatch(page, /const chartData/);
   assert.match(page, /function LoginScreen/);
