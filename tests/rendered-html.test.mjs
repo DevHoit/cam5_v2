@@ -127,6 +127,7 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(provisioning, /Descargar \.env/);
   assert.match(provisioning, /Rotar credencial/);
   assert.match(provisioning, /credential-secret-backdrop/);
+  assert.match(provisioning, /role="alertdialog"/);
   assert.match(provisioning, /Copiar token completo/);
   assert.match(provisioning, /Si cierras sin guardarlo, deberás rotar la credencial nuevamente/);
   assert.match(provisioning, /<Pagination/);

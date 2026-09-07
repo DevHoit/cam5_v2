@@ -221,7 +221,7 @@ export function GatewayProvisioningView({
     </section>
 
     {secret && <div className="credential-secret-backdrop">
-      <section className="panel credential-reveal credential-secret-dialog" role="dialog" aria-modal="true" aria-labelledby="gateway-token-title" aria-describedby="gateway-token-description">
+      <section className="panel credential-reveal credential-secret-dialog" role="alertdialog" aria-modal="true" aria-labelledby="gateway-token-title" aria-describedby="gateway-token-description">
         <span className="credential-reveal-icon"><IconShieldCheck size={24} /></span>
         <div><span className="eyebrow">Credencial generada · se muestra una sola vez</span><h2 id="gateway-token-title">Instala el nuevo token en {secret.credential.gateway.code}</h2><p id="gateway-token-description">Descarga el archivo privado o copia el valor completo antes de cerrar esta ventana.</p><code>{secret.token}</code><small>HoitLive Core conserva únicamente su hash SHA-256. Si cierras sin guardarlo, deberás rotar la credencial nuevamente.</small></div>
         <div className="credential-reveal-actions"><button className="primary-button" onClick={() => downloadEnvironment(secret)}><IconDownload size={16} /> Descargar .env</button><button ref={copyButtonRef} className="secondary-button" onClick={() => void copyToken()}>{copied ? <IconCheck size={16} /> : <IconCopy size={16} />}{copied ? "Token copiado" : "Copiar token completo"}</button><button className="ghost-button" onClick={() => setSecret(null)}>Ya lo guardé</button></div>
