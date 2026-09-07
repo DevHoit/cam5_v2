@@ -15,6 +15,8 @@ Este contrato es idéntico para una fuente de datos simulada y para un CAM5 fís
 
 El token identifica al gateway y no debe guardarse en el repositorio. Se recomienda almacenarlo como variable de entorno `CAM5_GATEWAY_TOKEN`, con permisos de lectura limitados al servicio.
 
+La credencial se administra en **Administración → Provisionamiento** dentro de HoitLive Core. El portal muestra el token completo una sola vez y permite descargar un archivo `.env` listo para instalar, rotarlo o revocarlo. La base de datos conserva únicamente su hash, prefijo, vigencia y trazabilidad de uso.
+
 Para comprobar el circuito completo con el emisor de referencia incluido:
 
 ```bash

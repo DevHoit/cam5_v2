@@ -54,6 +54,11 @@ test("keeps the production portal free of starter preview code", async () => {
     readFile(new URL("../app/account-view.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/v1/account/route.ts", import.meta.url), "utf8"),
   ]);
+  const [provisioning, provisioningApi, provisioningCredentialApi] = await Promise.all([
+    readFile(new URL("../app/gateway-provisioning-view.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/v1/gateway-credentials/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/v1/gateway-credentials/[id]/route.ts", import.meta.url), "utf8"),
+  ]);
 
   assert.match(page, /ReportsView as DatabaseReportsView/);
   assert.match(page, /function OperationalHierarchyView\(/);
@@ -110,6 +115,16 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(accountApi, /account\.session\.revoke/);
   assert.match(accountApi, /verifyPassword/);
   assert.match(accountApi, /otherSessionsRevoked/);
+  assert.match(page, /GatewayProvisioningView/);
+  assert.match(page, /Provisionamiento del gateway/);
+  assert.match(provisioning, /Descargar \.env/);
+  assert.match(provisioning, /Rotar credencial/);
+  assert.match(provisioning, /<Pagination/);
+  assert.match(provisioningApi, /hashGatewayToken/);
+  assert.match(provisioningApi, /gateway_credentials\.rotate/);
+  assert.match(provisioningApi, /settings\.write/);
+  assert.doesNotMatch(provisioningApi, /tokenHash: gatewayApiCredentials\.tokenHash/);
+  assert.match(provisioningCredentialApi, /gateway_credentials\.revoke/);
   assert.doesNotMatch(page, /CAM5-CTRL-01|CAM5-GW-01|Subestación Norte/);
   assert.match(page, /activeController\?\.code/);
   assert.match(page, /gatewayCode/);

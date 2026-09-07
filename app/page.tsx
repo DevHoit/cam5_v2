@@ -5,6 +5,7 @@ import type { ComponentType } from "react";
 import { AccountView } from "./account-view";
 import { Cam5CommissioningView } from "./cam5-engineering";
 import { DiagnosticsView as DatabaseDiagnosticsView } from "./diagnostics-view";
+import { GatewayProvisioningView } from "./gateway-provisioning-view";
 import { Pagination, useClientPagination } from "./pagination";
 import { NotificationsView as DatabaseNotificationsView } from "./notifications-view";
 import { ReportsView as DatabaseReportsView } from "./reports-view";
@@ -55,7 +56,7 @@ import {
   IconX as X,
 } from "@tabler/icons-react";
 
-type View = "overview" | "cabinet" | "diagnostics" | "commissioning" | "trends" | "alarms" | "history" | "assets" | "reports" | "settings" | "users" | "notifications" | "account";
+type View = "overview" | "cabinet" | "diagnostics" | "commissioning" | "trends" | "alarms" | "history" | "assets" | "reports" | "settings" | "provisioning" | "users" | "notifications" | "account";
 type Severity = "critical" | "warning" | "info";
 type SensorState = "normal" | "warning" | "critical";
 type HistoryTab = "measurements" | "alarms" | "audit";
@@ -347,6 +348,7 @@ const navGroups = [
     label: "Administración",
     items: [
       { id: "settings" as View, label: "Configuración", description: "Activo, Modbus y gateway", icon: Settings },
+      { id: "provisioning" as View, label: "Provisionamiento", description: "Credenciales y conexión", icon: Key },
       { id: "users" as View, label: "Usuarios y roles", description: "Acceso y permisos", icon: Users },
       { id: "notifications" as View, label: "Notificaciones", description: "Canales y escalamiento", icon: Mail },
       { id: "account" as View, label: "Mi cuenta", description: "Perfil, contraseña y sesiones", icon: ShieldCheck },
@@ -365,6 +367,7 @@ const viewTitles: Record<View, { title: string; description: string }> = {
   assets: { title: "Estructura operacional", description: "Clientes, sitios, puntos de medición, gateways y controladores asociados." },
   reports: { title: "Reportes", description: "Informes de condición, eventos y cumplimiento para operación y confiabilidad." },
   settings: { title: "Configuración", description: "Parámetros del activo, canales de adquisición y comunicaciones." },
+  provisioning: { title: "Provisionamiento del gateway", description: "Credenciales seguras, configuración inicial y verificación de conexión." },
   users: { title: "Usuarios y roles", description: "Control de acceso y permisos para la operación técnica." },
   notifications: { title: "Notificaciones", description: "Canales de entrega, reglas de escalamiento y trazabilidad." },
   account: { title: "Mi cuenta", description: "Perfil personal, credenciales y sesiones activas del portal." },
@@ -1519,7 +1522,7 @@ export default function Home() {
         <div className="content-scroll">
           <div className="page-content">
             {systemMode !== "normal" && <section className={`operational-banner banner-${systemMode}`} role="alert"><span>{systemMode === "offline" ? <PlugConnected size={19} /> : systemMode === "loading" ? <Refresh className="spin" size={19} /> : <Clock3 size={19} />}</span><div><strong>{systemMode === "offline" ? "Gateway sin comunicación" : systemMode === "loading" ? "Sincronizando datos" : "Las lecturas están atrasadas"}</strong><p>{systemMode === "offline" ? "El portal muestra el último valor recibido cuando existe. Las funciones administrativas siguen disponibles, pero no hay telemetría nueva." : systemMode === "loading" ? "Solicitando la última configuración, lecturas y eventos disponibles." : "Los datos visibles superan el tiempo de frescura configurado. Revisa el enlace antes de tomar una decisión."}</p></div>{systemMode !== "loading" && <button onClick={() => { setSystemMode("loading"); setTelemetryRefreshKey((current) => current + 1); notify("Consultando nuevamente la telemetría.", "info"); }}><Refresh size={15} /> Reintentar</button>}</section>}
-            <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> Gestión de activos críticos</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{view !== "assets" && view !== "settings" && view !== "users" && view !== "notifications" && view !== "account" && view !== "reports" && view !== "diagnostics" && view !== "commissioning" && view !== "trends" && view !== "history" && <button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button>}<button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{alarmSummary.critical + alarmSummary.warning} alertas activas</button></div></section>
+            <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> Gestión de activos críticos</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{view !== "assets" && view !== "settings" && view !== "provisioning" && view !== "users" && view !== "notifications" && view !== "account" && view !== "reports" && view !== "diagnostics" && view !== "commissioning" && view !== "trends" && view !== "history" && <button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button>}<button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{alarmSummary.critical + alarmSummary.warning} alertas activas</button></div></section>
             {view === "overview" && <Overview onNavigate={navigate} onAcknowledge={acknowledge} activeAlarms={alarmPreview} point={activePoint} />}
             {view === "cabinet" && <CabinetView onOpenTrend={openChannelTrend} />}
             {view === "diagnostics" && <DatabaseDiagnosticsView assetId={activePoint?.id ?? ""} canExecute={sessionUser.permissions.includes("diagnostics.execute")} notify={notify} />}
@@ -1530,6 +1533,7 @@ export default function Home() {
             {view === "assets" && <OperationalHierarchyView hierarchy={hierarchy} loading={hierarchyLoading} permissions={sessionUser.permissions} onReload={loadHierarchy} onSwitchSite={switchSite} />}
             {view === "reports" && <DatabaseReportsView assetId={activePoint?.id ?? ""} assetLabel={activePoint ? `${activePoint.code} · ${activePoint.name}` : "Sin punto seleccionado"} timezone={hierarchy?.sites.find((site) => site.id === sessionUser.siteId)?.timezone ?? "America/Santiago"} canGenerate={sessionUser.permissions.includes("reports.generate")} canSchedule={sessionUser.permissions.includes("reports.schedule")} notify={notify} confirm={(request) => setConfirmRequest(request)} />}
             {view === "settings" && <DatabaseSettingsView assetId={activePoint?.id ?? ""} canWrite={sessionUser.permissions.includes("settings.write")} notify={notify} confirm={(request) => setConfirmRequest(request)} onReloadHierarchy={loadHierarchy} />}
+            {view === "provisioning" && <GatewayProvisioningView canWrite={sessionUser.permissions.includes("settings.write")} notify={notify} confirm={(request) => setConfirmRequest(request)} />}
             {view === "users" && <UsersView currentUserId={sessionUser.id} sites={sessionUser.sites} activeSiteId={sessionUser.siteId} />}
             {view === "notifications" && <NotificationsView canWrite={sessionUser.permissions.includes("notifications.write")} />}
             {view === "account" && <AccountView notify={notify} confirm={(request) => setConfirmRequest(request)} onProfileUpdated={(displayName) => setSessionUser((current) => current ? { ...current, displayName } : current)} />}

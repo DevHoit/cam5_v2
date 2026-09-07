@@ -23,6 +23,7 @@ La estructura operacional admite uno o varios clientes, sitios, puntos de medici
 - Configuración técnica conectada a PostgreSQL por punto: identidad, gateway/controlador, perfil de lectura, retención, canales, umbrales, histéresis, mapa Modbus protegido y versiones SHA-256 auditables.
 - Puesta en marcha con identidad, 24 entradas físicas, alarmas, seis relés, red, respaldo y checklist de producción.
 - Diagnóstico de comunicación conectado a PostgreSQL: cadena CAM-5 → Modbus → gateway → Core, frescura, latencia promedio/P95, calidad, errores, ciclos paginados y auditoría.
+- Provisionamiento seguro del gateway: creación, rotación, revocación y expiración de credenciales, descarga privada de configuración, verificación por uso y auditoría.
 - Catálogo CAM-5/IRM-48 completo: 105 registros nativos entre 418 y 522.
 
 ## Desarrollo
