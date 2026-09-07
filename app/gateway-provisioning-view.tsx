@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   IconAlertTriangle,
   IconCheck,
@@ -96,6 +96,11 @@ export function GatewayProvisioningView({
   const [form, setForm] = useState({ gatewayId: "", name: "Agente de adquisición principal", validityDays: "365" });
   const [secret, setSecret] = useState<SecretResponse | null>(null);
   const [copied, setCopied] = useState(false);
+  const copyButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (secret) copyButtonRef.current?.focus();
+  }, [secret]);
 
   useEffect(() => {
     let active = true;
@@ -215,11 +220,13 @@ export function GatewayProvisioningView({
       <article><span className="module-summary-icon amber"><IconClock size={19} /></span><div><small>Última comprobación</small><strong>{formatDateTime(data.serverTime)}</strong><span>Estado consultado en PostgreSQL</span></div></article>
     </section>
 
-    {secret && <section className="panel credential-reveal" role="status">
-      <span className="credential-reveal-icon"><IconShieldCheck size={24} /></span>
-      <div><span className="eyebrow">Se muestra una sola vez</span><h2>Instala la nueva credencial en {secret.credential.gateway.code}</h2><p>Descarga el archivo privado o copia el token antes de cerrar esta sección.</p><code>{secret.token}</code><small>HoitLive Core conserva únicamente el hash SHA-256; este valor no puede recuperarse después.</small></div>
-      <div className="credential-reveal-actions"><button className="primary-button" onClick={() => downloadEnvironment(secret)}><IconDownload size={16} /> Descargar .env</button><button className="secondary-button" onClick={() => void copyToken()}>{copied ? <IconCheck size={16} /> : <IconCopy size={16} />}{copied ? "Copiado" : "Copiar token"}</button><button className="ghost-button" onClick={() => setSecret(null)}>Ya lo guardé</button></div>
-    </section>}
+    {secret && <div className="credential-secret-backdrop">
+      <section className="panel credential-reveal credential-secret-dialog" role="dialog" aria-modal="true" aria-labelledby="gateway-token-title" aria-describedby="gateway-token-description">
+        <span className="credential-reveal-icon"><IconShieldCheck size={24} /></span>
+        <div><span className="eyebrow">Credencial generada · se muestra una sola vez</span><h2 id="gateway-token-title">Instala el nuevo token en {secret.credential.gateway.code}</h2><p id="gateway-token-description">Descarga el archivo privado o copia el valor completo antes de cerrar esta ventana.</p><code>{secret.token}</code><small>HoitLive Core conserva únicamente su hash SHA-256. Si cierras sin guardarlo, deberás rotar la credencial nuevamente.</small></div>
+        <div className="credential-reveal-actions"><button className="primary-button" onClick={() => downloadEnvironment(secret)}><IconDownload size={16} /> Descargar .env</button><button ref={copyButtonRef} className="secondary-button" onClick={() => void copyToken()}>{copied ? <IconCheck size={16} /> : <IconCopy size={16} />}{copied ? "Token copiado" : "Copiar token completo"}</button><button className="ghost-button" onClick={() => setSecret(null)}>Ya lo guardé</button></div>
+      </section>
+    </div>}
 
     <section className="panel provisioning-guide">
       <header><span><IconRouter size={22} /></span><div><span className="eyebrow">Puesta en servicio</span><h2>Conectar el gateway a HoitLive Core</h2><p>El portal entrega la identidad; el gateway descarga su configuración y comienza a publicar telemetría.</p></div>{canWrite && <button className="primary-button" onClick={() => setShowForm((current) => !current)}><IconPlus size={16} />{showForm ? "Cancelar" : "Nueva credencial"}</button>}</header>

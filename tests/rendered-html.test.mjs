@@ -126,6 +126,9 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(page, /Provisionamiento del gateway/);
   assert.match(provisioning, /Descargar \.env/);
   assert.match(provisioning, /Rotar credencial/);
+  assert.match(provisioning, /credential-secret-backdrop/);
+  assert.match(provisioning, /Copiar token completo/);
+  assert.match(provisioning, /Si cierras sin guardarlo, deberás rotar la credencial nuevamente/);
   assert.match(provisioning, /<Pagination/);
   assert.match(provisioningApi, /hashGatewayToken/);
   assert.match(provisioningApi, /gateway_credentials\.rotate/);
