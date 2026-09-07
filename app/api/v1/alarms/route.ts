@@ -9,8 +9,6 @@ import {
   userAssetScopes,
   userRoleAssignments,
   users,
-  workOrderAlarms,
-  workOrders,
 } from "../../../../db/schema";
 import { apiErrorResponse, ApiError, parsePage, requireApiSession } from "../_lib/auth";
 
@@ -84,15 +82,10 @@ export async function GET(request: NextRequest) {
         channelCode: channels.code,
         channelName: channels.name,
         unit: channels.unit,
-        workOrderId: workOrders.id,
-        workOrderCode: workOrders.code,
-        workOrderStatus: workOrders.status,
       }).from(alarms)
         .innerJoin(assets, eq(assets.id, alarms.assetId))
         .leftJoin(channels, eq(channels.id, alarms.channelId))
         .leftJoin(assignedUser, eq(assignedUser.id, alarms.assignedTo))
-        .leftJoin(workOrderAlarms, eq(workOrderAlarms.alarmId, alarms.id))
-        .leftJoin(workOrders, eq(workOrders.id, workOrderAlarms.workOrderId))
         .where(where)
         .orderBy(desc(alarms.openedAt))
         .limit(pageSize)
@@ -126,7 +119,6 @@ export async function GET(request: NextRequest) {
         acknowledgedAt: record.acknowledgedAt?.toISOString() ?? null,
         resolvedAt: record.resolvedAt?.toISOString() ?? null,
         closedAt: record.closedAt?.toISOString() ?? null,
-        workOrder: record.workOrderId ? { id: record.workOrderId, code: record.workOrderCode, status: record.workOrderStatus } : null,
       })),
       page,
       pageSize,

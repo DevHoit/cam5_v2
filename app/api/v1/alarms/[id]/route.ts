@@ -12,8 +12,6 @@ import {
   userAssetScopes,
   userRoleAssignments,
   users,
-  workOrderAlarms,
-  workOrders,
 } from "../../../../../db/schema";
 import { apiErrorResponse, ApiError, requestMetadata, requireApiSession } from "../../_lib/auth";
 
@@ -64,8 +62,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     const { id } = await context.params;
     const target = await requireAlarm(db, id, user.siteId, user.id);
     const eventActor = alias(users, "alarm_event_actor");
-    const [events, linkedOrders] = await Promise.all([
-      db.select({
+    const events = await db.select({
         id: alarmEvents.id,
         type: alarmEvents.eventType,
         note: alarmEvents.note,
@@ -76,12 +73,7 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
       }).from(alarmEvents)
         .leftJoin(eventActor, eq(eventActor.id, alarmEvents.actorUserId))
         .where(eq(alarmEvents.alarmId, id))
-        .orderBy(asc(alarmEvents.createdAt)),
-      db.select({ id: workOrders.id, code: workOrders.code, title: workOrders.title, status: workOrders.status, priority: workOrders.priority })
-        .from(workOrderAlarms)
-        .innerJoin(workOrders, eq(workOrders.id, workOrderAlarms.workOrderId))
-        .where(eq(workOrderAlarms.alarmId, id)),
-    ]);
+        .orderBy(asc(alarmEvents.createdAt));
     return Response.json({
       item: {
         ...target,
@@ -94,7 +86,6 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
         closedAt: target.closedAt?.toISOString() ?? null,
       },
       events: events.map((event) => ({ ...event, createdAt: event.createdAt.toISOString(), actorName: event.actorName ?? "Sistema" })),
-      workOrders: linkedOrders,
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return apiErrorResponse(error);

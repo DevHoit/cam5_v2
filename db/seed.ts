@@ -3,6 +3,7 @@ import { pathToFileURL } from "node:url";
 import { cam5InputInventory, cam5OperationalChannels, cam5RegisterCatalog, cam5RelayDefaults } from "../app/cam5-model";
 import { PORTAL_PERMISSIONS, PORTAL_ROLES } from "./access-control";
 import { hashPassword } from "./auth";
+import { COMMISSIONING_CHECKLIST } from "./commissioning-engine";
 import { closeDb, getDb, type Cam5Database } from "./index";
 import { loadDatabaseEnvironment } from "./load-env";
 import {
@@ -349,17 +350,7 @@ export async function seedCam5Database(
       });
     }
 
-    const checklist = [
-      ["identity", "Identidad, serie, firmware y versión de datos confirmados"],
-      ["registers", "Lectura FC03 completa del bloque 418–522"],
-      ["inputs", "Bandas, códigos, antenas e índices contrastados en terreno"],
-      ["clock", "Reloj y zona horaria sincronizados"],
-      ["alarms", "Umbrales, persistencia e histéresis validados"],
-      ["relays", "Seis salidas de relé probadas"],
-      ["backup", "Respaldo inicial de configuración almacenado"],
-      ["stability", "Histórico y calidad verificados durante 24 horas"],
-    ] as const;
-    for (const [itemKey, label] of checklist) {
+    for (const [itemKey, label] of COMMISSIONING_CHECKLIST) {
       await tx.insert(commissioningItems).values({ deviceId: device.id, itemKey, label, status: "pending" }).onConflictDoUpdate({
         target: [commissioningItems.deviceId, commissioningItems.itemKey],
         set: { label },
@@ -368,7 +359,7 @@ export async function seedCam5Database(
 
     const templates = [
       { key: "condition-summary", name: "Resumen de condición", description: "Estado, alarmas y evolución de variables críticas.", definition: { sections: ["summary", "alarms", "trends"] } },
-      { key: "alarm-history", name: "Histórico de alarmas", description: "Eventos, reconocimientos, cierres y órdenes asociadas.", definition: { sections: ["alarms", "workflow", "audit"] } },
+      { key: "alarm-history", name: "Histórico de alarmas", description: "Eventos, reconocimientos, cierres y trazabilidad operativa.", definition: { sections: ["alarms", "workflow", "audit"] } },
       { key: "commissioning", name: "Acta de puesta en marcha", description: "Evidencias y aceptación del equipo CAM5.", definition: { sections: ["device", "inputs", "registers", "checklist"] } },
     ];
     for (const template of templates) {

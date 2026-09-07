@@ -1,8 +1,8 @@
 export const PORTAL_PERMISSIONS = [
   { code: "overview.read", module: "overview", action: "read", description: "Ver resumen operacional" },
   { code: "condition.read", module: "condition", action: "read", description: "Ver mapa de condición" },
-  { code: "diagnostics.read", module: "diagnostics", action: "read", description: "Ver diagnóstico OT" },
-  { code: "diagnostics.execute", module: "diagnostics", action: "execute", description: "Ejecutar diagnóstico OT" },
+  { code: "diagnostics.read", module: "diagnostics", action: "read", description: "Ver diagnóstico de comunicación" },
+  { code: "diagnostics.execute", module: "diagnostics", action: "execute", description: "Ejecutar diagnóstico de comunicación" },
   { code: "trends.read", module: "trends", action: "read", description: "Ver tendencias" },
   { code: "history.read", module: "history", action: "read", description: "Consultar histórico" },
   { code: "history.export", module: "history", action: "export", description: "Exportar histórico" },
@@ -11,8 +11,6 @@ export const PORTAL_PERMISSIONS = [
   { code: "alarms.close", module: "alarms", action: "close", description: "Cerrar alarmas" },
   { code: "assets.read", module: "assets", action: "read", description: "Ver activos" },
   { code: "assets.write", module: "assets", action: "write", description: "Editar activos" },
-  { code: "maintenance.read", module: "maintenance", action: "read", description: "Ver mantenimiento" },
-  { code: "maintenance.write", module: "maintenance", action: "write", description: "Gestionar órdenes de trabajo" },
   { code: "reports.read", module: "reports", action: "read", description: "Ver reportes" },
   { code: "reports.generate", module: "reports", action: "generate", description: "Generar reportes" },
   { code: "reports.schedule", module: "reports", action: "schedule", description: "Programar reportes" },
@@ -52,7 +50,7 @@ export const PORTAL_ROLES: ReadonlyArray<{
   {
     key: "engineer",
     name: "Ingeniero",
-    description: "Diagnóstico, configuración técnica, tendencias, alarmas y mantenimiento.",
+    description: "Diagnóstico, configuración técnica, tendencias, alarmas y puesta en marcha.",
     permissions: PORTAL_PERMISSIONS
       .filter((permission) => permission.code !== "users.manage")
       .map((permission) => permission.code),
@@ -60,12 +58,11 @@ export const PORTAL_ROLES: ReadonlyArray<{
   {
     key: "operator",
     name: "Operador",
-    description: "Supervisión diaria, reconocimiento de alarmas y gestión de órdenes.",
+    description: "Supervisión diaria, reconocimiento de alarmas y consulta de reportes.",
     permissions: [
       ...READ_ONLY_PERMISSIONS,
       "diagnostics.execute",
       "alarms.acknowledge",
-      "maintenance.write",
       "reports.generate",
     ],
   },

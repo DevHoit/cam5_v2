@@ -27,12 +27,14 @@ test("server-renders the protected HoitLive Core access gate", async () => {
 });
 
 test("keeps the production portal free of starter preview code", async () => {
-  const [page, layout, css, packageJson, engineering, model, alarmEngine, trends, notifications, notificationEngine, settings, configurationApi, gatewayConfigurationApi, reports, reportsApi, reportEngine] = await Promise.all([
+  const [page, layout, css, packageJson, engineering, commissioningApi, commissioningEngine, model, alarmEngine, trends, notifications, notificationEngine, settings, configurationApi, gatewayConfigurationApi, reports, reportsApi, reportEngine] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
     readFile(new URL("../app/cam5-engineering.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/v1/commissioning/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../db/commissioning-engine.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/cam5-model.ts", import.meta.url), "utf8"),
     readFile(new URL("../db/alarm-engine.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/trends-view.tsx", import.meta.url), "utf8"),
@@ -48,13 +50,11 @@ test("keeps the production portal free of starter preview code", async () => {
 
   assert.match(page, /ReportsView as DatabaseReportsView/);
   assert.match(page, /function OperationalHierarchyView\(/);
-  assert.match(page, /function MaintenanceView\(/);
   assert.match(page, /function IntegrationsView\(\)/);
   assert.match(page, /function DiagnosticsView\(\)/);
-  assert.match(page, /Diagnóstico OT/);
+  assert.match(page, /Diagnóstico de comunicación/);
   assert.match(page, /Comprobación de extremo a extremo/);
-  assert.match(page, /Crear orden de trabajo/);
-  assert.match(page, /sourceAlarmId/);
+  assert.doesNotMatch(page, /Crear orden de trabajo|function MaintenanceView\(|view === "maintenance"/);
   assert.match(page, /Reglas y umbrales/);
   assert.match(page, /Control contra falsos positivos/);
   assert.match(page, /\/api\/v1\/alarms/);
@@ -100,8 +100,16 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(gatewayConfigurationApi, /checksumSha256/);
   assert.doesNotMatch(settings, /usePersistentState|setTimeout\(.*Prueba Modbus/);
   assert.doesNotMatch(page, /cam5\.front\.(asset-config|gateway-config|channel-config|register-map)/);
-  assert.match(engineering, /Mapa oficial incorporado al frontend/);
-  assert.match(engineering, /Ver mapa 418–522/);
+  assert.match(engineering, /\/api\/v1\/commissioning/);
+  assert.match(engineering, /Controles previos a operación/);
+  assert.match(engineering, /Mapa Modbus/);
+  assert.doesNotMatch(engineering, /usePersistentState/);
+  assert.match(commissioningApi, /commissioningItems/);
+  assert.match(commissioningApi, /commissioning\.validate/);
+  assert.match(commissioningApi, /commissioning\.activate/);
+  assert.match(commissioningApi, /auditLogs/);
+  assert.match(commissioningEngine, /evaluateCommissioning/);
+  assert.match(commissioningEngine, /stabilityHours >= 24/);
   assert.match(model, /const humanReference/);
   assert.match(model, /registerDefinition\(418/);
   assert.match(model, /cam5RegisterCatalog/);
@@ -110,14 +118,13 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(layout, /HoitLive Core \| Monitoreo de condición eléctrica/);
   assert.match(css, /\.report-builder/);
   assert.match(css, /\.asset-management-layout/);
-  assert.match(css, /\.maintenance-plan-grid/);
   assert.match(css, /\.integration-card-grid/);
   assert.match(css, /\.register-map-table/);
   assert.match(css, /\.diagnostic-chain/);
   assert.match(css, /\.commissioning-summary/);
+  assert.match(css, /\.commissioning-chain/);
+  assert.match(css, /\.commissioning-control-list/);
   assert.match(css, /\.register-reference-table/);
-  assert.match(css, /\.focused-order/);
-  assert.match(css, /\.event-remediation-state/);
   assert.match(css, /\.alarm-rule-table/);
   assert.match(alarmEngine, /evaluateAlarmReadings/);
   assert.match(alarmEngine, /evaluateStaleCommunications/);

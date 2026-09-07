@@ -24,7 +24,6 @@ import {
   IconClipboardCheck as ClipboardCheck,
   IconCopy as Copy,
   IconClock as Clock3,
-  IconCalendarEvent as CalendarEvent,
   IconDatabase as Database,
   IconDeviceDesktopAnalytics as MonitorDot,
   IconDeviceFloppy as Save,
@@ -60,14 +59,11 @@ import {
   IconX as X,
 } from "@tabler/icons-react";
 
-type View = "overview" | "cabinet" | "diagnostics" | "commissioning" | "trends" | "alarms" | "history" | "assets" | "reports" | "maintenance" | "settings" | "integrations" | "users" | "notifications";
+type View = "overview" | "cabinet" | "diagnostics" | "commissioning" | "trends" | "alarms" | "history" | "assets" | "reports" | "settings" | "integrations" | "users" | "notifications";
 type Severity = "critical" | "warning" | "info";
 type SensorState = "normal" | "warning" | "critical";
 type HistoryTab = "measurements" | "alarms" | "audit";
 type UserRole = "Administrador" | "Ingeniero" | "Operador" | "Solo lectura";
-type WorkStatus = "Pendiente" | "En curso" | "Completada";
-type WorkPriority = "Crítica" | "Alta" | "Normal";
-type WorkOrder = { id: string; title: string; source: string; sourceAlarmId?: string; due: string; priority: WorkPriority; assignee: string; status: WorkStatus };
 type AlarmWorkflowStatus = "open" | "acknowledged" | "resolved" | "closed";
 type PortalAlarm = {
   id: string;
@@ -94,7 +90,6 @@ type PortalAlarm = {
   channelCode: string | null;
   channelName: string | null;
   unit: string | null;
-  workOrder: { id: string; code: string; status: string } | null;
 };
 type PortalAlarmEvent = { id: number; type: string; note: string | null; payload: Record<string, unknown>; createdAt: string; actorId: string | null; actorName: string };
 type AlarmRuleRecord = {
@@ -287,13 +282,6 @@ function useSensorData(override?: PortalTelemetryState) {
   });
 }
 
-const initialWorkOrders: WorkOrder[] = [
-  { id: "OT-260811-018", title: "Diagnóstico de descarga parcial", source: "PD1 · Evento AL-260811-031", sourceAlarmId: "AL-260811-031", due: "Hoy · 16:00", priority: "Crítica", assignee: "Emerson Allende", status: "En curso" },
-  { id: "OT-260811-017", title: "Inspección termográfica dirigida", source: "T01 · Evento AL-260811-028", sourceAlarmId: "AL-260811-028", due: "21 ago 2026", priority: "Alta", assignee: "Paula Rojas", status: "Pendiente" },
-  { id: "OT-260810-014", title: "Control de humedad en cabina", source: "H01 · Evento AL-260811-019", sourceAlarmId: "AL-260811-019", due: "22 ago 2026", priority: "Alta", assignee: "Felipe Soto", status: "Pendiente" },
-  { id: "OT-260731-009", title: "Verificación mensual de gateway", source: "Plan preventivo PM-04", due: "31 jul 2026", priority: "Normal", assignee: "Felipe Soto", status: "Completada" },
-];
-
 const chartData = [
   [42, 16], [44, 18], [43, 17], [46, 19], [48, 21], [47, 22], [50, 24], [51, 27],
   [53, 31], [52, 30], [55, 36], [57, 39], [58, 42], [60, 46], [62, 51], [61, 50],
@@ -313,7 +301,7 @@ const navGroups = [
     index: "02",
     label: "Diagnóstico",
     items: [
-      { id: "diagnostics" as View, label: "Diagnóstico OT", description: "Controlador y gateway", icon: Radio },
+      { id: "diagnostics" as View, label: "Diagnóstico de comunicación", description: "Controlador, Modbus y gateway", icon: Radio },
       { id: "commissioning" as View, label: "Puesta en marcha", description: "Conectar y validar CAM-5", icon: ClipboardCheck },
       { id: "trends" as View, label: "Tendencias", description: "Evolución por canal", icon: History },
       { id: "alarms" as View, label: "Centro de alertas", description: "Triage y seguimiento", icon: BellRing, badge: "3" },
@@ -326,7 +314,6 @@ const navGroups = [
     items: [
       { id: "assets" as View, label: "Estructura operacional", description: "Clientes, sitios y medición", icon: Factory },
       { id: "reports" as View, label: "Reportes", description: "Informes y programación", icon: FileReport },
-      { id: "maintenance" as View, label: "Mantenimiento", description: "Planes y órdenes", icon: Tool },
     ],
   },
   {
@@ -344,17 +331,16 @@ const navGroups = [
 const viewTitles: Record<View, { title: string; description: string }> = {
   overview: { title: "Resumen de condición", description: "Estado predictivo de activos críticos en tiempo real." },
   cabinet: { title: "Mapa de condición", description: "Ubicación, lectura y estado de cada canal instrumentado." },
-  diagnostics: { title: "Diagnóstico OT", description: "Puesta en marcha y comprobación de la cadena Controlador → Gateway → HoitLive Core." },
+  diagnostics: { title: "Diagnóstico de comunicación", description: "Comprobación de la cadena Controlador → Gateway → HoitLive Core." },
   commissioning: { title: "Puesta en marcha CAM-5", description: "Identidad, entradas, registros, alarmas y controles previos a la conexión productiva." },
   trends: { title: "Tendencias", description: "Evolución térmica, descarga parcial y humedad ambiental." },
   alarms: { title: "Centro de alertas", description: "Triage operativo, reconocimiento y trazabilidad de eventos." },
   history: { title: "Histórico", description: "Mediciones, alarmas y cambios administrativos en una sola trazabilidad." },
   assets: { title: "Estructura operacional", description: "Clientes, sitios, puntos de medición, gateways y controladores asociados." },
-  reports: { title: "Reportes", description: "Informes de condición, eventos y cumplimiento para operación y mantenimiento." },
-  maintenance: { title: "Mantenimiento", description: "Plan preventivo y órdenes de trabajo priorizadas por condición." },
+  reports: { title: "Reportes", description: "Informes de condición, eventos y cumplimiento para operación y confiabilidad." },
   settings: { title: "Configuración", description: "Parámetros del activo, canales de adquisición y comunicaciones." },
   integrations: { title: "Integraciones", description: "Conexiones, flujo de datos y acceso seguro para sistemas externos." },
-  users: { title: "Usuarios y roles", description: "Control de acceso y permisos para la operación OT." },
+  users: { title: "Usuarios y roles", description: "Control de acceso y permisos para la operación técnica." },
   notifications: { title: "Notificaciones", description: "Canales de entrega, reglas de escalamiento y trazabilidad." },
 };
 
@@ -600,7 +586,7 @@ function CabinetView({ onOpenTrend }: { onOpenTrend: (id: string) => void }) {
   );
 }
 
-function AlarmsView({ assetId, permissions, onWorkOrderCreated, onSummaryChange, onOpenTrend }: { assetId: string; permissions: string[]; onWorkOrderCreated: (order: WorkOrder) => void; onSummaryChange: (summary: { critical: number; warning: number }) => void; onOpenTrend: (channelId: string, openedAt: string) => void }) {
+function AlarmsView({ assetId, permissions, onSummaryChange, onOpenTrend }: { assetId: string; permissions: string[]; onSummaryChange: (summary: { critical: number; warning: number }) => void; onOpenTrend: (channelId: string, openedAt: string) => void }) {
   const notify = useFeedback();
   const confirm = useConfirm();
   const [tab, setTab] = useState<"events" | "rules">("events");
@@ -625,7 +611,6 @@ function AlarmsView({ assetId, permissions, onWorkOrderCreated, onSummaryChange,
   const [savingRule, setSavingRule] = useState("");
   const canOperate = permissions.includes("alarms.acknowledge");
   const canClose = permissions.includes("alarms.close");
-  const canCreateWorkOrder = permissions.includes("maintenance.write");
   const canConfigure = permissions.includes("settings.write");
 
   const loadAlarms = async (silent = false) => {
@@ -734,26 +719,6 @@ function AlarmsView({ assetId, permissions, onWorkOrderCreated, onSummaryChange,
     }
   };
 
-  const createWorkOrder = async () => {
-    if (!selected) return;
-    if (selected.workOrder) {
-      onWorkOrderCreated({ id: selected.workOrder.code, sourceAlarmId: selected.id, title: selected.title, source: `Alarma ${selected.code}`, due: "Programación registrada", priority: selected.severity === "critical" ? "Crítica" : selected.severity === "warning" ? "Alta" : "Normal", assignee: selected.assignedToName ?? "Sin asignar", status: selected.workOrder.status === "completed" ? "Completada" : selected.workOrder.status === "in_progress" ? "En curso" : "Pendiente" });
-      return;
-    }
-    setBusyAction("work_order");
-    try {
-      const response = await portalRequest<{ item: { id: string; code: string; title: string; status: string; priority: string; dueAt: string | null } }>(`/api/v1/alarms/${encodeURIComponent(selected.id)}/work-order`, { method: "POST", body: JSON.stringify({ assignedTo: selected.assignedToId }) });
-      const item = response.item;
-      onWorkOrderCreated({ id: item.code, sourceAlarmId: selected.id, title: item.title, source: `Alarma ${selected.code} · ${selected.assetCode}`, due: item.dueAt ? formatDateTime(item.dueAt) : "Sin programar", priority: item.priority === "critical" ? "Crítica" : item.priority === "high" ? "Alta" : "Normal", assignee: selected.assignedToName ?? "Sin asignar", status: item.status === "completed" ? "Completada" : item.status === "in_progress" ? "En curso" : "Pendiente" });
-      notify(`Orden ${item.code} creada y vinculada.`);
-      await loadAlarms(true);
-    } catch (requestError) {
-      notify(requestError instanceof Error ? requestError.message : "No fue posible crear la orden de trabajo.", "warning");
-    } finally {
-      setBusyAction("");
-    }
-  };
-
   const updateRuleDraft = (id: string, key: keyof (typeof ruleDrafts)[string], value: number | boolean) => setRuleDrafts((current) => ({ ...current, [id]: { ...current[id], [key]: value } }));
   const saveRule = async (rule: AlarmRuleRecord) => {
     const draft = ruleDrafts[rule.id];
@@ -784,7 +749,7 @@ function AlarmsView({ assetId, permissions, onWorkOrderCreated, onSummaryChange,
         <div className="alarm-toolbar"><label className="search-field"><Search size={17} /><input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="Buscar código, canal, activo o mensaje…" /></label><div className="alarm-filters"><label className="status-filter"><span>Estado</span><select value={workflowStatus} onChange={(event) => { setWorkflowStatus(event.target.value as typeof workflowStatus); setPage(1); }}><option value="all">Todos</option><option value="open">Abiertas</option><option value="acknowledged">Reconocidas</option><option value="resolved">Atendidas</option><option value="closed">Cerradas</option></select><ChevronDown size={13} /></label><div className="segmented">{(["all", "critical", "warning", "normal"] as const).map((item) => <button key={item} className={severity === item ? "active" : ""} onClick={() => { setSeverity(item); setPage(1); }}>{item === "all" ? "Todas" : item === "critical" ? "Críticas" : item === "warning" ? "Advertencias" : "Informativas"}</button>)}</div></div></div>
         {error ? <div className="load-error"><AlertTriangle size={18} />{error}<button onClick={() => void loadAlarms()}>Reintentar</button></div> : <div className="alarm-table-wrap"><div className="alarm-table"><div className="alarm-table-head"><span>Severidad</span><span>Evento / activo</span><span>Tiempo activo</span><span>Valor</span><span>Estado</span><span>Acción</span></div>{loading ? <TableEmptyState title="Cargando eventos" detail="Consultando alarmas y trazabilidad del punto activo." /> : result?.items.map((alarm) => <div className={`alarm-table-row ${selectedId === alarm.id ? "selected" : ""}`} key={alarm.id}><span><StatusPill state={alarm.severity === "normal" ? "info" : alarm.severity}>{alarm.severity === "critical" ? "Crítica" : alarm.severity === "warning" ? "Advertencia" : "Informativa"}</StatusPill></span><span className="event-cell"><strong>{alarm.title}</strong><small>{alarm.code} · {alarm.assetCode}{alarm.channelCode ? ` · ${alarm.channelCode}` : ""}</small></span><span>{formatRelativeTime(alarm.openedAt)}</span><span><strong>{alarmValue(alarm)}</strong></span><span className={`workflow-state workflow-${alarm.status}`}>{statusText(alarm.status)}</span><span><button className={selectedId === alarm.id ? "ack-button" : "ghost-button"} onClick={() => setSelectedId(alarm.id)}>Gestionar</button></span></div>)}{!loading && !result?.items.length && <TableEmptyState title="No hay eventos con estos filtros" detail="El motor conservará aquí las alarmas que genere la telemetría." />}</div></div>}
         {result && <Pagination page={result.page} totalPages={result.totalPages} total={result.total} pageSize={result.pageSize} onPageChange={setPage} itemLabel="eventos" />}
-        {selected && <section className={`event-detail-panel event-${selected.severity}`}><div className="event-detail-header"><span className="event-detail-icon"><AlertTriangle size={20} /></span><div><span className="eyebrow">{selected.kind === "communication" ? "Comunicación" : selected.kind === "data_quality" ? "Calidad de datos" : "Umbral"} · {selected.code}</span><h2>{selected.title}</h2><p>{selected.detail || `${selected.assetCode} · ${selected.channelName ?? "Punto de medición"}`}</p></div><span className={`workflow-badge workflow-${selected.status}`}>{statusText(selected.status)}</span></div><div className="event-workspace"><div className="event-management"><dl className="event-facts"><div><dt>Valor detectado</dt><dd>{alarmValue(selected)}</dd></div><div><dt>Última observación</dt><dd>{formatDateTime(selected.lastObservedAt)}</dd></div><div><dt>Responsable</dt><dd><select disabled={!canOperate || busyAction !== ""} value={selected.assignedToId ?? ""} onChange={(event) => void updateAlarm("assign", { assignedTo: event.target.value || null })}><option value="">Sin asignar</option>{result?.assignees.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</select></dd></div></dl><div className="event-actions">{selected.channelCode && <button className="secondary-button" onClick={() => onOpenTrend(selected.channelCode!, selected.openedAt)}><TrendingUp size={15} /> Ver tendencia de origen</button>}{selected.status === "open" && canOperate && <button className="primary-button" disabled={busyAction !== ""} onClick={() => void updateAlarm("acknowledge")}><CheckCircle2 size={15} /> Reconocer</button>}{selected.status !== "closed" && selected.status !== "resolved" && canClose && <button className="secondary-button" disabled={busyAction !== ""} onClick={() => void updateAlarm("resolve")}><ShieldCheck size={15} /> Marcar atendida</button>}{selected.status === "resolved" && canClose && <button className="secondary-button" disabled={busyAction !== "" || noteInput.trim().length < 3} onClick={() => confirm({ title: `Cerrar ${selected.code}`, detail: "La nota escrita se guardará como evidencia del cierre.", confirmLabel: "Cerrar evento", tone: "danger", onConfirm: () => void updateAlarm("close", { note: noteInput }) })}><ShieldCheck size={15} /> Cerrar</button>}{(selected.status === "closed" || selected.status === "resolved") && canClose && <button className="secondary-button" disabled={busyAction !== ""} onClick={() => void updateAlarm("reopen")}>Reabrir</button>}{canCreateWorkOrder && <button className={`work-order-action ${selected.workOrder ? "linked" : ""}`} disabled={busyAction !== ""} onClick={() => void createWorkOrder()}><ClipboardCheck size={15} /> {selected.workOrder ? `Abrir ${selected.workOrder.code}` : "Crear orden de trabajo"}</button>}</div>{!canOperate && <p className="permission-note"><ShieldCheck size={15} /> Tu perfil puede consultar la trazabilidad, sin modificarla.</p>}</div><div className="event-timeline"><h3>Línea de tiempo</h3>{detailLoading ? <p>Cargando trazabilidad…</p> : events.map((event) => <div key={event.id}><span className={`timeline-dot ${event.type.includes("resolved") || event.type === "closed" ? "normal" : event.type === "opened" ? selected.severity : "info"}`} /><p><strong>{eventText(event.type)}</strong><small>{formatDateTime(event.createdAt)} · {event.actorName}{event.note ? ` · ${event.note}` : ""}</small></p></div>)}</div></div>{canOperate && <form className="event-note-form" onSubmit={(event) => { event.preventDefault(); if (noteInput.trim().length >= 3) void updateAlarm("add_note", { note: noteInput }); }}><input value={noteInput} onChange={(event) => setNoteInput(event.target.value)} placeholder={selected.status === "resolved" ? "Nota de cierre obligatoria…" : "Agregar una nota de seguimiento…"} /><button type="submit" disabled={busyAction !== "" || noteInput.trim().length < 3}>Agregar nota</button></form>}</section>}
+        {selected && <section className={`event-detail-panel event-${selected.severity}`}><div className="event-detail-header"><span className="event-detail-icon"><AlertTriangle size={20} /></span><div><span className="eyebrow">{selected.kind === "communication" ? "Comunicación" : selected.kind === "data_quality" ? "Calidad de datos" : "Umbral"} · {selected.code}</span><h2>{selected.title}</h2><p>{selected.detail || `${selected.assetCode} · ${selected.channelName ?? "Punto de medición"}`}</p></div><span className={`workflow-badge workflow-${selected.status}`}>{statusText(selected.status)}</span></div><div className="event-workspace"><div className="event-management"><dl className="event-facts"><div><dt>Valor detectado</dt><dd>{alarmValue(selected)}</dd></div><div><dt>Última observación</dt><dd>{formatDateTime(selected.lastObservedAt)}</dd></div><div><dt>Responsable</dt><dd><select disabled={!canOperate || busyAction !== ""} value={selected.assignedToId ?? ""} onChange={(event) => void updateAlarm("assign", { assignedTo: event.target.value || null })}><option value="">Sin asignar</option>{result?.assignees.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</select></dd></div></dl><div className="event-actions">{selected.channelCode && <button className="secondary-button" onClick={() => onOpenTrend(selected.channelCode!, selected.openedAt)}><TrendingUp size={15} /> Ver tendencia de origen</button>}{selected.status === "open" && canOperate && <button className="primary-button" disabled={busyAction !== ""} onClick={() => void updateAlarm("acknowledge")}><CheckCircle2 size={15} /> Reconocer</button>}{selected.status !== "closed" && selected.status !== "resolved" && canClose && <button className="secondary-button" disabled={busyAction !== ""} onClick={() => void updateAlarm("resolve")}><ShieldCheck size={15} /> Marcar atendida</button>}{selected.status === "resolved" && canClose && <button className="secondary-button" disabled={busyAction !== "" || noteInput.trim().length < 3} onClick={() => confirm({ title: `Cerrar ${selected.code}`, detail: "La nota escrita se guardará como evidencia del cierre.", confirmLabel: "Cerrar evento", tone: "danger", onConfirm: () => void updateAlarm("close", { note: noteInput }) })}><ShieldCheck size={15} /> Cerrar</button>}{(selected.status === "closed" || selected.status === "resolved") && canClose && <button className="secondary-button" disabled={busyAction !== ""} onClick={() => void updateAlarm("reopen")}>Reabrir</button>}</div>{!canOperate && <p className="permission-note"><ShieldCheck size={15} /> Tu perfil puede consultar la trazabilidad, sin modificarla.</p>}</div><div className="event-timeline"><h3>Línea de tiempo</h3>{detailLoading ? <p>Cargando trazabilidad…</p> : events.map((event) => <div key={event.id}><span className={`timeline-dot ${event.type.includes("resolved") || event.type === "closed" ? "normal" : event.type === "opened" ? selected.severity : "info"}`} /><p><strong>{eventText(event.type)}</strong><small>{formatDateTime(event.createdAt)} · {event.actorName}{event.note ? ` · ${event.note}` : ""}</small></p></div>)}</div></div>{canOperate && <form className="event-note-form" onSubmit={(event) => { event.preventDefault(); if (noteInput.trim().length >= 3) void updateAlarm("add_note", { note: noteInput }); }}><input value={noteInput} onChange={(event) => setNoteInput(event.target.value)} placeholder={selected.status === "resolved" ? "Nota de cierre obligatoria…" : "Agregar una nota de seguimiento…"} /><button type="submit" disabled={busyAction !== "" || noteInput.trim().length < 3}>Agregar nota</button></form>}</section>}
       </article>
     </> : <article className="panel alarm-rules-panel"><div className="alarm-rule-summary"><div><span>Reglas configuradas</span><strong>{ruleResult?.summary.total ?? 0}</strong></div><div><span>Activas</span><strong>{ruleResult?.summary.enabled ?? 0}</strong></div><div><span>Evaluadas por telemetría</span><strong>{ruleResult?.summary.evaluating ?? 0}</strong></div><div><span>En estado crítico</span><strong>{ruleResult?.summary.critical ?? 0}</strong></div></div><div className="alarm-toolbar"><label className="search-field"><Search size={17} /><input value={ruleQuery} onChange={(event) => { setRuleQuery(event.target.value); setRulePage(1); }} placeholder="Buscar canal, nombre o zona…" /></label><label className="status-filter"><span>Regla</span><select value={ruleEnabled} onChange={(event) => { setRuleEnabled(event.target.value as typeof ruleEnabled); setRulePage(1); }}><option value="all">Todas</option><option value="true">Activas</option><option value="false">Desactivadas</option></select><ChevronDown size={13} /></label></div><div className="alarm-rule-table-wrap"><div className="alarm-rule-table"><div className="alarm-rule-head"><span>Canal</span><span>Estado</span><span>Advertencia</span><span>Crítico</span><span>Histéresis</span><span>Activación</span><span>Recuperación</span><span>Dato atrasado</span><span>Acción</span></div>{ruleLoading ? <TableEmptyState title="Cargando reglas" detail="Consultando umbrales persistentes." /> : ruleResult?.items.map((rule) => { const draft = ruleDrafts[rule.id]; if (!draft) return null; return <div className="alarm-rule-row" key={rule.id}><span className="rule-channel"><strong>{rule.channelCode}</strong><small>{rule.channelName} · {rule.zone ?? rule.assetCode}</small></span><span><label className="rule-switch"><input type="checkbox" checked={draft.enabled} disabled={!canConfigure} onChange={(event) => updateRuleDraft(rule.id, "enabled", event.target.checked)} /><i /><small>{draft.enabled ? "Activa" : "Inactiva"}</small></label></span><span><input type="number" step="0.1" value={draft.warningThreshold} disabled={!canConfigure} onChange={(event) => updateRuleDraft(rule.id, "warningThreshold", Number(event.target.value))} /><small>{rule.unit}</small></span><span><input type="number" step="0.1" value={draft.criticalThreshold} disabled={!canConfigure} onChange={(event) => updateRuleDraft(rule.id, "criticalThreshold", Number(event.target.value))} /><small>{rule.unit}</small></span><span><input type="number" step="0.1" min="0" value={draft.hysteresis} disabled={!canConfigure} onChange={(event) => updateRuleDraft(rule.id, "hysteresis", Number(event.target.value))} /></span><span><input type="number" min="1" max="100" value={draft.activationSamples} disabled={!canConfigure} onChange={(event) => updateRuleDraft(rule.id, "activationSamples", Number(event.target.value))} /><small>muestras</small></span><span><input type="number" min="1" max="100" value={draft.recoverySamples} disabled={!canConfigure} onChange={(event) => updateRuleDraft(rule.id, "recoverySamples", Number(event.target.value))} /><small>muestras</small></span><span><input type="number" min="1" max="86400" value={draft.staleAfterSeconds} disabled={!canConfigure} onChange={(event) => updateRuleDraft(rule.id, "staleAfterSeconds", Number(event.target.value))} /><small>segundos</small></span><span><button className="ghost-button" disabled={!canConfigure || savingRule === rule.id} onClick={() => void saveRule(rule)}>{savingRule === rule.id ? <Refresh className="spin" size={15} /> : <Save size={15} />} Guardar</button></span></div>})}{!ruleLoading && !ruleResult?.items.length && <TableEmptyState title="No hay reglas configuradas" detail="Configura los canales del punto antes de habilitar alarmas." />}</div></div>{ruleResult && <Pagination page={ruleResult.page} totalPages={ruleResult.totalPages} total={ruleResult.total} pageSize={ruleResult.pageSize} onPageChange={setRulePage} itemLabel="reglas" />}<div className="alarm-rule-note"><ShieldCheck size={18} /><p><strong>Control contra falsos positivos</strong><span>La regla exige muestras consecutivas, aplica histéresis para recuperar y conserva el estado del motor en la base de datos.</span></p></div></article>}
   </>;
@@ -1123,55 +1088,6 @@ function OperationalHierarchyView({
   </>;
 }
 
-function MaintenanceView({ orders, setOrders, focusOrderId }: { orders: WorkOrder[]; setOrders: React.Dispatch<React.SetStateAction<WorkOrder[]>>; focusOrderId: string | null }) {
-  const notify = useFeedback();
-  const confirm = useConfirm();
-  const role = useActiveRole();
-  const [tab, setTab] = useState<"plan" | "orders">(focusOrderId ? "orders" : "plan");
-  const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ title: "", priority: "Alta", assignee: "Paula Rojas" });
-  const plans = [
-    { code: "PM-01", name: "Inspección termográfica", frequency: "Mensual", next: "21 ago 2026", progress: 82, state: "Próxima" },
-    { code: "PM-02", name: "Diagnóstico UHF de descarga parcial", frequency: "Trimestral", next: "Hoy", progress: 100, state: "Vencida" },
-    { code: "PM-03", name: "Limpieza y control ambiental", frequency: "Trimestral", next: "22 ago 2026", progress: 78, state: "Próxima" },
-    { code: "PM-04", name: "Verificación de gateway y registros", frequency: "Mensual", next: "31 ago 2026", progress: 36, state: "En plazo" },
-  ];
-  const openOrders = orders.filter((order) => order.status !== "Completada").length;
-  const orderPage = useClientPagination(orders, 8);
-  const createOrder = (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!form.title.trim()) return;
-    const id = `OT-${Date.now().toString().slice(-9)}`;
-    setOrders((current) => [{ id, title: form.title.trim(), source: "Creación manual · Portal web", due: "Sin programar", priority: form.priority as WorkPriority, assignee: form.assignee, status: "Pendiente" }, ...current]);
-    orderPage.setPage(1);
-    notify(`Orden ${id} creada correctamente.`);
-    setForm({ title: "", priority: "Alta", assignee: "Paula Rojas" }); setShowCreate(false); setTab("orders");
-  };
-  const applyOrderStatus = (id: string, status: WorkStatus) => { setOrders((current) => current.map((order) => order.id === id ? { ...order, status } : order)); notify(`${id} actualizada a “${status}”.`, "info"); };
-  const updateOrder = (id: string, status: WorkStatus) => status === "Completada" ? confirm({ title: `Completar ${id}`, detail: "La orden quedará finalizada y el evento asociado podrá cerrarse desde el Centro de alertas.", confirmLabel: "Completar orden", onConfirm: () => applyOrderStatus(id, status) }) : applyOrderStatus(id, status);
-
-  return (
-    <>
-      <section className="module-summary-grid maintenance-summary-grid">
-        <article><span className="module-summary-icon green"><ClipboardCheck size={19} /></span><div><small>Cumplimiento preventivo</small><strong>87%</strong><span>Meta mensual: 90%</span></div></article>
-        <article><span className="module-summary-icon amber"><CalendarEvent size={19} /></span><div><small>Tareas próximas</small><strong>3</strong><span>1 requiere atención hoy</span></div></article>
-        <article><span className="module-summary-icon blue"><Tool size={19} /></span><div><small>Órdenes abiertas</small><strong>{openOrders}</strong><span>1 crítica · 2 altas</span></div></article>
-      </section>
-
-      <article className={`panel module-panel maintenance-module ${role === "Solo lectura" ? "role-readonly" : ""}`}>
-        <div className="module-toolbar"><div className="module-tabs" role="tablist" aria-label="Secciones de mantenimiento"><button className={tab === "plan" ? "active" : ""} onClick={() => setTab("plan")}><CalendarEvent size={16} /> Plan preventivo</button><button className={tab === "orders" ? "active" : ""} onClick={() => setTab("orders")}><ClipboardCheck size={16} /> Órdenes de trabajo</button></div><button className="primary-button" onClick={() => setShowCreate((current) => !current)}><Plus size={16} /> {showCreate ? "Cancelar" : "Nueva orden"}</button></div>
-
-        {showCreate && <form className="work-order-form" onSubmit={createOrder}><label><span>Trabajo requerido</span><input required value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} placeholder="Ej.: Revisar conexión del sensor T02" /></label><label><span>Prioridad</span><select value={form.priority} onChange={(event) => setForm({ ...form, priority: event.target.value })}><option>Crítica</option><option>Alta</option><option>Normal</option></select></label><label><span>Responsable</span><select value={form.assignee} onChange={(event) => setForm({ ...form, assignee: event.target.value })}><option>Paula Rojas</option><option>Emerson Allende</option><option>Felipe Soto</option></select></label><button type="submit"><ClipboardCheck size={15} /> Crear orden</button></form>}
-
-        {tab === "plan" && <div className="maintenance-plan-content"><div className="settings-section-head"><span className="settings-icon"><CalendarEvent size={20} /></span><div><h2>Plan basado en condición</h2><p>La frecuencia se complementa con los hallazgos de telemetría y eventos activos.</p></div></div><div className="maintenance-plan-grid">{plans.map((plan) => <article className={`maintenance-plan-card plan-${plan.state.toLowerCase().replace(" ", "-")}`} key={plan.code}><div className="maintenance-plan-head"><span>{plan.code}</span><i>{plan.state}</i></div><h3>{plan.name}</h3><dl><div><dt>Frecuencia</dt><dd>{plan.frequency}</dd></div><div><dt>Próxima ejecución</dt><dd>{plan.next}</dd></div></dl><div className="maintenance-progress"><span><i style={{ width: `${plan.progress}%` }} /></span><small>{plan.progress}% del intervalo consumido</small></div><button onClick={() => { setForm({ title: plan.name, priority: plan.state === "Vencida" ? "Alta" : "Normal", assignee: "Paula Rojas" }); setShowCreate(true); }}><Plus size={14} /> Crear orden desde el plan</button></article>)}</div><div className="maintenance-recommendation"><AlertTriangle size={19} /><div><strong>Recomendación prioritaria</strong><p>Adelantar el diagnóstico UHF de PD1 y coordinar una ventana de inspección antes de cualquier intervención invasiva.</p></div><button onClick={() => setTab("orders")}>Revisar órdenes <ChevronRight size={15} /></button></div></div>}
-
-        {tab === "orders" && <div className="maintenance-orders">{focusOrderId && <div className="work-order-focus-banner"><ClipboardCheck size={17} /><div><strong>Orden abierta desde el Centro de alertas</strong><p>{focusOrderId} quedó seleccionada para mantener la trazabilidad del evento.</p></div></div>}<div className="report-library-head"><div><span className="eyebrow">Ejecución</span><h2>Órdenes de trabajo</h2></div><span>{openOrders} abiertas</span></div><div className="module-table-wrap"><div className="work-order-table"><div className="module-table-head"><span>Orden / trabajo</span><span>Origen</span><span>Vencimiento</span><span>Prioridad</span><span>Responsable</span><span>Estado</span></div>{orderPage.pageItems.map((order) => <div className={`module-table-row ${order.id === focusOrderId ? "focused-order" : ""}`} key={order.id}><span className="event-cell"><strong>{order.title}</strong><small>{order.id}</small></span><span>{order.source}</span><span>{order.due}</span><span><i className={`maintenance-priority priority-${order.priority.toLowerCase()}`}>{order.priority}</i></span><span>{order.assignee}</span><span><select className={`work-status status-${order.status.toLowerCase().replace(" ", "-")}`} value={order.status} onChange={(event) => updateOrder(order.id, event.target.value as WorkStatus)}><option>Pendiente</option><option>En curso</option><option>Completada</option></select></span></div>)}</div></div><Pagination page={orderPage.page} totalPages={orderPage.totalPages} total={orderPage.total} pageSize={orderPage.pageSize} onPageChange={orderPage.setPage} itemLabel="órdenes" /></div>}
-        <div className="module-footer"><span><ShieldCheck size={14} /> Toda modificación queda asociada al usuario y al activo.</span><small>Estado local sincronizado · preparado para integración con CMMS.</small></div>
-      </article>
-    </>
-  );
-}
-
 function DiagnosticsView() {
   const notify = useFeedback();
   const [diagnosticState, setDiagnosticState] = useState<"idle" | "running" | "success">("idle");
@@ -1191,7 +1107,7 @@ function DiagnosticsView() {
   return (
     <>
       <section className="module-summary-grid diagnostic-summary-grid">
-        <article><span className="module-summary-icon green"><Radio size={19} /></span><div><small>Cadena OT</small><strong>Operativa</strong><span>Controlador + gateway + HoitLive Core</span></div></article>
+        <article><span className="module-summary-icon green"><Radio size={19} /></span><div><small>Cadena de adquisición</small><strong>Operativa</strong><span>Controlador + gateway + HoitLive Core</span></div></article>
         <article><span className="module-summary-icon blue"><Refresh size={19} /></span><div><small>Ciclo de sondeo</small><strong>2.0 s</strong><span>105 registros documentados</span></div></article>
         <article><span className="module-summary-icon green"><CheckCircle2 size={19} /></span><div><small>Éxito últimas 24 h</small><strong>99.98%</strong><span>0 excepciones Modbus</span></div></article>
       </section>
@@ -1280,7 +1196,7 @@ function IntegrationsView() {
       <article className={`panel module-panel integration-module ${role === "Solo lectura" ? "role-readonly" : ""}`}>
         <div className="module-toolbar"><div className="module-tabs" role="tablist" aria-label="Secciones de integraciones"><button className={tab === "connections" ? "active" : ""} onClick={() => setTab("connections")}><PlugConnected size={16} /> Conexiones</button><button className={tab === "flow" ? "active" : ""} onClick={() => setTab("flow")}><Timeline size={16} /> Flujo de datos</button><button className={tab === "api" ? "active" : ""} onClick={() => setTab("api")}><Key size={16} /> Acceso API</button></div><span className="autosave-state"><ShieldCheck size={14} /> Configuración local protegida</span></div>
 
-        {tab === "connections" && <div className="integration-content"><div className="settings-section-head"><span className="settings-icon"><PlugConnected size={20} /></span><div><h2>Arquitectura del sitio activo</h2><p>Enlaces configurados entre controladores, gateways y servicios externos.</p></div></div><div className="integration-card-grid">{connections.map((connection) => <article className={`integration-card ${connection.enabled ? "enabled" : "disabled"}`} key={connection.id}><div className="integration-card-head"><span className="integration-card-icon">{connection.id === "controller" ? <Radio size={21} /> : connection.id === "gateway" ? <Server size={21} /> : connection.id === "historian" ? <Database size={21} /> : <Tool size={21} />}</span>{connection.locked ? <span className="core-link-label"><ShieldCheck size={13} /> Requerida</span> : <button className={`switch-control ${connection.enabled ? "on" : ""}`} onClick={() => toggleConnection(connection.id)} aria-label={`${connection.enabled ? "Desactivar" : "Activar"} ${connection.name}`}><i /></button>}</div><span className="eyebrow">{connection.role}</span><h3>{connection.name}</h3><dl><div><dt>Protocolo</dt><dd>{connection.protocol}</dd></div><div><dt>Destino</dt><dd title={connection.endpoint}>{connection.endpoint}</dd></div><div><dt>Última actividad</dt><dd>{connection.freshness}</dd></div></dl><div className="integration-card-footer"><span className={connection.enabled && connection.status === "Operativa" ? "quality-ok" : connection.status === "Probando…" ? "integration-testing" : "muted-state"}>{connection.status === "Operativa" && <CheckCircle2 size={14} />}{connection.status}</span><button onClick={() => testConnection(connection.id)} disabled={!connection.enabled || testingId === connection.id}>{testingId === connection.id ? "Probando…" : "Probar conexión"}</button></div></article>)}</div><div className="configuration-note"><ShieldCheck size={17} /><p><strong>Cadena OT configurada.</strong> Cada sitio puede incorporar uno o más gateways y asociarlos a sus puntos de medición. Historiador y CMMS quedan disponibles para integración.</p></div></div>}
+        {tab === "connections" && <div className="integration-content"><div className="settings-section-head"><span className="settings-icon"><PlugConnected size={20} /></span><div><h2>Arquitectura del sitio activo</h2><p>Enlaces configurados entre controladores, gateways y servicios externos.</p></div></div><div className="integration-card-grid">{connections.map((connection) => <article className={`integration-card ${connection.enabled ? "enabled" : "disabled"}`} key={connection.id}><div className="integration-card-head"><span className="integration-card-icon">{connection.id === "controller" ? <Radio size={21} /> : connection.id === "gateway" ? <Server size={21} /> : connection.id === "historian" ? <Database size={21} /> : <Tool size={21} />}</span>{connection.locked ? <span className="core-link-label"><ShieldCheck size={13} /> Requerida</span> : <button className={`switch-control ${connection.enabled ? "on" : ""}`} onClick={() => toggleConnection(connection.id)} aria-label={`${connection.enabled ? "Desactivar" : "Activar"} ${connection.name}`}><i /></button>}</div><span className="eyebrow">{connection.role}</span><h3>{connection.name}</h3><dl><div><dt>Protocolo</dt><dd>{connection.protocol}</dd></div><div><dt>Destino</dt><dd title={connection.endpoint}>{connection.endpoint}</dd></div><div><dt>Última actividad</dt><dd>{connection.freshness}</dd></div></dl><div className="integration-card-footer"><span className={connection.enabled && connection.status === "Operativa" ? "quality-ok" : connection.status === "Probando…" ? "integration-testing" : "muted-state"}>{connection.status === "Operativa" && <CheckCircle2 size={14} />}{connection.status}</span><button onClick={() => testConnection(connection.id)} disabled={!connection.enabled || testingId === connection.id}>{testingId === connection.id ? "Probando…" : "Probar conexión"}</button></div></article>)}</div><div className="configuration-note"><ShieldCheck size={17} /><p><strong>Cadena de adquisición configurada.</strong> Cada sitio puede incorporar uno o más gateways y asociarlos a sus puntos de medición. Historiador y sistemas externos quedan disponibles para integración.</p></div></div>}
 
         {tab === "flow" && <div className="integration-content flow-content"><div className="settings-section-head"><span className="settings-icon"><Timeline size={20} /></span><div><h2>Ruta de datos del sitio activo</h2><p>Cadena de adquisición y procesamiento desde cada sensor hasta el portal.</p></div></div><div className="data-flow"><article><span><Activity size={21} /></span><small>Origen</small><strong>24 entradas CAM5</strong><p>{activeChannelCount} señales activas · temperatura, UHF y ambiente</p></article><i><ChevronRight size={19} /></i><article><span><CircuitBoard size={21} /></span><small>Controlador</small><strong>CAM5-CTRL-01</strong><p>Modbus TCP · Unit ID 1</p></article><i><ChevronRight size={19} /></i><article><span><Server size={21} /></span><small>Gateway</small><strong>CAM5-GW-01</strong><p>Ethernet · HTTPS/MQTT</p></article><i><ChevronRight size={19} /></i><article className="flow-core"><span><Zap size={21} /></span><small>Procesamiento</small><strong>HoitLive Core</strong><p>Reglas, eventos e histórico</p></article><i><ChevronRight size={19} /></i><article><span><MonitorDot size={21} /></span><small>Aplicación</small><strong>HoitLive Core</strong><p>Dashboard, alertas y reportes</p></article></div><div className="flow-grid"><section><div className="report-library-head"><div><span className="eyebrow">Mapeo Modbus</span><h2>Señales publicadas</h2></div><span>{activeChannelCount} activas</span></div><div className="module-table-wrap"><div className="integration-mapping-table"><div className="module-table-head"><span>Canal</span><span>Registro</span><span>Variable publicada</span><span>Publicación</span><span>Calidad</span></div>{sensors.filter((sensor) => sensor.enabled).map((sensor) => <div className="module-table-row" key={sensor.id}><span><b className={`sensor-code sensor-${sensor.state}`}>{sensor.id}</b></span><span className="mono-cell">{sensor.nativeRegister} · {sensor.register.replace("HR ", "")}</span><span className="mono-cell">cam5.mcc01.{sensor.id.toLowerCase()}</span><span>{sensor.id === "PD1" ? "HoitLive Core + eventos" : "HoitLive Core"}</span><span className="quality-ok"><CheckCircle2 size={14} /> {sensor.quality}</span></div>)}</div></div></section><aside className="sync-activity"><div className="report-library-head"><div><span className="eyebrow">Actividad</span><h2>Últimas sincronizaciones</h2></div></div><div>{syncLog.map((entry) => <article key={`${entry.time}-${entry.system}`}><span className={entry.state === "Correcta" ? "normal" : "warning"}><Refresh size={15} /></span><div><strong>{entry.action}</strong><small>{entry.system} · {entry.detail}</small></div><time>{entry.time}</time></article>)}</div></aside></div></div>}
 
@@ -1445,8 +1361,6 @@ export default function Home() {
   const [period, setPeriod] = useState("24 h");
   const [trendSensorId, setTrendSensorId] = useState("T01");
   const [trendWindow, setTrendWindow] = useState<TrendWindow | null>(null);
-  const [workOrders, setWorkOrders] = usePersistentState<WorkOrder[]>("cam5.front.work-orders", initialWorkOrders);
-  const [focusOrderId, setFocusOrderId] = useState<string | null>(null);
   const [alarmSummary, setAlarmSummary] = useState({ critical: 0, warning: 0 });
   const [alarmPreview, setAlarmPreview] = useState<PortalAlarm[]>([]);
   const [systemMode, setSystemMode] = useState<SystemMode>("loading");
@@ -1587,7 +1501,6 @@ export default function Home() {
 
   const navigate = (next: View, parameters?: Record<string, string>) => {
     setView(next);
-    if (next !== "maintenance") setFocusOrderId(null);
     setMenuOpen(false);
     const url = new URL(window.location.href);
     url.searchParams.set("view", next);
@@ -1624,12 +1537,6 @@ export default function Home() {
         notify("Alarma reconocida y registrada en la trazabilidad.");
       })
       .catch((requestError) => notify(requestError instanceof Error ? requestError.message : "No fue posible reconocer la alarma.", "warning"));
-  };
-  const openPersistedWorkOrder = (order: WorkOrder) => {
-    setWorkOrders((current) => current.some((item) => item.id === order.id) ? current.map((item) => item.id === order.id ? { ...item, ...order } : item) : [order, ...current]);
-    setFocusOrderId(order.id);
-    navigate("maintenance");
-    notify(`Orden ${order.id} abierta.`, "info");
   };
   const exportCsv = () => {
     const rows = ["canal,tipo,ubicacion,valor,unidad,estado", ...sensors.filter((sensor) => sensor.enabled).map((sensor) => [sensor.id, sensor.type, sensor.zone, sensor.value, sensor.unit, sensor.state].join(","))];
@@ -1700,7 +1607,7 @@ export default function Home() {
           ))}
         </nav>
         <div className="sidebar-status">
-          <div className="gateway-badge"><span className="gateway-icon"><Server size={17} /></span><span><strong>{gatewayState === "online" ? "Cadena OT operativa" : "Cadena OT en puesta en marcha"}</strong><small>{activeController?.code ?? "Controlador pendiente"} → {gatewayCode ?? "Gateway pendiente"}</small></span><i className={gatewayState === "online" ? "" : "pending"} /></div>
+          <div className="gateway-badge"><span className="gateway-icon"><Server size={17} /></span><span><strong>{gatewayState === "online" ? "Adquisición operativa" : "Adquisición en puesta en marcha"}</strong><small>{activeController?.code ?? "Controlador pendiente"} → {gatewayCode ?? "Gateway pendiente"}</small></span><i className={gatewayState === "online" ? "" : "pending"} /></div>
           <button className="user-card" onClick={() => navigate("users")} aria-label="Abrir usuarios y roles"><span className="user-avatar">{sessionUser.displayName.split(" ").map((part) => part[0]).slice(0, 2).join("").toUpperCase()}</span><span className="user-copy"><strong>{sessionUser.displayName}</strong><small>{sessionUser.roleName}</small></span><ChevronRight size={16} /></button>
           <button className="sidebar-logout" onClick={logout}><LogOut size={17} /> Cerrar sesión</button>
         </div>
@@ -1715,17 +1622,16 @@ export default function Home() {
         <div className="content-scroll">
           <div className="page-content">
             {systemMode !== "normal" && <section className={`operational-banner banner-${systemMode}`} role="alert"><span>{systemMode === "offline" ? <PlugConnected size={19} /> : systemMode === "loading" ? <Refresh className="spin" size={19} /> : <Clock3 size={19} />}</span><div><strong>{systemMode === "offline" ? "Gateway sin comunicación" : systemMode === "loading" ? "Sincronizando datos" : "Las lecturas están atrasadas"}</strong><p>{systemMode === "offline" ? "El portal muestra el último valor recibido cuando existe. Las funciones administrativas siguen disponibles, pero no hay telemetría nueva." : systemMode === "loading" ? "Solicitando la última configuración, lecturas y eventos disponibles." : "Los datos visibles superan el tiempo de frescura configurado. Revisa el enlace antes de tomar una decisión."}</p></div>{systemMode !== "loading" && <button onClick={() => { setSystemMode("loading"); setTelemetryRefreshKey((current) => current + 1); notify("Consultando nuevamente la telemetría.", "info"); }}><Refresh size={15} /> Reintentar</button>}</section>}
-            <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> Gestión de activos críticos</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{view !== "assets" && view !== "settings" && view !== "integrations" && view !== "users" && view !== "notifications" && view !== "reports" && view !== "maintenance" && view !== "diagnostics" && view !== "commissioning" && view !== "trends" && view !== "history" && <button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button>}<button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{alarmSummary.critical + alarmSummary.warning} alertas activas</button></div></section>
+            <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> Gestión de activos críticos</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{view !== "assets" && view !== "settings" && view !== "integrations" && view !== "users" && view !== "notifications" && view !== "reports" && view !== "diagnostics" && view !== "commissioning" && view !== "trends" && view !== "history" && <button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button>}<button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{alarmSummary.critical + alarmSummary.warning} alertas activas</button></div></section>
             {view === "overview" && <Overview onNavigate={navigate} onAcknowledge={acknowledge} activeAlarms={alarmPreview} point={activePoint} />}
             {view === "cabinet" && <CabinetView onOpenTrend={openChannelTrend} />}
             {view === "diagnostics" && <DiagnosticsView />}
-            {view === "commissioning" && <Cam5CommissioningView notify={notify} />}
+            {view === "commissioning" && <Cam5CommissioningView assetId={activePoint?.id ?? ""} canExecute={sessionUser.permissions.includes("commissioning.execute")} notify={notify} confirm={(request) => setConfirmRequest(request)} onOpenSettings={() => navigate("settings")} onOpenReports={() => navigate("reports")} />}
             {view === "trends" && <TrendsView assetId={activePoint?.id ?? ""} channels={sensors.map((sensor) => ({ id: sensor.id, label: sensor.label, zone: sensor.zone, unit: sensor.unit, state: sensor.state, enabled: sensor.enabled }))} period={period} setPeriod={setPeriod} selectedId={trendSensorId} onSelectChannel={selectTrendChannel} onBackToMap={() => navigate("cabinet")} rangeWindow={trendWindow} setRangeWindow={setTrendWindow} canExport={sessionUser.permissions.includes("history.export")} notify={notify} />}
-            {view === "alarms" && <AlarmsView assetId={activePoint?.id ?? ""} permissions={sessionUser.permissions} onWorkOrderCreated={openPersistedWorkOrder} onSummaryChange={setAlarmSummary} onOpenTrend={openAlarmTrend} />}
+            {view === "alarms" && <AlarmsView assetId={activePoint?.id ?? ""} permissions={sessionUser.permissions} onSummaryChange={setAlarmSummary} onOpenTrend={openAlarmTrend} />}
             {view === "history" && <HistoryView assetId={activePoint?.id ?? ""} canExport={sessionUser.permissions.includes("history.export")} onOpenTrend={openTrendRange} />}
             {view === "assets" && <OperationalHierarchyView hierarchy={hierarchy} loading={hierarchyLoading} permissions={sessionUser.permissions} onReload={loadHierarchy} onSwitchSite={switchSite} />}
             {view === "reports" && <DatabaseReportsView assetId={activePoint?.id ?? ""} assetLabel={activePoint ? `${activePoint.code} · ${activePoint.name}` : "Sin punto seleccionado"} timezone={hierarchy?.sites.find((site) => site.id === sessionUser.siteId)?.timezone ?? "America/Santiago"} canGenerate={sessionUser.permissions.includes("reports.generate")} canSchedule={sessionUser.permissions.includes("reports.schedule")} notify={notify} confirm={(request) => setConfirmRequest(request)} />}
-            {view === "maintenance" && <MaintenanceView orders={workOrders} setOrders={setWorkOrders} focusOrderId={focusOrderId} />}
             {view === "settings" && <DatabaseSettingsView assetId={activePoint?.id ?? ""} canWrite={sessionUser.permissions.includes("settings.write")} notify={notify} confirm={(request) => setConfirmRequest(request)} onReloadHierarchy={loadHierarchy} />}
             {view === "integrations" && <IntegrationsView />}
             {view === "users" && <UsersView currentUserId={sessionUser.id} sites={sessionUser.sites} activeSiteId={sessionUser.siteId} />}

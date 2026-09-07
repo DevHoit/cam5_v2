@@ -4,7 +4,7 @@ import test from "node:test";
 import { PGlite } from "@electric-sql/pglite";
 import { count, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
-import { PORTAL_ROLES } from "../db/access-control";
+import { PORTAL_PERMISSIONS, PORTAL_ROLES } from "../db/access-control";
 import { authenticateLocalUser, createPortalSession, resolvePortalSession, revokePortalSession, switchPortalSessionSite, verifyPassword } from "../db/auth";
 import { resolvePortalAccess } from "../db/authorization";
 import type { Cam5Database } from "../db/index";
@@ -49,7 +49,7 @@ test("seeds the initial CAM5 installation and remains idempotent", async () => {
     assert.equal(channelCount.value, 36);
     assert.equal(registerCount.value, 105);
     assert.equal(roleCount.value, PORTAL_ROLES.length);
-    assert.equal(permissionCount.value, 30);
+    assert.equal(permissionCount.value, PORTAL_PERMISSIONS.length);
     assert.equal(relayCount.value, 6);
     assert.equal(checkCount.value, 8);
     assert.equal(profileRangeCount.value, 4);

@@ -1,10 +1,12 @@
 import type { NextRequest } from "next/server";
 import { and, count, desc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
+import { COMMISSIONING_CHECKLIST } from "../../../../db/commissioning-engine";
 import {
   alarms,
   assets,
   auditLogs,
   clients,
+  commissioningItems,
   deviceModels,
   devices,
   gatewayApiCredentials,
@@ -254,6 +256,7 @@ export async function POST(request: NextRequest) {
           unitId: typeof body.unitId === "number" ? body.unitId : 1,
           state: "commissioning",
         }).returning();
+        await tx.insert(commissioningItems).values(COMMISSIONING_CHECKLIST.map(([itemKey, label]) => ({ deviceId: row.id, itemKey, label, status: "pending" as const })));
         record = row;
       }
 
