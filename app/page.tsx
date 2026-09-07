@@ -194,7 +194,7 @@ type PortalSensor = {
   displayOrder: number;
   recordedAt: string | null;
 };
-type PortalTelemetryState = { status: "preview" | "loading" | "ready" | "error"; data: PortalLiveTelemetry | null };
+type PortalTelemetryState = { status: "loading" | "ready" | "error"; data: PortalLiveTelemetry | null };
 type PaginationMeta = { page: number; pageSize: number; total: number; totalPages: number };
 type NoticeTone = "success" | "info" | "warning";
 type SystemMode = "normal" | "loading" | "stale" | "offline";
@@ -206,7 +206,7 @@ const ConfirmContext = createContext<(request: ConfirmRequest) => void>(() => un
 const useConfirm = () => useContext(ConfirmContext);
 const RoleContext = createContext<UserRole>("Administrador");
 const useActiveRole = () => useContext(RoleContext);
-const TelemetryContext = createContext<PortalTelemetryState>({ status: "preview", data: null });
+const TelemetryContext = createContext<PortalTelemetryState>({ status: "loading", data: null });
 
 async function portalRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -331,7 +331,7 @@ const navGroups = [
       { id: "diagnostics" as View, label: "Diagnóstico de comunicación", description: "Controlador, Modbus y gateway", icon: Radio },
       { id: "commissioning" as View, label: "Puesta en marcha", description: "Conectar y validar CAM-5", icon: ClipboardCheck },
       { id: "trends" as View, label: "Tendencias", description: "Evolución por canal", icon: History },
-      { id: "alarms" as View, label: "Centro de alertas", description: "Triage y seguimiento", icon: BellRing, badge: "3" },
+      { id: "alarms" as View, label: "Centro de alertas", description: "Triage y seguimiento", icon: BellRing },
       { id: "history" as View, label: "Histórico", description: "Mediciones y trazabilidad", icon: Database },
     ],
   },
@@ -1493,7 +1493,7 @@ export default function Home() {
               <div className="nav-items">
                 {group.items.map((item) => {
                   const Icon = item.icon;
-                  const badgeCount = item.id === "alarms" ? alarmSummary.critical + alarmSummary.warning : item.badge ? Number(item.badge) : null;
+                  const badgeCount = item.id === "alarms" ? alarmSummary.critical + alarmSummary.warning : null;
                   return (
                     <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)} aria-current={view === item.id ? "page" : undefined}>
                       <span className="nav-item-icon"><Icon size={19} strokeWidth={1.8} /></span>

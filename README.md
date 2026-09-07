@@ -76,19 +76,13 @@ No usar `npm run build:cloudflare` para Vercel, porque genera una salida vinext 
 
 ## Conexión del gateway
 
-Configurar:
-
-```text
-NEXT_PUBLIC_CAM5_API_URL=https://api.ejemplo.cl/api/v1
-```
-
-La autenticación, las cuentas, los usuarios, la jerarquía operacional, la configuración técnica, el histórico, las tendencias, los reportes, el diagnóstico, la última telemetría y el ciclo completo de alarmas utilizan rutas internas `/api/v1` conectadas a PostgreSQL.
+La autenticación, las cuentas, los usuarios, la jerarquía operacional, la configuración técnica, el histórico, las tendencias, los reportes, el diagnóstico, la última telemetría y el ciclo completo de alarmas utilizan rutas internas `/api/v1` conectadas a PostgreSQL. El navegador no utiliza datos locales ni necesita una URL pública alternativa para la API.
 
 Las integraciones externas con historiadores, CMMS/ERP u otras plataformas quedan fuera del alcance de esta primera versión. La estructura técnica de base de datos se conserva para incorporarlas después sin afectar los módulos operativos actuales.
 
-El contrato que debe implementar el gateway está en [`gateway/CAM5_GATEWAY_PROTOCOL.md`](./gateway/CAM5_GATEWAY_PROTOCOL.md). Incluye frecuencias, payload JSON, códigos de calidad, reintentos y un emisor Python de referencia.
+El gateway consulta `GET /api/v1/gateway/config` y envía cada lote a `POST /api/v1/gateway/ingest` en el mismo dominio de HoitLive Core. El contrato completo está en [`gateway/CAM5_GATEWAY_PROTOCOL.md`](./gateway/CAM5_GATEWAY_PROTOCOL.md): incluye frecuencias, payload JSON, códigos de calidad, reintentos y un emisor Python de referencia.
 
-`NEXT_PUBLIC_CAM5_API_URL` se reserva para ese servicio de telemetría. El cliente tipado está en `app/cam5-api.ts` y el contrato de implementación se encuentra en `BACKEND_HANDOFF.md`.
+La cobertura de persistencia por módulo está documentada en [`DATABASE_COVERAGE.md`](./DATABASE_COVERAGE.md).
 
 ## Archivos principales
 

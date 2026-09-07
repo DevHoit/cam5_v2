@@ -73,7 +73,7 @@ npm run db:migrate
 npm run db:seed
 ```
 
-El seed es repetible y crea:
+El seed es repetible y crea únicamente los registros iniciales que todavía no existen:
 
 - Cliente principal, Subestación Norte y MCC-01.
 - CAM5-GW-01 y CAM5-CTRL-01 en estado de puesta en marcha.
@@ -82,6 +82,8 @@ El seed es repetible y crea:
 - 30 permisos y cuatro perfiles de portal.
 - Tres plantillas de informe.
 - El administrador inicial, solamente si `CAM5_ADMIN_EMAIL` está definido. Su acceso local se habilita cuando también se define `CAM5_ADMIN_PASSWORD`.
+
+Una nueva ejecución no reemplaza nombres, direcciones, canales, umbrales, relés, retención ni contraseñas que ya fueron administrados. El catálogo oficial, los permisos y las descripciones de sistema sí pueden actualizarse de forma idempotente.
 
 El host `192.168.10.42` del seed es provisional. Debe reemplazarse por la dirección real del CAM5 durante la puesta en marcha.
 

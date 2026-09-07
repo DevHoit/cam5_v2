@@ -1,4 +1,3 @@
-export type Cam5SensorState = "normal" | "warning" | "critical";
 export type Cam5DataType = "Int16" | "UInt16";
 
 export type Cam5OperationalChannel = {
@@ -6,18 +5,11 @@ export type Cam5OperationalChannel = {
   sourceId: string;
   label: string;
   zone: string;
-  value: string;
   unit: string;
-  type: "Temperatura" | "Temperatura ambiente" | "Humedad" | "Descarga parcial" | "Descarga superficial";
   metric: "temperature" | "ambient" | "humidity" | "pd" | "sd";
-  state: Cam5SensorState;
-  trend: string;
-  threshold: string;
   warningDefault: number;
   criticalDefault: number;
   nativeRegister: number;
-  register: string;
-  quality: string;
   configured: boolean;
 };
 
@@ -62,38 +54,26 @@ const temperatureLabels = [
   ["Reserva térmica", "Sin asignar"],
 ] as const;
 
-const temperatureValues = [68.4, 54.1, 52.8, 47.2, 49.5, 45.6, 46.2, 44.9, 48.1, 47.6, 46.8, 0];
-
 const temperatureChannels: Cam5OperationalChannel[] = temperatureLabels.map(([label, zone], index) => {
   const channel = index + 1;
   const configured = channel <= 5;
-  const value = temperatureValues[index];
   return {
     id: `T${String(channel).padStart(2, "0")}`,
     sourceId: `TEMP-${String(channel).padStart(2, "0")}`,
     label,
     zone,
-    value: configured ? value.toFixed(1) : "—",
     unit: "°C",
-    type: "Temperatura",
     metric: "temperature",
-    state: channel === 1 ? "warning" : "normal",
-    trend: configured ? (channel === 1 ? "+1.8 °C/h" : `+0.${channel % 4} °C/h`) : "Sin configurar",
-    threshold: channel <= 3 ? "65 °C" : "70 °C",
     warningDefault: channel <= 3 ? 65 : 70,
     criticalDefault: channel <= 3 ? 75 : 80,
     nativeRegister: 417 + channel,
-    register: `HR ${humanReference(417 + channel)}`,
-    quality: configured ? "Válida" : "No configurado",
     configured,
   };
 });
 
-const pdTotals = [72, 18, 0, 0];
-const sdTotals = [31, 12, 0, 0];
 const dischargeLocations = ["Compartimiento de cables", "Barras principales", "Reserva UHF 03", "Reserva UHF 04"];
 
-const surfaceDischargeChannels: Cam5OperationalChannel[] = sdTotals.map((value, index) => {
+const surfaceDischargeChannels: Cam5OperationalChannel[] = Array.from({ length: 4 }, (_, index) => {
   const channel = index + 1;
   const configured = channel <= 2;
   return {
@@ -101,23 +81,16 @@ const surfaceDischargeChannels: Cam5OperationalChannel[] = sdTotals.map((value, 
     sourceId: `UHF-${String(channel).padStart(2, "0")}`,
     label: `Descarga superficial UHF ${String(channel).padStart(2, "0")}`,
     zone: dischargeLocations[index],
-    value: configured ? String(value) : "—",
     unit: "idx",
-    type: "Descarga superficial",
     metric: "sd",
-    state: "normal",
-    trend: configured ? "Estable" : "Sin configurar",
-    threshold: "40 idx",
     warningDefault: 30,
     criticalDefault: 40,
     nativeRegister: 445 + channel,
-    register: `HR ${humanReference(445 + channel)}`,
-    quality: configured ? "Válida" : "No configurado",
     configured,
   };
 });
 
-const partialDischargeChannels: Cam5OperationalChannel[] = pdTotals.map((value, index) => {
+const partialDischargeChannels: Cam5OperationalChannel[] = Array.from({ length: 4 }, (_, index) => {
   const channel = index + 1;
   const configured = channel <= 2;
   return {
@@ -125,18 +98,11 @@ const partialDischargeChannels: Cam5OperationalChannel[] = pdTotals.map((value, 
     sourceId: `UHF-${String(channel).padStart(2, "0")}`,
     label: `Descarga parcial UHF ${String(channel).padStart(2, "0")}`,
     zone: dischargeLocations[index],
-    value: configured ? String(value) : "—",
     unit: "idx",
-    type: "Descarga parcial",
     metric: "pd",
-    state: channel === 1 ? "critical" : "normal",
-    trend: configured ? (channel === 1 ? "Acelerando · Φ 2.8×" : "Estable") : "Sin configurar",
-    threshold: "60 idx",
     warningDefault: 40,
     criticalDefault: 60,
     nativeRegister: 449 + channel,
-    register: `HR ${humanReference(449 + channel)}`,
-    quality: configured ? "Válida" : "No configurado",
     configured,
   };
 });
@@ -149,18 +115,11 @@ const humidityChannels: Cam5OperationalChannel[] = Array.from({ length: 8 }, (_,
     sourceId: `HUM-${String(channel).padStart(2, "0")}`,
     label: channel === 1 ? "Ambiente de cabina" : `Humedad ambiental ${String(channel).padStart(2, "0")}`,
     zone: channel === 1 ? "Compartimiento de cables" : "Sin asignar",
-    value: configured ? "78.0" : "—",
     unit: "%RH",
-    type: "Humedad",
     metric: "humidity",
-    state: configured ? "warning" : "normal",
-    trend: configured ? "+4 % / 24h" : "Sin configurar",
-    threshold: "75 %RH",
     warningDefault: 75,
     criticalDefault: 85,
     nativeRegister: 429 + channel * 2,
-    register: `HR ${humanReference(429 + channel * 2)}`,
-    quality: configured ? "Válida" : "No configurado",
     configured,
   };
 });
@@ -173,18 +132,11 @@ const ambientChannels: Cam5OperationalChannel[] = Array.from({ length: 8 }, (_, 
     sourceId: `HUM-${String(channel).padStart(2, "0")}`,
     label: channel === 1 ? "Temperatura ambiente de cabina" : `Temperatura ambiente ${String(channel).padStart(2, "0")}`,
     zone: channel === 1 ? "Compartimiento de cables" : "Sin asignar",
-    value: configured ? "32.6" : "—",
     unit: "°C",
-    type: "Temperatura ambiente",
     metric: "ambient",
-    state: "normal",
-    trend: configured ? "+0.4 °C / 24h" : "Sin configurar",
-    threshold: "45 °C",
     warningDefault: 45,
     criticalDefault: 55,
     nativeRegister: 428 + channel * 2,
-    register: `HR ${humanReference(428 + channel * 2)}`,
-    quality: configured ? "Válida" : "No configurado",
     configured,
   };
 });
@@ -289,15 +241,6 @@ export const cam5InputInventory: Cam5InputDefinition[] = [
     signal: index === 0 ? "En línea" : "Sin lectura",
   })),
 ];
-
-export const cam5PdMetrics = [
-  { key: "total", label: "Total", value: 72, description: "Magnitud total detectada" },
-  { key: "alpha", label: "Alpha", value: 64, description: "Promedio de corto plazo" },
-  { key: "beta", label: "Beta", value: 49, description: "Referencia de largo plazo" },
-  { key: "phi", label: "Phi", value: 2.8, description: "Velocidad de cambio" },
-  { key: "noise", label: "Ruido", value: 11, description: "Piso UHF observado" },
-  { key: "surface", label: "SD", value: 31, description: "Descarga superficial" },
-] as const;
 
 export const cam5RelayDefaults = [
   { id: 1, name: "Alarma térmica", source: "Temperatura máxima", level: "Alarma", state: "Inactivo" },

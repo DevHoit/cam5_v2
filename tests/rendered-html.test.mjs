@@ -81,6 +81,7 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(page, /\/api\/v1\/alarms/);
   assert.match(page, /\/api\/v1\/alarm-rules/);
   assert.doesNotMatch(page, /usePersistentState|cam5\.front\.integrations|cam5\.front\.api-keys/);
+  assert.doesNotMatch(page, /status: "preview"|badge: "3"/);
   assert.match(page, /portal-notice/);
   assert.match(page, /Estructura operacional/);
   assert.match(page, /Clientes, sitios y medición/);
@@ -162,6 +163,7 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(model, /registerDefinition\(418/);
   assert.match(model, /cam5RegisterCatalog/);
   assert.match(model, /cam5InputInventory/);
+  assert.doesNotMatch(model, /temperatureValues|pdTotals|sdTotals|cam5PdMetrics/);
   assert.doesNotMatch(page, /CAM5-GW-0[234]|Subestación Auxiliar|2 subestaciones/);
   assert.match(layout, /HoitLive Core \| Monitoreo de condición eléctrica/);
   assert.match(css, /\.report-builder/);
@@ -198,6 +200,39 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.doesNotMatch(page, /SkeletonPreview|codex-preview/);
   assert.doesNotMatch(layout, /SkeletonPreview|codex-preview/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
+});
+
+test("keeps every visible module on authenticated database APIs", async () => {
+  const sources = await Promise.all([
+    "page.tsx",
+    "account-view.tsx",
+    "cam5-engineering.tsx",
+    "diagnostics-view.tsx",
+    "gateway-provisioning-view.tsx",
+    "notifications-view.tsx",
+    "reports-view.tsx",
+    "settings-view.tsx",
+    "trends-view.tsx",
+  ].map((file) => readFile(new URL(`../app/${file}`, import.meta.url), "utf8")));
+  const visibleFrontend = sources.join("\n");
+
+  assert.doesNotMatch(visibleFrontend, /localStorage|sessionStorage|usePersistentState/);
+  for (const endpoint of [
+    "/api/v1/auth/session",
+    "/api/v1/hierarchy",
+    "/api/v1/telemetry/latest",
+    "/api/v1/diagnostics",
+    "/api/v1/commissioning",
+    "/api/v1/trends",
+    "/api/v1/alarms",
+    "/api/v1/history",
+    "/api/v1/reports",
+    "/api/v1/configuration",
+    "/api/v1/gateway-credentials",
+    "/api/v1/users",
+    "/api/v1/notifications/summary",
+    "/api/v1/account",
+  ]) assert.match(visibleFrontend, new RegExp(endpoint.replaceAll("/", "\\/")));
 });
 
 test("includes the backend handoff contract", async () => {

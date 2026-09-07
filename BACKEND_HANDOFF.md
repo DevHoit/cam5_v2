@@ -59,9 +59,9 @@ Los valores `0x8000` y `0xFFFF` deben convertirse en calidad inválida, no en me
 - El motor de alarmas se ejecuta después de cada lote de ingestión y guarda contadores, severidad, calidad y última evaluación en `alarm_rule_states`.
 - La matriz de seis relés se configura y audita mediante el backend.
 
-## Endpoints previstos
+## Endpoints del producto
 
-El cliente tipado está en `app/cam5-api.ts`. Las familias principales son:
+El portal usa directamente las rutas Next.js bajo `/api/v1`. Las familias principales son:
 
 - `/health`
 - `/auth/login`
@@ -129,11 +129,10 @@ La carga de `config.xml`, restauración, firmware y reinicio deben ejecutarse a 
 ## Variables de entorno
 
 ```text
-NEXT_PUBLIC_CAM5_API_URL=https://api.ejemplo.cl/api/v1
 DATABASE_URL=postgresql://usuario:clave@host:5432/cam5
 CAM5_ADMIN_EMAIL=administrador@empresa.cl
 CAM5_ADMIN_NAME=Nombre del administrador
 CAM5_ADMIN_PASSWORD=una-clave-segura-de-al-menos-10-caracteres
 ```
 
-Sin `DATABASE_URL` el portal no permite iniciar sesión. Las variables `CAM5_ADMIN_*` se usan durante `npm run db:seed`; `NEXT_PUBLIC_CAM5_API_URL` será necesaria cuando se conecte la telemetría proveniente del gateway.
+Sin `DATABASE_URL` el portal no permite iniciar sesión. Las variables `CAM5_ADMIN_*` se usan durante `npm run db:seed`. El gateway se autentica contra las rutas `/api/v1/gateway/*` del mismo despliegue y no requiere exponer una variable `NEXT_PUBLIC_*` al navegador.

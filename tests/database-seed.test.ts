@@ -23,7 +23,23 @@ test("seeds the initial CAM5 installation and remains idempotent", async () => {
 
     const seedOptions = { adminEmail: "admin@example.test", adminName: "Administrador de prueba", adminPassword: "Cam5-Prueba-2026", log: false };
     await seedCam5Database(seedDb, seedOptions);
-    await seedCam5Database(seedDb, seedOptions);
+
+    const [seededClient] = await db.select().from(schema.clients).limit(1);
+    const [seededSite] = await db.select().from(schema.sites).limit(1);
+    const [seededProfile] = await db.select().from(schema.readingProfiles).limit(1);
+    const [seededInput] = await db.select().from(schema.physicalInputs).where(eq(schema.physicalInputs.code, "T01")).limit(1);
+    const [seededChannel] = await db.select().from(schema.channels).where(eq(schema.channels.code, "T01")).limit(1);
+    const [seededRule] = await db.select().from(schema.alarmRules).where(eq(schema.alarmRules.channelId, seededChannel.id)).limit(1);
+    const [seededRelay] = await db.select().from(schema.relayConfigurations).where(eq(schema.relayConfigurations.relayNumber, 1)).limit(1);
+    await db.update(schema.clients).set({ name: "Cliente administrado" }).where(eq(schema.clients.id, seededClient.id));
+    await db.update(schema.sites).set({ name: "Sitio administrado" }).where(eq(schema.sites.id, seededSite.id));
+    await db.update(schema.readingProfiles).set({ staleAfterSeconds: 90 }).where(eq(schema.readingProfiles.id, seededProfile.id));
+    await db.update(schema.physicalInputs).set({ enabled: false, assignment: "Asignación de terreno" }).where(eq(schema.physicalInputs.id, seededInput.id));
+    await db.update(schema.channels).set({ enabled: false, name: "Canal administrado" }).where(eq(schema.channels.id, seededChannel.id));
+    await db.update(schema.alarmRules).set({ warningThreshold: "61" }).where(eq(schema.alarmRules.id, seededRule.id));
+    await db.update(schema.relayConfigurations).set({ name: "Relé administrado" }).where(eq(schema.relayConfigurations.id, seededRelay.id));
+
+    await seedCam5Database(seedDb, { ...seedOptions, adminPassword: "Otra-Clave-Que-No-Debe-Aplicarse" });
 
     const [clientCount] = await db.select({ value: count() }).from(schema.clients);
     const [siteCount] = await db.select({ value: count() }).from(schema.sites);
@@ -57,6 +73,23 @@ test("seeds the initial CAM5 installation and remains idempotent", async () => {
     assert.equal(identityCount.value, 1);
     assert.equal(clientAssignmentCount.value, 1);
 
+    const [preservedClient] = await db.select().from(schema.clients).where(eq(schema.clients.id, seededClient.id)).limit(1);
+    const [preservedSite] = await db.select().from(schema.sites).where(eq(schema.sites.id, seededSite.id)).limit(1);
+    const [preservedProfile] = await db.select().from(schema.readingProfiles).where(eq(schema.readingProfiles.id, seededProfile.id)).limit(1);
+    const [preservedInput] = await db.select().from(schema.physicalInputs).where(eq(schema.physicalInputs.id, seededInput.id)).limit(1);
+    const [preservedChannel] = await db.select().from(schema.channels).where(eq(schema.channels.id, seededChannel.id)).limit(1);
+    const [preservedRule] = await db.select().from(schema.alarmRules).where(eq(schema.alarmRules.id, seededRule.id)).limit(1);
+    const [preservedRelay] = await db.select().from(schema.relayConfigurations).where(eq(schema.relayConfigurations.id, seededRelay.id)).limit(1);
+    assert.equal(preservedClient.name, "Cliente administrado");
+    assert.equal(preservedSite.name, "Sitio administrado");
+    assert.equal(preservedProfile.staleAfterSeconds, 90);
+    assert.equal(preservedInput.enabled, false);
+    assert.equal(preservedInput.assignment, "Asignación de terreno");
+    assert.equal(preservedChannel.enabled, false);
+    assert.equal(preservedChannel.name, "Canal administrado");
+    assert.equal(preservedRule.warningThreshold, "61.000000");
+    assert.equal(preservedRelay.name, "Relé administrado");
+
     const [storedIdentity] = await db.select().from(schema.authIdentities).limit(1);
     assert.ok(storedIdentity.passwordHash);
     assert.equal(await verifyPassword("Cam5-Prueba-2026", storedIdentity.passwordHash), true);
@@ -67,8 +100,8 @@ test("seeds the initial CAM5 installation and remains idempotent", async () => {
     const resolvedSession = await resolvePortalSession(seedDb, session.token);
     assert.equal(resolvedSession?.email, "admin@example.test");
     assert.equal(resolvedSession?.roleKey, "administrator");
-    assert.equal(resolvedSession?.clientName, "Cliente principal");
-    assert.equal(resolvedSession?.siteName, "Subestación Norte");
+    assert.equal(resolvedSession?.clientName, "Cliente administrado");
+    assert.equal(resolvedSession?.siteName, "Sitio administrado");
     assert.equal(resolvedSession?.sites.length, 1);
     assert.ok(resolvedSession?.permissions.includes("users.manage"));
 
@@ -82,7 +115,7 @@ test("seeds the initial CAM5 installation and remains idempotent", async () => {
     assert.equal(switchedSession?.sites.length, 2);
     await db.update(schema.sites).set({ active: false }).where(eq(schema.sites.id, secondSite.id));
     const fallbackSession = await resolvePortalSession(seedDb, session.token);
-    assert.equal(fallbackSession?.siteName, "Subestación Norte");
+    assert.equal(fallbackSession?.siteName, "Sitio administrado");
     assert.equal(fallbackSession?.sites.length, 1);
     await revokePortalSession(seedDb, session.token);
     assert.equal(await resolvePortalSession(seedDb, session.token), null);

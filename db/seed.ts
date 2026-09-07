@@ -90,10 +90,7 @@ export async function seedCam5Database(
     await tx.insert(clients).values({
       code: clientCode,
       name: clientName,
-    }).onConflictDoUpdate({
-      target: clients.code,
-      set: { name: clientName, active: true, updatedAt: new Date() },
-    });
+    }).onConflictDoNothing({ target: clients.code });
     const [client] = await tx.select().from(clients).where(eq(clients.code, clientCode)).limit(1);
     if (!client) throw new Error("No fue posible crear el cliente inicial.");
 
@@ -103,10 +100,7 @@ export async function seedCam5Database(
       name: "Subestación Norte",
       description: "Primera ubicación productiva HoitLive Core",
       timezone: "America/Santiago",
-    }).onConflictDoUpdate({
-      target: [sites.clientId, sites.code],
-      set: { name: "Subestación Norte", timezone: "America/Santiago", active: true, updatedAt: new Date() },
-    });
+    }).onConflictDoNothing({ target: [sites.clientId, sites.code] });
     const [site] = await tx.select().from(sites).where(and(eq(sites.clientId, client.id), eq(sites.code, "SITE-NORTE"))).limit(1);
     if (!site) throw new Error("No fue posible crear la ubicación inicial.");
 
@@ -117,10 +111,7 @@ export async function seedCam5Database(
       area: "Cabina instrumentada",
       nominalVoltageKv: "13.8",
       state: "offline",
-    }).onConflictDoUpdate({
-      target: [assets.siteId, assets.code],
-      set: { name: "Alimentador Norte", area: "Cabina instrumentada", nominalVoltageKv: "13.8", updatedAt: new Date() },
-    });
+    }).onConflictDoNothing({ target: [assets.siteId, assets.code] });
     const [asset] = await tx.select().from(assets).where(and(eq(assets.siteId, site.id), eq(assets.code, "MCC-01"))).limit(1);
     if (!asset) throw new Error("No fue posible crear el activo inicial.");
 
@@ -130,10 +121,7 @@ export async function seedCam5Database(
       name: "Gateway industrial CAM5",
       state: "pending",
       metadata: { connectionState: "awaiting_backend" },
-    }).onConflictDoUpdate({
-      target: [gateways.siteId, gateways.code],
-      set: { name: "Gateway industrial CAM5", updatedAt: new Date() },
-    });
+    }).onConflictDoNothing({ target: [gateways.siteId, gateways.code] });
     const [gateway] = await tx.select().from(gateways).where(and(eq(gateways.siteId, site.id), eq(gateways.code, "CAM5-GW-01"))).limit(1);
     if (!gateway) throw new Error("No fue posible crear el gateway inicial.");
 
@@ -144,10 +132,7 @@ export async function seedCam5Database(
       staleAfterSeconds: 30,
       rawRetentionDays: 30,
       aggregateRetentionDays: 1825,
-    }).onConflictDoUpdate({
-      target: readingProfiles.key,
-      set: { name: "CAM5 equilibrado", staleAfterSeconds: 30, rawRetentionDays: 30, aggregateRetentionDays: 1825, enabled: true, updatedAt: new Date() },
-    });
+    }).onConflictDoNothing({ target: readingProfiles.key });
     const [profile] = await tx.select().from(readingProfiles).where(eq(readingProfiles.key, "cam5-balanced-v1")).limit(1);
     if (!profile) throw new Error("No fue posible crear el perfil de lectura.");
 
@@ -158,9 +143,8 @@ export async function seedCam5Database(
       { name: "Conteos y tendencias", startRegister: 491, endRegister: 522, intervalMs: 10_000, priority: 40 },
     ];
     for (const range of profileRanges) {
-      await tx.insert(readingProfileRanges).values({ profileId: profile.id, functionCode: 3, enabled: true, ...range }).onConflictDoUpdate({
+      await tx.insert(readingProfileRanges).values({ profileId: profile.id, functionCode: 3, enabled: true, ...range }).onConflictDoNothing({
         target: [readingProfileRanges.profileId, readingProfileRanges.name],
-        set: { startRegister: range.startRegister, endRegister: range.endRegister, intervalMs: range.intervalMs, priority: range.priority, functionCode: 3, enabled: true },
       });
     }
 
@@ -190,10 +174,7 @@ export async function seedCam5Database(
       unitId: 1,
       timeoutMs: 1000,
       retries: 2,
-    }).onConflictDoUpdate({
-      target: [devices.gatewayId, devices.unitId],
-      set: { assetId: asset.id, modelId: model.id, readingProfileId: profile.id, code: "CAM5-CTRL-01", updatedAt: new Date() },
-    });
+    }).onConflictDoNothing({ target: [devices.gatewayId, devices.unitId] });
     const [device] = await tx.select().from(devices).where(and(eq(devices.gatewayId, gateway.id), eq(devices.unitId, 1))).limit(1);
     if (!device) throw new Error("No fue posible crear el equipo CAM5.");
 
@@ -253,20 +234,7 @@ export async function seedCam5Database(
         humidityIndex: humidityIndex === null ? null : String(humidityIndex),
         metadata: { registers: input.register, calibrationState: input.calibration, signalState: input.signal },
         updatedAt: new Date(),
-      }).onConflictDoUpdate({
-        target: [physicalInputs.deviceId, physicalInputs.code],
-        set: {
-          enabled: input.enabled,
-          assignment: input.assignment,
-          zone: input.location,
-          calibrationCode: input.calibration.startsWith("Código ") ? input.calibration.slice(7) : null,
-          frequencyBand: band ? `${band} MHz` : null,
-          antennaPort: antenna ? `Antena ${antenna}` : null,
-          humidityIndex: humidityIndex === null ? null : String(humidityIndex),
-          metadata: { registers: input.register, calibrationState: input.calibration, signalState: input.signal },
-          updatedAt: new Date(),
-        },
-      });
+      }).onConflictDoNothing({ target: [physicalInputs.deviceId, physicalInputs.code] });
     }
     const inputRows = await tx.select().from(physicalInputs).where(eq(physicalInputs.deviceId, device.id));
     if (inputRows.length !== 24) throw new Error(`El CAM5 debe contener 24 entradas; se encontraron ${inputRows.length}.`);
@@ -290,20 +258,7 @@ export async function seedCam5Database(
         enabled: channel.configured,
         displayOrder,
         metadata: { sourceId: channel.sourceId },
-      }).onConflictDoUpdate({
-        target: [channels.deviceId, channels.code],
-        set: {
-          physicalInputId: input.id,
-          registerDefinitionId: register.id,
-          name: channel.label,
-          zone: channel.zone,
-          metric: channelMetric(channel.metric),
-          unit: channel.unit,
-          enabled: channel.configured,
-          displayOrder,
-          updatedAt: new Date(),
-        },
-      });
+      }).onConflictDoNothing({ target: [channels.deviceId, channels.code] });
     }
     const channelRows = await tx.select().from(channels).where(eq(channels.deviceId, device.id));
     if (channelRows.length !== 36) throw new Error(`El portal debe exponer 36 señales operativas; se encontraron ${channelRows.length}.`);
@@ -321,18 +276,7 @@ export async function seedCam5Database(
         activationSamples: 3,
         recoverySamples: 3,
         staleAfterSeconds: 30,
-      }).onConflictDoUpdate({
-        target: alarmRules.channelId,
-        set: {
-          enabled: channel.configured,
-          warningThreshold: String(channel.warningDefault),
-          criticalThreshold: String(channel.criticalDefault),
-          activationSamples: 3,
-          recoverySamples: 3,
-          staleAfterSeconds: 30,
-          updatedAt: new Date(),
-        },
-      });
+      }).onConflictDoNothing({ target: alarmRules.channelId });
     }
 
     for (const relay of cam5RelayDefaults) {
@@ -344,10 +288,7 @@ export async function seedCam5Database(
         severity: relay.level === "Advertencia" ? "warning" : "critical",
         enabled: relay.state === "Activo",
         failsafe: true,
-      }).onConflictDoUpdate({
-        target: [relayConfigurations.deviceId, relayConfigurations.relayNumber],
-        set: { name: relay.name, sourceExpression: relay.source, severity: relay.level === "Advertencia" ? "warning" : "critical", enabled: relay.state === "Activo", updatedAt: new Date() },
-      });
+      }).onConflictDoNothing({ target: [relayConfigurations.deviceId, relayConfigurations.relayNumber] });
     }
 
     for (const [itemKey, label] of COMMISSIONING_CHECKLIST) {
@@ -412,10 +353,7 @@ export async function seedCam5Database(
           provider: "local",
           providerSubject: adminEmail,
           passwordHash,
-        }).onConflictDoUpdate({
-          target: [authIdentities.provider, authIdentities.providerSubject],
-          set: { userId: admin.id, passwordHash, updatedAt: new Date() },
-        });
+        }).onConflictDoNothing({ target: [authIdentities.provider, authIdentities.providerSubject] });
       }
     }
   });
