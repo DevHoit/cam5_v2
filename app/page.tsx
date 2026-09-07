@@ -4,7 +4,6 @@ import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { ComponentType } from "react";
 import { usePersistentState } from "./use-persistent-state";
 import { Cam5CommissioningView } from "./cam5-engineering";
-import { cam5OperationalChannels } from "./cam5-model";
 import { Pagination, useClientPagination } from "./pagination";
 import { NotificationsView as DatabaseNotificationsView } from "./notifications-view";
 import { ReportsView as DatabaseReportsView } from "./reports-view";
@@ -142,9 +141,10 @@ type PortalHierarchy = {
 };
 type PortalLiveTelemetry = {
   serverTime: string;
-  point: { id: string; code: string; name: string; state: PortalHierarchy["points"][number]["state"] };
-  gateway: { id: string; code: string; state: PortalHierarchy["gateways"][number]["state"]; lastSeenAt: string | null } | null;
-  device: { id: string; code: string; state: string; lastReadAt: string | null } | null;
+  point: { id: string; code: string; name: string; area: string | null; nominalVoltageKv: number | null; state: PortalHierarchy["points"][number]["state"] };
+  gateway: { id: string; code: string; name: string; state: PortalHierarchy["gateways"][number]["state"]; lastSeenAt: string | null } | null;
+  device: { id: string; code: string; name: string; state: string; protocol: string; lastReadAt: string | null } | null;
+  inputSummary: { total: number; enabled: number; assigned: number };
   staleAfterSeconds: number;
   items: Array<{
     id: string;
@@ -154,7 +154,14 @@ type PortalLiveTelemetry = {
     metric: string;
     unit: string;
     enabled: boolean;
+    displayOrder: number;
     register: number;
+    humanReference: string;
+    physicalInputId: string | null;
+    inputCode: string | null;
+    inputKind: string | null;
+    inputPort: number | null;
+    inputAssignment: string | null;
     rawValue: number | null;
     value: number | null;
     quality: "good" | "stale" | "bad" | "disabled";
@@ -166,6 +173,28 @@ type PortalLiveTelemetry = {
     criticalThreshold: number | null;
     severity: SensorState;
   }>;
+};
+type PortalSensor = {
+  id: string;
+  sourceId: string;
+  label: string;
+  zone: string;
+  value: string;
+  numericValue: number | null;
+  unit: string;
+  type: string;
+  metric: "temperature" | "ambient" | "humidity" | "pd" | "sd" | "other";
+  state: SensorState;
+  trend: string;
+  threshold: string;
+  warning: number | null;
+  critical: number | null;
+  nativeRegister: number;
+  register: string;
+  quality: string;
+  enabled: boolean;
+  displayOrder: number;
+  recordedAt: string | null;
 };
 type PortalTelemetryState = { status: "preview" | "loading" | "ready" | "error"; data: PortalLiveTelemetry | null };
 type PaginationMeta = { page: number; pageSize: number; total: number; totalPages: number };
@@ -230,8 +259,6 @@ function alarmValue(alarm: PortalAlarm) {
   return `${Number(alarm.triggerValue.toFixed(1))} ${alarm.unit || ""}`.trim();
 }
 
-const sensors = cam5OperationalChannels;
-
 function telemetryAge(recordedAt: string | null) {
   if (!recordedAt) return "Sin lecturas recibidas";
   const seconds = Math.max(0, Math.round((Date.now() - new Date(recordedAt).getTime()) / 1000));
@@ -247,46 +274,48 @@ function formatTelemetryValue(value: number | null, unit: string) {
 function useSensorData(override?: PortalTelemetryState) {
   const context = useContext(TelemetryContext);
   const telemetry = override ?? context;
-  return sensors.map((sensor) => {
-    const live = telemetry.data?.items.find((item) => item.code === sensor.id);
-    const warning = live?.warningThreshold ?? sensor.warningDefault;
-    const critical = live?.criticalThreshold ?? sensor.criticalDefault;
-    const reading = live ? live.value : telemetry.status === "preview" ? Number(sensor.value) : null;
-    const enabled = live?.enabled ?? sensor.configured;
-    const state: SensorState = live?.severity ?? (enabled && reading !== null && Number.isFinite(reading) ? reading >= critical ? "critical" : reading >= warning ? "warning" : "normal" : "normal");
-    const activeThreshold = state === "critical" ? critical : warning;
-    const quality = !enabled
+  return (telemetry.data?.items ?? []).map<PortalSensor>((live) => {
+    const presentation = live.metric === "temperature" ? { type: "Temperatura", metric: "temperature" as const }
+      : live.metric === "ambient_temperature" ? { type: "Temperatura ambiente", metric: "ambient" as const }
+        : live.metric === "humidity" ? { type: "Humedad", metric: "humidity" as const }
+          : live.metric === "partial_discharge" ? { type: "Descarga parcial", metric: "pd" as const }
+            : live.metric === "surface_discharge" ? { type: "Descarga superficial", metric: "sd" as const }
+              : { type: "Señal CAM-5", metric: "other" as const };
+    const activeThreshold = live.severity === "critical" ? live.criticalThreshold : live.warningThreshold;
+    const quality = !live.enabled
       ? "Deshabilitado"
-      : live?.quality === "good"
+      : live.quality === "good"
         ? "Válida"
-        : live?.quality === "stale"
+        : live.quality === "stale"
           ? "Atrasada"
-          : live?.quality === "bad"
+          : live.quality === "bad"
             ? "Inválida"
             : telemetry.status === "loading"
               ? "Esperando datos"
-              : telemetry.status === "error"
-                ? "Sin comunicación"
-                : sensor.quality;
+              : "Sin comunicación";
     return {
-      ...sensor,
-      enabled,
-      warning,
-      critical,
-      state,
-      value: live ? formatTelemetryValue(live.value, sensor.unit) : telemetry.status === "preview" ? sensor.value : "—",
-      threshold: `${activeThreshold} ${sensor.unit}`,
+      id: live.code,
+      sourceId: live.inputCode ?? "Sin entrada",
+      label: live.name,
+      zone: live.zone ?? live.inputAssignment ?? "Sin asignar",
+      value: formatTelemetryValue(live.value, live.unit),
+      numericValue: live.value,
+      unit: live.unit,
+      ...presentation,
+      enabled: live.enabled,
+      warning: live.warningThreshold,
+      critical: live.criticalThreshold,
+      state: live.severity,
+      threshold: activeThreshold === null ? "Sin umbral" : `${activeThreshold} ${live.unit}`,
       quality,
-      trend: live ? telemetryAge(live.recordedAt) : telemetry.status === "preview" ? sensor.trend : "Sin telemetría",
+      trend: telemetryAge(live.recordedAt),
+      nativeRegister: live.register,
+      register: live.humanReference,
+      displayOrder: live.displayOrder,
+      recordedAt: live.recordedAt,
     };
   });
 }
-
-const chartData = [
-  [42, 16], [44, 18], [43, 17], [46, 19], [48, 21], [47, 22], [50, 24], [51, 27],
-  [53, 31], [52, 30], [55, 36], [57, 39], [58, 42], [60, 46], [62, 51], [61, 50],
-  [63, 55], [65, 59], [64, 61], [66, 66], [67, 70], [68, 72], [67, 71], [68, 74],
-];
 
 const navGroups = [
   {
@@ -383,18 +412,33 @@ function MetricCard({
   );
 }
 
-function SensorMarker({ id, selectedId, onSelect }: { id: string; selectedId?: string; onSelect?: (id: string) => void }) {
-  const sensors = useSensorData();
-  const sensor = sensors.find((item) => item.id === id)!;
-  const stateLabel = !sensor.enabled ? "No configurado" : sensor.state === "critical" ? "Crítico" : sensor.state === "warning" ? "Advertencia" : "Normal";
+function sensorGroupState(items: PortalSensor[]): SensorState {
+  const enabled = items.filter((item) => item.enabled);
+  if (enabled.some((item) => item.state === "critical")) return "critical";
+  if (enabled.some((item) => item.state === "warning")) return "warning";
+  return "normal";
+}
+
+function sensorStateText(items: PortalSensor[]) {
+  const enabled = items.filter((item) => item.enabled);
+  if (!enabled.length) return "Sin canales habilitados";
+  const critical = enabled.filter((item) => item.state === "critical").length;
+  const warning = enabled.filter((item) => item.state === "warning").length;
+  if (critical || warning) return [critical ? `${critical} crítico${critical === 1 ? "" : "s"}` : "", warning ? `${warning} advertencia${warning === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ");
+  return "Condición normal";
+}
+
+function SensorMarker({ sensor, selectedId, onSelect }: { sensor: PortalSensor; selectedId?: string; onSelect?: (id: string) => void }) {
+  const unavailable = sensor.enabled && sensor.quality !== "Válida";
+  const stateLabel = !sensor.enabled ? "No configurado" : unavailable ? sensor.quality : sensor.state === "critical" ? "Crítico" : sensor.state === "warning" ? "Advertencia" : "Normal";
   return (
     <button
       type="button"
-      className={`sensor-marker ${sensor.enabled ? `marker-${sensor.state}` : "marker-disabled"} ${selectedId === id ? "selected" : ""}`}
+      className={`sensor-marker ${!sensor.enabled ? "marker-disabled" : unavailable ? "marker-stale" : `marker-${sensor.state}`} ${selectedId === sensor.id ? "selected" : ""}`}
       aria-label={`${sensor.id}, ${sensor.label}, ${sensor.value} ${sensor.unit}, ${sensor.state}`}
-      aria-pressed={selectedId === id}
+      aria-pressed={selectedId === sensor.id}
       disabled={!sensor.enabled}
-      onClick={() => onSelect?.(id)}
+      onClick={() => onSelect?.(sensor.id)}
     >
       <span className="sensor-marker-top"><span className="sensor-marker-id">{sensor.id}</span><span className="sensor-marker-state"><i />{stateLabel}</span></span>
       <strong className="sensor-marker-value">{sensor.value}<small>{sensor.unit}</small></strong>
@@ -405,181 +449,154 @@ function SensorMarker({ id, selectedId, onSelect }: { id: string; selectedId?: s
 
 function CabinetDiagram({ selectedId, onSelect }: { selectedId?: string; onSelect?: (id: string) => void }) {
   const telemetry = useContext(TelemetryContext).data;
+  const sensors = useSensorData();
   const gatewayOnline = telemetry?.gateway?.state === "online";
+  const zones = [...new Set(sensors.map((sensor) => sensor.zone))];
   return (
-    <div className="condition-map" aria-label="Mapa de condición de la cabina MCC-01">
-      <div className="condition-map-header"><span className="map-asset-icon"><CircuitBoard size={20} /></span><div><strong>MCC-01</strong><small>13.8 kV · Alimentador Norte</small></div><b>CAM5-01</b></div>
+    <div className="condition-map" aria-label={`Mapa de condición de ${telemetry?.point.code ?? "punto de medición"}`}>
+      <div className="condition-map-header"><span className="map-asset-icon"><CircuitBoard size={20} /></span><div><strong>{telemetry?.point.code ?? "Sin punto seleccionado"}</strong><small>{telemetry?.point.nominalVoltageKv ? `${telemetry.point.nominalVoltageKv} kV · ` : ""}{telemetry?.point.name ?? "Esperando contexto operacional"}</small></div><b>{telemetry?.device?.code ?? "Sin controlador"}</b></div>
 
       <div className="condition-map-zones">
-        <section className="equipment-zone">
-          <header className="zone-header"><span className="zone-index">01</span><div><h3>Barras principales</h3><p>Temperatura por fase y actividad UHF</p></div><span className="zone-status warning"><i />1 advertencia</span></header>
-          <div className="bus-map">
-            <div className="phase-rows">
-              <div className="phase-row"><span className="phase-tag phase-l1">L1</span><span className="phase-line" /><SensorMarker id="T01" selectedId={selectedId} onSelect={onSelect} /></div>
-              <div className="phase-row"><span className="phase-tag">L2</span><span className="phase-line" /><SensorMarker id="T02" selectedId={selectedId} onSelect={onSelect} /></div>
-              <div className="phase-row"><span className="phase-tag">L3</span><span className="phase-line" /><SensorMarker id="T03" selectedId={selectedId} onSelect={onSelect} /></div>
-            </div>
-            <div className="aux-channel"><span>Monitoreo UHF</span><SensorMarker id="PD2" selectedId={selectedId} onSelect={onSelect} /></div>
-          </div>
-        </section>
-
-        <section className="equipment-zone">
-          <header className="zone-header"><span className="zone-index">02</span><div><h3>Interruptor de potencia</h3><p>Temperatura de contactos superior e inferior</p></div><span className="zone-status normal"><i />Condición normal</span></header>
-          <div className="breaker-map">
-            <SensorMarker id="T04" selectedId={selectedId} onSelect={onSelect} />
-            <span className="device-connector" />
-            <div className="breaker-device"><strong>52</strong><span>Interruptor CA</span></div>
-            <span className="device-connector" />
-            <SensorMarker id="T05" selectedId={selectedId} onSelect={onSelect} />
-          </div>
-        </section>
-
-        <section className="equipment-zone zone-critical">
-          <header className="zone-header"><span className="zone-index">03</span><div><h3>Compartimiento de cables</h3><p>Descarga parcial y humedad ambiental</p></div><span className="zone-status critical"><i />1 crítico · 1 advertencia</span></header>
-          <div className="cable-map">
-            <SensorMarker id="H01" selectedId={selectedId} onSelect={onSelect} />
-            <div className="cable-device"><div><span><b>L1</b><i /></span><span><b>L2</b><i /></span><span><b>L3</b><i /></span></div><small>Salida de cables</small></div>
-            <SensorMarker id="PD1" selectedId={selectedId} onSelect={onSelect} />
-          </div>
-        </section>
+        {zones.map((zone, index) => {
+          const zoneSensors = sensors.filter((sensor) => sensor.zone === zone).sort((left, right) => left.displayOrder - right.displayOrder);
+          const state = sensorGroupState(zoneSensors);
+          const variables = [...new Set(zoneSensors.map((sensor) => sensor.type))].join(" · ");
+          return <section className={`equipment-zone zone-${state}`} key={zone}>
+            <header className="zone-header"><span className="zone-index">{String(index + 1).padStart(2, "0")}</span><div><h3>{zone}</h3><p>{variables}</p></div><span className={`zone-status ${state}`}><i />{sensorStateText(zoneSensors)}</span></header>
+            <div className="zone-channel-grid">{zoneSensors.map((sensor) => <SensorMarker key={sensor.id} sensor={sensor} selectedId={selectedId} onSelect={onSelect} />)}</div>
+          </section>;
+        })}
+        {!zones.length && <div className="condition-map-empty"><Database size={24} /><strong>Sin canales asignados</strong><p>Habilita y asigna canales a una zona desde Configuración.</p></div>}
       </div>
 
-      <div className="condition-map-footer"><span><Wifi size={15} /><span><strong>{telemetry?.device?.code ?? "CAM5-CTRL-01"}</strong><small>Modbus TCP · vía {telemetry?.gateway?.code ?? "CAM5-GW-01"} · {telemetryAge(telemetry?.device?.lastReadAt ?? null).toLowerCase()}</small></span></span><StatusPill state={gatewayOnline ? "online" : "offline"}>{gatewayOnline ? "En línea" : "Sin conexión"}</StatusPill></div>
+      <div className="condition-map-footer"><span><Wifi size={15} /><span><strong>{telemetry?.device?.name ?? "Controlador no configurado"}</strong><small>{telemetry?.device?.protocol.replaceAll("_", " ").toUpperCase() ?? "Sin protocolo"} · vía {telemetry?.gateway?.code ?? "sin gateway"} · {telemetryAge(telemetry?.device?.lastReadAt ?? null).toLowerCase()}</small></span></span><StatusPill state={gatewayOnline ? "online" : "offline"}>{gatewayOnline ? "En línea" : "Sin conexión"}</StatusPill></div>
     </div>
   );
 }
 
 function Overview({ onNavigate, onAcknowledge, activeAlarms, point }: { onNavigate: (view: View) => void; onAcknowledge: (id: string) => void; activeAlarms: PortalAlarm[]; point?: PortalHierarchy["points"][number] }) {
+  type TrendPreview = { series: Array<{ code: string; name: string; unit: string; points: Array<{ timestamp: string; value: number | null }> }> };
+  const telemetry = useContext(TelemetryContext).data;
   const sensors = useSensorData();
   const activeSensors = sensors.filter((sensor) => sensor.enabled);
-  const activeInputCount = new Set(activeSensors.map((sensor) => sensor.sourceId)).size;
-  const temperature = activeSensors.filter((sensor) => sensor.type === "Temperatura").sort((a, b) => Number(b.value) - Number(a.value))[0];
-  const partialDischarge = activeSensors.find((sensor) => sensor.id === "PD1");
-  const humidity = activeSensors.find((sensor) => sensor.id === "H01");
-  const conditionCounts = {
-    critical: activeSensors.filter((sensor) => sensor.state === "critical").length,
-    warning: activeSensors.filter((sensor) => sensor.state === "warning").length,
-    normal: activeSensors.filter((sensor) => sensor.state === "normal").length,
+  const activeInputCount = telemetry?.inputSummary.assigned ?? new Set(activeSensors.map((sensor) => sensor.sourceId).filter((source) => source !== "Sin entrada")).size;
+  const totalInputCount = telemetry?.inputSummary.total ?? 0;
+  const byHighestValue = (items: PortalSensor[]) => [...items].sort((left, right) => (right.numericValue ?? -Infinity) - (left.numericValue ?? -Infinity))[0];
+  const temperature = byHighestValue(activeSensors.filter((sensor) => sensor.metric === "temperature" || sensor.metric === "ambient"));
+  const partialDischarge = byHighestValue(activeSensors.filter((sensor) => sensor.metric === "pd"));
+  const humidity = byHighestValue(activeSensors.filter((sensor) => sensor.metric === "humidity"));
+  const conditionCounts = { critical: activeSensors.filter((sensor) => sensor.state === "critical").length, warning: activeSensors.filter((sensor) => sensor.state === "warning").length, normal: activeSensors.filter((sensor) => sensor.state === "normal").length };
+  const conditionState: SensorState = conditionCounts.critical ? "critical" : conditionCounts.warning ? "warning" : "normal";
+  const hasMeasurements = activeSensors.some((sensor) => sensor.recordedAt !== null);
+  const severityRank: Record<PortalAlarm["severity"], number> = { critical: 3, warning: 2, normal: 1 };
+  const priorityAlarm = [...activeAlarms].sort((left, right) => severityRank[right.severity] - severityRank[left.severity] || new Date(right.openedAt).getTime() - new Date(left.openedAt).getTime())[0] ?? null;
+  const prioritySensor = priorityAlarm?.channelCode ? activeSensors.find((sensor) => sensor.id === priorityAlarm.channelCode) : null;
+  const secondaryFindings = activeSensors.filter((sensor) => sensor.state !== "normal" && sensor.id !== prioritySensor?.id).slice(0, 3);
+  const [trendPreview, setTrendPreview] = useState<TrendPreview | null>(null);
+  const trendCodes = [temperature?.id, partialDischarge?.id].filter(Boolean).join(",");
+
+  useEffect(() => {
+    if (!point?.id || !trendCodes) { Promise.resolve().then(() => setTrendPreview(null)); return; }
+    let active = true;
+    const load = async () => {
+      const to = new Date();
+      const params = new URLSearchParams({ assetId: point.id, channels: trendCodes, from: new Date(to.getTime() - 24 * 3600_000).toISOString(), to: to.toISOString(), resolution: "3600" });
+      try { const result = await portalRequest<TrendPreview>(`/api/v1/trends?${params}`); if (active) setTrendPreview(result); }
+      catch { if (active) setTrendPreview(null); }
+    };
+    void load();
+    const timer = window.setInterval(() => void load(), 5 * 60_000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [point?.id, trendCodes]);
+
+  const normalizedSeries = (seriesIndex: number) => {
+    const values = trendPreview?.series[seriesIndex]?.points.map((sample) => sample.value).filter((value): value is number => value !== null) ?? [];
+    if (!values.length) return [];
+    const minimum = Math.min(...values); const maximum = Math.max(...values); const span = Math.max(maximum - minimum, 1);
+    return values.map((value) => Math.round(18 + (value - minimum) / span * 76));
   };
-  return (
-    <>
-      <section className="metrics-grid">
-        <MetricCard label="Temperatura máxima" value={temperature?.value ?? "—"} unit={temperature?.unit} note={temperature ? `${temperature.id} · ${temperature.trend}` : "Sin canales activos"} tone={temperature?.state === "critical" ? "red" : temperature?.state === "warning" ? "amber" : "green"} icon={Thermometer} />
-        <MetricCard label="Descarga parcial" value={partialDischarge?.value ?? "—"} unit={partialDischarge?.unit} note={partialDischarge ? `${partialDischarge.id} · ${partialDischarge.trend}` : "Canal deshabilitado"} tone={partialDischarge?.state === "critical" ? "red" : partialDischarge?.state === "warning" ? "amber" : "green"} icon={Activity} />
-        <MetricCard label="Humedad relativa" value={humidity?.value ?? "—"} unit={humidity?.unit} note={humidity ? `${humidity.id} · ${humidity.trend}` : "Canal deshabilitado"} tone={humidity?.state === "critical" ? "red" : humidity?.state === "warning" ? "amber" : "blue"} icon={Droplets} />
-        <MetricCard label="Entradas supervisadas" value={`${activeInputCount}/24`} note={`${activeSensors.length} señales de telemetría activas`} tone="green" icon={Server} />
-      </section>
+  const firstSeries = normalizedSeries(0); const secondSeries = normalizedSeries(1); const barCount = Math.max(firstSeries.length, secondSeries.length);
+  const pointRecord = telemetry?.point ?? point;
+  const gatewayOnline = telemetry?.gateway?.state === "online";
+  const overallState: SensorState | "offline" = gatewayOnline && hasMeasurements ? conditionState : "offline";
+  const noAlarmTitle = overallState === "offline" ? "Telemetría no disponible" : "No hay eventos activos";
+  const noAlarmDetail = overallState === "offline" ? "El resumen espera una lectura válida del gateway y del controlador." : "Las reglas no registran condiciones abiertas para este punto.";
 
-      <section className="overview-grid">
-        <article className="panel asset-summary-panel">
-          <div className="panel-header asset-summary-header">
-            <div><span className="eyebrow">Punto de medición prioritario</span><h2>{point ? `${point.code} · ${point.name}` : "Punto sin seleccionar"}</h2><p>{point?.nominalVoltageKv ? `Cabina de ${point.nominalVoltageKv} kV` : "Tensión nominal pendiente"} · condición consolidada</p></div>
-            <StatusPill state="critical">Atención prioritaria</StatusPill>
-          </div>
+  return <>
+    <section className="metrics-grid">
+      <MetricCard label="Temperatura máxima" value={temperature?.value ?? "—"} unit={temperature?.unit} note={temperature ? `${temperature.id} · ${temperature.trend}` : "Sin lecturas térmicas"} tone={!temperature || temperature.numericValue === null ? "amber" : temperature.state === "critical" ? "red" : temperature.state === "warning" ? "amber" : "green"} icon={Thermometer} />
+      <MetricCard label="Descarga parcial" value={partialDischarge?.value ?? "—"} unit={partialDischarge?.unit} note={partialDischarge ? `${partialDischarge.id} · ${partialDischarge.trend}` : "Sin canal habilitado"} tone={!partialDischarge || partialDischarge.numericValue === null ? "amber" : partialDischarge.state === "critical" ? "red" : partialDischarge.state === "warning" ? "amber" : "green"} icon={Activity} />
+      <MetricCard label="Humedad relativa" value={humidity?.value ?? "—"} unit={humidity?.unit} note={humidity ? `${humidity.id} · ${humidity.trend}` : "Sin canal habilitado"} tone={!humidity || humidity.numericValue === null ? "amber" : humidity.state === "critical" ? "red" : humidity.state === "warning" ? "amber" : "blue"} icon={Droplets} />
+      <MetricCard label="Entradas supervisadas" value={`${activeInputCount}/${totalInputCount || 0}`} note={`${activeSensors.length} de ${sensors.length} señales habilitadas`} tone={gatewayOnline ? "green" : "amber"} icon={Server} />
+    </section>
 
-          <div className="asset-summary-body">
-            <section className="primary-finding" aria-label="Hallazgo de mayor prioridad">
-              <div className="finding-heading">
-                <span className="finding-icon"><AlertTriangle size={20} /></span>
-                <div><span>Evento de mayor prioridad</span><h3>Descarga parcial en aceleración</h3><p>PD1 · Compartimiento de cables · activo hace 12 min</p></div>
-                <strong>72<small>idx</small></strong>
-              </div>
-              <div className="finding-evidence">
-                <div><span>Aceleración</span><strong>Φ 2.8×</strong></div>
-                <div><span>Umbral configurado</span><strong>60 idx</strong></div>
-                <div><span>Prioridad sugerida</span><strong>Inspección en terreno</strong></div>
-              </div>
-              <div className="finding-action"><ShieldCheck size={17} /><p><strong>Acción recomendada:</strong> revisar terminaciones y cableado del compartimiento antes del próximo ciclo de carga.</p></div>
-            </section>
+    <section className="overview-grid">
+      <article className="panel asset-summary-panel">
+        <div className="panel-header asset-summary-header"><div><span className="eyebrow">Punto de medición activo</span><h2>{pointRecord ? `${pointRecord.code} · ${pointRecord.name}` : "Punto sin seleccionar"}</h2><p>{pointRecord?.nominalVoltageKv ? `${pointRecord.nominalVoltageKv} kV · ` : ""}{telemetry?.point.area || "Ubicación no informada"}</p></div><StatusPill state={overallState}>{overallState === "offline" ? "Esperando telemetría" : overallState === "critical" ? "Atención crítica" : overallState === "warning" ? "Requiere atención" : "Condición normal"}</StatusPill></div>
+        <div className="asset-summary-body">
+          <section className={`primary-finding finding-${priorityAlarm?.severity ?? (overallState === "offline" ? "offline" : "normal")}`} aria-label="Hallazgo de mayor prioridad">
+            <div className="finding-heading"><span className="finding-icon">{priorityAlarm || overallState === "offline" ? <AlertTriangle size={20} /> : <CheckCircle2 size={20} />}</span><div><span>{priorityAlarm ? "Evento de mayor prioridad" : "Condición consolidada"}</span><h3>{priorityAlarm?.title ?? noAlarmTitle}</h3><p>{priorityAlarm ? `${priorityAlarm.channelCode ?? "Comunicación"} · ${prioritySensor?.zone ?? priorityAlarm.assetCode} · ${formatRelativeTime(priorityAlarm.openedAt)}` : noAlarmDetail}</p></div><strong>{priorityAlarm ? alarmValue(priorityAlarm) : overallState === "offline" ? "—" : "OK"}</strong></div>
+            <div className="finding-evidence"><div><span>Lectura actual</span><strong>{prioritySensor ? `${prioritySensor.value} ${prioritySensor.unit}` : priorityAlarm ? alarmValue(priorityAlarm) : "Sin hallazgos"}</strong></div><div><span>Umbral aplicable</span><strong>{prioritySensor?.threshold ?? "No aplica"}</strong></div><div><span>Observaciones</span><strong>{priorityAlarm?.occurrenceCount ?? 0}</strong></div></div>
+            <div className="finding-action"><ShieldCheck size={17} /><p><strong>{priorityAlarm ? "Detalle registrado:" : "Supervisión activa:"}</strong> {priorityAlarm?.detail ?? "el estado se recalcula con cada paquete de telemetría recibido."}</p></div>
+          </section>
+          <aside className="condition-summary" aria-label="Resumen de canales"><div className="condition-summary-title"><div><span className="eyebrow">Estado actual</span><h3>{activeSensors.length} canales supervisados</h3></div><span className={gatewayOnline ? "online-mini" : "online-mini offline"}><i />{gatewayOnline ? "Datos sincronizados" : "Sin comunicación"}</span></div><div className="condition-counts"><div className="count-critical"><strong>{conditionCounts.critical}</strong><span>Crítico</span></div><div className="count-warning"><strong>{conditionCounts.warning}</strong><span>Advertencia</span></div><div className="count-normal"><strong>{conditionCounts.normal}</strong><span>Normal</span></div></div><div className="secondary-findings">{secondaryFindings.map((sensor) => <div key={sensor.id}><span className={`sensor-code sensor-${sensor.state}`}>{sensor.id}</span><p><strong>{sensor.value} {sensor.unit}</strong><small>{sensor.zone}</small></p><b>{sensor.threshold}</b></div>)}{!secondaryFindings.length && <div className="secondary-empty"><CheckCircle2 size={17} /><p><strong>Sin hallazgos secundarios</strong><small>Todos los demás canales están normales.</small></p></div>}</div></aside>
+        </div>
+        <div className="asset-summary-footer"><span><Wifi size={15} /> {telemetry?.gateway?.code ?? "Sin gateway"} · {telemetryAge(telemetry?.gateway?.lastSeenAt ?? null)}</span><button onClick={() => onNavigate("cabinet")}>Revisar condición del activo <ChevronRight size={16} /></button></div>
+      </article>
 
-            <aside className="condition-summary" aria-label="Resumen de canales">
-              <div className="condition-summary-title"><div><span className="eyebrow">Estado actual</span><h3>{activeSensors.length} canales supervisados</h3></div><span className="online-mini"><i />Datos sincronizados</span></div>
-              <div className="condition-counts">
-                <div className="count-critical"><strong>{conditionCounts.critical}</strong><span>Crítico</span></div>
-                <div className="count-warning"><strong>{conditionCounts.warning}</strong><span>Advertencia</span></div>
-                <div className="count-normal"><strong>{conditionCounts.normal}</strong><span>Normal</span></div>
-              </div>
-              <div className="secondary-findings">
-                <div><span className="sensor-code sensor-warning">T01</span><p><strong>68.4 °C</strong><small>Barra L1 · sobre umbral</small></p><b>+1.8 °C/h</b></div>
-                <div><span className="sensor-code sensor-warning">H01</span><p><strong>78 %RH</strong><small>Humedad de cabina elevada</small></p><b>+4 % / 24h</b></div>
-              </div>
-            </aside>
-          </div>
+      <article className="panel alarms-panel"><div className="panel-header compact"><div><span className="eyebrow">Triage</span><h2>Alarmas activas</h2></div><button className="icon-button" aria-label="Abrir centro de alertas" onClick={() => onNavigate("alarms")}><BellRing size={18} /></button></div><div className="alarm-list">{activeAlarms.slice(0, 3).map((alarm) => <div className={`alarm-item alarm-${alarm.severity}`} key={alarm.id}><div className="alarm-indicator"><AlertTriangle size={17} /></div><div className="alarm-copy"><strong>{alarm.title}</strong><span>{alarm.detail || `${alarm.assetCode} · ${alarm.channelCode ?? "Comunicación"}`}</span><small>{formatRelativeTime(alarm.openedAt)}</small></div><div className="alarm-side"><b>{alarmValue(alarm)}</b>{alarm.status === "open" ? <button onClick={() => onAcknowledge(alarm.id)}>Reconocer</button> : <small>Reconocida</small>}</div></div>)}{activeAlarms.length === 0 && <TableEmptyState title="Sin alarmas activas" detail="No existen eventos abiertos o reconocidos para el punto seleccionado." />}</div><button className="text-action" onClick={() => onNavigate("alarms")}>Ver todas las alertas <span>→</span></button></article>
+    </section>
 
-          <div className="asset-summary-footer"><span><Wifi size={15} /> CAM5-GW-01 · 42 ms</span><button onClick={() => onNavigate("cabinet")}>Revisar condición del activo <ChevronRight size={16} /></button></div>
-        </article>
-
-        <article className="panel alarms-panel">
-          <div className="panel-header compact">
-            <div><span className="eyebrow">Triage</span><h2>Alarmas activas</h2></div>
-            <button className="icon-button" aria-label="Abrir centro de alertas" onClick={() => onNavigate("alarms")}><BellRing size={18} /></button>
-          </div>
-          <div className="alarm-list">
-            {activeAlarms.slice(0, 3).map((alarm) => (
-              <div className={`alarm-item alarm-${alarm.severity}`} key={alarm.id}>
-                <div className="alarm-indicator"><AlertTriangle size={17} /></div>
-                <div className="alarm-copy"><strong>{alarm.title}</strong><span>{alarm.detail || `${alarm.assetCode} · ${alarm.channelCode ?? "Comunicación"}`}</span><small>{formatRelativeTime(alarm.openedAt)}</small></div>
-                <div className="alarm-side"><b>{alarmValue(alarm)}</b>{alarm.status === "open" ? <button onClick={() => onAcknowledge(alarm.id)}>Reconocer</button> : <small>Reconocida</small>}</div>
-              </div>
-            ))}
-            {activeAlarms.length === 0 && <TableEmptyState title="Sin alarmas activas" detail="No existen eventos abiertos o reconocidos para el punto seleccionado." />}
-          </div>
-          <button className="text-action" onClick={() => onNavigate("alarms")}>Ver todas las alertas <span>→</span></button>
-        </article>
-      </section>
-
-      <section className="lower-grid">
-        <article className="panel trend-preview">
-          <div className="panel-header compact"><div><span className="eyebrow">Últimas 24 horas</span><h2>Tendencia combinada</h2></div><StatusPill state="critical">PD acelerando</StatusPill></div>
-          <div className="mini-chart" aria-label="Gráfico de temperatura y descarga parcial">
-            {chartData.map(([temp, pd], index) => <span key={index}><i style={{ height: `${temp}%` }} /><b style={{ height: `${pd}%` }} /></span>)}
-          </div>
-          <div className="chart-legend"><span><i className="legend-temp" />Temperatura T01</span><span><i className="legend-pd" />Índice PD1</span><button onClick={() => onNavigate("trends")}>Analizar tendencia</button></div>
-        </article>
-        <article className="panel connection-panel">
-          <div className="panel-header compact"><div><span className="eyebrow">Comunicaciones</span><h2>Salud del gateway</h2></div><Radio size={20} className="brand-icon" /></div>
-          <div className="connection-score"><strong>99.96%</strong><span>Disponibilidad 30 días</span></div>
-          <dl className="connection-stats"><div><dt>Último dato</dt><dd>Hace 2 s</dd></div><div><dt>Protocolo</dt><dd>Modbus TCP</dd></div><div><dt>Latencia</dt><dd>42 ms</dd></div></dl>
-          <div className="freshness"><span style={{ width: "96%" }} /></div>
-        </article>
-      </section>
-    </>
-  );
+    <section className="lower-grid">
+      <article className="panel trend-preview"><div className="panel-header compact"><div><span className="eyebrow">Últimas 24 horas</span><h2>Tendencias prioritarias</h2></div><StatusPill state={overallState}>{trendPreview?.series.length ? `${trendPreview.series.length} series` : "Sin histórico"}</StatusPill></div>{barCount ? <div className="mini-chart" aria-label="Histórico real de los canales prioritarios">{Array.from({ length: barCount }, (_, index) => <span key={index}><i style={{ height: `${firstSeries[index] ?? 0}%` }} /><b style={{ height: `${secondSeries[index] ?? 0}%` }} /></span>)}</div> : <div className="trend-preview-empty"><Database size={22} /><span>El gráfico aparecerá cuando PostgreSQL tenga muestras del periodo.</span></div>}<div className="chart-legend">{trendPreview?.series.map((series, index) => <span key={series.code}><i className={index === 0 ? "legend-temp" : "legend-pd"} />{series.code} · {series.name}</span>)}<button onClick={() => onNavigate("trends")}>Analizar tendencia</button></div></article>
+      <article className="panel connection-panel"><div className="panel-header compact"><div><span className="eyebrow">Comunicaciones</span><h2>Estado de adquisición</h2></div><Radio size={20} className="brand-icon" /></div><div className={`connection-score connection-${gatewayOnline ? "online" : "offline"}`}><strong>{gatewayOnline ? "En línea" : "Pendiente"}</strong><span>{telemetry?.gateway?.name ?? "Gateway no configurado"}</span></div><dl className="connection-stats"><div><dt>Último gateway</dt><dd>{telemetryAge(telemetry?.gateway?.lastSeenAt ?? null)}</dd></div><div><dt>Última lectura</dt><dd>{telemetryAge(telemetry?.device?.lastReadAt ?? null)}</dd></div><div><dt>Dato atrasado desde</dt><dd>{telemetry?.staleAfterSeconds ?? 30} s</dd></div></dl><div className="freshness"><span style={{ width: gatewayOnline ? "100%" : "0%" }} /></div></article>
+    </section>
+  </>;
 }
 
 function CabinetView({ onOpenTrend }: { onOpenTrend: (id: string) => void }) {
+  const telemetryState = useContext(TelemetryContext);
+  const telemetry = telemetryState.data;
   const sensors = useSensorData();
   const activeSensors = sensors.filter((sensor) => sensor.enabled);
-  const activeInputCount = new Set(activeSensors.map((sensor) => sensor.sourceId)).size;
-  const [selectedId, setSelectedId] = useState("PD1");
-  const selected = sensors.find((sensor) => sensor.id === selectedId && sensor.enabled) ?? sensors.find((sensor) => sensor.enabled) ?? sensors[0];
-  const SelectedIcon = selected.metric === "temperature" || selected.metric === "ambient" ? Thermometer : selected.metric === "humidity" ? Droplets : Activity;
-  const selectedStateLabel = !selected.enabled ? "No configurado" : selected.state === "critical" ? "Crítico" : selected.state === "warning" ? "Advertencia" : "Normal";
+  const [selectedId, setSelectedId] = useState("");
+  const selected = activeSensors.find((sensor) => sensor.id === selectedId) ?? activeSensors[0] ?? null;
+  const hasMeasurements = activeSensors.some((sensor) => sensor.recordedAt !== null);
+  const conditionState = sensorGroupState(activeSensors);
+  const overallState: SensorState | "offline" = telemetry?.gateway?.state === "online" && hasMeasurements ? conditionState : "offline";
+  const totalInputs = telemetry?.inputSummary.total ?? 0;
+  const assignedInputs = telemetry?.inputSummary.assigned ?? new Set(activeSensors.map((sensor) => sensor.sourceId).filter((source) => source !== "Sin entrada")).size;
+  const disabledChannels = sensors.length - activeSensors.length;
+  const SelectedIcon = selected && (selected.metric === "temperature" || selected.metric === "ambient") ? Thermometer : selected?.metric === "humidity" ? Droplets : Activity;
+  const selectedDisplayState: SensorState | "offline" = selected?.quality === "Válida" ? selected.state : "offline";
+  const selectedStateLabel = selected?.quality === "Válida" ? selected.state === "critical" ? "Crítico" : selected.state === "warning" ? "Advertencia" : "Normal" : selected?.quality ?? "Sin lectura";
+  const statusText = telemetryState.status === "loading" ? "Cargando canales" : !activeSensors.length ? "Sin canales activos" : telemetry?.gateway?.state !== "online" ? "Sin comunicación" : !hasMeasurements ? "Esperando lecturas" : sensorStateText(activeSensors);
 
   return (
     <section className="cabinet-view-grid">
       <article className="panel cabinet-full-panel">
-        <div className="panel-header"><div><span className="eyebrow">Mapa de condición de la cabina</span><h2>MCC-01 · Alimentador Norte</h2><p>{activeInputCount} entradas asignadas · {24 - activeInputCount} disponibles · {activeSensors.length} señales</p></div><StatusPill state="critical">{activeSensors.filter((sensor) => sensor.state === "critical").length} crítico · {activeSensors.filter((sensor) => sensor.state === "warning").length} advertencias</StatusPill></div>
-        <CabinetDiagram selectedId={selectedId} onSelect={setSelectedId} />
+        <div className="panel-header"><div><span className="eyebrow">Mapa de condición de la cabina</span><h2>{telemetry?.point ? `${telemetry.point.code} · ${telemetry.point.name}` : "Punto de medición"}</h2><p>{assignedInputs} entradas asignadas · {Math.max(0, totalInputs - assignedInputs)} disponibles · {activeSensors.length} señales activas{disabledChannels ? ` · ${disabledChannels} deshabilitadas` : ""}</p></div><StatusPill state={overallState}>{statusText}</StatusPill></div>
+        <CabinetDiagram selectedId={selected?.id} onSelect={setSelectedId} />
         <div className="diagram-legend"><span><i className="dot-normal" />Normal</span><span><i className="dot-warning" />Advertencia</span><span><i className="dot-critical" />Crítico</span><span><i className="dot-disabled" />No configurado</span><small>Selecciona una tarjeta para revisar el canal.</small></div>
       </article>
       <article className="panel sensor-panel">
-        <div className={`selected-sensor-card selected-${selected.state}`}>
-          <div className="selected-sensor-head"><span className="selected-sensor-icon"><SelectedIcon size={21} /></span><div><small>Canal seleccionado</small><strong>{selected.id} · {selected.type}</strong></div><StatusPill state={selected.state}>{selectedStateLabel}</StatusPill></div>
+        {selected ? <div className={`selected-sensor-card selected-${selectedDisplayState}`}>
+          <div className="selected-sensor-head"><span className="selected-sensor-icon"><SelectedIcon size={21} /></span><div><small>Canal seleccionado</small><strong>{selected.id} · {selected.type}</strong></div><StatusPill state={selectedDisplayState}>{selectedStateLabel}</StatusPill></div>
           <div className="selected-sensor-value">{selected.value}<span>{selected.unit}</span></div>
           <p>{selected.label} · {selected.zone}</p>
-          <dl><div><dt>Tendencia</dt><dd>{selected.trend}</dd></div><div><dt>Umbral</dt><dd>{selected.threshold}</dd></div><div><dt>Registro CAM-5</dt><dd>{selected.nativeRegister} · {selected.register}</dd></div><div><dt>Calidad</dt><dd>{selected.quality}</dd></div></dl>
+          <dl><div><dt>Actualización</dt><dd>{selected.trend}</dd></div><div><dt>Umbral</dt><dd>{selected.threshold}</dd></div><div><dt>Registro CAM-5</dt><dd>{selected.nativeRegister} · {selected.register}</dd></div><div><dt>Calidad</dt><dd>{selected.quality}</dd></div></dl>
           <button type="button" onClick={() => onOpenTrend(selected.id)}>Abrir tendencia del canal <TrendingUp size={16} /></button>
-        </div>
-        <div className="panel-header compact sensor-list-header"><div><span className="eyebrow">Canales configurados</span><h2>Matriz de sensores</h2></div><span className="data-fresh"><Wifi size={14} /> Hace 2 s</span></div>
+        </div> : <div className="selected-sensor-empty"><Database size={25} /><strong>{telemetryState.status === "loading" ? "Cargando canales" : "No hay canales habilitados"}</strong><p>{telemetryState.status === "error" ? "No fue posible consultar la telemetría. Revisa la conexión con el servidor." : "Configura al menos un canal para habilitar su lectura y tendencia."}</p></div>}
+        <div className="panel-header compact sensor-list-header"><div><span className="eyebrow">Canales configurados</span><h2>Matriz de sensores</h2></div><span className="data-fresh"><Wifi size={14} /> {telemetryAge(telemetry?.device?.lastReadAt ?? null)}</span></div>
         <div className="sensor-list">
           {activeSensors.map((sensor) => (
-            <button type="button" className={`sensor-row ${!sensor.enabled ? "disabled" : ""} ${selectedId === sensor.id ? "selected" : ""}`} key={sensor.id} onClick={() => setSelectedId(sensor.id)} disabled={!sensor.enabled}>
+            <button type="button" className={`sensor-row ${!sensor.enabled ? "disabled" : ""} ${selected?.id === sensor.id ? "selected" : ""}`} key={sensor.id} onClick={() => setSelectedId(sensor.id)} disabled={!sensor.enabled}>
               <span className={`sensor-code sensor-${sensor.state}`}>{sensor.id}</span>
               <div><strong>{sensor.label}</strong><small>{sensor.zone}</small></div>
               <div className="sensor-reading"><strong>{sensor.value}<small>{sensor.unit}</small></strong><span>{sensor.trend}</span></div>
             </button>
           ))}
+          {!activeSensors.length && <div className="sensor-list-empty">No existen canales activos para este punto.</div>}
         </div>
       </article>
     </section>
@@ -1359,7 +1376,7 @@ export default function Home() {
   const [view, setView] = useState<View>("overview");
   const [menuOpen, setMenuOpen] = useState(false);
   const [period, setPeriod] = useState("24 h");
-  const [trendSensorId, setTrendSensorId] = useState("T01");
+  const [trendSensorId, setTrendSensorId] = useState("");
   const [trendWindow, setTrendWindow] = useState<TrendWindow | null>(null);
   const [alarmSummary, setAlarmSummary] = useState({ critical: 0, warning: 0 });
   const [alarmPreview, setAlarmPreview] = useState<PortalAlarm[]>([]);
@@ -1571,6 +1588,7 @@ export default function Home() {
   const activeController = hierarchy?.controllers.find((controller) => controller.active && controller.pointId === activePoint?.id) ?? hierarchy?.controllers.find((controller) => controller.active);
   const gatewayState = telemetryState.data?.gateway?.state ?? activeGateway?.state;
   const gatewayCode = telemetryState.data?.gateway?.code ?? activeGateway?.code;
+  const resolvedTrendSensorId = sensors.some((sensor) => sensor.enabled && sensor.id === trendSensorId) ? trendSensorId : sensors.find((sensor) => sensor.enabled)?.id ?? "";
 
   return (
     <FeedbackContext.Provider value={notify}>
@@ -1627,7 +1645,7 @@ export default function Home() {
             {view === "cabinet" && <CabinetView onOpenTrend={openChannelTrend} />}
             {view === "diagnostics" && <DiagnosticsView />}
             {view === "commissioning" && <Cam5CommissioningView assetId={activePoint?.id ?? ""} canExecute={sessionUser.permissions.includes("commissioning.execute")} notify={notify} confirm={(request) => setConfirmRequest(request)} onOpenSettings={() => navigate("settings")} onOpenReports={() => navigate("reports")} />}
-            {view === "trends" && <TrendsView assetId={activePoint?.id ?? ""} channels={sensors.map((sensor) => ({ id: sensor.id, label: sensor.label, zone: sensor.zone, unit: sensor.unit, state: sensor.state, enabled: sensor.enabled }))} period={period} setPeriod={setPeriod} selectedId={trendSensorId} onSelectChannel={selectTrendChannel} onBackToMap={() => navigate("cabinet")} rangeWindow={trendWindow} setRangeWindow={setTrendWindow} canExport={sessionUser.permissions.includes("history.export")} notify={notify} />}
+            {view === "trends" && <TrendsView assetId={activePoint?.id ?? ""} channels={sensors.map((sensor) => ({ id: sensor.id, label: sensor.label, zone: sensor.zone, unit: sensor.unit, state: sensor.state, enabled: sensor.enabled }))} period={period} setPeriod={setPeriod} selectedId={resolvedTrendSensorId} onSelectChannel={selectTrendChannel} onBackToMap={() => navigate("cabinet")} rangeWindow={trendWindow} setRangeWindow={setTrendWindow} canExport={sessionUser.permissions.includes("history.export")} notify={notify} />}
             {view === "alarms" && <AlarmsView assetId={activePoint?.id ?? ""} permissions={sessionUser.permissions} onSummaryChange={setAlarmSummary} onOpenTrend={openAlarmTrend} />}
             {view === "history" && <HistoryView assetId={activePoint?.id ?? ""} canExport={sessionUser.permissions.includes("history.export")} onOpenTrend={openTrendRange} />}
             {view === "assets" && <OperationalHierarchyView hierarchy={hierarchy} loading={hierarchyLoading} permissions={sessionUser.permissions} onReload={loadHierarchy} onSwitchSite={switchSite} />}

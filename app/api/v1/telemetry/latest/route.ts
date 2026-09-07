@@ -7,6 +7,7 @@ import {
   devices,
   gateways,
   latestReadings,
+  physicalInputs,
   readingProfiles,
   registerDefinitions,
 } from "../../../../../db/schema";
@@ -26,10 +27,13 @@ export async function GET(request: NextRequest) {
     const [device] = await db.select({
       id: devices.id,
       code: devices.code,
+      name: devices.name,
       state: devices.state,
+      protocol: devices.protocol,
       lastReadAt: devices.lastReadAt,
       gatewayId: gateways.id,
       gatewayCode: gateways.code,
+      gatewayName: gateways.name,
       gatewayState: gateways.state,
       gatewayLastSeenAt: gateways.lastSeenAt,
       staleAfterSeconds: readingProfiles.staleAfterSeconds,
@@ -48,7 +52,14 @@ export async function GET(request: NextRequest) {
       metric: channels.metric,
       unit: channels.unit,
       enabled: channels.enabled,
+      displayOrder: channels.displayOrder,
       register: registerDefinitions.nativeRegister,
+      humanReference: registerDefinitions.humanReference,
+      physicalInputId: physicalInputs.id,
+      inputCode: physicalInputs.code,
+      inputKind: physicalInputs.kind,
+      inputPort: physicalInputs.portNumber,
+      inputAssignment: physicalInputs.assignment,
       rawValue: latestReadings.rawValue,
       value: latestReadings.value,
       quality: latestReadings.quality,
@@ -60,18 +71,27 @@ export async function GET(request: NextRequest) {
       criticalThreshold: alarmRules.criticalThreshold,
     }).from(channels)
       .innerJoin(registerDefinitions, eq(registerDefinitions.id, channels.registerDefinitionId))
+      .leftJoin(physicalInputs, eq(physicalInputs.id, channels.physicalInputId))
       .leftJoin(latestReadings, eq(latestReadings.channelId, channels.id))
       .leftJoin(alarmRules, eq(alarmRules.channelId, channels.id))
       .where(eq(channels.assetId, point.id))
       .orderBy(channels.displayOrder);
 
+    const inputs = device
+      ? await db.select({ id: physicalInputs.id, enabled: physicalInputs.enabled })
+        .from(physicalInputs)
+        .where(eq(physicalInputs.deviceId, device.id))
+      : [];
+    const assignedInputIds = new Set(rows.map((row) => row.physicalInputId).filter((id): id is string => id !== null));
+
     const now = new Date();
     const staleAfterSeconds = device?.staleAfterSeconds ?? 30;
     return Response.json({
       serverTime: now.toISOString(),
-      point: { id: point.id, code: point.code, name: point.name, state: point.state },
-      gateway: device ? { id: device.gatewayId, code: device.gatewayCode, state: device.gatewayState, lastSeenAt: device.gatewayLastSeenAt?.toISOString() ?? null } : null,
-      device: device ? { id: device.id, code: device.code, state: device.state, lastReadAt: device.lastReadAt?.toISOString() ?? null } : null,
+      point: { id: point.id, code: point.code, name: point.name, area: point.area, nominalVoltageKv: point.nominalVoltageKv === null ? null : Number(point.nominalVoltageKv), state: point.state },
+      gateway: device ? { id: device.gatewayId, code: device.gatewayCode, name: device.gatewayName, state: device.gatewayState, lastSeenAt: device.gatewayLastSeenAt?.toISOString() ?? null } : null,
+      device: device ? { id: device.id, code: device.code, name: device.name, state: device.state, protocol: device.protocol, lastReadAt: device.lastReadAt?.toISOString() ?? null } : null,
+      inputSummary: { total: inputs.length, enabled: inputs.filter((input) => input.enabled).length, assigned: assignedInputIds.size },
       staleAfterSeconds,
       items: rows.map((row) => {
         const numericValue = row.value === null ? null : Number(row.value);
