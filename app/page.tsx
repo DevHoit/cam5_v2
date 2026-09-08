@@ -461,14 +461,12 @@ function OverviewChannelRow({ sensor, onOpenTrend }: { sensor: PortalSensor; onO
         : `${Math.round(risk)}% del umbral crítico`;
   const Icon = sensor.metric === "temperature" || sensor.metric === "ambient" ? Thermometer : sensor.metric === "humidity" ? Droplets : Activity;
 
-  return <div className={`overview-channel-row channel-${displayState}`}>
-    <span className="overview-channel-identity"><i><Icon size={17} /></i><span><b>{sensor.id}</b><strong>{sensor.label}</strong><small>{sensor.zone}</small></span></span>
-    <span className="overview-channel-reading"><strong>{sensor.value}</strong><small>{sensor.unit}</small></span>
-    <span><i className={`overview-channel-state state-${displayState}`}><b />{stateLabel}</i></span>
-    <span className="overview-channel-threshold"><span>{thresholdLabel}</span><i aria-hidden="true"><b style={{ width: `${progress}%` }} /></i></span>
-    <span className="overview-channel-freshness"><strong>{sensor.trend}</strong><small>{sensor.quality === "Válida" ? "Dato utilizable" : "Revisar adquisición"}</small></span>
-    <button className="overview-channel-action" onClick={() => onOpenTrend(sensor.id)} aria-label={`Abrir tendencia de ${sensor.id}`}><TrendingUp size={17} /><span>Tendencia</span></button>
-  </div>;
+  return <article className={`overview-channel-card channel-${displayState}`}>
+    <header><span className="overview-channel-identity"><i><Icon size={17} /></i><span><b>{sensor.id}</b><strong>{sensor.label}</strong><small>{sensor.zone}</small></span></span><i className={`overview-channel-state state-${displayState}`}><b />{stateLabel}</i></header>
+    <div className="overview-channel-reading"><strong>{sensor.value}</strong><small>{sensor.unit}</small><span>{sensor.type}</span></div>
+    <div className="overview-channel-threshold"><span>{thresholdLabel}</span><i aria-hidden="true"><b style={{ width: `${progress}%` }} /></i></div>
+    <footer><span className="overview-channel-freshness"><Clock3 size={14} /><span><strong>{sensor.trend}</strong><small>{sensor.quality === "Válida" ? "Dato utilizable" : "Revisar adquisición"}</small></span></span><button className="overview-channel-action" onClick={() => onOpenTrend(sensor.id)} aria-label={`Abrir tendencia de ${sensor.id}`}><TrendingUp size={16} /><span>Ver tendencia</span></button></footer>
+  </article>;
 }
 
 function Overview({ onNavigate, onOpenTrend, onAcknowledge, activeAlarms, alarmSummary, point }: { onNavigate: (view: View) => void; onOpenTrend: (id: string) => void; onAcknowledge: (id: string) => void; activeAlarms: PortalAlarm[]; alarmSummary: { critical: number; warning: number }; point?: PortalHierarchy["points"][number] }) {
@@ -507,10 +505,12 @@ function Overview({ onNavigate, onOpenTrend, onAcknowledge, activeAlarms, alarmS
   const highestRiskPercent = highestRiskSensor && riskRatio(highestRiskSensor) >= 0 ? Math.round(riskRatio(highestRiskSensor) * 100) : null;
 
   return <div className="operational-overview">
-    <section className={`panel overview-command overview-command-${overallState}`}>
-      <div className="overview-command-status"><span className="overview-command-icon">{overallState === "normal" ? <CheckCircle2 size={27} /> : <AlertTriangle size={27} />}</span><div><span className="eyebrow">Estado operativo del punto</span><h2>{statusTitle}</h2><p>{statusDetail}</p></div>{priorityAlarm && <strong className="overview-priority-value">{alarmValue(priorityAlarm)}</strong>}</div>
-      <aside className="overview-command-context"><div><span>Punto supervisado</span><strong>{pointRecord ? `${pointRecord.code} · ${pointRecord.name}` : "Sin selección"}</strong><small>{pointRecord?.nominalVoltageKv ? `${pointRecord.nominalVoltageKv} kV · ` : ""}{telemetry?.point.area || "Ubicación no informada"}</small></div><StatusPill state={overallState}>{overallState === "offline" ? "Datos no vigentes" : overallState === "critical" ? "Condición crítica" : overallState === "warning" ? "Atención requerida" : "Operación normal"}</StatusPill><span className="overview-link-health"><Wifi size={16} />{telemetry?.gateway?.code ?? "Sin gateway"} · {telemetryAge(telemetry?.gateway?.lastSeenAt ?? null)}</span></aside>
-      <footer className="overview-command-actions"><button className="primary-button" onClick={() => onNavigate(priorityAlarm ? "alarms" : "cabinet")}>{priorityAlarm ? "Revisar evento prioritario" : "Abrir mapa de condición"}<ChevronRight size={16} /></button><button className="secondary-button" onClick={() => onNavigate(priorityAlarm ? "cabinet" : "alarms")}>{priorityAlarm ? "Ver mapa de condición" : "Abrir centro de alertas"}</button></footer>
+    <section className={`panel overview-statusbar overview-command-${overallState}`} title={statusDetail}>
+      <span className="overview-statusbar-icon">{overallState === "normal" ? <CheckCircle2 size={22} /> : <AlertTriangle size={22} />}</span>
+      <div className="overview-statusbar-asset"><span className="eyebrow">{pointRecord ? `${pointRecord.code} · ${pointRecord.name}` : "Punto sin seleccionar"}</span><strong>{statusTitle}</strong><small>{pointRecord?.nominalVoltageKv ? `${pointRecord.nominalVoltageKv} kV · ` : ""}{telemetry?.point.area || "Ubicación no informada"}</small></div>
+      <div className="overview-statusbar-health"><StatusPill state={overallState}>{overallState === "offline" ? "Datos no vigentes" : overallState === "critical" ? "Condición crítica" : overallState === "warning" ? "Atención requerida" : "Operación normal"}</StatusPill><span><Wifi size={15} />{telemetry?.gateway?.code ?? "Sin gateway"} · {telemetryAge(telemetry?.gateway?.lastSeenAt ?? null)}</span></div>
+      {priorityAlarm && <strong className="overview-priority-value">{alarmValue(priorityAlarm)}</strong>}
+      <div className="overview-statusbar-actions"><button onClick={() => onNavigate("alarms")}>Alertas <ChevronRight size={15} /></button><button onClick={() => onNavigate("cabinet")}>Mapa <ChevronRight size={15} /></button></div>
     </section>
 
     <section className="overview-metric-grid" aria-label="Indicadores operativos">
@@ -523,7 +523,7 @@ function Overview({ onNavigate, onOpenTrend, onAcknowledge, activeAlarms, alarmS
     <section className="overview-workbench">
       <article className="panel overview-channels-panel">
         <header className="panel-header"><div><span className="eyebrow">Supervisión en tiempo real</span><h2>Variables monitoreadas</h2><p>Ordenadas por criticidad y cercanía a sus límites configurados.</p></div><button className="secondary-button" onClick={() => onNavigate("trends")}><TrendingUp size={16} /> Comparar tendencias</button></header>
-        <div className="overview-channel-table"><div className="overview-channel-head"><span>Canal</span><span>Lectura</span><span>Condición</span><span>Referencia</span><span>Vigencia</span><span /></div>{rankedSensors.map((sensor) => <OverviewChannelRow key={sensor.id} sensor={sensor} onOpenTrend={onOpenTrend} />)}{!rankedSensors.length && <TableEmptyState title="Todavía no hay canales activos" detail="Los canales habilitados aparecerán aquí con su lectura, condición y vigencia." />}</div>
+        <div className="overview-channel-grid">{rankedSensors.map((sensor) => <OverviewChannelRow key={sensor.id} sensor={sensor} onOpenTrend={onOpenTrend} />)}{!rankedSensors.length && <TableEmptyState title="Todavía no hay canales activos" detail="Los canales habilitados aparecerán aquí con su lectura, condición y vigencia." />}</div>
         <footer className="overview-channel-footer"><span><i className="critical" />{conditionCounts.critical} críticos</span><span><i className="warning" />{conditionCounts.warning} advertencias</span><span><i className="normal" />{conditionCounts.normal} normales</span><span><i className="offline" />{unavailableCount} no vigentes</span><button onClick={() => onNavigate("cabinet")}>Ver distribución en la cabina <ChevronRight size={15} /></button></footer>
       </article>
 

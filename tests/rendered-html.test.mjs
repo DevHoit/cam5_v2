@@ -99,6 +99,9 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(page, /zone-channel-grid/);
   assert.match(page, /Variables monitoreadas/);
   assert.match(page, /Ordenadas por criticidad y cercanía a sus límites configurados/);
+  assert.match(page, /overview-statusbar/);
+  assert.match(page, /overview-channel-grid/);
+  assert.doesNotMatch(page, /overview-channel-table|overview-channel-head/);
   assert.match(page, /pageSize: "100"/);
   assert.match(page, /Cadena de adquisición/);
   assert.match(page, /Gestionar todas las alertas/);
