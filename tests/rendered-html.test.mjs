@@ -97,7 +97,11 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(page, /function useSensorData/);
   assert.match(page, /telemetry\.data\?\.items/);
   assert.match(page, /zone-channel-grid/);
-  assert.match(page, /Lecturas comparadas con sus umbrales/);
+  assert.match(page, /Variables monitoreadas/);
+  assert.match(page, /Ordenadas por criticidad y cercanía a sus límites configurados/);
+  assert.match(page, /pageSize: "100"/);
+  assert.match(page, /Cadena de adquisición/);
+  assert.match(page, /Gestionar todas las alertas/);
   assert.match(page, /El portal conserva el último dato recibido, pero no lo presenta como una lectura actual/);
   assert.match(page, /Canales vigentes/);
   assert.doesNotMatch(page, /normalizedSeries|mini-chart/);
