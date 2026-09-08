@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { processNotificationDelivery } from "../../../../../../db/notification-engine";
-import { auditLogs, notificationDeliveries, notificationEndpoints } from "../../../../../../db/schema";
+import { auditLogs, notificationDeliveries, notificationEndpoints, sites } from "../../../../../../db/schema";
 import { apiErrorResponse, ApiError, requestMetadata, requireApiSession } from "../../../_lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +10,14 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
   try {
     const { db, user } = await requireApiSession(request, "notifications.write");
     const { id } = await context.params;
-    const [endpoint] = await db.select().from(notificationEndpoints).where(and(eq(notificationEndpoints.id, id), eq(notificationEndpoints.siteId, user.siteId))).limit(1);
+    const [endpoint] = await db.select({
+      id: notificationEndpoints.id,
+      enabled: notificationEndpoints.enabled,
+      timezone: sites.timezone,
+    }).from(notificationEndpoints)
+      .innerJoin(sites, eq(sites.id, notificationEndpoints.siteId))
+      .where(and(eq(notificationEndpoints.id, id), eq(notificationEndpoints.siteId, user.siteId)))
+      .limit(1);
     if (!endpoint) throw new ApiError(404, "El canal no existe.");
     if (!endpoint.enabled) throw new ApiError(400, "Activa el canal antes de probarlo.");
     const now = new Date();
@@ -18,7 +25,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
       endpointId: endpoint.id,
       eventType: "test",
       subject: "Prueba de notificaciones · HoitLive Core",
-      payload: { eventType: "test", severity: "normal", title: "Canal configurado correctamente", detail: "Este mensaje verifica la conexión del canal de notificaciones.", site: user.siteName, occurredAt: now.toISOString(), portalUrl: process.env.APP_URL || "https://cam5v2.vercel.app" },
+      payload: { eventType: "test", severity: "normal", title: "Canal configurado correctamente", detail: "Este mensaje verifica la conexión del canal de notificaciones.", site: user.siteName, timezone: endpoint.timezone, occurredAt: now.toISOString(), portalUrl: process.env.APP_URL || "https://cam5v2.vercel.app" },
       queuedAt: now,
       scheduledAt: now,
       nextAttemptAt: now,

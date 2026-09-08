@@ -78,3 +78,42 @@ test("signs webhook payloads without exposing the signing secret", async () => {
   assert.match(signature, /^sha256=[a-f0-9]{64}$/);
   assert.doesNotMatch(signature, /super-secret/);
 });
+
+test("sends a responsive branded email with a plain-text fallback", async () => {
+  let providerBody: Record<string, unknown> = {};
+  const result = await sendNotification(
+    { kind: "email", configuration: { recipients: ["operaciones@example.test"] }, secretReference: null },
+    {
+      subject: "Nueva alarma · AL-003",
+      payload: {
+        eventType: "opened",
+        severity: "critical",
+        kind: "threshold",
+        alarmCode: "AL-003",
+        title: "Temperatura <script>alert('x')</script>",
+        detail: "Umbral crítico superado en la barra principal.",
+        site: "Subestación Norte",
+        asset: "MCC-01 · Alimentador Norte",
+        channel: "T01 · Barra fase L1",
+        occurredAt: "2026-09-08T03:15:00.000Z",
+        timezone: "America/Santiago",
+        portalUrl: "https://cam5v2.vercel.app/?view=alarms&record=alarm-3",
+      },
+    },
+    {
+      environment: { NODE_ENV: "test", RESEND_API_KEY: "re_test", NOTIFICATION_FROM_EMAIL: "alarmas@example.test" },
+      fetchImpl: async (_input, init) => {
+        providerBody = JSON.parse(String(init?.body || "{}")) as Record<string, unknown>;
+        return Response.json({ id: "email-1" }, { status: 200 });
+      },
+    },
+  );
+
+  assert.equal(result.providerMessageId, "email-1");
+  assert.match(String(providerBody.html), /HoitLive/);
+  assert.match(String(providerBody.html), /Alarma crítica/);
+  assert.match(String(providerBody.html), /Ver evento en HoitLive Core/);
+  assert.match(String(providerBody.html), /&lt;script&gt;/);
+  assert.doesNotMatch(String(providerBody.html), /<script>alert/);
+  assert.match(String(providerBody.text), /Subestación Norte/);
+});
