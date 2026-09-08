@@ -1754,6 +1754,10 @@ button.module-table-row { width: 100%; }
 .password-policy-note { display: flex; align-items: center; gap: 7px; margin-top: -4px; color: #64748b; font-size: var(--text-sm); line-height: 1.45; }
 .password-policy-note svg { flex: 0 0 auto; color: #059669; }
 .password-reset-success { padding: 17px; display: grid; grid-template-columns: 34px minmax(0,1fr); align-items: start; gap: 11px; color: #047857; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 12px; }
+.login-auth-notice { margin-bottom: 20px; }
+.login-session-notice { color: #b45309; background: #fffbeb; border-color: #fde68a; }
+.login-session-notice strong { color: #92400e; }
+.login-session-notice small { color: #7c5a2d; }
 .password-reset-success > svg { margin-top: 2px; }.password-reset-success > span { display: flex; flex-direction: column; gap: 5px; }.password-reset-success strong { color: #065f46; font-size: var(--text-base); }.password-reset-success small { color: #3f6653; font-size: var(--text-label); line-height: 1.5; }.password-reset-success > button { grid-column: 2; margin-top: 5px; }.password-reset-success > .login-submit { width: 100%; min-height: 46px; }
 .required-password-user { min-height: 62px; margin: -8px 0 20px; padding: 10px 12px; display: flex; align-items: center; gap: 11px; color: #334155; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 11px; }
 .required-password-user > span { width: 39px; height: 39px; flex: 0 0 auto; display: grid; place-items: center; color: #0369a1; background: #e0f2fe; border-radius: 9px; font-size: var(--text-sm); font-weight: 800; }.required-password-user > div { min-width: 0; display: flex; flex-direction: column; gap: 3px; }.required-password-user strong,.required-password-user small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.required-password-user strong { color: #0f172a; font-size: var(--text-label); }.required-password-user small { color: #64748b; font-size: var(--text-sm); }

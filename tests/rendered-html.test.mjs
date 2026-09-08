@@ -26,6 +26,19 @@ test("server-renders the protected HoitLive Core access gate", async () => {
   assert.match(html, /Estamos comprobando tus credenciales de acceso/);
 });
 
+test("keeps first-access users outside the portal until a fresh login", async () => {
+  const [page, requiredChangeApi] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/v1/auth/change-required-password/route.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(page, /if \(sessionUser\.mustChangePassword\) return <RequiredPasswordChangeScreen/);
+  assert.match(page, /setSessionUser\(null\); setLoginNotice\(\{ title: "Contraseña actualizada", message, tone: "success" \}\); setAuthState\("anonymous"\)/);
+  assert.match(requiredChangeApi, /eq\(authSessions\.userId, user\.id\), isNull\(authSessions\.revokedAt\)/);
+  assert.match(requiredChangeApi, /Max-Age=0/);
+  assert.doesNotMatch(requiredChangeApi, /resolvePortalSession/);
+});
+
 test("keeps the production portal free of starter preview code", async () => {
   const [page, layout, css, packageJson, engineering, commissioningApi, commissioningEngine, model, alarmEngine, trends, notifications, notificationEngine, settings, configurationApi, gatewayConfigurationApi, reports, reportsApi, reportEngine, telemetryApi, diagnostics, diagnosticsApi] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),

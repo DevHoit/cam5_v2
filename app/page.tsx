@@ -201,6 +201,7 @@ type PaginationMeta = { page: number; pageSize: number; total: number; totalPage
 type NoticeTone = "success" | "info" | "warning";
 type SystemMode = "normal" | "loading" | "stale" | "offline";
 type ConfirmRequest = { title: string; detail: string; confirmLabel: string; tone?: "default" | "danger"; onConfirm: () => void };
+type LoginNotice = { title: string; message: string; tone: "success" | "warning" };
 
 const FeedbackContext = createContext<(message: string, tone?: NoticeTone) => void>(() => undefined);
 const useFeedback = () => useContext(FeedbackContext);
@@ -210,6 +211,13 @@ const RoleContext = createContext<UserRole>("Administrador");
 const useActiveRole = () => useContext(RoleContext);
 const TelemetryContext = createContext<PortalTelemetryState>({ status: "loading", data: null });
 
+class PortalRequestError extends Error {
+  constructor(message: string, public status: number) {
+    super(message);
+    this.name = "PortalRequestError";
+  }
+}
+
 async function portalRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     ...init,
@@ -218,7 +226,7 @@ async function portalRequest<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!response.ok) {
     const payload = await response.json().catch(() => null) as { error?: string } | null;
-    throw new Error(payload?.error || "No fue posible completar la solicitud.");
+    throw new PortalRequestError(payload?.error || "No fue posible completar la solicitud.", response.status);
   }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
@@ -1225,7 +1233,7 @@ function AuthFrame({ children }: { children: React.ReactNode }) {
   </main>;
 }
 
-function LoginScreen({ checking, onAuthenticated }: { checking: boolean; onAuthenticated: (user: PortalSessionUser) => void }) {
+function LoginScreen({ checking, notice, onAuthenticated }: { checking: boolean; notice?: LoginNotice | null; onAuthenticated: (user: PortalSessionUser) => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -1264,6 +1272,7 @@ function LoginScreen({ checking, onAuthenticated }: { checking: boolean; onAuthe
 
   return <AuthFrame>
         <header className="login-card-header"><span className="login-security-icon">{recovery ? <Key size={21} /> : <ShieldCheck size={21} />}</span><span className="eyebrow">{recovery ? "Recuperación de acceso" : "Acceso a la plataforma"}</span><h2>{checking ? "Validando tu sesión" : recovery ? "Recuperar contraseña" : "Bienvenido"}</h2><p>{checking ? "Estamos comprobando tus credenciales de acceso." : recovery ? "Te enviaremos un enlace seguro para crear una nueva contraseña." : "Ingresa con las credenciales asignadas por tu organización."}</p></header>
+        {notice && !checking && !recovery && <div className={`password-reset-success login-auth-notice ${notice.tone === "warning" ? "login-session-notice" : ""}`} role="status">{notice.tone === "warning" ? <AlertTriangle size={22} /> : <CheckCircle2 size={22} />}<span><strong>{notice.title}</strong><small>{notice.message}</small></span></div>}
         {checking ? <div className="login-checking"><Refresh className="spin" size={19} /><span><strong>Verificando acceso</strong><small>Esto tomará solo un momento.</small></span></div> : recoveryMessage ? <div className="password-reset-success"><CheckCircle2 size={22} /><span><strong>Revisa tu correo</strong><small>{recoveryMessage}</small></span><button type="button" className="login-link-button" onClick={() => { setRecovery(false); setRecoveryMessage(""); }}>Volver a iniciar sesión</button></div> : recovery ? <form onSubmit={requestRecovery}>
           <label htmlFor="recovery-email"><span>Correo electrónico</span><div className="login-input-wrap"><Mail size={18} /><input id="recovery-email" type="email" inputMode="email" autoCapitalize="none" autoComplete="email" required autoFocus value={email} onChange={(event) => setEmail(event.target.value)} placeholder="nombre@empresa.cl" /></div></label>
           {error && <div className="login-error" role="alert"><AlertTriangle size={17} /><span><strong>No pudimos procesar la solicitud</strong><small>{error}</small></span></div>}
@@ -1305,7 +1314,7 @@ function PasswordResetScreen({ token, onComplete }: { token: string; onComplete:
   </AuthFrame>;
 }
 
-function RequiredPasswordChangeScreen({ user, onChanged, onLogout }: { user: PortalSessionUser; onChanged: (user: PortalSessionUser) => void; onLogout: () => void }) {
+function RequiredPasswordChangeScreen({ user, onCompleted, onSessionExpired, onLogout }: { user: PortalSessionUser; onCompleted: (message: string) => void; onSessionExpired: (message: string) => void; onLogout: () => void }) {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
@@ -1315,9 +1324,15 @@ function RequiredPasswordChangeScreen({ user, onChanged, onLogout }: { user: Por
   const submit = async (event: React.FormEvent) => {
     event.preventDefault(); setSubmitting(true); setError("");
     try {
-      const response = await portalRequest<{ user: PortalSessionUser }>("/api/v1/auth/change-required-password", { method: "POST", body: JSON.stringify({ currentPassword, newPassword, confirmation }) });
-      onChanged(response.user);
-    } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "No fue posible cambiar la contraseña."); }
+      const response = await portalRequest<{ message: string }>("/api/v1/auth/change-required-password", { method: "POST", body: JSON.stringify({ currentPassword, newPassword, confirmation }) });
+      onCompleted(response.message);
+    } catch (requestError) {
+      if (requestError instanceof PortalRequestError && requestError.status === 401) {
+        onSessionExpired("Tu sesión dejó de ser válida. Inicia sesión nuevamente para continuar.");
+        return;
+      }
+      setError(requestError instanceof Error ? requestError.message : "No fue posible cambiar la contraseña.");
+    }
     finally { setSubmitting(false); }
   };
   return <AuthFrame>
@@ -1354,6 +1369,7 @@ export default function Home() {
   const [activePointId, setActivePointId] = useState("");
   const [authState, setAuthState] = useState<"checking" | "authenticated" | "anonymous">("checking");
   const [passwordResetToken, setPasswordResetToken] = useState("");
+  const [loginNotice, setLoginNotice] = useState<LoginNotice | null>(null);
   const [notice, setNotice] = useState<{ id: number; message: string; tone: NoticeTone } | null>(null);
   const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null);
   const noticeTimer = useRef<number | null>(null);
@@ -1559,10 +1575,15 @@ export default function Home() {
     const url = new URL(window.location.href); url.searchParams.delete("action"); url.hash = ""; window.history.replaceState({}, "", url);
     setPasswordResetToken(""); setSessionUser(null); setAuthState("anonymous");
   }} />;
-  if (authState !== "authenticated" || !sessionUser) return <LoginScreen checking={authState === "checking"} onAuthenticated={(user) => {
-    setSessionUser(user); setAuthState("authenticated"); if (!user.mustChangePassword) void loadHierarchy();
+  if (authState !== "authenticated" || !sessionUser) return <LoginScreen checking={authState === "checking"} notice={loginNotice} onAuthenticated={(user) => {
+    setLoginNotice(null); setHierarchy(null); setSessionUser(user); setAuthState("authenticated"); if (!user.mustChangePassword) void loadHierarchy();
   }} />;
-  if (sessionUser.mustChangePassword) return <RequiredPasswordChangeScreen user={sessionUser} onChanged={(user) => { setSessionUser(user); void loadHierarchy(); }} onLogout={() => void logout()} />;
+  if (sessionUser.mustChangePassword) return <RequiredPasswordChangeScreen
+    user={sessionUser}
+    onCompleted={(message) => { setHierarchy(null); setSessionUser(null); setLoginNotice({ title: "Contraseña actualizada", message, tone: "success" }); setAuthState("anonymous"); }}
+    onSessionExpired={(message) => { setHierarchy(null); setSessionUser(null); setLoginNotice({ title: "Sesión finalizada", message, tone: "warning" }); setAuthState("anonymous"); }}
+    onLogout={() => void logout()}
+  />;
   const activeRole = sessionUser.roleName;
   const activePoint = hierarchy?.points.find((point) => point.id === activePointId && point.active) ?? hierarchy?.points.find((point) => point.active);
   const activeGateway = hierarchy?.gateways.find((gateway) => gateway.active);

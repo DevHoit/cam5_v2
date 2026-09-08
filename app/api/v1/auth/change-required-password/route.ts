@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
-import { and, eq, isNull, ne } from "drizzle-orm";
-import { hashPassword, hashSessionToken, resolvePortalSession, verifyPassword } from "../../../../../db/auth";
+import { and, eq, isNull } from "drizzle-orm";
+import { hashPassword, SESSION_COOKIE_NAME, verifyPassword } from "../../../../../db/auth";
 import { auditLogs, authIdentities, authSessions } from "../../../../../db/schema";
 import { apiErrorResponse, ApiError, requestMetadata, requireApiSession } from "../../_lib/auth";
 
@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
   try {
-    const { db, user, token } = await requireApiSession(request, undefined, { allowPasswordChangeRequired: true });
+    const { db, user } = await requireApiSession(request, undefined, { allowPasswordChangeRequired: true });
     if (!user.mustChangePassword) throw new ApiError(409, "La cuenta no tiene un cambio de contraseña pendiente.");
     const body = await request.json().catch(() => null) as { currentPassword?: unknown; newPassword?: unknown; confirmation?: unknown } | null;
     const currentPassword = typeof body?.currentPassword === "string" ? body.currentPassword : "";
@@ -29,11 +29,8 @@ export async function POST(request: NextRequest) {
     await db.transaction(async (tx) => {
       await tx.update(authIdentities).set({ passwordHash, mustChangePassword: false, updatedAt: now })
         .where(and(eq(authIdentities.userId, user.id), eq(authIdentities.provider, "local")));
-      await tx.update(authSessions).set({ revokedAt: now }).where(and(
-        eq(authSessions.userId, user.id),
-        ne(authSessions.tokenHash, hashSessionToken(token)),
-        isNull(authSessions.revokedAt),
-      ));
+      await tx.update(authSessions).set({ revokedAt: now })
+        .where(and(eq(authSessions.userId, user.id), isNull(authSessions.revokedAt)));
       await tx.insert(auditLogs).values({
         siteId: user.siteId,
         actorUserId: user.id,
@@ -43,12 +40,15 @@ export async function POST(request: NextRequest) {
         outcome: "success",
         ipAddress: metadata.ipAddress,
         userAgent: metadata.userAgent,
-        metadata: { otherSessionsRevoked: true },
+        metadata: { allSessionsRevoked: true, loginRequired: true },
       });
     });
-    const refreshedUser = await resolvePortalSession(db, token);
-    if (!refreshedUser) throw new ApiError(401, "La sesión ya no es válida.");
-    return Response.json({ user: refreshedUser }, { headers: { "Cache-Control": "no-store" } });
+    const response = Response.json(
+      { message: "Contraseña actualizada. Inicia sesión nuevamente con tu nueva contraseña." },
+      { headers: { "Cache-Control": "no-store" } },
+    );
+    response.headers.append("Set-Cookie", `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${process.env.NODE_ENV === "production" ? "; Secure" : ""}`);
+    return response;
   } catch (error) {
     return apiErrorResponse(error);
   }
