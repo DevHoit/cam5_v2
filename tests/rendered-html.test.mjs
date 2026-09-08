@@ -246,6 +246,9 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(notifications, /PostgreSQL · trazabilidad activa/);
   assert.match(notifications, /Enviar prueba/);
   assert.match(notifications, /Reintentar/);
+  assert.match(notifications, /Detalle de la notificación/);
+  assert.match(notifications, /setSelectedDelivery\(delivery\)/);
+  assert.match(notifications, /Reintentar entrega/);
   assert.match(notifications, /RESEND_API_KEY/);
   assert.match(notificationEngine, /queueAlarmNotifications/);
   assert.match(notificationEngine, /processNotificationQueue/);

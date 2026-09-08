@@ -8,6 +8,7 @@ import {
   IconCircleCheck,
   IconClock,
   IconEdit,
+  IconEye,
   IconMail,
   IconPlus,
   IconRefresh,
@@ -17,6 +18,7 @@ import {
   IconTrash,
   IconUsers,
   IconWebhook,
+  IconX,
 } from "@tabler/icons-react";
 import { Pagination } from "./pagination";
 
@@ -112,6 +114,16 @@ function statusLabel(status: DeliveryRecord["status"]) {
   return "Programada";
 }
 
+function eventLabel(eventType: string) {
+  if (eventType === "opened") return "Nueva alarma";
+  if (eventType === "escalated") return "Alarma escalada";
+  if (eventType === "reopened_automatically") return "Alarma reabierta";
+  if (eventType.startsWith("resolved")) return "Condición recuperada";
+  if (eventType === "repeat") return "Alarma aún activa";
+  if (eventType === "test") return "Prueba manual";
+  return eventType.replaceAll("_", " ");
+}
+
 export function NotificationsView({
   canWrite,
   notify,
@@ -139,6 +151,7 @@ export function NotificationsView({
   const [saving, setSaving] = useState(false);
   const [testingId, setTestingId] = useState<string | null>(null);
   const [retryingId, setRetryingId] = useState<number | null>(null);
+  const [selectedDelivery, setSelectedDelivery] = useState<DeliveryRecord | null>(null);
   const [showEndpointForm, setShowEndpointForm] = useState(false);
   const [editingEndpointId, setEditingEndpointId] = useState<string | null>(null);
   const [endpointForm, setEndpointForm] = useState(emptyEndpointForm);
@@ -181,6 +194,13 @@ export function NotificationsView({
     }, 250);
     return () => window.clearTimeout(timeout);
   }, [tab, page, query, status, kind, from, to, reload]);
+
+  useEffect(() => {
+    if (!selectedDelivery) return;
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setSelectedDelivery(null); };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [selectedDelivery]);
 
   const refresh = () => setReload((value) => value + 1);
   const selectTab = (next: typeof tab) => { setTab(next); setPage(1); setQuery(""); setStatus("all"); setKind("all"); setError(""); };
@@ -256,6 +276,7 @@ export function NotificationsView({
     try {
       const result = await requestJson<{ ok: boolean; error: string | null }>(`/api/v1/notification-deliveries/${delivery.id}/retry`, { method: "POST" });
       notify(result.ok ? "Entrega completada en el reintento." : result.error || "El reintento volvió a fallar.", result.ok ? "success" : "warning");
+      setSelectedDelivery((current) => current?.id === delivery.id ? null : current);
       refresh();
     } catch (retryError) { notify(retryError instanceof Error ? retryError.message : "No fue posible reintentar la entrega.", "warning"); }
     finally { setRetryingId(null); }
@@ -288,9 +309,23 @@ export function NotificationsView({
 
       {tab === "delivery" && !loading && !error && <div className="notification-content delivery-content">
         {deliveries?.items.length === 0 && <NotificationEmpty icon="delivery" title="No hay entregas para estos filtros" detail="Las pruebas y los mensajes generados por alarmas aparecerán aquí con todos sus intentos." />}
-        {deliveries && deliveries.items.length > 0 && <><div className="module-table-wrap"><div className="delivery-table notification-delivery-table"><div className="module-table-head"><span>Fecha</span><span>Mensaje</span><span>Canal y destino</span><span>Resultado</span><span>Acción</span></div>{deliveries.items.map((delivery) => <div className="module-table-row" key={delivery.id}><span><strong className="mono-cell">{formatDateTime(delivery.queuedAt)}</strong><small>{delivery.sentAt ? `Entregada ${formatDateTime(delivery.sentAt)}` : delivery.status === "queued" ? `Programada ${formatDateTime(delivery.scheduledAt)}` : `Intento ${formatDateTime(delivery.lastAttemptAt)}`}</small></span><span><strong>{delivery.subject}</strong><small>{delivery.alarmCode || delivery.policyName || "Prueba manual"}</small></span><span><strong>{delivery.endpointName}</strong><small title={delivery.recipient || ""}>{delivery.recipient || kindLabel(delivery.endpointKind)}</small></span><span><b className={`delivery-status status-${delivery.status}`}>{delivery.status === "delivered" ? <IconCircleCheck size={14} /> : delivery.status === "failed" ? <IconAlertTriangle size={14} /> : <IconClock size={14} />}{statusLabel(delivery.status)}</b><small title={delivery.errorMessage || ""}>{delivery.errorMessage || `${delivery.attemptCount} de ${delivery.maxAttempts} intentos`}</small></span><span>{canWrite && delivery.status === "failed" ? <button className="ghost-button" disabled={retryingId === delivery.id} onClick={() => void retryDelivery(delivery)}><IconRefresh size={14} />{retryingId === delivery.id ? "Reintentando…" : "Reintentar"}</button> : <span className="muted-state">—</span>}</span></div>)}</div></div><Pagination page={deliveries.page} totalPages={deliveries.totalPages} total={deliveries.total} pageSize={deliveries.pageSize} onPageChange={setPage} itemLabel="entregas" /></>}
+        {deliveries && deliveries.items.length > 0 && <><div className="module-table-wrap"><div className="delivery-table notification-delivery-table"><div className="module-table-head"><span>Fecha</span><span>Mensaje</span><span>Canal y destino</span><span>Resultado</span><span>Acciones</span></div>{deliveries.items.map((delivery) => <div className="module-table-row" key={delivery.id}><span><strong className="mono-cell">{formatDateTime(delivery.queuedAt)}</strong><small>{delivery.sentAt ? `Entregada ${formatDateTime(delivery.sentAt)}` : delivery.status === "queued" ? `Programada ${formatDateTime(delivery.scheduledAt)}` : `Intento ${formatDateTime(delivery.lastAttemptAt)}`}</small></span><span><strong>{delivery.subject}</strong><small>{delivery.alarmCode || delivery.policyName || "Prueba manual"}</small></span><span><strong>{delivery.endpointName}</strong><small title={delivery.recipient || ""}>{delivery.recipient || kindLabel(delivery.endpointKind)}</small></span><span><b className={`delivery-status status-${delivery.status}`}>{delivery.status === "delivered" ? <IconCircleCheck size={14} /> : delivery.status === "failed" ? <IconAlertTriangle size={14} /> : <IconClock size={14} />}{statusLabel(delivery.status)}</b><small title={delivery.errorMessage || ""}>{delivery.errorMessage || `${delivery.attemptCount} de ${delivery.maxAttempts} intentos`}</small></span><span className="delivery-row-actions"><button className="ghost-button" onClick={() => setSelectedDelivery(delivery)}><IconEye size={14} /> Detalle</button>{canWrite && delivery.status === "failed" && <button className="ghost-button retry" disabled={retryingId === delivery.id} onClick={() => void retryDelivery(delivery)}><IconRefresh size={14} />{retryingId === delivery.id ? "Enviando…" : "Reintentar"}</button>}</span></div>)}</div></div><Pagination page={deliveries.page} totalPages={deliveries.totalPages} total={deliveries.total} pageSize={deliveries.pageSize} onPageChange={setPage} itemLabel="entregas" /></>}
       </div>}
     </article>
+    {selectedDelivery && <div className="delivery-detail-backdrop" role="presentation" onMouseDown={() => setSelectedDelivery(null)}><section className="delivery-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="delivery-detail-title" onMouseDown={(event) => event.stopPropagation()}>
+      <header><div><span className="eyebrow">Entrega #{selectedDelivery.id}</span><h2 id="delivery-detail-title">Detalle de la notificación</h2><p>{selectedDelivery.subject}</p></div><button type="button" onClick={() => setSelectedDelivery(null)} aria-label="Cerrar detalle"><IconX size={19} /></button></header>
+      <div className="delivery-detail-status"><b className={`delivery-status status-${selectedDelivery.status}`}>{selectedDelivery.status === "delivered" ? <IconCircleCheck size={15} /> : selectedDelivery.status === "failed" ? <IconAlertTriangle size={15} /> : <IconClock size={15} />}{statusLabel(selectedDelivery.status)}</b><span>{eventLabel(selectedDelivery.eventType)}</span></div>
+      <dl className="delivery-detail-grid">
+        <div><dt>Canal</dt><dd>{selectedDelivery.endpointName}<small>{kindLabel(selectedDelivery.endpointKind)}</small></dd></div>
+        <div><dt>Destino</dt><dd title={selectedDelivery.recipient || ""}>{selectedDelivery.recipient || "No informado"}</dd></div>
+        <div><dt>Origen</dt><dd>{selectedDelivery.alarmCode || selectedDelivery.policyName || "Prueba manual"}<small>{selectedDelivery.policyName || "Sin regla asociada"}</small></dd></div>
+        <div><dt>Intentos</dt><dd>{selectedDelivery.attemptCount} de {selectedDelivery.maxAttempts}<small>Próximo: {selectedDelivery.status === "queued" ? formatDateTime(selectedDelivery.nextAttemptAt) : "No programado"}</small></dd></div>
+        <div><dt>En cola</dt><dd>{formatDateTime(selectedDelivery.queuedAt)}<small>Programada: {formatDateTime(selectedDelivery.scheduledAt)}</small></dd></div>
+        <div><dt>Resultado</dt><dd>{selectedDelivery.sentAt ? formatDateTime(selectedDelivery.sentAt) : selectedDelivery.lastAttemptAt ? formatDateTime(selectedDelivery.lastAttemptAt) : "Pendiente"}<small>{selectedDelivery.providerMessageId ? `ID proveedor: ${selectedDelivery.providerMessageId}` : "Sin identificador del proveedor"}</small></dd></div>
+      </dl>
+      {selectedDelivery.errorMessage && <div className="delivery-detail-error"><IconAlertTriangle size={18} /><div><strong>Error informado por el proveedor</strong><p>{selectedDelivery.errorMessage}</p></div></div>}
+      <footer><button type="button" className="secondary-button" onClick={() => setSelectedDelivery(null)}>Cerrar</button>{canWrite && selectedDelivery.status === "failed" && <button type="button" className="primary-button" disabled={retryingId === selectedDelivery.id} onClick={() => void retryDelivery(selectedDelivery)}><IconRefresh size={15} />{retryingId === selectedDelivery.id ? "Reintentando…" : "Reintentar entrega"}</button>}</footer>
+    </section></div>}
     <div className="configuration-note notification-security-note"><IconShieldCheck size={17} /><p><strong>Secretos fuera de la base de datos.</strong> Teams usa una variable segura para su webhook; los webhooks pueden firmarse con HMAC y el correo utiliza <code>RESEND_API_KEY</code> y <code>NOTIFICATION_FROM_EMAIL</code> del entorno de despliegue.</p></div>
   </>;
 }
