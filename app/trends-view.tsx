@@ -188,6 +188,15 @@ export function TrendsView({
   const expectedStepMs = (result?.resolution.expectedStepSeconds ?? 2) * 1000;
   const yTicks = [0, .25, .5, .75, 1].map((ratio) => ({ ratio, value: yMax - (yMax - yMin) * ratio, y: 30 + ratio * 270 }));
   const xTicks = [0, .25, .5, .75, 1].map((ratio) => new Date(fromMs + (toMs - fromMs) * ratio));
+  const thresholdMarkers = primary ? [
+    primary.criticalThreshold === null ? null : { key: "critical", label: "Crítico", value: primary.criticalThreshold, lineY: 300 - (primary.criticalThreshold - yMin) / Math.max(.0001, yMax - yMin) * 270 },
+    primary.warningThreshold === null ? null : { key: "warning", label: "Advertencia", value: primary.warningThreshold, lineY: 300 - (primary.warningThreshold - yMin) / Math.max(.0001, yMax - yMin) * 270 },
+  ].filter((marker): marker is { key: string; label: string; value: number; lineY: number } => marker !== null).map((marker) => ({ ...marker, labelY: marker.lineY })) : [];
+  if (thresholdMarkers.length === 2 && Math.abs(thresholdMarkers[0].labelY - thresholdMarkers[1].labelY) < 28) {
+    const center = (thresholdMarkers[0].labelY + thresholdMarkers[1].labelY) / 2;
+    thresholdMarkers[0].labelY = Math.max(44, center - 15);
+    thresholdMarkers[1].labelY = Math.min(286, center + 15);
+  }
   const cursorTime = hoverX === null ? null : fromMs + (toMs - fromMs) * hoverX / 1000;
   const cursorItems = cursorTime === null ? [] : (result?.series.map((series, index) => {
     const point = series.points.reduce<TrendPoint | null>((nearest, candidate) => !nearest || Math.abs(new Date(candidate.timestamp).getTime() - cursorTime) < Math.abs(new Date(nearest.timestamp).getTime() - cursorTime) ? candidate : nearest, null);
@@ -260,14 +269,15 @@ export function TrendsView({
         <div className={`trend-svg-wrap ${dragStart !== null ? "selecting" : ""}`} onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); const x = pointerX(event); setDragStart(x); setDragCurrent(x); }} onPointerMove={(event) => { const x = pointerX(event); setHoverX(x); if (dragStart !== null) setDragCurrent(x); }} onPointerUp={finishZoom} onPointerCancel={finishZoom} onPointerLeave={() => { if (dragStart === null) setHoverX(null); }}>
           <svg viewBox="0 0 1000 320" preserveAspectRatio="none" role="img" aria-label="Gráfico de tendencias por canal">
             <g className="trend-grid-lines">{yTicks.map((tick) => <line key={tick.ratio} x1="0" x2="1000" y1={tick.y} y2={tick.y} />)}</g>
-            {primary?.warningThreshold !== null && primary?.warningThreshold !== undefined && <g className="trend-threshold warning"><line x1="0" x2="1000" y1={300 - (primary.warningThreshold - yMin) / Math.max(.0001, yMax - yMin) * 270} y2={300 - (primary.warningThreshold - yMin) / Math.max(.0001, yMax - yMin) * 270} /><text x="990" y={294 - (primary.warningThreshold - yMin) / Math.max(.0001, yMax - yMin) * 270}>Advertencia {primary.warningThreshold}</text></g>}
-            {primary?.criticalThreshold !== null && primary?.criticalThreshold !== undefined && <g className="trend-threshold critical"><line x1="0" x2="1000" y1={300 - (primary.criticalThreshold - yMin) / Math.max(.0001, yMax - yMin) * 270} y2={300 - (primary.criticalThreshold - yMin) / Math.max(.0001, yMax - yMin) * 270} /><text x="990" y={294 - (primary.criticalThreshold - yMin) / Math.max(.0001, yMax - yMin) * 270}>Crítico {primary.criticalThreshold}</text></g>}
+            {thresholdMarkers.map((marker) => <g key={marker.key} className={`trend-threshold ${marker.key}`}><line x1="0" x2="1000" y1={marker.lineY} y2={marker.lineY} /></g>)}
             {result?.series[0]?.points.filter((point) => point.quality !== "good").map((point) => { const x = (new Date(point.timestamp).getTime() - fromMs) / Math.max(1, toMs - fromMs) * 1000; return <rect key={point.timestamp} className={`quality-band ${point.quality}`} x={x - 2} y="30" width="4" height="270" />; })}
             {result?.series.map((series, index) => pathSegments(series, fromMs, toMs, yMin, yMax, expectedStepMs).map((path, segment) => <path key={`${series.id}-${segment}`} className="trend-series-path" d={path} style={{ stroke: COLORS[index] }} />))}
+            {result?.resolution.key === "raw" && result.series.map((series, index) => series.points.length <= 240 ? series.points.map((point) => point.value === null || point.quality === "bad" ? null : <circle key={`${series.id}-${point.timestamp}`} className="trend-series-dot" cx={(new Date(point.timestamp).getTime() - fromMs) / Math.max(1, toMs - fromMs) * 1000} cy={300 - (point.value - yMin) / Math.max(.0001, yMax - yMin) * 270} r="2.7" style={{ fill: COLORS[index] }} />) : null)}
             {hoverX !== null && <line className="trend-cursor-line" x1={hoverX} x2={hoverX} y1="30" y2="300" />}
             {cursorItems.map((item) => item.point.value === null ? null : <circle key={item.series.id} className="trend-cursor-point" cx={(new Date(item.point.timestamp).getTime() - fromMs) / Math.max(1, toMs - fromMs) * 1000} cy={300 - (item.point.value - yMin) / Math.max(.0001, yMax - yMin) * 270} r="5" style={{ fill: item.color }} />)}
             {dragStart !== null && dragCurrent !== null && <rect className="trend-selection" x={Math.min(dragStart, dragCurrent)} y="30" width={Math.abs(dragCurrent - dragStart)} height="270" />}
           </svg>
+          {thresholdMarkers.map((marker) => <div key={marker.key} className={`trend-threshold-label ${marker.key}`} style={{ top: `${marker.labelY / 320 * 100}%` }}><span>{marker.label}</span><strong>{valueLabel(marker.value, primary?.unit ?? primaryOption.unit)}</strong></div>)}
           {!loading && !error && !validValues.length && <div className="trend-chart-empty"><ChartLine size={25} /><strong>Sin muestras para este periodo</strong><span>La línea aparecerá cuando el gateway envíe datos del canal.</span></div>}
           {cursorItems.length > 0 && hoverX !== null && <div className={`trend-tooltip ${hoverX > 720 ? "align-right" : ""}`} style={{ left: `${hoverX / 10}%` }}><strong>{new Intl.DateTimeFormat("es-CL", { dateStyle: "short", timeStyle: "medium" }).format(new Date(cursorItems[0].point.timestamp))}</strong>{cursorItems.map((item) => <span key={item.series.id}><i style={{ background: item.color }} /><b>{item.series.code}</b>{valueLabel(item.point.value, item.series.unit)}<small>{item.point.quality === "good" ? "Válida" : item.point.quality === "stale" ? "Parcial" : "Inválida"}</small></span>)}</div>}
         </div>

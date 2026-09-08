@@ -9,7 +9,7 @@ import {
   userAssetScopes,
 } from "../../../../db/schema";
 import { apiErrorResponse, ApiError, requireApiSession } from "../_lib/auth";
-import { resolveTrendResolution, TREND_RESOLUTIONS, type RequestedTrendResolution } from "../_lib/trend-resolution";
+import { inferTrendStepSeconds, resolveTrendResolution, TREND_RESOLUTIONS, type RequestedTrendResolution } from "../_lib/trend-resolution";
 
 export const dynamic = "force-dynamic";
 
@@ -227,7 +227,7 @@ export async function GET(request: NextRequest) {
       asset: { id: asset.id, code: asset.code, name: asset.name },
       from: from.toISOString(),
       to: to.toISOString(),
-      resolution: { ...resolution, source, expectedStepSeconds: resolution.bucketSeconds || 2 },
+      resolution: { ...resolution, source, expectedStepSeconds: inferTrendStepSeconds(series, resolution.bucketSeconds) },
       series,
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {

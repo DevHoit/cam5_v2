@@ -30,3 +30,18 @@ export function resolveTrendResolution(from: Date, to: Date, requested: Requeste
   if (rangeSeconds > maximumRange[value]) throw new ApiError(400, `La resolución ${RESOLUTION_LABELS[value].toLowerCase()} no admite un periodo tan extenso.`);
   return { key: value, bucketSeconds: value === "raw" ? 0 : Number(value), label: RESOLUTION_LABELS[value] };
 }
+
+export function inferTrendStepSeconds(
+  series: Array<{ points: Array<{ timestamp: string }> }>,
+  bucketSeconds: number,
+  fallbackSeconds = 300,
+) {
+  if (bucketSeconds > 0) return bucketSeconds;
+  const deltas = series.flatMap(({ points }) => points.slice(1).map((point, index) =>
+    new Date(point.timestamp).getTime() - new Date(points[index].timestamp).getTime(),
+  )).filter((delta) => Number.isFinite(delta) && delta > 0).sort((a, b) => a - b);
+  if (!deltas.length) return fallbackSeconds;
+  const middle = Math.floor(deltas.length / 2);
+  const medianMs = deltas.length % 2 ? deltas[middle] : (deltas[middle - 1] + deltas[middle]) / 2;
+  return Math.max(1, Math.round(medianMs / 1000));
+}

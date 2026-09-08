@@ -39,6 +39,18 @@ test("keeps first-access users outside the portal until a fresh login", async ()
   assert.doesNotMatch(requiredChangeApi, /resolvePortalSession/);
 });
 
+test("keeps history-to-trend ranges out of the future", async () => {
+  const [page, trends] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/trends-view.tsx", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(page, /new Date\(Math\.min\(Date\.now\(\), new Date\(toIso\)\.getTime\(\)\)\)\.toISOString\(\)/);
+  assert.match(page, /const toTime = Math\.min\(Date\.now\(\), new Date\(to\)\.getTime\(\)\)/);
+  assert.doesNotMatch(trends, /<text[^>]*>Advertencia|<text[^>]*>Crítico/);
+  assert.match(trends, /trend-threshold-label/);
+});
+
 test("keeps the production portal free of starter preview code", async () => {
   const [page, layout, css, packageJson, engineering, commissioningApi, commissioningEngine, model, alarmEngine, trends, notifications, notificationEngine, settings, configurationApi, gatewayConfigurationApi, reports, reportsApi, reportEngine, telemetryApi, diagnostics, diagnosticsApi] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
