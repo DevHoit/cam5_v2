@@ -49,11 +49,20 @@ test("creates an immutable report snapshot from the operational database", async
     const [asset] = await database.select().from(schema.assets).limit(1);
     const [template] = await database.select().from(schema.reportTemplates).limit(1);
     const [user] = await database.select().from(schema.users).limit(1);
+    const [channel] = await database.select().from(schema.channels).limit(1);
+    await database.insert(schema.readings).values({
+      channelId: channel.id,
+      recordedAt: new Date("2026-08-10T12:00:00.000Z"),
+      value: "48.500000",
+      quality: "good",
+      sequence: 1,
+    });
     const result = await createReportRun(database, { templateId: template.id, assetId: asset.id, requestedBy: user.id, generatedBy: user.displayName, periodStart: new Date("2026-08-10T00:00:00.000Z"), periodEnd: new Date("2026-08-11T00:00:00.000Z"), format: "pdf" });
     assert.equal(result.run.status, "completed");
     assert.deepEqual(result.run.payload, result.snapshot);
     assert.equal(result.snapshot.asset.code, "MCC-01");
     assert.ok(result.snapshot.channels.length > 0);
+    assert.equal(result.snapshot.channels.find((item) => item.code === channel.code)?.latestAt, "2026-08-10T12:00:00.000Z");
   } finally {
     await client.close();
   }

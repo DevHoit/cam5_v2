@@ -60,6 +60,12 @@ function numeric(value: string | number | null | undefined) {
   return value === null || value === undefined ? null : Number(value);
 }
 
+function timestampIso(value: Date | string | null | undefined) {
+  if (value === null || value === undefined) return null;
+  const timestamp = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(timestamp.getTime()) ? null : timestamp.toISOString();
+}
+
 export async function createReportRun(db: Cam5Database, input: {
   templateId: string;
   assetId: string;
@@ -104,7 +110,9 @@ export async function createReportRun(db: Cam5Database, input: {
     average: sql<string | null>`avg(${readings.value})`,
     maximum: sql<string | null>`max(${readings.value})`,
     latest: sql<string | null>`(array_agg(${readings.value} order by ${readings.recordedAt} desc) filter (where ${readings.id} is not null))[1]`,
-    latestAt: sql<Date | null>`max(${readings.recordedAt})`,
+    // Aggregated timestamps are returned as strings by postgres.js in the
+    // production runtime, even though direct timestamp columns are Dates.
+    latestAt: sql<Date | string | null>`max(${readings.recordedAt})`,
   }).from(channels)
     .leftJoin(readings, and(eq(readings.channelId, channels.id), between(readings.recordedAt, input.periodStart, input.periodEnd)))
     .where(and(eq(channels.assetId, input.assetId), eq(channels.enabled, true)))
@@ -161,7 +169,7 @@ export async function createReportRun(db: Cam5Database, input: {
       average: numeric(channel.average),
       maximum: numeric(channel.maximum),
       latest: numeric(channel.latest),
-      latestAt: channel.latestAt?.toISOString() ?? null,
+      latestAt: timestampIso(channel.latestAt),
     })),
     alarms: alarmRows.map((alarm) => ({
       ...alarm,
