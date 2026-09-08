@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { and, asc, between, count, desc, eq, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
+import { and, between, count, desc, eq, ilike, inArray, or, type SQL } from "drizzle-orm";
 import {
   alarms,
   assets,
@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
     const allowedAssetIds = scopes.map((scope) => scope.assetId);
 
     if (tab === "measurements") {
-      const filters: SQL[] = [eq(assets.siteId, user.siteId), eq(channels.enabled, true)];
+      const filters: SQL[] = [eq(assets.siteId, user.siteId), eq(channels.enabled, true), between(readings.recordedAt, from, to)];
       if (allowedAssetIds.length) filters.push(inArray(assets.id, allowedAssetIds));
       if (assetId) {
         if (allowedAssetIds.length && !allowedAssetIds.includes(assetId)) throw new ApiError(403, "No tienes acceso al punto de medición indicado.");
@@ -69,40 +69,38 @@ export async function GET(request: NextRequest) {
       const where = and(...filters);
       const [items, totals] = await Promise.all([
         db.select({
-          id: channels.id,
+          id: readings.id,
+          recordedAt: readings.recordedAt,
+          receivedAt: readings.receivedAt,
           code: channels.code,
           name: channels.name,
           zone: channels.zone,
           unit: channels.unit,
-          lastRecordedAt: sql<Date | null>`max(${readings.recordedAt})`,
-          lastValue: sql<string | null>`(array_agg(${readings.value} order by ${readings.recordedAt} desc) filter (where ${readings.id} is not null))[1]`,
-          averageValue: sql<string | null>`avg(${readings.value})`,
-          minimumValue: sql<string | null>`min(${readings.value})`,
-          maximumValue: sql<string | null>`max(${readings.value})`,
-          validSamples: sql<number>`count(${readings.id}) filter (where ${readings.quality} = 'good')`,
-          totalSamples: count(readings.id),
+          value: readings.value,
+          rawValue: readings.rawValue,
+          quality: readings.quality,
+          qualityFlags: readings.qualityFlags,
+          sequence: readings.sequence,
         })
-          .from(channels)
+          .from(readings)
+          .innerJoin(channels, eq(channels.id, readings.channelId))
           .innerJoin(assets, eq(assets.id, channels.assetId))
-          .leftJoin(readings, and(eq(readings.channelId, channels.id), between(readings.recordedAt, from, to)))
           .where(where)
-          .groupBy(channels.id)
-          .orderBy(asc(channels.displayOrder))
+          .orderBy(desc(readings.recordedAt), desc(readings.id))
           .limit(queryLimit)
           .offset(queryOffset),
-        db.select({ total: count() }).from(channels).innerJoin(assets, eq(assets.id, channels.assetId)).where(where),
+        db.select({ total: count() }).from(readings).innerJoin(channels, eq(channels.id, readings.channelId)).innerJoin(assets, eq(assets.id, channels.assetId)).where(where),
       ]);
       const total = Number(totals[0]?.total ?? 0);
       if (exporting) return csvResponse("hoitlive-historico-mediciones.csv", [
-        ["canal", "nombre", "zona", "ultima_lectura_utc", "ultimo_valor", "promedio", "minimo", "maximo", "unidad", "muestras_validas", "muestras_totales"],
-        ...items.map((item) => [item.code, item.name, item.zone, item.lastRecordedAt?.toISOString() ?? null, item.lastValue, item.averageValue, item.minimumValue, item.maximumValue, item.unit, Number(item.validSamples), Number(item.totalSamples)]),
+        ["fecha_medicion_utc", "fecha_recepcion_utc", "canal", "nombre", "zona", "valor", "unidad", "valor_crudo", "calidad", "banderas", "secuencia"],
+        ...items.map((item) => [item.recordedAt.toISOString(), item.receivedAt.toISOString(), item.code, item.name, item.zone, item.value, item.unit, item.rawValue, item.quality, item.qualityFlags.join("|"), item.sequence]),
       ]);
       return Response.json({
         items: items.map((item) => ({
           ...item,
-          lastRecordedAt: item.lastRecordedAt?.toISOString() ?? null,
-          qualityPercent: Number(item.totalSamples) ? Math.round(Number(item.validSamples) / Number(item.totalSamples) * 10_000) / 100 : null,
-          totalSamples: Number(item.totalSamples),
+          recordedAt: item.recordedAt.toISOString(),
+          receivedAt: item.receivedAt.toISOString(),
         })),
         page,
         pageSize,

@@ -59,6 +59,10 @@ test("keeps the production portal free of starter preview code", async () => {
     readFile(new URL("../app/api/v1/gateway-credentials/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/v1/gateway-credentials/[id]/route.ts", import.meta.url), "utf8"),
   ]);
+  const [historyApi, alarmActionApi] = await Promise.all([
+    readFile(new URL("../app/api/v1/history/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/v1/alarms/[id]/route.ts", import.meta.url), "utf8"),
+  ]);
 
   assert.match(page, /ReportsView as DatabaseReportsView/);
   assert.match(page, /function OperationalHierarchyView\(/);
@@ -108,6 +112,14 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(page, /function HistoryView/);
   assert.match(page, /type="date"/);
   assert.match(page, /<Pagination/);
+  assert.match(page, /Fecha y hora/);
+  assert.match(page, /requestAlarmClose/);
+  assert.match(page, /Nota de cierre obligatoria/);
+  assert.match(historyApi, /\.from\(readings\)/);
+  assert.match(historyApi, /orderBy\(desc\(readings\.recordedAt\), desc\(readings\.id\)\)/);
+  assert.doesNotMatch(historyApi, /groupBy\(channels\.id\)/);
+  assert.match(alarmActionApi, /status: "closed"/);
+  assert.match(alarmActionApi, /Agrega una nota de cierre/);
   assert.match(page, /Quitar acceso/);
   assert.match(page, /URLSearchParams/);
   assert.match(reports, /report-preview/);
