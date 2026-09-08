@@ -121,6 +121,7 @@ type PortalSessionUser = {
   displayName: string;
   roleKey: "administrator" | "engineer" | "operator" | "viewer";
   roleName: UserRole;
+  mustChangePassword: boolean;
   clientId: string;
   clientCode: string;
   clientName: string;
@@ -1111,7 +1112,7 @@ function UsersView({ currentUserId, sites, activeSiteId }: { currentUserId: stri
   const confirm = useConfirm();
   const currentRole = useActiveRole();
   const manageableSites = sites.filter((site) => site.roleKey === "administrator");
-  type UserRow = { id: string; displayName: string; email: string; status: "active" | "suspended" | "invited"; lastLoginAt: string | null; createdAt: string; role: { key: "administrator" | "engineer" | "operator" | "viewer"; name: UserRole }; siteIds: string[] };
+  type UserRow = { id: string; displayName: string; email: string; status: "active" | "suspended" | "invited"; mustChangePassword: boolean; lastLoginAt: string | null; createdAt: string; role: { key: "administrator" | "engineer" | "operator" | "viewer"; name: UserRole }; siteIds: string[] };
   type UserResult = PaginationMeta & { items: UserRow[]; summary: { total: number; active: number; administrators: number; invited: number } };
   const blankForm = { displayName: "", email: "", password: "", role: "operator" as UserRow["role"]["key"], status: "active" as UserRow["status"], siteIds: [activeSiteId] };
   const [result, setResult] = useState<UserResult | null>(null);
@@ -1157,7 +1158,7 @@ function UsersView({ currentUserId, sites, activeSiteId }: { currentUserId: stri
         method: editingId ? "PATCH" : "POST",
         body: JSON.stringify(form),
       });
-      notify(editingId ? "Usuario actualizado en la base de datos." : "Usuario creado y habilitado para iniciar sesión.");
+      notify(editingId ? (form.password ? "Contraseña temporal asignada; el usuario deberá cambiarla al ingresar." : "Usuario actualizado en la base de datos.") : "Usuario creado; deberá cambiar su contraseña temporal al ingresar.");
       setShowForm(false);
       setEditingId(null);
       setForm(blankForm);
@@ -1192,11 +1193,11 @@ function UsersView({ currentUserId, sites, activeSiteId }: { currentUserId: stri
       <section className="module-summary-grid user-summary-grid"><article><span className="module-summary-icon blue"><Users size={19} /></span><div><small>Usuarios registrados</small><strong>{result?.summary.total ?? 0}</strong><span>{result?.summary.active ?? 0} activos</span></div></article><article><span className="module-summary-icon green"><ShieldCheck size={19} /></span><div><small>Administradores</small><strong>{result?.summary.administrators ?? 0}</strong><span>Acceso total</span></div></article><article><span className="module-summary-icon amber"><Mail size={19} /></span><div><small>Invitaciones pendientes</small><strong>{result?.summary.invited ?? 0}</strong><span>Sin primer acceso</span></div></article></section>
       <article className="panel module-panel users-module">
         <div className="module-toolbar"><div><span className="eyebrow">Control de acceso</span><h2>Equipo con acceso al portal</h2></div><button className="primary-button" onClick={showForm ? () => setShowForm(false) : openCreate}><UserPlus size={16} />{showForm ? "Cancelar" : "Crear usuario"}</button></div>
-        {showForm && <form className="user-editor-form" onSubmit={submitUser}><div><span className="eyebrow">{editingId ? "Editar acceso" : "Nuevo acceso"}</span><h3>{editingId ? "Actualizar usuario" : "Crear usuario conectado a PostgreSQL"}</h3></div><label><span>Nombre completo</span><input required minLength={3} value={form.displayName} onChange={(event) => setForm({ ...form, displayName: event.target.value })} /></label><label><span>Correo electrónico</span><input type="email" required value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label><label><span>{editingId ? "Nueva contraseña (opcional)" : "Contraseña inicial"}</span><input type="password" required={!editingId} minLength={10} autoComplete="new-password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} placeholder="Mínimo 10 caracteres" /></label><label><span>Perfil</span><select value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value as UserRow["role"]["key"] })}><option value="administrator">Administrador</option><option value="engineer">Ingeniero</option><option value="operator">Operador</option><option value="viewer">Solo lectura</option></select></label><label><span>Estado</span><select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as UserRow["status"] })}><option value="active">Activo</option><option value="suspended">Suspendido</option><option value="invited">Invitado</option></select></label><fieldset className="user-site-access"><legend>Sitios autorizados</legend><p>El perfil seleccionado se aplicará en cada sitio donde tienes administración.</p><div>{manageableSites.map((site) => <label key={site.id} className={form.siteIds.includes(site.id) ? "selected" : ""}><input type="checkbox" checked={form.siteIds.includes(site.id)} onChange={() => toggleSite(site.id)} /><span><strong>{site.name}</strong><small>{site.clientName} · {site.code}</small></span></label>)}</div>{!form.siteIds.length && <small className="field-error">Selecciona al menos un sitio.</small>}</fieldset><div className="user-editor-actions"><button type="button" className="secondary-button" onClick={() => setShowForm(false)}>Cancelar</button><button type="submit" className="primary-button" disabled={saving || !form.siteIds.length}>{saving ? "Guardando…" : editingId ? "Guardar cambios" : "Crear usuario"}</button></div></form>}
+        {showForm && <form className="user-editor-form" onSubmit={submitUser}><div><span className="eyebrow">{editingId ? "Editar acceso" : "Nuevo acceso"}</span><h3>{editingId ? "Actualizar usuario" : "Crear usuario conectado a PostgreSQL"}</h3></div><label><span>Nombre completo</span><input required minLength={3} value={form.displayName} onChange={(event) => setForm({ ...form, displayName: event.target.value })} /></label><label><span>Correo electrónico</span><input type="email" required value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label><label><span>{editingId ? "Nueva contraseña temporal (opcional)" : "Contraseña temporal"}</span><input type="password" required={!editingId} minLength={10} autoComplete="new-password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} placeholder="Mínimo 10 caracteres" /><small>{editingId ? "Si defines una nueva, se cerrarán sus sesiones y deberá cambiarla al ingresar." : "El usuario deberá reemplazarla durante su primer acceso."}</small></label><label><span>Perfil</span><select value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value as UserRow["role"]["key"] })}><option value="administrator">Administrador</option><option value="engineer">Ingeniero</option><option value="operator">Operador</option><option value="viewer">Solo lectura</option></select></label><label><span>Estado</span><select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as UserRow["status"] })}><option value="active">Activo</option><option value="suspended">Suspendido</option><option value="invited">Invitado</option></select></label><fieldset className="user-site-access"><legend>Sitios autorizados</legend><p>El perfil seleccionado se aplicará en cada sitio donde tienes administración.</p><div>{manageableSites.map((site) => <label key={site.id} className={form.siteIds.includes(site.id) ? "selected" : ""}><input type="checkbox" checked={form.siteIds.includes(site.id)} onChange={() => toggleSite(site.id)} /><span><strong>{site.name}</strong><small>{site.clientName} · {site.code}</small></span></label>)}</div>{!form.siteIds.length && <small className="field-error">Selecciona al menos un sitio.</small>}</fieldset><div className="user-editor-actions"><button type="button" className="secondary-button" onClick={() => setShowForm(false)}>Cancelar</button><button type="submit" className="primary-button" disabled={saving || !form.siteIds.length}>{saving ? "Guardando…" : editingId ? "Guardar cambios" : "Crear usuario"}</button></div></form>}
         <div className="user-list-toolbar"><label className="search-field"><Search size={17} /><input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="Buscar por nombre o correo…" /></label><label className="status-filter"><span>Estado</span><select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPage(1); }}><option value="all">Todos</option><option value="active">Activos</option><option value="suspended">Suspendidos</option><option value="invited">Invitados</option></select><ChevronDown size={13} /></label></div>
         {error && <div className="data-error"><AlertTriangle size={18} /><div><strong>No se pudieron cargar los usuarios</strong><p>{error}</p></div></div>}
         {loading && <div className="data-loading"><Refresh className="spin" size={18} /> Consultando usuarios…</div>}
-        {!loading && !error && <><div className="module-table-wrap"><div className="users-table"><div className="module-table-head"><span>Usuario</span><span>Rol</span><span>Sitios</span><span>Estado</span><span>Último acceso</span><span>Acciones</span></div>{result?.items.map((user) => <div className="module-table-row" key={user.id}><span className="user-identity"><b>{user.displayName.split(" ").map((part) => part[0]).slice(0, 2).join("").toUpperCase()}</b><span><strong>{user.displayName}{user.id === currentUserId ? " · Tú" : ""}</strong><small>{user.email}</small></span></span><span><i className="role-chip">{user.role.name}</i></span><span><i className="site-count-chip">{user.siteIds.length} {user.siteIds.length === 1 ? "sitio" : "sitios"}</i></span><span><i className={`user-status status-${user.status}`}>{user.status === "active" ? "Activo" : user.status === "suspended" ? "Suspendido" : "Invitado"}</i></span><span>{formatDateTime(user.lastLoginAt)}</span><span className="row-actions"><button className="ghost-button" onClick={() => openEdit(user)}><Pencil size={14} /> Editar</button><button className="icon-danger-button" disabled={user.id === currentUserId} onClick={() => deleteUser(user)} aria-label={`Quitar acceso de ${user.displayName} al sitio activo`}><Trash size={15} /></button></span></div>)}{result?.items.length === 0 && <TableEmptyState title="No hay usuarios con estos filtros" detail="Cambia la búsqueda o crea un nuevo acceso." />}</div></div>{result && <Pagination page={result.page} totalPages={result.totalPages} total={result.total} pageSize={result.pageSize} onPageChange={setPage} itemLabel="usuarios" />}</>}
+        {!loading && !error && <><div className="module-table-wrap"><div className="users-table"><div className="module-table-head"><span>Usuario</span><span>Rol</span><span>Sitios</span><span>Estado</span><span>Último acceso</span><span>Acciones</span></div>{result?.items.map((user) => <div className="module-table-row" key={user.id}><span className="user-identity"><b>{user.displayName.split(" ").map((part) => part[0]).slice(0, 2).join("").toUpperCase()}</b><span><strong>{user.displayName}{user.id === currentUserId ? " · Tú" : ""}</strong><small>{user.email}</small></span></span><span><i className="role-chip">{user.role.name}</i></span><span><i className="site-count-chip">{user.siteIds.length} {user.siteIds.length === 1 ? "sitio" : "sitios"}</i></span><span className="user-security-state"><i className={`user-status status-${user.status}`}>{user.status === "active" ? "Activo" : user.status === "suspended" ? "Suspendido" : "Invitado"}</i>{user.mustChangePassword && <small>Cambio requerido</small>}</span><span>{formatDateTime(user.lastLoginAt)}</span><span className="row-actions"><button className="ghost-button" onClick={() => openEdit(user)}><Pencil size={14} /> Editar</button><button className="icon-danger-button" disabled={user.id === currentUserId} onClick={() => deleteUser(user)} aria-label={`Quitar acceso de ${user.displayName} al sitio activo`}><Trash size={15} /></button></span></div>)}{result?.items.length === 0 && <TableEmptyState title="No hay usuarios con estos filtros" detail="Cambia la búsqueda o crea un nuevo acceso." />}</div></div>{result && <Pagination page={result.page} totalPages={result.totalPages} total={result.total} pageSize={result.pageSize} onPageChange={setPage} itemLabel="usuarios" />}</>}
         <div className="role-matrix"><div><span className="eyebrow">Matriz de permisos</span><h3>Alcance de cada rol</h3></div><div className="role-matrix-grid"><span><strong>Administrador</strong><small>Configuración, usuarios y operación completa</small></span><span><strong>Ingeniero</strong><small>Diagnóstico, umbrales y reportes</small></span><span><strong>Operador</strong><small>Supervisión y reconocimiento de alarmas</small></span><span><strong>Solo lectura</strong><small>Consulta sin capacidad de modificación</small></span></div></div>
       </article>
     </>
@@ -1208,12 +1209,30 @@ function NotificationsView({ canWrite }: { canWrite: boolean }) {
   const confirm = useConfirm();
   return <DatabaseNotificationsView canWrite={canWrite} notify={notify} confirm={confirm} />;
 }
+function AuthFrame({ children }: { children: React.ReactNode }) {
+  return <main className="login-shell">
+    <section className="login-brand-panel" aria-label="HoitLive Core">
+      <header className="login-brand-identity"><span className="login-brand-mark"><Zap size={25} strokeWidth={2.3} /></span><span><strong>HoitLive</strong><b>Core</b></span></header>
+      <div className="login-brand-message"><span className="login-product-label"><i /> Plataforma de monitoreo de condición</span><h1>Visibilidad operacional para activos críticos.</h1><p>Información confiable para supervisar, diagnosticar y actuar con oportunidad.</p></div>
+      <footer className="login-brand-footer"><span>HoitLive Core</span><small>Industrial condition intelligence</small></footer>
+    </section>
+    <section className="login-form-panel"><div className="login-card">
+      <div className="login-mobile-brand"><span className="login-brand-mark"><Zap size={21} strokeWidth={2.3} /></span><span><strong>HoitLive</strong><b>Core</b></span></div>
+      {children}
+      <div className="login-assurance"><ShieldCheck size={16} /><span>Conexión cifrada y sesión protegida</span></div>
+      <small className="login-product-meta">HoitLive Core · Monitoreo de condición eléctrica</small>
+    </div></section>
+  </main>;
+}
+
 function LoginScreen({ checking, onAuthenticated }: { checking: boolean; onAuthenticated: (user: PortalSessionUser) => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [recovery, setRecovery] = useState(false);
+  const [recoveryMessage, setRecoveryMessage] = useState("");
 
   const login = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -1229,27 +1248,91 @@ function LoginScreen({ checking, onAuthenticated }: { checking: boolean; onAuthe
     }
   };
 
-  return <main className="login-shell">
-    <section className="login-brand-panel" aria-label="HoitLive Core">
-      <header className="login-brand-identity"><span className="login-brand-mark"><Zap size={25} strokeWidth={2.3} /></span><span><strong>HoitLive</strong><b>Core</b></span></header>
-      <div className="login-brand-message"><span className="login-product-label"><i /> Plataforma de monitoreo de condición</span><h1>Visibilidad operacional para activos críticos.</h1><p>Información confiable para supervisar, diagnosticar y actuar con oportunidad.</p></div>
-      <footer className="login-brand-footer"><span>HoitLive Core</span><small>Industrial condition intelligence</small></footer>
-    </section>
-    <section className="login-form-panel">
-      <div className="login-card">
-        <div className="login-mobile-brand"><span className="login-brand-mark"><Zap size={21} strokeWidth={2.3} /></span><span><strong>HoitLive</strong><b>Core</b></span></div>
-        <header className="login-card-header"><span className="login-security-icon"><ShieldCheck size={21} /></span><span className="eyebrow">Acceso a la plataforma</span><h2>{checking ? "Validando tu sesión" : "Bienvenido"}</h2><p>{checking ? "Estamos comprobando tus credenciales de acceso." : "Ingresa con las credenciales asignadas por tu organización."}</p></header>
-        {checking ? <div className="login-checking"><Refresh className="spin" size={19} /><span><strong>Verificando acceso</strong><small>Esto tomará solo un momento.</small></span></div> : <form onSubmit={login}>
+  const requestRecovery = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSubmitting(true);
+    setError("");
+    try {
+      const response = await portalRequest<{ message: string }>("/api/v1/auth/password-reset/request", { method: "POST", body: JSON.stringify({ email }) });
+      setRecoveryMessage(response.message);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "No fue posible procesar la solicitud.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return <AuthFrame>
+        <header className="login-card-header"><span className="login-security-icon">{recovery ? <Key size={21} /> : <ShieldCheck size={21} />}</span><span className="eyebrow">{recovery ? "Recuperación de acceso" : "Acceso a la plataforma"}</span><h2>{checking ? "Validando tu sesión" : recovery ? "Recuperar contraseña" : "Bienvenido"}</h2><p>{checking ? "Estamos comprobando tus credenciales de acceso." : recovery ? "Te enviaremos un enlace seguro para crear una nueva contraseña." : "Ingresa con las credenciales asignadas por tu organización."}</p></header>
+        {checking ? <div className="login-checking"><Refresh className="spin" size={19} /><span><strong>Verificando acceso</strong><small>Esto tomará solo un momento.</small></span></div> : recoveryMessage ? <div className="password-reset-success"><CheckCircle2 size={22} /><span><strong>Revisa tu correo</strong><small>{recoveryMessage}</small></span><button type="button" className="login-link-button" onClick={() => { setRecovery(false); setRecoveryMessage(""); }}>Volver a iniciar sesión</button></div> : recovery ? <form onSubmit={requestRecovery}>
+          <label htmlFor="recovery-email"><span>Correo electrónico</span><div className="login-input-wrap"><Mail size={18} /><input id="recovery-email" type="email" inputMode="email" autoCapitalize="none" autoComplete="email" required autoFocus value={email} onChange={(event) => setEmail(event.target.value)} placeholder="nombre@empresa.cl" /></div></label>
+          {error && <div className="login-error" role="alert"><AlertTriangle size={17} /><span><strong>No pudimos procesar la solicitud</strong><small>{error}</small></span></div>}
+          <button className="login-submit" type="submit" disabled={submitting}>{submitting ? <><Refresh className="spin" size={18} /> Enviando…</> : <>Enviar enlace seguro <ChevronRight size={18} /></>}</button>
+          <button type="button" className="login-link-button" onClick={() => { setRecovery(false); setError(""); }}>Volver a iniciar sesión</button>
+        </form> : <form onSubmit={login}>
           <label htmlFor="login-email"><span>Correo electrónico</span><div className="login-input-wrap"><Mail size={18} /><input id="login-email" type="email" inputMode="email" autoCapitalize="none" autoComplete="username" required autoFocus value={email} onChange={(event) => setEmail(event.target.value)} placeholder="nombre@empresa.cl" /></div></label>
-          <label htmlFor="login-password"><span>Contraseña</span><div className="login-input-wrap"><Key size={18} /><input id="login-password" type={showPassword ? "text" : "password"} autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Ingresa tu contraseña" aria-describedby={error ? "login-error" : undefined} /><button type="button" onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></label>
+          <label htmlFor="login-password"><span className="password-label-row"><span>Contraseña</span><button type="button" onClick={() => { setRecovery(true); setError(""); }}>¿Olvidaste tu contraseña?</button></span><div className="login-input-wrap"><Key size={18} /><input id="login-password" type={showPassword ? "text" : "password"} autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Ingresa tu contraseña" aria-describedby={error ? "login-error" : undefined} /><button type="button" onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></label>
           {error && <div className="login-error" id="login-error" role="alert"><AlertTriangle size={17} /><span><strong>No pudimos iniciar sesión</strong><small>{error}</small></span></div>}
           <button className="login-submit" type="submit" disabled={submitting}>{submitting ? <><Refresh className="spin" size={18} /> Verificando acceso…</> : <>Iniciar sesión <ChevronRight size={18} /></>}</button>
         </form>}
-        <div className="login-assurance"><ShieldCheck size={16} /><span>Conexión cifrada y sesión protegida</span></div>
-        <small className="login-product-meta">HoitLive Core · Monitoreo de condición eléctrica</small>
-      </div>
-    </section>
-  </main>;
+  </AuthFrame>;
+}
+
+function PasswordResetScreen({ token, onComplete }: { token: string; onComplete: () => void }) {
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [complete, setComplete] = useState(false);
+  const [error, setError] = useState("");
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault(); setSubmitting(true); setError("");
+    try {
+      await portalRequest("/api/v1/auth/password-reset/confirm", { method: "POST", body: JSON.stringify({ token, newPassword, confirmation }) });
+      setComplete(true);
+    } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "No fue posible cambiar la contraseña."); }
+    finally { setSubmitting(false); }
+  };
+  return <AuthFrame>
+    <header className="login-card-header"><span className="login-security-icon"><Key size={21} /></span><span className="eyebrow">Recuperación de acceso</span><h2>{complete ? "Contraseña actualizada" : "Crea una nueva contraseña"}</h2><p>{complete ? "El enlace ya fue utilizado y todas las sesiones anteriores fueron cerradas." : "Define una contraseña diferente a la anterior para recuperar tu cuenta."}</p></header>
+    {complete ? <div className="password-reset-success"><CheckCircle2 size={22} /><span><strong>Acceso recuperado</strong><small>Ya puedes ingresar con tu nueva contraseña.</small></span><button type="button" className="login-submit" onClick={onComplete}>Ir al inicio de sesión <ChevronRight size={18} /></button></div> : <form onSubmit={submit}>
+      <label><span>Nueva contraseña</span><div className="login-input-wrap"><Key size={18} /><input type={showPassword ? "text" : "password"} minLength={10} autoComplete="new-password" required autoFocus value={newPassword} onChange={(event) => setNewPassword(event.target.value)} placeholder="Mínimo 10 caracteres" /><button type="button" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? "Ocultar contraseñas" : "Mostrar contraseñas"}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></label>
+      <label><span>Confirmar contraseña</span><div className="login-input-wrap"><Key size={18} /><input type={showPassword ? "text" : "password"} minLength={10} autoComplete="new-password" required value={confirmation} onChange={(event) => setConfirmation(event.target.value)} placeholder="Repite la nueva contraseña" /></div></label>
+      <small className="password-policy-note"><ShieldCheck size={15} /> Usa al menos 10 caracteres y no reutilices tu contraseña anterior.</small>
+      {error && <div className="login-error" role="alert"><AlertTriangle size={17} /><span><strong>No pudimos actualizarla</strong><small>{error}</small></span></div>}
+      <button className="login-submit" type="submit" disabled={submitting}>{submitting ? <><Refresh className="spin" size={18} /> Actualizando…</> : <>Guardar nueva contraseña <ChevronRight size={18} /></>}</button>
+    </form>}
+  </AuthFrame>;
+}
+
+function RequiredPasswordChangeScreen({ user, onChanged, onLogout }: { user: PortalSessionUser; onChanged: (user: PortalSessionUser) => void; onLogout: () => void }) {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault(); setSubmitting(true); setError("");
+    try {
+      const response = await portalRequest<{ user: PortalSessionUser }>("/api/v1/auth/change-required-password", { method: "POST", body: JSON.stringify({ currentPassword, newPassword, confirmation }) });
+      onChanged(response.user);
+    } catch (requestError) { setError(requestError instanceof Error ? requestError.message : "No fue posible cambiar la contraseña."); }
+    finally { setSubmitting(false); }
+  };
+  return <AuthFrame>
+    <header className="login-card-header"><span className="login-security-icon"><ShieldCheck size={21} /></span><span className="eyebrow">Primer acceso protegido</span><h2>Cambia tu contraseña</h2><p>La contraseña asignada es temporal. Debes reemplazarla antes de entrar al portal.</p></header>
+    <div className="required-password-user"><span>{user.displayName.split(" ").map((part) => part[0]).slice(0, 2).join("").toUpperCase()}</span><div><strong>{user.displayName}</strong><small>{user.email}</small></div></div>
+    <form onSubmit={submit}>
+      <label><span>Contraseña temporal</span><div className="login-input-wrap"><Key size={18} /><input type={showPassword ? "text" : "password"} autoComplete="current-password" required autoFocus value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} placeholder="Contraseña entregada por el administrador" /><button type="button" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? "Ocultar contraseñas" : "Mostrar contraseñas"}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></label>
+      <label><span>Nueva contraseña</span><div className="login-input-wrap"><Key size={18} /><input type={showPassword ? "text" : "password"} minLength={10} autoComplete="new-password" required value={newPassword} onChange={(event) => setNewPassword(event.target.value)} placeholder="Mínimo 10 caracteres" /></div></label>
+      <label><span>Confirmar nueva contraseña</span><div className="login-input-wrap"><Key size={18} /><input type={showPassword ? "text" : "password"} minLength={10} autoComplete="new-password" required value={confirmation} onChange={(event) => setConfirmation(event.target.value)} placeholder="Repite la nueva contraseña" /></div></label>
+      <small className="password-policy-note"><ShieldCheck size={15} /> Al guardar, se cerrará cualquier otra sesión de esta cuenta.</small>
+      {error && <div className="login-error" role="alert"><AlertTriangle size={17} /><span><strong>No pudimos completar el cambio</strong><small>{error}</small></span></div>}
+      <button className="login-submit" type="submit" disabled={submitting}>{submitting ? <><Refresh className="spin" size={18} /> Protegiendo cuenta…</> : <>Cambiar y continuar <ChevronRight size={18} /></>}</button>
+      <button type="button" className="login-link-button" onClick={onLogout}>Cerrar sesión</button>
+    </form>
+  </AuthFrame>;
 }
 
 export default function Home() {
@@ -1270,6 +1353,7 @@ export default function Home() {
   const [hierarchyLoading, setHierarchyLoading] = useState(false);
   const [activePointId, setActivePointId] = useState("");
   const [authState, setAuthState] = useState<"checking" | "authenticated" | "anonymous">("checking");
+  const [passwordResetToken, setPasswordResetToken] = useState("");
   const [notice, setNotice] = useState<{ id: number; message: string; tone: NoticeTone } | null>(null);
   const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null);
   const noticeTimer = useRef<number | null>(null);
@@ -1285,12 +1369,19 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    const route = new URL(window.location.href);
+    const resetToken = new URLSearchParams(route.hash.replace(/^#/, "")).get("token");
+    if (route.searchParams.get("action") === "reset-password" && resetToken) {
+      window.queueMicrotask(() => { setPasswordResetToken(resetToken); setAuthState("anonymous"); });
+      return;
+    }
     let active = true;
     portalRequest<{ user: PortalSessionUser }>("/api/v1/auth/session")
       .then(async (response) => {
         if (!active) return;
         setSessionUser(response.user);
         setAuthState("authenticated");
+        if (response.user.mustChangePassword) return;
         setHierarchyLoading(true);
         try {
           const data = await portalRequest<PortalHierarchy>("/api/v1/hierarchy");
@@ -1464,7 +1555,14 @@ export default function Home() {
     }
   };
 
-  if (authState !== "authenticated" || !sessionUser) return <LoginScreen checking={authState === "checking"} onAuthenticated={(user) => { setSessionUser(user); setAuthState("authenticated"); void loadHierarchy(); }} />;
+  if (passwordResetToken) return <PasswordResetScreen token={passwordResetToken} onComplete={() => {
+    const url = new URL(window.location.href); url.searchParams.delete("action"); url.hash = ""; window.history.replaceState({}, "", url);
+    setPasswordResetToken(""); setSessionUser(null); setAuthState("anonymous");
+  }} />;
+  if (authState !== "authenticated" || !sessionUser) return <LoginScreen checking={authState === "checking"} onAuthenticated={(user) => {
+    setSessionUser(user); setAuthState("authenticated"); if (!user.mustChangePassword) void loadHierarchy();
+  }} />;
+  if (sessionUser.mustChangePassword) return <RequiredPasswordChangeScreen user={sessionUser} onChanged={(user) => { setSessionUser(user); void loadHierarchy(); }} onLogout={() => void logout()} />;
   const activeRole = sessionUser.roleName;
   const activePoint = hierarchy?.points.find((point) => point.id === activePointId && point.active) ?? hierarchy?.points.find((point) => point.active);
   const activeGateway = hierarchy?.gateways.find((gateway) => gateway.active);

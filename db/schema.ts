@@ -140,12 +140,28 @@ export const authIdentities = pgTable("auth_identities", {
   provider: identityProviderEnum("provider").notNull(),
   providerSubject: varchar("provider_subject", { length: 320 }).notNull(),
   passwordHash: text("password_hash"),
+  mustChangePassword: boolean("must_change_password").default(false).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("auth_identities_provider_subject_uidx").on(table.provider, table.providerSubject),
   index("auth_identities_user_idx").on(table.userId),
   check("auth_identities_password_chk", sql`(${table.provider} = 'local' AND ${table.passwordHash} IS NOT NULL) OR (${table.provider} <> 'local' AND ${table.passwordHash} IS NULL)`),
+]);
+
+export const passwordResetTokens = pgTable("password_reset_tokens", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  tokenHash: varchar("token_hash", { length: 64 }).notNull(),
+  requestedIp: varchar("requested_ip", { length: 64 }),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  usedAt: timestamp("used_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("password_reset_tokens_hash_uidx").on(table.tokenHash),
+  index("password_reset_tokens_user_created_idx").on(table.userId, table.createdAt),
+  index("password_reset_tokens_expiry_idx").on(table.expiresAt),
+  check("password_reset_tokens_expiry_chk", sql`${table.expiresAt} > ${table.createdAt}`),
 ]);
 
 export const gatewayApiCredentials = pgTable("gateway_api_credentials", {

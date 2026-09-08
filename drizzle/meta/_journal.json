@@ -64,6 +64,13 @@
       "when": 1788745003374,
       "tag": "0008_sloppy_mister_sinister",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1788891803337,
+      "tag": "0009_cuddly_infant_terrible",
+      "breakpoints": true
     }
   ]
 }

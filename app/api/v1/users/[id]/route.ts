@@ -1,9 +1,10 @@
 import type { NextRequest } from "next/server";
-import { and, count, eq, ilike, inArray } from "drizzle-orm";
+import { and, count, eq, ilike, inArray, isNull } from "drizzle-orm";
 import { hashPassword, normalizeEmail } from "../../../../../db/auth";
 import {
   auditLogs,
   authIdentities,
+  authSessions,
   roles,
   sites,
   userClientAssignments,
@@ -23,11 +24,13 @@ async function getTarget(db: Awaited<ReturnType<typeof requireApiSession>>["db"]
     displayName: users.displayName,
     email: users.email,
     status: users.status,
+    mustChangePassword: authIdentities.mustChangePassword,
     roleKey: roles.key,
     roleName: roles.name,
   }).from(users)
     .leftJoin(userRoleAssignments, eq(userRoleAssignments.userId, users.id))
     .leftJoin(roles, eq(roles.id, userRoleAssignments.roleId))
+    .leftJoin(authIdentities, and(eq(authIdentities.userId, users.id), eq(authIdentities.provider, "local")))
     .where(and(eq(users.id, id), eq(userRoleAssignments.siteId, siteId)))
     .limit(1);
   if (!target) throw new ApiError(404, "El usuario no existe.");
@@ -72,6 +75,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     if (selectedSites.length !== requestedSiteIds.length) throw new ApiError(403, "Uno o más sitios seleccionados están fuera de tu alcance.");
     if (actor.id === id && status !== "active") throw new ApiError(409, "No puedes suspender tu propia cuenta.");
     if (actor.id === id && !requestedSiteIds.includes(actor.siteId)) throw new ApiError(409, "No puedes retirar tu propio acceso al sitio activo.");
+    if (actor.id === id && password) throw new ApiError(409, "Cambia tu propia contraseña desde Mi cuenta.");
     const adminSitesAtRisk = currentScopeRows
       .filter((scope) => scope.roleKey === "administrator" && (roleKey !== "administrator" || status !== "active" || !requestedSiteIds.includes(scope.siteId ?? "")))
       .map((scope) => scope.siteId)
@@ -85,7 +89,8 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       const [role] = await tx.select().from(roles).where(eq(roles.key, roleKey)).limit(1);
       if (!role) throw new ApiError(400, "El perfil seleccionado no existe.");
       const [record] = await tx.update(users).set({ displayName, email, status: status as typeof VALID_STATUSES[number], updatedAt: new Date() }).where(eq(users.id, id)).returning();
-      await tx.update(authIdentities).set({ providerSubject: email, ...(passwordHash ? { passwordHash } : {}), updatedAt: new Date() }).where(and(eq(authIdentities.userId, id), eq(authIdentities.provider, "local")));
+      await tx.update(authIdentities).set({ providerSubject: email, ...(passwordHash ? { passwordHash, mustChangePassword: true } : {}), updatedAt: new Date() }).where(and(eq(authIdentities.userId, id), eq(authIdentities.provider, "local")));
+      if (passwordHash) await tx.update(authSessions).set({ revokedAt: new Date() }).where(and(eq(authSessions.userId, id), isNull(authSessions.revokedAt)));
       await tx.delete(userRoleAssignments).where(and(eq(userRoleAssignments.userId, id), inArray(userRoleAssignments.siteId, actorSiteIds)));
       await tx.insert(userRoleAssignments).values(requestedSiteIds.map((siteId) => ({ userId: id, roleId: role.id, siteId, grantedBy: actor.id })));
       const actorClientIds = [...new Set(actor.sites.filter((site) => site.roleKey === "administrator").map((site) => site.clientId))];
@@ -113,7 +118,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         ipAddress: metadata.ipAddress,
         userAgent: metadata.userAgent,
         before: { email: target.email, displayName: target.displayName, status: target.status, role: target.roleKey },
-        after: { email, displayName, status, role: roleKey, siteIds: requestedSiteIds, passwordChanged: Boolean(passwordHash) },
+        after: { email, displayName, status, role: roleKey, siteIds: requestedSiteIds, passwordChanged: Boolean(passwordHash), passwordChangeRequired: passwordHash ? true : target.mustChangePassword },
       });
       return { ...record, role: { key: role.key, name: role.name } };
     });
@@ -125,6 +130,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       status: updated.status,
       lastLoginAt: updated.lastLoginAt?.toISOString() ?? null,
       createdAt: updated.createdAt.toISOString(),
+      mustChangePassword: passwordHash ? true : target.mustChangePassword ?? false,
       role: updated.role,
       siteIds: requestedSiteIds,
     }, { headers: { "Cache-Control": "no-store" } });

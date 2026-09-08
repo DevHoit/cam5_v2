@@ -27,6 +27,7 @@ const expectedTables = [
   "notification_endpoints",
   "notification_deliveries",
   "notification_policies",
+  "password_reset_tokens",
   "permissions",
   "physical_inputs",
   "reading_profile_ranges",
@@ -53,7 +54,7 @@ const expectedTables = [
 test("applies the CAM5 PostgreSQL migration with access profiles and telemetry constraints", async () => {
   const database = new PGlite();
   try {
-    for (const filename of ["0000_cam5_initial_schema.sql", "0001_eager_blockbuster.sql", "0002_sparkling_wallow.sql", "0003_rich_charles_xavier.sql", "0004_windy_gauntlet.sql", "0005_milky_caretaker.sql", "0006_smiling_frightful_four.sql", "0007_big_frightful_four.sql", "0008_sloppy_mister_sinister.sql"]) {
+    for (const filename of ["0000_cam5_initial_schema.sql", "0001_eager_blockbuster.sql", "0002_sparkling_wallow.sql", "0003_rich_charles_xavier.sql", "0004_windy_gauntlet.sql", "0005_milky_caretaker.sql", "0006_smiling_frightful_four.sql", "0007_big_frightful_four.sql", "0008_sloppy_mister_sinister.sql", "0009_cuddly_infant_terrible.sql"]) {
       const migration = await readFile(new URL(`../drizzle/${filename}`, import.meta.url), "utf8");
       await database.exec(migration.replaceAll("--> statement-breakpoint", ""));
     }
@@ -100,6 +101,21 @@ test("applies the CAM5 PostgreSQL migration with access profiles and telemetry c
       order by column_name
     `);
     assert.deepEqual(deliveryColumns.rows.map((row) => row.column_name), ["alarm_event_id", "dedupe_key", "event_type", "max_attempts", "next_attempt_at", "payload", "policy_id", "subject"]);
+
+    const authColumns = await database.query(`
+      select column_name, is_nullable
+      from information_schema.columns
+      where table_schema = 'public'
+        and ((table_name = 'auth_identities' and column_name = 'must_change_password')
+          or (table_name = 'password_reset_tokens' and column_name in ('token_hash', 'expires_at', 'used_at')))
+      order by table_name, column_name
+    `);
+    assert.deepEqual(authColumns.rows, [
+      { column_name: "must_change_password", is_nullable: "NO" },
+      { column_name: "expires_at", is_nullable: "NO" },
+      { column_name: "token_hash", is_nullable: "NO" },
+      { column_name: "used_at", is_nullable: "YES" },
+    ]);
 
     const reportRunColumns = await database.query(`
       select column_name, is_nullable

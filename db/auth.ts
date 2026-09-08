@@ -7,6 +7,7 @@ import {
   authSessions,
   clients,
   permissions,
+  passwordResetTokens,
   rolePermissions,
   roles,
   sites,
@@ -17,6 +18,7 @@ import {
 const scrypt = promisify(nodeScrypt);
 const PASSWORD_KEY_LENGTH = 64;
 const SESSION_HOURS = 12;
+export const PASSWORD_RESET_MINUTES = 30;
 
 export const SESSION_COOKIE_NAME = "cam5_session";
 
@@ -27,6 +29,7 @@ export type AuthenticatedPortalUser = {
   status: "invited" | "active" | "suspended";
   roleKey: "administrator" | "engineer" | "operator" | "viewer";
   roleName: "Administrador" | "Ingeniero" | "Operador" | "Solo lectura";
+  mustChangePassword: boolean;
   clientId: string;
   clientCode: string;
   clientName: string;
@@ -68,6 +71,85 @@ export async function verifyPassword(password: string, encoded: string): Promise
 
 export function hashSessionToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
+}
+
+export async function createPasswordResetToken(
+  db: Cam5Database,
+  email: string,
+  requestedIp?: string | null,
+  now = new Date(),
+) {
+  const normalizedEmail = normalizeEmail(email);
+  const [target] = await db.select({
+    userId: users.id,
+    email: users.email,
+    displayName: users.displayName,
+  }).from(users)
+    .innerJoin(authIdentities, and(eq(authIdentities.userId, users.id), eq(authIdentities.provider, "local")))
+    .where(and(eq(authIdentities.providerSubject, normalizedEmail), eq(users.status, "active")))
+    .limit(1);
+  if (!target) return null;
+
+  const throttleAfter = new Date(now.getTime() - 60_000);
+  const [recent] = await db.select({ id: passwordResetTokens.id }).from(passwordResetTokens)
+    .where(and(eq(passwordResetTokens.userId, target.userId), gt(passwordResetTokens.createdAt, throttleAfter)))
+    .limit(1);
+  if (recent) return null;
+
+  const token = randomBytes(32).toString("base64url");
+  const expiresAt = new Date(now.getTime() + PASSWORD_RESET_MINUTES * 60_000);
+  await db.transaction(async (tx) => {
+    await tx.update(passwordResetTokens).set({ usedAt: now })
+      .where(and(eq(passwordResetTokens.userId, target.userId), isNull(passwordResetTokens.usedAt)));
+    await tx.insert(passwordResetTokens).values({
+      userId: target.userId,
+      tokenHash: hashSessionToken(token),
+      requestedIp: requestedIp || null,
+      expiresAt,
+      createdAt: now,
+    });
+  });
+  return { ...target, token, expiresAt };
+}
+
+export async function consumePasswordResetToken(
+  db: Cam5Database,
+  token: string,
+  newPassword: string,
+  now = new Date(),
+) {
+  const tokenHash = hashSessionToken(token);
+  const [candidate] = await db.select({
+    id: passwordResetTokens.id,
+    userId: passwordResetTokens.userId,
+    passwordHash: authIdentities.passwordHash,
+  }).from(passwordResetTokens)
+    .innerJoin(users, eq(users.id, passwordResetTokens.userId))
+    .innerJoin(authIdentities, and(eq(authIdentities.userId, users.id), eq(authIdentities.provider, "local")))
+    .where(and(
+      eq(passwordResetTokens.tokenHash, tokenHash),
+      isNull(passwordResetTokens.usedAt),
+      gt(passwordResetTokens.expiresAt, now),
+      eq(users.status, "active"),
+    ))
+    .limit(1);
+  if (!candidate?.passwordHash) return null;
+  if (await verifyPassword(newPassword, candidate.passwordHash)) throw new Error("La nueva contraseña debe ser diferente de la anterior.");
+  const passwordHash = await hashPassword(newPassword);
+
+  return db.transaction(async (tx) => {
+    const [claimed] = await tx.update(passwordResetTokens).set({ usedAt: now })
+      .where(and(eq(passwordResetTokens.id, candidate.id), isNull(passwordResetTokens.usedAt), gt(passwordResetTokens.expiresAt, now)))
+      .returning({ id: passwordResetTokens.id });
+    if (!claimed) return null;
+    await tx.update(authIdentities).set({ passwordHash, mustChangePassword: false, updatedAt: now })
+      .where(and(eq(authIdentities.userId, candidate.userId), eq(authIdentities.provider, "local")));
+    await tx.update(authSessions).set({ revokedAt: now })
+      .where(and(eq(authSessions.userId, candidate.userId), isNull(authSessions.revokedAt)));
+    await tx.update(passwordResetTokens).set({ usedAt: now })
+      .where(and(eq(passwordResetTokens.userId, candidate.userId), isNull(passwordResetTokens.usedAt)));
+    return { userId: candidate.userId };
+  });
 }
 
 export async function createPortalSession(
@@ -163,9 +245,11 @@ export async function resolvePortalSession(db: Cam5Database, token: string): Pro
       email: users.email,
       displayName: users.displayName,
       status: users.status,
+      mustChangePassword: authIdentities.mustChangePassword,
     })
     .from(authSessions)
     .innerJoin(users, eq(users.id, authSessions.userId))
+    .leftJoin(authIdentities, and(eq(authIdentities.userId, users.id), eq(authIdentities.provider, "local")))
     .where(and(
       eq(authSessions.tokenHash, hashSessionToken(token)),
       isNull(authSessions.revokedAt),
@@ -233,6 +317,7 @@ export async function resolvePortalSession(db: Cam5Database, token: string): Pro
     status: session.status,
     roleKey: selected.roleKey as AuthenticatedPortalUser["roleKey"],
     roleName: selected.roleName as AuthenticatedPortalUser["roleName"],
+    mustChangePassword: session.mustChangePassword ?? false,
     clientId: selected.clientId,
     clientCode: selected.clientCode,
     clientName: selected.clientName,

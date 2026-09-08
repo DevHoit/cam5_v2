@@ -35,12 +35,14 @@ export async function GET(request: NextRequest) {
         status: users.status,
         lastLoginAt: users.lastLoginAt,
         createdAt: users.createdAt,
+        mustChangePassword: authIdentities.mustChangePassword,
         roleKey: roles.key,
         roleName: roles.name,
       })
         .from(users)
         .innerJoin(userRoleAssignments, eq(userRoleAssignments.userId, users.id))
         .innerJoin(roles, eq(roles.id, userRoleAssignments.roleId))
+        .leftJoin(authIdentities, and(eq(authIdentities.userId, users.id), eq(authIdentities.provider, "local")))
         .where(where)
         .orderBy(desc(users.createdAt))
         .limit(pageSize)
@@ -71,6 +73,7 @@ export async function GET(request: NextRequest) {
         status: record.status,
         lastLoginAt: record.lastLoginAt?.toISOString() ?? null,
         createdAt: record.createdAt.toISOString(),
+        mustChangePassword: record.mustChangePassword ?? false,
         role: { key: record.roleKey ?? "viewer", name: record.roleName ?? "Solo lectura" },
         siteIds: [...new Set(scopeRows.filter((scope) => scope.userId === record.id).map((scope) => scope.siteId).filter((siteId): siteId is string => Boolean(siteId)))],
       })),
@@ -116,7 +119,7 @@ export async function POST(request: NextRequest) {
       const [role] = await tx.select().from(roles).where(eq(roles.key, roleKey)).limit(1);
       if (!role) throw new ApiError(400, "El perfil seleccionado no existe en la base.");
       const [newUser] = await tx.insert(users).values({ email, displayName, status: status as typeof VALID_STATUSES[number] }).returning();
-      await tx.insert(authIdentities).values({ userId: newUser.id, provider: "local", providerSubject: email, passwordHash });
+      await tx.insert(authIdentities).values({ userId: newUser.id, provider: "local", providerSubject: email, passwordHash, mustChangePassword: true });
       const selectedClientIds = [...new Set(selectedSites.map((site) => site.clientId))];
       await tx.insert(userClientAssignments).values(selectedClientIds.map((clientId) => ({ userId: newUser.id, clientId, roleId: role.id, grantedBy: actor.id })));
       await tx.insert(userRoleAssignments).values(requestedSiteIds.map((siteId) => ({ userId: newUser.id, roleId: role.id, siteId, grantedBy: actor.id })));
@@ -141,6 +144,7 @@ export async function POST(request: NextRequest) {
       status: created.status,
       lastLoginAt: created.lastLoginAt?.toISOString() ?? null,
       createdAt: created.createdAt.toISOString(),
+      mustChangePassword: true,
       role: created.role,
       siteIds: requestedSiteIds,
     }, { status: 201, headers: { "Cache-Control": "no-store" } });

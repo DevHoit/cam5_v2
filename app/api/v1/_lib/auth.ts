@@ -12,12 +12,14 @@ export class ApiError extends Error {
 export async function requireApiSession(
   request: NextRequest,
   permission?: PortalPermission,
+  options: { allowPasswordChangeRequired?: boolean } = {},
 ): Promise<{ db: ReturnType<typeof getDb>; user: AuthenticatedPortalUser; token: string }> {
   const token = request.cookies.get(SESSION_COOKIE_NAME)?.value;
   if (!token) throw new ApiError(401, "Debes iniciar sesión.");
   const db = getDb();
   const user = await resolvePortalSession(db, token);
   if (!user) throw new ApiError(401, "La sesión expiró o ya no es válida.");
+  if (user.mustChangePassword && !options.allowPasswordChangeRequired) throw new ApiError(428, "Debes cambiar tu contraseña temporal antes de continuar.");
   if (permission && !user.permissions.includes(permission)) throw new ApiError(403, "No tienes permisos para realizar esta acción.");
   return { db, user, token };
 }

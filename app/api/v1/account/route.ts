@@ -89,7 +89,7 @@ export async function PATCH(request: NextRequest) {
     await db.transaction(async (tx) => {
       await tx.update(users).set({ displayName, updatedAt: new Date() }).where(eq(users.id, user.id));
       if (passwordHash) {
-        await tx.update(authIdentities).set({ passwordHash, updatedAt: new Date() }).where(and(eq(authIdentities.userId, user.id), eq(authIdentities.provider, "local")));
+        await tx.update(authIdentities).set({ passwordHash, mustChangePassword: false, updatedAt: new Date() }).where(and(eq(authIdentities.userId, user.id), eq(authIdentities.provider, "local")));
         await tx.update(authSessions).set({ revokedAt: new Date() }).where(and(
           eq(authSessions.userId, user.id),
           ne(authSessions.tokenHash, hashSessionToken(token)),

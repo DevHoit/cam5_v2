@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   try {
-    const { user } = await requireApiSession(request);
+    const { user } = await requireApiSession(request, undefined, { allowPasswordChangeRequired: true });
     return Response.json({ user }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return apiErrorResponse(error);
