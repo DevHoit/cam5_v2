@@ -10,6 +10,7 @@ import {
   physicalInputs,
   readingProfiles,
   registerDefinitions,
+  userChannelPreferences,
 } from "../../../../../db/schema";
 import { apiErrorResponse, ApiError, requireApiSession } from "../../_lib/auth";
 
@@ -69,11 +70,13 @@ export async function GET(request: NextRequest) {
       sequence: latestReadings.sequence,
       warningThreshold: alarmRules.warningThreshold,
       criticalThreshold: alarmRules.criticalThreshold,
+      visiblePreference: userChannelPreferences.visible,
     }).from(channels)
       .innerJoin(registerDefinitions, eq(registerDefinitions.id, channels.registerDefinitionId))
       .leftJoin(physicalInputs, eq(physicalInputs.id, channels.physicalInputId))
       .leftJoin(latestReadings, eq(latestReadings.channelId, channels.id))
       .leftJoin(alarmRules, eq(alarmRules.channelId, channels.id))
+      .leftJoin(userChannelPreferences, and(eq(userChannelPreferences.channelId, channels.id), eq(userChannelPreferences.userId, user.id)))
       .where(eq(channels.assetId, point.id))
       .orderBy(channels.displayOrder);
 
@@ -94,6 +97,7 @@ export async function GET(request: NextRequest) {
       inputSummary: { total: inputs.length, enabled: inputs.filter((input) => input.enabled).length, assigned: assignedInputIds.size },
       staleAfterSeconds,
       items: rows.map((row) => {
+        const { visiblePreference, ...channel } = row;
         const numericValue = row.value === null ? null : Number(row.value);
         const stale = !row.recordedAt || now.getTime() - row.recordedAt.getTime() > staleAfterSeconds * 1000;
         const quality = !row.enabled ? "disabled" : stale && row.quality === "good" ? "stale" : row.quality;
@@ -105,7 +109,8 @@ export async function GET(request: NextRequest) {
               ? "warning"
               : "normal";
         return {
-          ...row,
+          ...channel,
+          visible: row.enabled && (visiblePreference ?? true),
           value: numericValue,
           quality: quality ?? (row.enabled ? "stale" : "disabled"),
           qualityFlags: row.qualityFlags ?? [],

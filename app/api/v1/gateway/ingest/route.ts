@@ -225,7 +225,7 @@ export async function POST(request: NextRequest) {
     const complete = !payload.poll.error && transformed.length === payload.poll.expectedRegisters;
     const storageIntervalMs = (device.storageIntervalSeconds ?? 60) * 1_000;
     const diagnosticIntervalMs = (device.diagnosticIntervalSeconds ?? 300) * 1_000;
-    const operational = transformed.filter((entry) => entry.definition.channelId);
+    const operational = transformed.filter((entry) => entry.definition.channelId && entry.definition.channelEnabled);
     const channelIds = operational.map((entry) => entry.definition.channelId!);
     const latestChannelRows = channelIds.length ? await db.select({ channelId: latestReadings.channelId, recordedAt: latestReadings.recordedAt })
       .from(latestReadings)
@@ -297,8 +297,9 @@ export async function POST(request: NextRequest) {
         return { id: duplicate.id, duplicate: true, success: duplicate.success, accepted: duplicate.receivedRegisters };
       }
 
-      if (transformed.length && (diagnosticDue || exceptional)) {
-        await tx.insert(deviceRegisterSamples).values(transformed.map((entry) => ({
+      const diagnosticSamples = transformed.filter((entry) => !entry.definition.channelId || entry.definition.channelEnabled);
+      if (diagnosticSamples.length && (diagnosticDue || exceptional)) {
+        await tx.insert(deviceRegisterSamples).values(diagnosticSamples.map((entry) => ({
           batchId: batch.id,
           deviceId: device.id,
           registerDefinitionId: entry.definition.id,
@@ -381,7 +382,7 @@ export async function POST(request: NextRequest) {
     let alarmEvaluation = { opened: 0, updated: 0, resolved: 0 };
     try {
       alarmEvaluation = await evaluateAlarmReadings(db, device.assetId, transformed
-        .filter((entry) => entry.definition.channelId)
+        .filter((entry) => entry.definition.channelId && entry.definition.channelEnabled)
         .map((entry) => ({
           channelId: entry.definition.channelId!,
           value: entry.definition.channelEnabled ? entry.value : null,

@@ -12,6 +12,7 @@ import { SettingsView as DatabaseSettingsView } from "./settings-view";
 import { TrendsView } from "./trends-view";
 import {
   IconActivity as Activity,
+  IconAdjustmentsHorizontal as AdjustmentsHorizontal,
   IconAlertTriangle as AlertTriangle,
   IconBellRinging as BellRing,
   IconBolt as Zap,
@@ -154,6 +155,7 @@ type PortalLiveTelemetry = {
     metric: string;
     unit: string;
     enabled: boolean;
+    visible: boolean;
     displayOrder: number;
     register: number;
     humanReference: string;
@@ -175,6 +177,7 @@ type PortalLiveTelemetry = {
   }>;
 };
 type PortalSensor = {
+  channelId: string;
   id: string;
   sourceId: string;
   label: string;
@@ -193,6 +196,7 @@ type PortalSensor = {
   register: string;
   quality: string;
   enabled: boolean;
+  visible: boolean;
   displayOrder: number;
   recordedAt: string | null;
 };
@@ -302,6 +306,7 @@ function useSensorData(override?: PortalTelemetryState) {
               ? "Esperando datos"
               : "Sin comunicación";
     return {
+      channelId: live.id,
       id: live.code,
       sourceId: live.inputCode ?? "Sin entrada",
       label: live.name,
@@ -311,6 +316,7 @@ function useSensorData(override?: PortalTelemetryState) {
       unit: live.unit,
       ...presentation,
       enabled: live.enabled,
+      visible: live.visible,
       warning: live.warningThreshold,
       critical: live.criticalThreshold,
       state: live.severity,
@@ -430,10 +436,74 @@ function SensorMarker({ sensor, selectedId, onSelect }: { sensor: PortalSensor; 
   );
 }
 
+function ChannelVisibilityDialog({ open, assetId, sensors, onClose, onSaved }: { open: boolean; assetId: string; sensors: PortalSensor[]; onClose: () => void; onSaved: () => void }) {
+  const notify = useFeedback();
+  const monitored = sensors.filter((sensor) => sensor.enabled).sort((left, right) => left.displayOrder - right.displayOrder);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [query, setQuery] = useState("");
+  const [group, setGroup] = useState("all");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setSelected(new Set(monitored.filter((sensor) => sensor.visible).map((sensor) => sensor.channelId)));
+    setQuery("");
+    setGroup("all");
+  // La selección se toma al abrir; las recargas de telemetría no deben sobrescribir cambios pendientes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assetId, open]);
+
+  if (!open) return null;
+  const groups = [...new Set(monitored.map((sensor) => sensor.zone))];
+  const visibleRows = monitored.filter((sensor) => {
+    const matchesQuery = !query.trim() || `${sensor.id} ${sensor.label} ${sensor.zone} ${sensor.type}`.toLowerCase().includes(query.trim().toLowerCase());
+    return matchesQuery && (group === "all" || sensor.zone === group);
+  });
+  const applyPreset = (preset: "all" | "temperature" | "discharge" | "environment") => {
+    const matches = monitored.filter((sensor) => preset === "all"
+      || preset === "temperature" && (sensor.metric === "temperature" || sensor.metric === "ambient")
+      || preset === "discharge" && (sensor.metric === "pd" || sensor.metric === "sd")
+      || preset === "environment" && (sensor.metric === "ambient" || sensor.metric === "humidity"));
+    setSelected(new Set(matches.map((sensor) => sensor.channelId)));
+  };
+  const toggle = (channelId: string) => setSelected((current) => {
+    const next = new Set(current);
+    if (next.has(channelId)) next.delete(channelId); else next.add(channelId);
+    return next;
+  });
+  const save = async () => {
+    setSaving(true);
+    try {
+      await portalRequest("/api/v1/channel-preferences", { method: "PATCH", body: JSON.stringify({ assetId, visibleChannelIds: monitored.filter((sensor) => selected.has(sensor.channelId)).map((sensor) => sensor.channelId) }) });
+      notify(`Vista actualizada: ${selected.size} canal${selected.size === 1 ? "" : "es"} visible${selected.size === 1 ? "" : "s"}.`);
+      onSaved();
+      onClose();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "No fue posible guardar la selección.", "warning");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return <div className="channel-visibility-backdrop" role="presentation" onMouseDown={onClose}>
+    <section className="channel-visibility-sheet" role="dialog" aria-modal="true" aria-labelledby="channel-visibility-title" onMouseDown={(event) => event.stopPropagation()}>
+      <header><span className="visibility-heading-icon"><AdjustmentsHorizontal size={21} /></span><div><span className="eyebrow">Vista personal</span><h2 id="channel-visibility-title">Personalizar canales</h2><p>Elige qué variables aparecen en Resumen y Mapa de condición. Las alarmas y el histórico no cambian.</p></div><button className="visibility-close" onClick={onClose} aria-label="Cerrar"><X size={19} /></button></header>
+      <div className="visibility-summary"><span><Eye size={17} /><strong>{selected.size}</strong> visibles</span><span><Activity size={17} /><strong>{monitored.length}</strong> monitoreados</span><span><EyeOff size={17} /><strong>{Math.max(0, monitored.length - selected.size)}</strong> ocultos</span></div>
+      <div className="visibility-presets"><span>Mostrar sólo</span><button onClick={() => applyPreset("all")}>Todos</button><button onClick={() => applyPreset("temperature")}>Temperaturas</button><button onClick={() => applyPreset("discharge")}>Descargas</button><button onClick={() => applyPreset("environment")}>Ambiente</button></div>
+      <div className="visibility-filters"><label className="search-field"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar canal o variable…" autoFocus /></label><label className="status-filter"><span>Zona</span><select value={group} onChange={(event) => setGroup(event.target.value)}><option value="all">Todas</option>{groups.map((zone) => <option key={zone} value={zone}>{zone}</option>)}</select></label></div>
+      <div className="visibility-list">
+        {visibleRows.map((sensor) => <label className={`visibility-channel ${selected.has(sensor.channelId) ? "selected" : ""}`} key={sensor.channelId}><input type="checkbox" checked={selected.has(sensor.channelId)} onChange={() => toggle(sensor.channelId)} /><span className={`sensor-code sensor-${sensor.state}`}>{sensor.id}</span><span><strong>{sensor.label}</strong><small>{sensor.zone} · {sensor.type}</small></span><span className="visibility-reading">{sensor.value}<small>{sensor.unit}</small></span></label>)}
+        {!visibleRows.length && <div className="visibility-empty"><Search size={20} /><strong>No encontramos canales</strong><span>Cambia la búsqueda o la zona seleccionada.</span></div>}
+      </div>
+      <footer><div><ShieldCheck size={16} /><span>Esta preferencia es sólo tuya y queda guardada en el portal.</span></div><button className="secondary-button" onClick={onClose} disabled={saving}>Cancelar</button><button className="primary-button" onClick={() => void save()} disabled={saving}>{saving ? <><Refresh className="spin" size={16} /> Guardando…</> : <><Save size={16} /> Aplicar selección</>}</button></footer>
+    </section>
+  </div>;
+}
+
 function CabinetDiagram({ selectedId, onSelect }: { selectedId?: string; onSelect?: (id: string) => void }) {
   const telemetryState = useContext(TelemetryContext);
   const telemetry = telemetryState.data;
-  const sensors = useSensorData();
+  const sensors = useSensorData().filter((sensor) => sensor.enabled && sensor.visible);
   const gatewayOnline = telemetry?.gateway?.state === "online";
   const zones = [...new Set(sensors.map((sensor) => sensor.zone))];
   if (!telemetry && telemetryState.status !== "ready") return (
@@ -491,6 +561,7 @@ function Overview({ onNavigate, onOpenTrend, onAcknowledge, activeAlarms, alarmS
   const sensors = useSensorData();
   if (!telemetry && telemetryState.status !== "ready") return <div className="operational-overview" aria-live="polite" aria-busy={telemetryState.status === "loading"}><section className={`panel telemetry-state-panel telemetry-state-${telemetryState.status}`}><span><Refresh className={telemetryState.status === "loading" ? "spin" : ""} size={26} /></span><div><span className="eyebrow">{point ? `${point.code} · ${point.name}` : "Contexto operacional"}</span><h2>{telemetryState.status === "loading" ? "Cargando estado operativo" : "Estado operativo no disponible"}</h2><p>{telemetryState.status === "loading" ? "Estamos verificando el gateway, el controlador CAM-5, las lecturas vigentes y las alertas. No mostraremos indicadores hasta contar con una respuesta confiable." : "La consulta no pudo completarse. Esto no significa que el gateway esté desconectado; su estado permanece sin verificar hasta una nueva consulta."}</p><div className="telemetry-check-list"><span><Server size={16} /> Gateway <b>Verificando</b></span><span><CircuitBoard size={16} /> CAM-5 <b>Verificando</b></span><span><Database size={16} /> Canales <b>Verificando</b></span></div></div></section></div>;
   const activeSensors = sensors.filter((sensor) => sensor.enabled);
+  const visibleSensors = activeSensors.filter((sensor) => sensor.visible);
   const readableSensors = activeSensors.filter((sensor) => sensor.numericValue !== null && sensor.recordedAt !== null);
   const freshSensors = readableSensors.filter((sensor) => sensor.quality === "Válida");
   const unavailableCount = activeSensors.length - freshSensors.length;
@@ -501,11 +572,16 @@ function Overview({ onNavigate, onOpenTrend, onAcknowledge, activeAlarms, alarmS
     return sensor.numericValue !== null && reference !== null && reference > 0 ? sensor.numericValue / reference : -1;
   };
   const sensorPriority = (sensor: PortalSensor) => sensor.quality !== "Válida" ? 3 : sensor.state === "critical" ? 4 : sensor.state === "warning" ? 2 : 1;
-  const rankedSensors = [...activeSensors].sort((left, right) => sensorPriority(right) - sensorPriority(left) || riskRatio(right) - riskRatio(left) || left.displayOrder - right.displayOrder);
+  const rankedSensors = [...visibleSensors].sort((left, right) => sensorPriority(right) - sensorPriority(left) || riskRatio(right) - riskRatio(left) || left.displayOrder - right.displayOrder);
   const conditionCounts = {
     critical: freshSensors.filter((sensor) => sensor.state === "critical").length,
     warning: freshSensors.filter((sensor) => sensor.state === "warning").length,
     normal: freshSensors.filter((sensor) => sensor.state === "normal").length,
+  };
+  const visibleConditionCounts = {
+    critical: visibleSensors.filter((sensor) => sensor.quality === "Válida" && sensor.state === "critical").length,
+    warning: visibleSensors.filter((sensor) => sensor.quality === "Válida" && sensor.state === "warning").length,
+    normal: visibleSensors.filter((sensor) => sensor.quality === "Válida" && sensor.state === "normal").length,
   };
   const conditionState: SensorState = conditionCounts.critical ? "critical" : conditionCounts.warning ? "warning" : "normal";
   const severityRank: Record<PortalAlarm["severity"], number> = { critical: 3, warning: 2, normal: 1 };
@@ -540,9 +616,9 @@ function Overview({ onNavigate, onOpenTrend, onAcknowledge, activeAlarms, alarmS
 
     <section className="overview-workbench">
       <article className="panel overview-channels-panel">
-        <header className="panel-header"><div><span className="eyebrow">Supervisión en tiempo real</span><h2>Variables monitoreadas</h2><p>Ordenadas por criticidad y cercanía a sus límites configurados.</p></div><button className="secondary-button" onClick={() => onNavigate("trends")}><TrendingUp size={16} /> Comparar tendencias</button></header>
-        <div className="overview-channel-grid">{rankedSensors.map((sensor) => <OverviewChannelRow key={sensor.id} sensor={sensor} onOpenTrend={onOpenTrend} />)}{!rankedSensors.length && <TableEmptyState title="Todavía no hay canales activos" detail="Los canales habilitados aparecerán aquí con su lectura, condición y vigencia." />}</div>
-        <footer className="overview-channel-footer"><span><i className="critical" />{conditionCounts.critical} críticos</span><span><i className="warning" />{conditionCounts.warning} advertencias</span><span><i className="normal" />{conditionCounts.normal} normales</span><span><i className="offline" />{unavailableCount} no vigentes</span><button onClick={() => onNavigate("cabinet")}>Ver distribución en la cabina <ChevronRight size={15} /></button></footer>
+        <header className="panel-header"><div><span className="eyebrow">Supervisión en tiempo real</span><h2>Variables visibles</h2><p>{visibleSensors.length} de {activeSensors.length} canales monitoreados · ordenados por prioridad operacional.</p></div><button className="secondary-button" onClick={() => onNavigate("trends")}><TrendingUp size={16} /> Comparar tendencias</button></header>
+        <div className="overview-channel-grid">{rankedSensors.map((sensor) => <OverviewChannelRow key={sensor.id} sensor={sensor} onOpenTrend={onOpenTrend} />)}{!rankedSensors.length && <TableEmptyState title="No seleccionaste canales visibles" detail="Usa Personalizar canales para elegir las variables que quieres ver en este resumen." />}</div>
+        <footer className="overview-channel-footer"><span><i className="critical" />{visibleConditionCounts.critical} críticos</span><span><i className="warning" />{visibleConditionCounts.warning} advertencias</span><span><i className="normal" />{visibleConditionCounts.normal} normales</span><span><i className="offline" />{activeSensors.length - visibleSensors.length} ocultos</span><button onClick={() => onNavigate("cabinet")}>Ver distribución en la cabina <ChevronRight size={15} /></button></footer>
       </article>
 
       <aside className="overview-side-column">
@@ -559,8 +635,9 @@ function CabinetView({ onOpenTrend }: { onOpenTrend: (id: string) => void }) {
   const telemetry = telemetryState.data;
   const sensors = useSensorData();
   const activeSensors = sensors.filter((sensor) => sensor.enabled);
+  const visibleSensors = activeSensors.filter((sensor) => sensor.visible);
   const [selectedId, setSelectedId] = useState("");
-  const selected = activeSensors.find((sensor) => sensor.id === selectedId) ?? activeSensors[0] ?? null;
+  const selected = visibleSensors.find((sensor) => sensor.id === selectedId) ?? visibleSensors[0] ?? null;
   const hasMeasurements = activeSensors.some((sensor) => sensor.recordedAt !== null);
   const conditionState = sensorGroupState(activeSensors);
   const overallState: SensorState | "loading" | "waiting" | "offline" | "error" = !telemetry && telemetryState.status === "loading" ? "loading" : !telemetry && telemetryState.status === "error" ? "error" : telemetry?.gateway?.state !== "online" ? "offline" : !hasMeasurements ? "waiting" : conditionState;
@@ -575,7 +652,7 @@ function CabinetView({ onOpenTrend }: { onOpenTrend: (id: string) => void }) {
   return (
     <section className="cabinet-view-grid">
       <article className="panel cabinet-full-panel">
-        <div className="panel-header"><div><span className="eyebrow">Mapa de condición de la cabina</span><h2>{telemetry?.point ? `${telemetry.point.code} · ${telemetry.point.name}` : "Punto de medición"}</h2><p>{assignedInputs} entradas asignadas · {Math.max(0, totalInputs - assignedInputs)} disponibles · {activeSensors.length} señales activas{disabledChannels ? ` · ${disabledChannels} deshabilitadas` : ""}</p></div><StatusPill state={overallState}>{statusText}</StatusPill></div>
+        <div className="panel-header"><div><span className="eyebrow">Mapa de condición de la cabina</span><h2>{telemetry?.point ? `${telemetry.point.code} · ${telemetry.point.name}` : "Punto de medición"}</h2><p>{visibleSensors.length} visibles de {activeSensors.length} monitoreadas · {assignedInputs} entradas asignadas{disabledChannels ? ` · ${disabledChannels} sin monitoreo` : ""}</p></div><StatusPill state={overallState}>{statusText}</StatusPill></div>
         <CabinetDiagram selectedId={selected?.id} onSelect={setSelectedId} />
         <div className="diagram-legend"><span><i className="dot-normal" />Normal</span><span><i className="dot-warning" />Advertencia</span><span><i className="dot-critical" />Crítico</span><span><i className="dot-disabled" />No configurado</span><small>Selecciona una tarjeta para revisar el canal.</small></div>
       </article>
@@ -586,17 +663,17 @@ function CabinetView({ onOpenTrend }: { onOpenTrend: (id: string) => void }) {
           <p>{selected.label} · {selected.zone}</p>
           <dl><div><dt>Actualización</dt><dd>{selected.trend}</dd></div><div><dt>Umbral</dt><dd>{selected.threshold}</dd></div><div><dt>Registro CAM-5</dt><dd>{selected.nativeRegister} · {selected.register}</dd></div><div><dt>Calidad</dt><dd>{selected.quality}</dd></div></dl>
           <button type="button" onClick={() => onOpenTrend(selected.id)}>Abrir tendencia del canal <TrendingUp size={16} /></button>
-        </div> : <div className="selected-sensor-empty"><Database size={25} /><strong>{telemetryState.status === "loading" ? "Cargando canales" : telemetryState.status === "error" ? "Estado no verificado" : "No hay canales habilitados"}</strong><p>{telemetryState.status === "loading" ? "Esperando la respuesta del gateway y del controlador CAM-5." : telemetryState.status === "error" ? "No fue posible consultar la telemetría. Esto no confirma una desconexión del equipo." : "Configura al menos un canal para habilitar su lectura y tendencia."}</p></div>}
-        <div className="panel-header compact sensor-list-header"><div><span className="eyebrow">Canales configurados</span><h2>Matriz de sensores</h2></div><span className="data-fresh"><Wifi size={14} /> {telemetryAge(telemetry?.device?.lastReadAt ?? null)}</span></div>
+        </div> : <div className="selected-sensor-empty"><EyeOff size={25} /><strong>{telemetryState.status === "loading" ? "Cargando canales" : telemetryState.status === "error" ? "Estado no verificado" : "No seleccionaste canales visibles"}</strong><p>{telemetryState.status === "loading" ? "Esperando la respuesta del gateway y del controlador CAM-5." : telemetryState.status === "error" ? "No fue posible consultar la telemetría. Esto no confirma una desconexión del equipo." : "Usa Personalizar canales para elegir las variables que quieres revisar."}</p></div>}
+        <div className="panel-header compact sensor-list-header"><div><span className="eyebrow">Selección personal</span><h2>Canales visibles</h2></div><span className="data-fresh"><Wifi size={14} /> {telemetryAge(telemetry?.device?.lastReadAt ?? null)}</span></div>
         <div className="sensor-list">
-          {activeSensors.map((sensor) => (
+          {visibleSensors.map((sensor) => (
             <button type="button" className={`sensor-row ${!sensor.enabled ? "disabled" : ""} ${selected?.id === sensor.id ? "selected" : ""}`} key={sensor.id} onClick={() => setSelectedId(sensor.id)} disabled={!sensor.enabled}>
               <span className={`sensor-code sensor-${sensor.state}`}>{sensor.id}</span>
               <div><strong>{sensor.label}</strong><small>{sensor.zone}</small></div>
               <div className="sensor-reading"><strong>{sensor.value}<small>{sensor.unit}</small></strong><span>{sensor.trend}</span></div>
             </button>
           ))}
-          {!activeSensors.length && <div className="sensor-list-empty">No existen canales activos para este punto.</div>}
+          {!visibleSensors.length && <div className="sensor-list-empty">No hay canales seleccionados para esta vista.</div>}
         </div>
       </article>
     </section>
@@ -1381,6 +1458,7 @@ export default function Home() {
   const [loginNotice, setLoginNotice] = useState<LoginNotice | null>(null);
   const [notice, setNotice] = useState<{ id: number; message: string; tone: NoticeTone } | null>(null);
   const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null);
+  const [visibilityOpen, setVisibilityOpen] = useState(false);
   const noticeTimer = useRef<number | null>(null);
 
   const notify = (message: string, tone: NoticeTone = "success") => {
@@ -1667,7 +1745,7 @@ export default function Home() {
         <div className="content-scroll">
           <div className="page-content">
             {systemMode !== "normal" && <section className={`operational-banner banner-${systemMode}`} role={systemMode === "offline" || systemMode === "error" ? "alert" : "status"} aria-live="polite"><span>{systemMode === "offline" ? <PlugConnected size={19} /> : systemMode === "loading" ? <Refresh className="spin" size={19} /> : systemMode === "error" ? <AlertTriangle size={19} /> : <Clock3 size={19} />}</span><div><strong>{systemMessage.title}</strong><p>{systemMessage.detail}</p></div>{systemMode !== "loading" && <button onClick={() => { setTelemetryState({ status: "loading", data: null }); setSystemMode("loading"); setTelemetryRefreshKey((current) => current + 1); notify("Consultando nuevamente la telemetría.", "info"); }}><Refresh size={15} /> Reintentar</button>}</section>}
-            <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> Gestión de activos críticos</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{view !== "assets" && view !== "settings" && view !== "provisioning" && view !== "users" && view !== "notifications" && view !== "account" && view !== "reports" && view !== "diagnostics" && view !== "commissioning" && view !== "trends" && view !== "history" && <button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button>}<button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{alarmSummary.critical + alarmSummary.warning} alertas activas</button></div></section>
+            <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> Gestión de activos críticos</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{(view === "overview" || view === "cabinet") && <button className="secondary-button" onClick={() => setVisibilityOpen(true)} disabled={!activePoint || !sensors.some((sensor) => sensor.enabled)}><AdjustmentsHorizontal size={16} /><span>Personalizar canales</span></button>}{view !== "assets" && view !== "settings" && view !== "provisioning" && view !== "users" && view !== "notifications" && view !== "account" && view !== "reports" && view !== "diagnostics" && view !== "commissioning" && view !== "trends" && view !== "history" && <button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button>}<button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{alarmSummary.critical + alarmSummary.warning} alertas activas</button></div></section>
             {view === "overview" && <Overview onNavigate={navigate} onOpenTrend={openChannelTrend} onAcknowledge={acknowledge} activeAlarms={alarmPreview} alarmSummary={alarmSummary} point={activePoint} />}
             {view === "cabinet" && <CabinetView onOpenTrend={openChannelTrend} />}
             {view === "diagnostics" && <DatabaseDiagnosticsView assetId={activePoint?.id ?? ""} canExecute={sessionUser.permissions.includes("diagnostics.execute")} notify={notify} />}
@@ -1685,6 +1763,7 @@ export default function Home() {
           </div>
         </div>
       </main>
+      {activePoint && <ChannelVisibilityDialog open={visibilityOpen} assetId={activePoint.id} sensors={sensors} onClose={() => setVisibilityOpen(false)} onSaved={() => setTelemetryRefreshKey((current) => current + 1)} />}
       {notice && <div className={`portal-notice notice-${notice.tone}`} role="status" aria-live="polite" key={notice.id}><CheckCircle2 size={18} /><span>{notice.message}</span><button onClick={() => setNotice(null)} aria-label="Cerrar notificación"><X size={16} /></button></div>}
       {confirmRequest && <div className="confirm-backdrop" role="presentation" onMouseDown={() => setConfirmRequest(null)}><section className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-title" onMouseDown={(event) => event.stopPropagation()}><span className={`confirm-icon ${confirmRequest.tone === "danger" ? "danger" : ""}`}>{confirmRequest.tone === "danger" ? <AlertTriangle size={22} /> : <ShieldCheck size={22} />}</span><div><span className="eyebrow">Confirmación requerida</span><h2 id="confirm-title">{confirmRequest.title}</h2><p>{confirmRequest.detail}</p></div><div className="confirm-actions"><button className="secondary-button" onClick={() => setConfirmRequest(null)}>Cancelar</button><button className={confirmRequest.tone === "danger" ? "danger-button" : "primary-button"} onClick={() => { const action = confirmRequest.onConfirm; setConfirmRequest(null); action(); }}>{confirmRequest.confirmLabel}</button></div></section></div>}
     </div>

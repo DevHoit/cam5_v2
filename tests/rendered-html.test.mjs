@@ -122,8 +122,10 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(page, /function useSensorData/);
   assert.match(page, /telemetry\.data\?\.items/);
   assert.match(page, /zone-channel-grid/);
-  assert.match(page, /Variables monitoreadas/);
-  assert.match(page, /Ordenadas por criticidad y cercanía a sus límites configurados/);
+  assert.match(page, /Variables visibles/);
+  assert.match(page, /ordenados por prioridad operacional/);
+  assert.match(page, /Personalizar canales/);
+  assert.match(page, /\/api\/v1\/channel-preferences/);
   assert.match(page, /overview-statusbar/);
   assert.match(page, /overview-channel-grid/);
   assert.doesNotMatch(page, /overview-channel-table|overview-channel-head/);

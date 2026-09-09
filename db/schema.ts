@@ -427,6 +427,18 @@ export const channels = pgTable("channels", {
   check("channels_display_order_nonnegative_chk", sql`${table.displayOrder} >= 0`),
 ]);
 
+export const userChannelPreferences = pgTable("user_channel_preferences", {
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  channelId: uuid("channel_id").notNull().references(() => channels.id, { onDelete: "cascade" }),
+  visible: boolean("visible").default(true).notNull(),
+  displayOrder: integer("display_order"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.userId, table.channelId] }),
+  index("user_channel_preferences_channel_idx").on(table.channelId),
+  check("user_channel_preferences_order_chk", sql`${table.displayOrder} IS NULL OR ${table.displayOrder} >= 0`),
+]);
+
 export const alarmRules = pgTable("alarm_rules", {
   id: uuid("id").defaultRandom().primaryKey(),
   channelId: uuid("channel_id").notNull().references(() => channels.id, { onDelete: "cascade" }),
