@@ -250,6 +250,9 @@ export type ReadingProfile = {
   key: string;
   name: string;
   staleAfterSeconds: number;
+  storageIntervalSeconds: number;
+  heartbeatIntervalSeconds: number;
+  diagnosticIntervalSeconds: number;
   rawRetentionDays: number;
   aggregateRetentionDays: number;
   ranges: Array<{

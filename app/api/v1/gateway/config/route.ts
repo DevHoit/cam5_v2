@@ -60,7 +60,13 @@ export async function GET(request: NextRequest) {
           .orderBy(desc(configurationSnapshots.version))
           .limit(1),
       ]);
-      const [profile] = device.readingProfileId ? await db.select({ key: readingProfiles.key, staleAfterSeconds: readingProfiles.staleAfterSeconds }).from(readingProfiles).where(eq(readingProfiles.id, device.readingProfileId)).limit(1) : [];
+      const [profile] = device.readingProfileId ? await db.select({
+        key: readingProfiles.key,
+        staleAfterSeconds: readingProfiles.staleAfterSeconds,
+        storageIntervalSeconds: readingProfiles.storageIntervalSeconds,
+        heartbeatIntervalSeconds: readingProfiles.heartbeatIntervalSeconds,
+        diagnosticIntervalSeconds: readingProfiles.diagnosticIntervalSeconds,
+      }).from(readingProfiles).where(eq(readingProfiles.id, device.readingProfileId)).limit(1) : [];
       return {
         code: device.code,
         unitId: device.unitId,
@@ -72,6 +78,13 @@ export async function GET(request: NextRequest) {
         registerConvention: device.registerConvention,
         configuration: revisions[0] ? { version: revisions[0].version, checksumSha256: revisions[0].checksumSha256, createdAt: revisions[0].createdAt.toISOString() } : null,
         profile: profile ?? null,
+        uploadPolicy: profile ? {
+          normalIntervalMs: profile.storageIntervalSeconds * 1_000,
+          heartbeatIntervalMs: profile.heartbeatIntervalSeconds * 1_000,
+          diagnosticIntervalMs: profile.diagnosticIntervalSeconds * 1_000,
+          immediateOnAlarm: true,
+          immediateOnRecovery: true,
+        } : null,
         ranges,
         registers,
         channels: channelPolicies.map((channel) => ({
@@ -83,9 +96,10 @@ export async function GET(request: NextRequest) {
       };
     }));
     return Response.json({
-      schemaVersion: "1.1",
+      schemaVersion: "1.2",
       serverTime: new Date().toISOString(),
       ingestionUrl: "/api/v1/gateway/ingest",
+      heartbeatUrl: "/api/v1/gateway/heartbeat",
       gateway: { code: credential.gatewayCode, name: credential.gatewayName },
       devices: payloadDevices,
     }, { headers: { "Cache-Control": "no-store" } });

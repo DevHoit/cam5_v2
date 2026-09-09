@@ -33,7 +33,7 @@ type ProvisioningResponse = {
   summary: { gateways: number; onlineGateways: number; activeCredentials: number; usedCredentials: number; expiringCredentials: number; expiredCredentials: number };
   serverTime: string;
 };
-type SecretResponse = { credential: Credential; token: string; rotatedCredentialId: string | null; endpoints: { configuration: string; ingestion: string } };
+type SecretResponse = { credential: Credential; token: string; rotatedCredentialId: string | null; endpoints: { configuration: string; ingestion: string; heartbeat: string } };
 type RenewalResponse = { credentialId: string; previousExpiresAt: string | null; expiresAt: string; renewedAt: string; tokenChanged: false };
 
 async function requestProvisioning<T>(path: string, init?: RequestInit): Promise<T> {

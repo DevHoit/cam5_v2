@@ -271,7 +271,7 @@ export async function evaluateStaleCommunications(db: Cam5Database, siteId: stri
     .where(and(eq(assets.siteId, siteId), eq(assets.active, true), eq(devices.active, true), eq(gateways.active, true)));
 
   for (const device of monitored) {
-    const staleAfterSeconds = device.staleAfterSeconds ?? 30;
+    const staleAfterSeconds = device.staleAfterSeconds ?? 180;
     const lastContact = device.lastReadAt ?? device.gatewayLastSeenAt ?? device.deviceUpdatedAt;
     const ageSeconds = Math.max(0, Math.floor((evaluatedAt.getTime() - lastContact.getTime()) / 1000));
     const stale = ageSeconds > staleAfterSeconds;

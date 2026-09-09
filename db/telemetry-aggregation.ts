@@ -1,12 +1,12 @@
 import { sql } from "drizzle-orm";
 import type { Cam5Database } from "./index";
-import { assets, channels, devices, readingAggregates, readingProfiles, readings } from "./schema";
+import { assets, channels, deviceRegisterSamples, devices, ingestionBatches, latestReadings, readingAggregates, readingProfiles, readings } from "./schema";
 
 const AGGREGATION_WINDOWS = [
-  { bucketSeconds: 60, lookbackMs: 20 * 60 * 1000 },
-  { bucketSeconds: 300, lookbackMs: 2 * 60 * 60 * 1000 },
-  { bucketSeconds: 3600, lookbackMs: 48 * 60 * 60 * 1000 },
-  { bucketSeconds: 86400, lookbackMs: 4 * 24 * 60 * 60 * 1000 },
+  { bucketSeconds: 60, lookbackMs: 30 * 60 * 60 * 1000 },
+  { bucketSeconds: 300, lookbackMs: 30 * 60 * 60 * 1000 },
+  { bucketSeconds: 3600, lookbackMs: 8 * 24 * 60 * 60 * 1000 },
+  { bucketSeconds: 86400, lookbackMs: 8 * 24 * 60 * 60 * 1000 },
 ] as const;
 
 export async function refreshTelemetryAggregates(db: Cam5Database, siteId: string, evaluatedAt = new Date()) {
@@ -53,6 +53,15 @@ export async function refreshTelemetryAggregates(db: Cam5Database, siteId: strin
     bucketsUpdated += 1;
   }
   await db.execute(sql`
+    delete from ${deviceRegisterSamples}
+    using ${devices}, ${assets}, ${readingProfiles}
+    where ${deviceRegisterSamples.deviceId} = ${devices.id}
+      and ${devices.assetId} = ${assets.id}
+      and ${devices.readingProfileId} = ${readingProfiles.id}
+      and ${assets.siteId} = ${siteId}
+      and ${deviceRegisterSamples.recordedAt} < ${evaluatedAtIso}::timestamptz - make_interval(days => ${readingProfiles.rawRetentionDays})
+  `);
+  await db.execute(sql`
     delete from ${readings}
     using ${channels}, ${devices}, ${assets}, ${readingProfiles}
     where ${readings.channelId} = ${channels.id}
@@ -61,6 +70,16 @@ export async function refreshTelemetryAggregates(db: Cam5Database, siteId: strin
       and ${devices.readingProfileId} = ${readingProfiles.id}
       and ${assets.siteId} = ${siteId}
       and ${readings.recordedAt} < ${evaluatedAtIso}::timestamptz - make_interval(days => ${readingProfiles.rawRetentionDays})
+      and not exists (select 1 from ${latestReadings} where ${latestReadings.readingId} = ${readings.id})
+  `);
+  await db.execute(sql`
+    delete from ${ingestionBatches}
+    using ${devices}, ${assets}, ${readingProfiles}
+    where ${ingestionBatches.deviceId} = ${devices.id}
+      and ${devices.assetId} = ${assets.id}
+      and ${devices.readingProfileId} = ${readingProfiles.id}
+      and ${assets.siteId} = ${siteId}
+      and ${ingestionBatches.receivedAt} < ${evaluatedAtIso}::timestamptz - make_interval(days => ${readingProfiles.rawRetentionDays})
   `);
   await db.execute(sql`
     delete from ${readingAggregates}

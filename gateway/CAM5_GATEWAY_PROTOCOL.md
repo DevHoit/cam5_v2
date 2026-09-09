@@ -1,4 +1,4 @@
-# Contrato de ingestión CAM5 Gateway v1.1
+# Contrato de adquisición CAM5 Gateway v1.2
 
 Este contrato es idéntico para una fuente de datos simulada y para un CAM5 físico. El backend no recibe ni necesita una marca que identifique el origen como simulación.
 
@@ -7,6 +7,7 @@ Este contrato es idéntico para una fuente de datos simulada y para un CAM5 fís
 - API productiva: `https://cam5v2.vercel.app/api/v1`
 - Configuración: `GET /gateway/config`
 - Ingestión: `POST /gateway/ingest`
+- Heartbeat: `POST /gateway/heartbeat`
 - Transporte: HTTPS con TLS válido.
 - Autenticación: `Authorization: Bearer <token-del-gateway>`.
 - Contenido: `Content-Type: application/json`.
@@ -26,17 +27,19 @@ CAM5_RUN_ONCE=1 python3 gateway/examples/cam5_gateway_simulator.py
 
 Sin `CAM5_RUN_ONCE=1`, el emisor permanece ejecutándose y respeta los intervalos de la configuración remota.
 
-## Frecuencias
+## Frecuencias separadas
 
-| Rango nativo | Contenido | Frecuencia recomendada |
+| Operación | Contenido | Frecuencia recomendada |
 | --- | --- | ---: |
-| 418–453 | Temperatura, ambiente y totales UHF | cada 2 segundos |
-| 454–490 | Versión y diagnóstico UHF | cada 30 segundos |
-| 491–522 | Conteos y tendencias Alpha/Beta/Phi | cada 10 segundos |
+| Lectura local rápida | Temperatura, ambiente y totales UHF | cada 2 segundos |
+| Lectura local de diagnóstico | Estado CAM5, conteos y versiones | cada 10–30 segundos |
+| Telemetría operativa persistida | Canales habilitados | cada 1 minuto |
+| Fotografía completa de diagnóstico | Registros 418–522 | cada 5 minutos |
+| Heartbeat | Estado del proceso gateway | cada 30 segundos |
 
-No es necesario enviar los 105 registros cada dos segundos. Cada rango se envía como un lote independiente inmediatamente después de leerlo.
+La lectura Modbus y el almacenamiento en PostgreSQL son procesos independientes. El gateway mantiene en memoria la última lectura de cada registro y envía solamente los canales operativos cada minuto. También envía inmediatamente cuando detecta un cambio de estado de alarma o una recuperación. La fotografía completa de 105 registros se conserva para diagnóstico cada cinco minutos.
 
-Si Modbus no responde, el gateway debe enviar cada 10 segundos un lote con `readings: []` y `poll.error`. Esto demuestra que el gateway está conectado aunque el controlador no responda.
+El heartbeat actualiza la conectividad sin crear filas históricas. Si Modbus no responde, el gateway debe mantener el heartbeat y enviar inmediatamente un lote con `readings: []` y `poll.error`. Así el portal distingue entre gateway conectado y controlador sin respuesta.
 
 ## Formato de ingestión
 
@@ -162,7 +165,9 @@ Un lote nuevo responde HTTP `202`:
   "operationalReadings": 36,
   "success": true,
   "serverTime": "2026-09-05T18:42:16.411Z",
-  "nextUploadInMs": 2000
+  "nextUploadInMs": 60000,
+  "nextHeartbeatInMs": 30000,
+  "nextDiagnosticInMs": 300000
 }
 ```
 
@@ -184,7 +189,7 @@ Errores `400`, `403`, `404`, `413` o `422` indican que el lote no debe repetirse
 
 `GET /gateway/config` devuelve los controladores autorizados, host, puerto, Unit ID, rangos, intervalos, tipos, escalas, unidades, códigos de error y políticas de canal. El script debe consultar esta ruta al iniciar y luego cada 15 minutos. Si la consulta falla, debe continuar con la última configuración válida almacenada localmente. Los rangos con `enabled: false` no deben consultarse.
 
-Desde la versión `1.1`, cada controlador incluye la revisión vigente:
+Desde la versión `1.2`, cada controlador incluye la revisión vigente y la política de envío:
 
 ```json
 {
@@ -192,6 +197,13 @@ Desde la versión `1.1`, cada controlador incluye la revisión vigente:
     "version": 7,
     "checksumSha256": "5a7f…64-caracteres…9c2d",
     "createdAt": "2026-09-06T18:42:16.325Z"
+  },
+  "uploadPolicy": {
+    "normalIntervalMs": 60000,
+    "heartbeatIntervalMs": 30000,
+    "diagnosticIntervalMs": 300000,
+    "immediateOnAlarm": true,
+    "immediateOnRecovery": true
   }
 }
 ```

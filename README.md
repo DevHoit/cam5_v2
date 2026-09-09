@@ -80,7 +80,7 @@ La autenticación, las cuentas, los usuarios, la jerarquía operacional, la conf
 
 Las integraciones externas con historiadores, CMMS/ERP u otras plataformas quedan fuera del alcance de esta primera versión. La estructura técnica de base de datos se conserva para incorporarlas después sin afectar los módulos operativos actuales.
 
-El gateway consulta `GET /api/v1/gateway/config` y envía cada lote a `POST /api/v1/gateway/ingest` en el mismo dominio de HoitLive Core. El contrato completo está en [`gateway/CAM5_GATEWAY_PROTOCOL.md`](./gateway/CAM5_GATEWAY_PROTOCOL.md): incluye frecuencias, payload JSON, códigos de calidad, reintentos y un emisor Python de referencia.
+El gateway consulta `GET /api/v1/gateway/config`, mantiene conectividad con `POST /api/v1/gateway/heartbeat` y publica telemetría en `POST /api/v1/gateway/ingest`. El contrato completo está en [`gateway/CAM5_GATEWAY_PROTOCOL.md`](./gateway/CAM5_GATEWAY_PROTOCOL.md): separa lectura local, almacenamiento, diagnóstico y eventos inmediatos, e incluye un emisor Python de referencia.
 
 La cobertura de persistencia por módulo está documentada en [`DATABASE_COVERAGE.md`](./DATABASE_COVERAGE.md).
 

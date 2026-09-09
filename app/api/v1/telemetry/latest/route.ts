@@ -85,7 +85,7 @@ export async function GET(request: NextRequest) {
     const assignedInputIds = new Set(rows.map((row) => row.physicalInputId).filter((id): id is string => id !== null));
 
     const now = new Date();
-    const staleAfterSeconds = device?.staleAfterSeconds ?? 30;
+    const staleAfterSeconds = device?.staleAfterSeconds ?? 180;
     return Response.json({
       serverTime: now.toISOString(),
       point: { id: point.id, code: point.code, name: point.name, area: point.area, nominalVoltageKv: point.nominalVoltageKv === null ? null : Number(point.nominalVoltageKv), state: point.state },

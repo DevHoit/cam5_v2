@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Emisor de referencia para el contrato CAM5 Gateway v1.1 (ingestión v1.0)."""
+"""Emisor de referencia HoitLive Core: lectura local rápida y envío desacoplado."""
 
 import json
 import os
@@ -50,15 +50,14 @@ def simulated_raw(register):
     return random.randint(0, 100)
 
 
-def send_with_retry(payload):
+def send_with_retry(path, payload):
     for delay in (0, 2, 5, 15):
         if delay:
             time.sleep(delay)
         try:
-            status, response = request_json("/gateway/ingest", "POST", payload)
+            status, response = request_json(path, "POST", payload)
             if status in (200, 202):
-                print(response["status"], payload["batchKey"], "registros:", response["accepted"])
-                return True
+                return response
         except urllib.error.HTTPError as error:
             detail = error.read().decode("utf-8", errors="replace")
             if 400 <= error.code < 500 and error.code != 429:
@@ -67,7 +66,56 @@ def send_with_retry(payload):
             print("Error temporal HTTP", error.code, detail)
         except OSError as error:
             print("Error de red", error)
-    return False
+    return None
+
+
+def poll_range(item, cache):
+    captured_at = utc_now()
+    for register in range(item["startRegister"], item["endRegister"] + 1):
+        cache[register] = {"rawValue": simulated_raw(register), "recordedAt": captured_at}
+
+
+def alarm_states(device, cache, definitions):
+    states = {}
+    for channel in device.get("channels", []):
+        if not channel.get("enabled", True) or channel["register"] not in cache:
+            continue
+        definition = definitions[channel["register"]]
+        value = cache[channel["register"]]["rawValue"] * float(definition["scaleFactor"])
+        warning = channel.get("warningThreshold")
+        critical = channel.get("criticalThreshold")
+        states[channel["register"]] = "critical" if critical is not None and value >= critical else "warning" if warning is not None and value >= warning else "normal"
+    return states
+
+
+def ingestion_payload(gateway, device, cache, registers, sequence, reason):
+    started_at = utc_now()
+    selected = [register for register in sorted(set(registers)) if register in cache]
+    completed_at = utc_now()
+    return {
+        "schemaVersion": "1.0",
+        "batchKey": f"{BOOT_ID}:{reason}:{sequence}",
+        "sentAt": utc_now(),
+        "gateway": {
+            "code": gateway["code"],
+            "bootId": BOOT_ID,
+            "sequence": sequence,
+            "uptimeSeconds": int(time.monotonic() - STARTED_MONOTONIC),
+        },
+        "device": {"code": device["code"], "unitId": device["unitId"], "dataVersion": 16},
+        "poll": {"startedAt": started_at, "completedAt": completed_at, "expectedRegisters": len(selected), "latencyMs": 0},
+        "readings": [
+            {
+                "register": register,
+                "rawValue": cache[register]["rawValue"],
+                "recordedAt": cache[register]["recordedAt"],
+                "sequence": sequence,
+                "quality": "good",
+                "flags": [],
+            }
+            for register in selected
+        ],
+    }
 
 
 def main():
@@ -78,51 +126,58 @@ def main():
     if not configuration["devices"]:
         raise SystemExit("El gateway no tiene controladores asignados.")
     device = configuration["devices"][0]
-    ranges = [item for item in configuration["devices"][0]["ranges"] if item.get("enabled", True)]
-    next_run = {item["name"]: 0.0 for item in ranges}
+    ranges = [item for item in device["ranges"] if item.get("enabled", True)]
+    policy = device.get("uploadPolicy") or {}
+    storage_seconds = policy.get("normalIntervalMs", 60_000) / 1000.0
+    heartbeat_seconds = policy.get("heartbeatIntervalMs", 30_000) / 1000.0
+    diagnostic_seconds = policy.get("diagnosticIntervalMs", 300_000) / 1000.0
+    definitions = {item["register"]: item for item in device["registers"]}
+    operational_registers = [item["register"] for item in device.get("channels", []) if item.get("enabled", True)]
+    diagnostic_registers = list(definitions)
+    cache = {}
+    next_poll = {item["name"]: 0.0 for item in ranges}
+    next_storage = 0.0
+    next_heartbeat = 0.0
+    next_diagnostic = time.monotonic() + diagnostic_seconds
+    previous_alarm_states = {}
+    last_state_upload = 0.0
     sequence = 0
 
     while True:
         now = time.monotonic()
         for item in ranges:
-            if now < next_run[item["name"]]:
-                continue
+            if now >= next_poll[item["name"]]:
+                poll_range(item, cache)
+                next_poll[item["name"]] = now + item["intervalMs"] / 1000.0
+
+        current_alarm_states = alarm_states(device, cache, definitions)
+        alarm_changed = bool(previous_alarm_states) and current_alarm_states != previous_alarm_states and now - last_state_upload >= 30
+        previous_alarm_states = current_alarm_states
+
+        reason = None
+        registers = operational_registers
+        if alarm_changed:
+            reason = "state-change"
+        elif now >= next_diagnostic:
+            reason = "diagnostic"
+            registers = diagnostic_registers
+            next_diagnostic = now + diagnostic_seconds
+        elif now >= next_storage:
+            reason = "scheduled"
+
+        if reason and registers:
             sequence += 1
-            started_at = utc_now()
-            started_clock = time.monotonic()
-            registers = list(range(item["startRegister"], item["endRegister"] + 1))
-            captured_at = utc_now()
-            payload = {
-                "schemaVersion": "1.0",
-                "batchKey": BOOT_ID + ":" + str(item["startRegister"]) + "-" + str(item["endRegister"]) + ":" + str(sequence),
-                "sentAt": utc_now(),
-                "gateway": {
-                    "code": gateway["code"],
-                    "bootId": BOOT_ID,
-                    "sequence": sequence,
-                    "uptimeSeconds": int(time.monotonic() - STARTED_MONOTONIC),
-                },
-                "device": {"code": device["code"], "unitId": device["unitId"], "dataVersion": 16},
-                "poll": {
-                    "startedAt": started_at,
-                    "completedAt": captured_at,
-                    "expectedRegisters": len(registers),
-                    "latencyMs": int((time.monotonic() - started_clock) * 1000),
-                },
-                "readings": [
-                    {
-                        "register": register,
-                        "rawValue": simulated_raw(register),
-                        "recordedAt": captured_at,
-                        "sequence": sequence,
-                        "quality": "good",
-                        "flags": [],
-                    }
-                    for register in registers
-                ],
-            }
-            send_with_retry(payload)
-            next_run[item["name"]] = time.monotonic() + item["intervalMs"] / 1000.0
+            response = send_with_retry("/gateway/ingest", ingestion_payload(gateway, device, cache, registers, sequence, reason))
+            if response:
+                print(response["status"], reason, "registros:", response["accepted"])
+                next_storage = now + response.get("nextUploadInMs", storage_seconds * 1000) / 1000.0
+                if reason == "state-change":
+                    last_state_upload = now
+
+        if now >= next_heartbeat:
+            heartbeat = send_with_retry("/gateway/heartbeat", {})
+            if heartbeat:
+                next_heartbeat = now + heartbeat.get("nextHeartbeatInMs", heartbeat_seconds * 1000) / 1000.0
         if RUN_ONCE:
             return
         time.sleep(0.1)

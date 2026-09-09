@@ -71,6 +71,13 @@
       "when": 1788891803337,
       "tag": "0009_cuddly_infant_terrible",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1788974321515,
+      "tag": "0010_robust_wallop",
+      "breakpoints": true
     }
   ]
 }

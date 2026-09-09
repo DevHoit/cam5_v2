@@ -200,7 +200,7 @@ export async function POST(request: NextRequest) {
       },
       token,
       rotatedCredentialId: created.rotated?.id ?? null,
-      endpoints: { configuration: "/api/v1/gateway/config", ingestion: "/api/v1/gateway/ingest" },
+      endpoints: { configuration: "/api/v1/gateway/config", ingestion: "/api/v1/gateway/ingest", heartbeat: "/api/v1/gateway/heartbeat" },
     }, { status: 201, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return apiErrorResponse(error);

@@ -74,6 +74,9 @@ type ConfigurationData = {
     name: string;
     description: string | null;
     staleAfterSeconds: number;
+    storageIntervalSeconds: number;
+    heartbeatIntervalSeconds: number;
+    diagnosticIntervalSeconds: number;
     rawRetentionDays: number;
     aggregateRetentionDays: number;
     ranges: Array<{ id: string; name: string; startRegister: number; endRegister: number; functionCode: number; intervalMs: number; priority: number; enabled: boolean }>;
@@ -134,6 +137,9 @@ type AcquisitionDraft = {
   timeoutMs: string;
   retries: string;
   staleAfterSeconds: string;
+  storageIntervalSeconds: string;
+  heartbeatIntervalSeconds: string;
+  diagnosticIntervalSeconds: string;
   rawRetentionDays: string;
   aggregateRetentionDays: string;
   ranges: Array<{ id: string; name: string; startRegister: string; endRegister: string; functionCode: string; intervalMs: string; enabled: boolean }>;
@@ -170,7 +176,7 @@ function channelDrafts(data: ConfigurationData) {
     hysteresis: String(channel.hysteresis),
     activationSamples: String(channel.activationSamples ?? 3),
     recoverySamples: String(channel.recoverySamples ?? 3),
-    staleAfterSeconds: String(channel.staleAfterSeconds ?? 30),
+    staleAfterSeconds: String(channel.staleAfterSeconds ?? 180),
   }])) as Record<string, ChannelDraft>;
 }
 
@@ -185,6 +191,9 @@ function acquisitionDraft(data: ConfigurationData): AcquisitionDraft | null {
     timeoutMs: String(data.controller.timeoutMs),
     retries: String(data.controller.retries),
     staleAfterSeconds: String(data.profile.staleAfterSeconds),
+    storageIntervalSeconds: String(data.profile.storageIntervalSeconds),
+    heartbeatIntervalSeconds: String(data.profile.heartbeatIntervalSeconds),
+    diagnosticIntervalSeconds: String(data.profile.diagnosticIntervalSeconds),
     rawRetentionDays: String(data.profile.rawRetentionDays),
     aggregateRetentionDays: String(data.profile.aggregateRetentionDays),
     ranges: data.profile.ranges.map((range) => ({
@@ -269,7 +278,7 @@ export function SettingsView({
       || draft.hysteresis !== String(channel.hysteresis)
       || draft.activationSamples !== String(channel.activationSamples ?? 3)
       || draft.recoverySamples !== String(channel.recoverySamples ?? 3)
-      || draft.staleAfterSeconds !== String(channel.staleAfterSeconds ?? 30);
+      || draft.staleAfterSeconds !== String(channel.staleAfterSeconds ?? 180);
   }), [data, drafts]);
   const assetDirty = Boolean(data && (assetForm.name !== data.asset.name || assetForm.area !== (data.asset.area ?? "") || assetForm.nominalVoltageKv !== String(data.asset.nominalVoltageKv ?? "")));
   const acquisitionDirty = Boolean(data && JSON.stringify(acquisitionForm) !== JSON.stringify(acquisitionDraft(data)));
@@ -302,6 +311,9 @@ export function SettingsView({
       timeoutMs: Number(acquisitionForm.timeoutMs),
       retries: Number(acquisitionForm.retries),
       staleAfterSeconds: Number(acquisitionForm.staleAfterSeconds),
+      storageIntervalSeconds: Number(acquisitionForm.storageIntervalSeconds),
+      heartbeatIntervalSeconds: Number(acquisitionForm.heartbeatIntervalSeconds),
+      diagnosticIntervalSeconds: Number(acquisitionForm.diagnosticIntervalSeconds),
       rawRetentionDays: Number(acquisitionForm.rawRetentionDays),
       aggregateRetentionDays: Number(acquisitionForm.aggregateRetentionDays),
       ranges: acquisitionForm.ranges.map((range) => ({ ...range, startRegister: Number(range.startRegister), endRegister: Number(range.endRegister), functionCode: Number(range.functionCode), intervalMs: Number(range.intervalMs) })),
@@ -319,6 +331,11 @@ export function SettingsView({
 
   const updateChannel = (id: string, field: keyof ChannelDraft, value: string | boolean) => setDrafts((current) => ({ ...current, [id]: { ...current[id], [field]: value } }));
   const updateRange = (id: string, field: "enabled" | "startRegister" | "endRegister" | "functionCode" | "intervalMs", value: string | boolean) => setAcquisitionForm((current) => current ? ({ ...current, ranges: current.ranges.map((range) => range.id === id ? { ...range, [field]: value } : range) }) : current);
+  const updateStorageInterval = (value: string) => setAcquisitionForm((current) => current ? ({
+    ...current,
+    storageIntervalSeconds: value,
+    staleAfterSeconds: String(Math.max(Number(current.staleAfterSeconds) || 0, Number(value) * 3)),
+  }) : current);
   const tabDirty = tab === "channels" ? changedChannels.length > 0 : false;
 
   if (!assetId) return <article className="panel configuration-empty"><IconBuilding size={26} /><h2>Selecciona un punto de medición</h2><p>La configuración técnica se aplica al punto activo del encabezado.</p></article>;
@@ -377,11 +394,14 @@ export function SettingsView({
                 <label><span>Protocolo</span><input value="Modbus TCP · FC 03/04" readOnly /></label>
               </div></section>
               <section><h3><IconClock size={18} /> Datos e histórico</h3><div className="form-grid">
+                <label><span>Almacenar telemetría cada</span><select value={acquisitionForm.storageIntervalSeconds} disabled={!canWrite} onChange={(event) => updateStorageInterval(event.target.value)}><option value="30">30 segundos</option><option value="60">1 minuto · recomendado</option><option value="300">5 minutos</option></select></label>
+                <label><span>Heartbeat del gateway</span><select value={acquisitionForm.heartbeatIntervalSeconds} disabled={!canWrite} onChange={(event) => setAcquisitionForm({ ...acquisitionForm, heartbeatIntervalSeconds: event.target.value })}><option value="15">15 segundos</option><option value="30">30 segundos · recomendado</option><option value="60">1 minuto</option></select></label>
+                <label><span>Diagnóstico completo cada</span><select value={acquisitionForm.diagnosticIntervalSeconds} disabled={!canWrite} onChange={(event) => setAcquisitionForm({ ...acquisitionForm, diagnosticIntervalSeconds: event.target.value })}><option value="60">1 minuto</option><option value="300">5 minutos · recomendado</option><option value="900">15 minutos</option></select></label>
                 <label><span>Dato atrasado después de</span><div className="input-unit"><input type="number" min="1" value={acquisitionForm.staleAfterSeconds} disabled={!canWrite} onChange={(event) => setAcquisitionForm({ ...acquisitionForm, staleAfterSeconds: event.target.value })} /><b>s</b></div></label>
                 <label><span>Retención de datos crudos</span><div className="input-unit"><input type="number" min="1" value={acquisitionForm.rawRetentionDays} disabled={!canWrite} onChange={(event) => setAcquisitionForm({ ...acquisitionForm, rawRetentionDays: event.target.value })} /><b>días</b></div></label>
                 <label><span>Retención de agregados</span><div className="input-unit"><input type="number" min="1" value={acquisitionForm.aggregateRetentionDays} disabled={!canWrite} onChange={(event) => setAcquisitionForm({ ...acquisitionForm, aggregateRetentionDays: event.target.value })} /><b>días</b></div></label>
                 <label><span>Perfil</span><input value={`${data.profile.key} · ${data.profile.name}`} readOnly /></label>
-              </div><div className="acquisition-diagnostic"><span className={data.controller.gatewayState === "online" ? "online" : "pending"}><IconServer size={16} /></span><div><strong>Gateway {data.controller.gatewayCode}: {data.controller.gatewayState}</strong><small>Último contacto: {age(data.controller.gatewayLastSeenAt)}</small></div></div><div className="acquisition-diagnostic"><span className={data.controller.lastReadAt ? "online" : "pending"}><IconActivity size={16} /></span><div><strong>Última lectura del controlador</strong><small>{formatDateTime(data.controller.lastReadAt)}</small></div></div></section>
+              </div><div className="configuration-note"><IconDatabase size={17} /><p><strong>Lectura y almacenamiento son independientes.</strong> El gateway puede consultar el CAM5 cada 2 segundos, pero guarda telemetría operativa con esta frecuencia. Las alarmas y recuperaciones se envían inmediatamente; el heartbeat no crea históricos.</p></div><div className="acquisition-diagnostic"><span className={data.controller.gatewayState === "online" ? "online" : "pending"}><IconServer size={16} /></span><div><strong>Gateway {data.controller.gatewayCode}: {data.controller.gatewayState}</strong><small>Último contacto: {age(data.controller.gatewayLastSeenAt)}</small></div></div><div className="acquisition-diagnostic"><span className={data.controller.lastReadAt ? "online" : "pending"}><IconActivity size={16} /></span><div><strong>Última lectura del controlador</strong><small>{formatDateTime(data.controller.lastReadAt)}</small></div></div></section>
             </section>
           </div>
           <div className="reading-ranges"><div className="settings-subhead"><div><span className="eyebrow">Perfil de lectura</span><h3>Bloques Modbus consultados por el gateway</h3></div><span>{acquisitionForm.ranges.filter((range) => range.enabled).length} activos</span></div>

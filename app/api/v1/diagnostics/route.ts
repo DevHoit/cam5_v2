@@ -128,7 +128,7 @@ async function diagnosticPayload(db: Cam5Database, user: DiagnosticUser, assetId
   const successfulBatches = Number(stats?.successful ?? 0);
   const totalSamples = Number(stats?.totalSamples ?? 0);
   const goodSamples = Number(stats?.goodSamples ?? 0);
-  const staleAfterSeconds = context.staleAfterSeconds ?? 30;
+  const staleAfterSeconds = context.staleAfterSeconds ?? 180;
   const freshnessBoundary = now.getTime() - staleAfterSeconds * 1000;
   const latestBatch = latestBatchRows[0] ?? null;
   const controllerFresh = Boolean(context.lastReadAt && context.lastReadAt.getTime() >= freshnessBoundary);

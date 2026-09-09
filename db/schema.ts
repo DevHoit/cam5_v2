@@ -276,8 +276,11 @@ export const readingProfiles = pgTable("reading_profiles", {
   key: varchar("key", { length: 60 }).notNull(),
   name: varchar("name", { length: 120 }).notNull(),
   description: text("description"),
-  staleAfterSeconds: integer("stale_after_seconds").default(30).notNull(),
-  rawRetentionDays: integer("raw_retention_days").default(30).notNull(),
+  staleAfterSeconds: integer("stale_after_seconds").default(180).notNull(),
+  storageIntervalSeconds: integer("storage_interval_seconds").default(60).notNull(),
+  heartbeatIntervalSeconds: integer("heartbeat_interval_seconds").default(30).notNull(),
+  diagnosticIntervalSeconds: integer("diagnostic_interval_seconds").default(300).notNull(),
+  rawRetentionDays: integer("raw_retention_days").default(7).notNull(),
   aggregateRetentionDays: integer("aggregate_retention_days").default(1825).notNull(),
   enabled: boolean("enabled").default(true).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -285,6 +288,7 @@ export const readingProfiles = pgTable("reading_profiles", {
 }, (table) => [
   uniqueIndex("reading_profiles_key_uidx").on(table.key),
   check("reading_profiles_stale_positive_chk", sql`${table.staleAfterSeconds} > 0`),
+  check("reading_profiles_upload_intervals_chk", sql`${table.storageIntervalSeconds} BETWEEN 10 AND 86400 AND ${table.heartbeatIntervalSeconds} BETWEEN 10 AND 3600 AND ${table.diagnosticIntervalSeconds} BETWEEN 60 AND 86400`),
   check("reading_profiles_retention_positive_chk", sql`${table.rawRetentionDays} > 0 AND ${table.aggregateRetentionDays} >= ${table.rawRetentionDays}`),
 ]);
 
@@ -432,7 +436,7 @@ export const alarmRules = pgTable("alarm_rules", {
   hysteresis: numeric("hysteresis", { precision: 18, scale: 6 }).default("0").notNull(),
   activationSamples: smallint("activation_samples").default(3).notNull(),
   recoverySamples: smallint("recovery_samples").default(3).notNull(),
-  staleAfterSeconds: integer("stale_after_seconds").default(30).notNull(),
+  staleAfterSeconds: integer("stale_after_seconds").default(180).notNull(),
   updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [

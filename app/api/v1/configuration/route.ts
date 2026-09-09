@@ -125,6 +125,9 @@ async function snapshotPayload(db: Cam5Database, deviceId: string) {
       key: readingProfiles.key,
       name: readingProfiles.name,
       staleAfterSeconds: readingProfiles.staleAfterSeconds,
+      storageIntervalSeconds: readingProfiles.storageIntervalSeconds,
+      heartbeatIntervalSeconds: readingProfiles.heartbeatIntervalSeconds,
+      diagnosticIntervalSeconds: readingProfiles.diagnosticIntervalSeconds,
       rawRetentionDays: readingProfiles.rawRetentionDays,
       aggregateRetentionDays: readingProfiles.aggregateRetentionDays,
     }).from(readingProfiles).where(eq(readingProfiles.id, device.readingProfileId)).limit(1)
@@ -212,6 +215,9 @@ export async function GET(request: NextRequest) {
       profileName: readingProfiles.name,
       profileDescription: readingProfiles.description,
       staleAfterSeconds: readingProfiles.staleAfterSeconds,
+      storageIntervalSeconds: readingProfiles.storageIntervalSeconds,
+      heartbeatIntervalSeconds: readingProfiles.heartbeatIntervalSeconds,
+      diagnosticIntervalSeconds: readingProfiles.diagnosticIntervalSeconds,
       rawRetentionDays: readingProfiles.rawRetentionDays,
       aggregateRetentionDays: readingProfiles.aggregateRetentionDays,
       gatewayId: gateways.id,
@@ -328,6 +334,9 @@ export async function GET(request: NextRequest) {
         name: controller.profileName,
         description: controller.profileDescription,
         staleAfterSeconds: controller.staleAfterSeconds,
+        storageIntervalSeconds: controller.storageIntervalSeconds,
+        heartbeatIntervalSeconds: controller.heartbeatIntervalSeconds,
+        diagnosticIntervalSeconds: controller.diagnosticIntervalSeconds,
         rawRetentionDays: controller.rawRetentionDays,
         aggregateRetentionDays: controller.aggregateRetentionDays,
         ranges,
@@ -406,9 +415,13 @@ export async function PATCH(request: NextRequest) {
         const unitId = integer(body.unitId, "El Unit ID", 0, 247);
         const timeoutMs = integer(body.timeoutMs, "El timeout", 100, 60_000);
         const retries = integer(body.retries, "Los reintentos", 0, 10);
+        const storageIntervalSeconds = integer(body.storageIntervalSeconds, "La frecuencia de almacenamiento", 10, 86_400);
+        const heartbeatIntervalSeconds = integer(body.heartbeatIntervalSeconds, "La frecuencia de heartbeat", 10, 3_600);
+        const diagnosticIntervalSeconds = integer(body.diagnosticIntervalSeconds, "La frecuencia de diagnóstico", 60, 86_400);
         const rawRetentionDays = integer(body.rawRetentionDays, "La retención de datos crudos", 1, 3_650);
         const aggregateRetentionDays = integer(body.aggregateRetentionDays, "La retención de agregados", rawRetentionDays, 36_500);
         const staleAfterSeconds = integer(body.staleAfterSeconds, "El límite de dato atrasado", 1, 86_400);
+        if (staleAfterSeconds < storageIntervalSeconds * 2) throw new ApiError(400, "El límite de dato atrasado debe ser al menos dos veces la frecuencia de almacenamiento.");
         const ranges = Array.isArray(body.ranges) ? body.ranges : [];
         if (!controller.profileId || !ranges.length) throw new ApiError(400, "El perfil de lectura debe conservar al menos un rango.");
         const parsedRanges = ranges.map((item, index) => {
@@ -439,6 +452,9 @@ export async function PATCH(request: NextRequest) {
             name: `${sourceProfile.name} · ${current.code}`.slice(0, 120),
             description: `Perfil dedicado del controlador ${current.code}.`,
             staleAfterSeconds: sourceProfile.staleAfterSeconds,
+            storageIntervalSeconds: sourceProfile.storageIntervalSeconds,
+            heartbeatIntervalSeconds: sourceProfile.heartbeatIntervalSeconds,
+            diagnosticIntervalSeconds: sourceProfile.diagnosticIntervalSeconds,
             rawRetentionDays: sourceProfile.rawRetentionDays,
             aggregateRetentionDays: sourceProfile.aggregateRetentionDays,
             enabled: true,
@@ -461,11 +477,11 @@ export async function PATCH(request: NextRequest) {
           effectiveRanges = parsedRanges.map((range) => ({ ...range, id: replacementIds.get(range.id) ?? range.id }));
         }
         const [updated] = await tx.update(devices).set({ name, gatewayId, readingProfileId: effectiveProfileId, host, port, unitId, timeoutMs, retries, updatedAt: new Date() }).where(eq(devices.id, controller.id)).returning();
-        await tx.update(readingProfiles).set({ staleAfterSeconds, rawRetentionDays, aggregateRetentionDays, updatedAt: new Date() }).where(eq(readingProfiles.id, effectiveProfileId));
+        await tx.update(readingProfiles).set({ staleAfterSeconds, storageIntervalSeconds, heartbeatIntervalSeconds, diagnosticIntervalSeconds, rawRetentionDays, aggregateRetentionDays, updatedAt: new Date() }).where(eq(readingProfiles.id, effectiveProfileId));
         for (const range of effectiveRanges) {
           await tx.update(readingProfileRanges).set({ startRegister: range.startRegister, endRegister: range.endRegister, intervalMs: range.intervalMs, functionCode: range.functionCode, enabled: range.enabled }).where(and(eq(readingProfileRanges.id, range.id), eq(readingProfileRanges.profileId, effectiveProfileId)));
         }
-        after = { controller: updated, profile: { id: effectiveProfileId, staleAfterSeconds, rawRetentionDays, aggregateRetentionDays }, ranges: effectiveRanges };
+        after = { controller: updated, profile: { id: effectiveProfileId, staleAfterSeconds, storageIntervalSeconds, heartbeatIntervalSeconds, diagnosticIntervalSeconds, rawRetentionDays, aggregateRetentionDays }, ranges: effectiveRanges };
       } else {
         if (!controller) throw new ApiError(409, "El punto no tiene un controlador activo para configurar.");
         const items = Array.isArray(body.items) ? body.items : [];

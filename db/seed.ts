@@ -128,9 +128,12 @@ export async function seedCam5Database(
     await tx.insert(readingProfiles).values({
       key: "cam5-balanced-v1",
       name: "CAM5 equilibrado",
-      description: "Perfil inicial: variables operativas cada 2 s y diagnóstico en ciclos más lentos.",
-      staleAfterSeconds: 30,
-      rawRetentionDays: 30,
+      description: "Perfil equilibrado: lectura local rápida, persistencia operativa cada minuto y diagnóstico completo cada 5 minutos.",
+      staleAfterSeconds: 180,
+      storageIntervalSeconds: 60,
+      heartbeatIntervalSeconds: 30,
+      diagnosticIntervalSeconds: 300,
+      rawRetentionDays: 7,
       aggregateRetentionDays: 1825,
     }).onConflictDoNothing({ target: readingProfiles.key });
     const [profile] = await tx.select().from(readingProfiles).where(eq(readingProfiles.key, "cam5-balanced-v1")).limit(1);
@@ -275,7 +278,7 @@ export async function seedCam5Database(
         hysteresis: channel.metric === "humidity" ? "2" : channel.metric === "pd" || channel.metric === "sd" ? "5" : "1",
         activationSamples: 3,
         recoverySamples: 3,
-        staleAfterSeconds: 30,
+        staleAfterSeconds: 180,
       }).onConflictDoNothing({ target: alarmRules.channelId });
     }
 

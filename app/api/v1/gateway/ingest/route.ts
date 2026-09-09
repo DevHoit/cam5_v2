@@ -9,6 +9,7 @@ import {
   gateways,
   ingestionBatches,
   latestReadings,
+  readingProfiles,
   readings,
   registerDefinitions,
 } from "../../../../../db/schema";
@@ -164,8 +165,12 @@ export async function POST(request: NextRequest) {
       assetId: devices.assetId,
       modelId: devices.modelId,
       code: devices.code,
+      storageIntervalSeconds: readingProfiles.storageIntervalSeconds,
+      heartbeatIntervalSeconds: readingProfiles.heartbeatIntervalSeconds,
+      diagnosticIntervalSeconds: readingProfiles.diagnosticIntervalSeconds,
     }).from(devices)
       .innerJoin(assets, eq(assets.id, devices.assetId))
+      .leftJoin(readingProfiles, eq(readingProfiles.id, devices.readingProfileId))
       .where(and(
       eq(devices.gatewayId, credential.gatewayId),
       eq(devices.code, payload.device.code),
@@ -349,7 +354,9 @@ export async function POST(request: NextRequest) {
       success: complete,
       alarms: alarmEvaluation,
       serverTime: receivedAt.toISOString(),
-      nextUploadInMs: complete ? 2_000 : 10_000,
+      nextUploadInMs: complete ? (device.storageIntervalSeconds ?? 60) * 1_000 : 10_000,
+      nextHeartbeatInMs: (device.heartbeatIntervalSeconds ?? 30) * 1_000,
+      nextDiagnosticInMs: (device.diagnosticIntervalSeconds ?? 300) * 1_000,
     }, { status: 202, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return apiErrorResponse(error);
