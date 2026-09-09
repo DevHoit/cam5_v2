@@ -82,6 +82,9 @@ export async function GET(request: NextRequest) {
 
     const total = Number(totalRows[0]?.value ?? 0);
     const statusRows = allCredentials.map((credential) => ({ ...credential, status: serializeStatus(credential, now) }));
+    const renewalWarningAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1_000);
+    const expiringCredentials = statusRows.filter((credential) => (credential.status === "active" || credential.status === "unused") && credential.expiresAt && credential.expiresAt <= renewalWarningAt).length;
+    const expiredCredentials = statusRows.filter((credential) => credential.status === "expired").length;
     return Response.json({
       gateways: gatewayRows.map((gateway) => ({
         ...gateway,
@@ -108,6 +111,8 @@ export async function GET(request: NextRequest) {
         onlineGateways: gatewayRows.filter((gateway) => gateway.state === "online").length,
         activeCredentials: statusRows.filter((credential) => credential.status === "active" || credential.status === "unused").length,
         usedCredentials: statusRows.filter((credential) => credential.lastUsedAt && (credential.status === "active")).length,
+        expiringCredentials,
+        expiredCredentials,
       },
       serverTime: now.toISOString(),
     }, { headers: { "Cache-Control": "no-store" } });

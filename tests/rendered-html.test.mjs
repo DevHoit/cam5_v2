@@ -174,6 +174,9 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(page, /Provisionamiento del gateway/);
   assert.match(provisioning, /Descargar \.env/);
   assert.match(provisioning, /Rotar credencial/);
+  assert.match(provisioning, /Renovar misma credencial/);
+  assert.match(provisioning, /Confirmo la renovación sin cambiar el token/);
+  assert.match(provisioning, /Renovación requerida/);
   assert.match(provisioning, /credential-secret-backdrop/);
   assert.match(provisioning, /role="alertdialog"/);
   assert.match(provisioning, /Copiar token completo/);
@@ -184,6 +187,9 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(provisioningApi, /settings\.write/);
   assert.doesNotMatch(provisioningApi, /tokenHash: gatewayApiCredentials\.tokenHash/);
   assert.match(provisioningCredentialApi, /gateway_credentials\.revoke/);
+  assert.match(provisioningCredentialApi, /gateway_credentials\.renew/);
+  assert.match(provisioningCredentialApi, /body\.confirmed !== true/);
+  assert.match(provisioningCredentialApi, /tokenChanged: false/);
   assert.doesNotMatch(page, /CAM5-CTRL-01|CAM5-GW-01|Subestación Norte/);
   assert.match(page, /activeController\?\.code/);
   assert.match(page, /gatewayCode/);
