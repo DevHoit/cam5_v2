@@ -157,7 +157,7 @@ def main():
         reason = None
         registers = operational_registers
         if alarm_changed:
-            reason = "state-change"
+            reason = "alarm" if any(state != "normal" for state in current_alarm_states.values()) else "recovery"
         elif now >= next_diagnostic:
             reason = "diagnostic"
             registers = diagnostic_registers
@@ -171,7 +171,7 @@ def main():
             if response:
                 print(response["status"], reason, "registros:", response["accepted"])
                 next_storage = now + response.get("nextUploadInMs", storage_seconds * 1000) / 1000.0
-                if reason == "state-change":
+                if reason in ("alarm", "recovery"):
                     last_state_upload = now
 
         if now >= next_heartbeat:

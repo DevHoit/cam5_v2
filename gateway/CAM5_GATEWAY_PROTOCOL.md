@@ -46,6 +46,7 @@ El heartbeat actualiza la conectividad sin crear filas históricas. Si Modbus no
 ```json
 {
   "schemaVersion": "1.0",
+  "trigger": "scheduled",
   "batchKey": "550e8400-e29b-41d4-a716-446655440000:fast:1842",
   "sentAt": "2026-09-05T18:42:16.325Z",
   "gateway": {
@@ -93,6 +94,7 @@ El ejemplo muestra dos registros para que sea legible. En operación, `expectedR
 ### Campos obligatorios
 
 - `schemaVersion`: siempre `1.0`.
+- `trigger`: `scheduled`, `diagnostic`, `alarm`, `recovery` o `error`. Si se omite, el backend asume `scheduled` y aplica la limitación normal de almacenamiento.
 - `batchKey`: identificador único e inmutable del lote, máximo 160 caracteres. Reenviar el mismo lote debe conservar esta clave.
 - `sentAt`: hora UTC en que el gateway envía la solicitud.
 - `gateway.code`: código configurado en HoitLive Core.
@@ -171,7 +173,7 @@ Un lote nuevo responde HTTP `202`:
 }
 ```
 
-Reenviar el mismo `batchKey` responde HTTP `200` con `status: "duplicate"`. Esto se considera éxito: el gateway debe retirar ese lote de su cola local.
+Reenviar el mismo `batchKey` responde HTTP `200` con `status: "duplicate"`. Si un envío programado llega antes de la frecuencia configurada, responde HTTP `202` con `status: "deferred"`: la conectividad se actualiza, pero no se crean filas históricas. Ambos estados se consideran éxito y el gateway debe retirar el lote de su cola local.
 
 Errores `400`, `403`, `404`, `413` o `422` indican que el lote no debe repetirse sin corregirlo. Errores `429` o `5xx` deben reintentarse con espera exponencial.
 

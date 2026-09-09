@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, max, sql } from "drizzle-orm";
 import { evaluateAlarmReadings, evaluateStaleCommunications } from "../../../../../db/alarm-engine";
 import {
   assets,
@@ -39,6 +39,7 @@ type GatewayReading = {
 
 type IngestionPayload = {
   schemaVersion: "1.0";
+  trigger: "scheduled" | "diagnostic" | "alarm" | "recovery" | "error";
   batchKey: string;
   sentAt: Date;
   gateway: { code: string; bootId: string; sequence: number; uptimeSeconds?: number };
@@ -79,6 +80,8 @@ function timestamp(value: unknown, label: string, now: Date): Date {
 function parsePayload(value: unknown, now: Date): IngestionPayload {
   const body = object(value, "El cuerpo");
   if (body.schemaVersion !== "1.0") throw new ApiError(400, "schemaVersion debe ser 1.0.");
+  const trigger = body.trigger === undefined ? "scheduled" : body.trigger;
+  if (!(trigger === "scheduled" || trigger === "diagnostic" || trigger === "alarm" || trigger === "recovery" || trigger === "error")) throw new ApiError(400, "trigger no es válido.");
   const gateway = object(body.gateway, "gateway");
   const device = object(body.device, "device");
   const poll = object(body.poll, "poll");
@@ -123,6 +126,7 @@ function parsePayload(value: unknown, now: Date): IngestionPayload {
   const measuredLatency = Math.max(0, completedAt.getTime() - startedAt.getTime());
   return {
     schemaVersion: "1.0",
+    trigger,
     batchKey: requiredString(body.batchKey, "batchKey"),
     sentAt,
     gateway: {
@@ -219,6 +223,50 @@ export async function POST(request: NextRequest) {
     });
 
     const complete = !payload.poll.error && transformed.length === payload.poll.expectedRegisters;
+    const storageIntervalMs = (device.storageIntervalSeconds ?? 60) * 1_000;
+    const diagnosticIntervalMs = (device.diagnosticIntervalSeconds ?? 300) * 1_000;
+    const operational = transformed.filter((entry) => entry.definition.channelId);
+    const channelIds = operational.map((entry) => entry.definition.channelId!);
+    const latestChannelRows = channelIds.length ? await db.select({ channelId: latestReadings.channelId, recordedAt: latestReadings.recordedAt })
+      .from(latestReadings)
+      .where(inArray(latestReadings.channelId, channelIds)) : [];
+    const latestByChannel = new Map(latestChannelRows.map((entry) => [entry.channelId, entry.recordedAt]));
+    const operationalDue = operational.filter((entry) => {
+      const last = latestByChannel.get(entry.definition.channelId!);
+      return !last || receivedAt.getTime() - last.getTime() >= storageIntervalMs;
+    });
+    const definitionIds = transformed.map((entry) => entry.definition.id);
+    const [latestDiagnostic] = definitionIds.length ? await db.select({ recordedAt: max(deviceRegisterSamples.recordedAt) })
+      .from(deviceRegisterSamples)
+      .where(and(eq(deviceRegisterSamples.deviceId, device.id), inArray(deviceRegisterSamples.registerDefinitionId, definitionIds))) : [];
+    const diagnosticDue = payload.trigger === "diagnostic"
+      || !latestDiagnostic?.recordedAt
+      || receivedAt.getTime() - latestDiagnostic.recordedAt.getTime() >= diagnosticIntervalMs;
+    const exceptional = Boolean(payload.poll.error) || payload.trigger === "alarm" || payload.trigger === "recovery" || payload.trigger === "error" || transformed.some((entry) => entry.quality !== "good");
+    const operationalToStore = exceptional ? operational : operationalDue;
+
+    if (!exceptional && !diagnosticDue && operationalToStore.length === 0) {
+      await db.transaction(async (tx) => {
+        await tx.update(gateways).set({ state: "online", lastSeenAt: receivedAt, updatedAt: receivedAt }).where(eq(gateways.id, credential.gatewayId));
+        await tx.update(devices).set({
+          state: transformed.length ? "active" : "offline",
+          ...(transformed.length ? { lastReadAt: payload.poll.completedAt } : {}),
+          updatedAt: receivedAt,
+        }).where(eq(devices.id, device.id));
+        await tx.update(assets).set({ state: transformed.length ? "normal" : "offline", updatedAt: receivedAt }).where(eq(assets.id, device.assetId));
+      });
+      return Response.json({
+        status: "deferred",
+        accepted: 0,
+        observed: transformed.length,
+        success: true,
+        serverTime: receivedAt.toISOString(),
+        nextUploadInMs: storageIntervalMs,
+        nextHeartbeatInMs: (device.heartbeatIntervalSeconds ?? 30) * 1_000,
+        nextDiagnosticInMs: diagnosticIntervalMs,
+      }, { status: 202, headers: { "Cache-Control": "no-store" } });
+    }
+
     const result = await db.transaction(async (tx) => {
       const [batch] = await tx.insert(ingestionBatches).values({
         gatewayId: credential.gatewayId,
@@ -249,7 +297,7 @@ export async function POST(request: NextRequest) {
         return { id: duplicate.id, duplicate: true, success: duplicate.success, accepted: duplicate.receivedRegisters };
       }
 
-      if (transformed.length) {
+      if (transformed.length && (diagnosticDue || exceptional)) {
         await tx.insert(deviceRegisterSamples).values(transformed.map((entry) => ({
           batchId: batch.id,
           deviceId: device.id,
@@ -264,9 +312,8 @@ export async function POST(request: NextRequest) {
         })));
       }
 
-      const operational = transformed.filter((entry) => entry.definition.channelId);
-      if (operational.length) {
-        const insertedReadings = await tx.insert(readings).values(operational.map((entry) => ({
+      if (operationalToStore.length) {
+        const insertedReadings = await tx.insert(readings).values(operationalToStore.map((entry) => ({
           channelId: entry.definition.channelId!,
           batchId: batch.id,
           recordedAt: entry.reading.recordedAt,
@@ -350,13 +397,14 @@ export async function POST(request: NextRequest) {
       status: "accepted",
       batchId: result.id,
       accepted: transformed.length,
-      operationalReadings: transformed.filter((entry) => entry.definition.channelId).length,
+      operationalReadings: operationalToStore.length,
+      diagnosticSnapshotStored: diagnosticDue || exceptional,
       success: complete,
       alarms: alarmEvaluation,
       serverTime: receivedAt.toISOString(),
-      nextUploadInMs: complete ? (device.storageIntervalSeconds ?? 60) * 1_000 : 10_000,
+      nextUploadInMs: complete ? storageIntervalMs : 10_000,
       nextHeartbeatInMs: (device.heartbeatIntervalSeconds ?? 30) * 1_000,
-      nextDiagnosticInMs: (device.diagnosticIntervalSeconds ?? 300) * 1_000,
+      nextDiagnosticInMs: diagnosticIntervalMs,
     }, { status: 202, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return apiErrorResponse(error);
