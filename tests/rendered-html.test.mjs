@@ -130,7 +130,11 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(page, /pageSize: "100"/);
   assert.match(page, /Cadena de adquisición/);
   assert.match(page, /Gestionar todas las alertas/);
-  assert.match(page, /El portal conserva el último dato recibido, pero no lo presenta como una lectura actual/);
+  assert.match(page, /Cargando estado operativo/);
+  assert.match(page, /Esto no significa que el gateway esté desconectado/);
+  assert.match(page, /data\.gateway\?\.state !== "online" \? "offline" : !hasReadings \? "waiting"/);
+  assert.match(page, /const acquisitionMode = telemetryState\.status === "loading"/);
+  assert.doesNotMatch(page, /telemetryState\.data\?\.gateway\?\.state \?\? activeGateway\?\.state/);
   assert.match(page, /Canales vigentes/);
   assert.doesNotMatch(page, /normalizedSeries|mini-chart/);
   assert.match(page, /inputSummary\.total/);
