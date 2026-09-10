@@ -1678,7 +1678,6 @@ export default function Home() {
   const activeRole = sessionUser.roleName;
   const activePoint = hierarchy?.points.find((point) => point.id === activePointId && point.active) ?? hierarchy?.points.find((point) => point.active);
   const activeGateway = hierarchy?.gateways.find((gateway) => gateway.active);
-  const activeController = hierarchy?.controllers.find((controller) => controller.active && controller.pointId === activePoint?.id) ?? hierarchy?.controllers.find((controller) => controller.active);
   const gatewayState = telemetryState.data?.gateway?.state;
   const gatewayCode = telemetryState.data?.gateway?.code ?? activeGateway?.code;
   const acquisitionMode = telemetryState.status === "loading" ? "loading" : telemetryState.status === "error" ? "unknown" : gatewayState === "online" ? "normal" : "offline";
@@ -1730,7 +1729,6 @@ export default function Home() {
           ))}
         </nav>
         <div className="sidebar-status">
-          <div className={`gateway-badge gateway-${acquisitionMode}`}><span className="gateway-icon"><Server size={17} /></span><span><strong>{acquisitionTitle}</strong><small>{activeController?.code ?? "Controlador pendiente"} → {gatewayCode ?? "Gateway pendiente"}</small></span><i className={acquisitionMode === "normal" ? "" : acquisitionMode} /></div>
           <button className="user-card" onClick={() => navigate("account")} aria-label="Abrir mi cuenta"><span className="user-avatar">{sessionUser.displayName.split(" ").map((part) => part[0]).slice(0, 2).join("").toUpperCase()}</span><span className="user-copy"><strong>{sessionUser.displayName}</strong><small>{sessionUser.roleName}</small></span><ChevronRight size={16} /></button>
           <button className="sidebar-logout" onClick={logout}><LogOut size={17} /> Cerrar sesión</button>
         </div>

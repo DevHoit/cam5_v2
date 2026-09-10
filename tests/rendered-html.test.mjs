@@ -193,7 +193,8 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(provisioningCredentialApi, /body\.confirmed !== true/);
   assert.match(provisioningCredentialApi, /tokenChanged: false/);
   assert.doesNotMatch(page, /CAM5-CTRL-01|CAM5-GW-01|Subestación Norte/);
-  assert.match(page, /activeController\?\.code/);
+  assert.doesNotMatch(page, /gateway-badge|activeController\?\.code/);
+  assert.match(page, /live-state/);
   assert.match(page, /gatewayCode/);
   assert.match(settings, /Modbus TCP/);
   assert.match(settings, /Mapa oficial de registros CAM5/);
