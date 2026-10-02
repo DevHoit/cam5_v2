@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  IconActivity as Activity,
   IconBolt as Bolt,
   IconCpu as Cpu,
   IconPlus as Plus,
