@@ -41,6 +41,7 @@ jobs:
           app/api/v1/gateway/_lib/ingest-v2.ts
           app/api/v1/telemetry/metrics
           app/api/v1/cold-chain
+          app/cold-chain-view.tsx
           tests/gateway-ingest-v2.test.ts
           tests/cold-chain.test.ts
           tests/database-schema.test.mjs
