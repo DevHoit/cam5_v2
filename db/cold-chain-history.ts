@@ -57,10 +57,11 @@ export function detectTemperatureExcursions(input: {
     if (previous) {
       const gapSeconds = Math.round((point.recordedAt.getTime() - previous.recordedAt.getTime()) / 1000);
       if (gapSeconds > input.staleAfterSeconds) {
-        closeActive(previous.recordedAt);
+        const staleBoundary = new Date(previous.recordedAt.getTime() + input.staleAfterSeconds * 1000);
+        closeActive(staleBoundary);
         excursions.push({
           type: "data_gap",
-          startedAt: new Date(previous.recordedAt.getTime() + input.staleAfterSeconds * 1000),
+          startedAt: staleBoundary,
           endedAt: point.recordedAt,
           durationSeconds: Math.max(0, gapSeconds - input.staleAfterSeconds),
           extremeC: null,
@@ -105,24 +106,29 @@ export function detectTemperatureExcursions(input: {
     }
   }
 
+  const last = points[points.length - 1];
+  const trailingGapSeconds = Math.round((input.rangeEnd.getTime() - last.recordedAt.getTime()) / 1000);
+  const trailingIsStale = trailingGapSeconds > input.staleAfterSeconds;
+
   if (active) {
-    const durationSeconds = Math.max(0, Math.round((input.rangeEnd.getTime() - active.startedAt.getTime()) / 1000));
+    const thermalEnd = trailingIsStale
+      ? new Date(last.recordedAt.getTime() + input.staleAfterSeconds * 1000)
+      : input.rangeEnd;
+    const durationSeconds = Math.max(0, Math.round((thermalEnd.getTime() - active.startedAt.getTime()) / 1000));
     if (durationSeconds >= input.excursionDelaySeconds) {
       excursions.push({
         type: active.type,
         startedAt: active.startedAt,
-        endedAt: null,
+        endedAt: trailingIsStale ? thermalEnd : null,
         durationSeconds,
         extremeC: active.extremeC,
         thresholdC: active.thresholdC,
-        active: true,
+        active: !trailingIsStale,
       });
     }
   }
 
-  const last = points[points.length - 1];
-  const trailingGapSeconds = Math.round((input.rangeEnd.getTime() - last.recordedAt.getTime()) / 1000);
-  if (trailingGapSeconds > input.staleAfterSeconds) {
+  if (trailingIsStale) {
     excursions.push({
       type: "data_gap",
       startedAt: new Date(last.recordedAt.getTime() + input.staleAfterSeconds * 1000),
