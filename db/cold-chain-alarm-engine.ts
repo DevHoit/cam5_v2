@@ -416,7 +416,7 @@ export async function evaluateColdChainSite(db: Cam5Database, siteId: string, ev
   ));
   const results = [];
   for (const chamber of chambers) results.push(await evaluateColdChainAsset(db, chamber.id, evaluatedAt));
-  return results.reduce((summary, item) => ({
+  return results.reduce<{ chambers: number; opened: number; resolved: number; evaluated: number }>((summary, item) => ({
     chambers: summary.chambers + 1,
     opened: summary.opened + item.opened,
     resolved: summary.resolved + item.resolved,
