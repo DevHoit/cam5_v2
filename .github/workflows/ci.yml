@@ -38,6 +38,7 @@ jobs:
           db/hoit-metrics.ts
           db/cold-chain.ts
           db/cold-chain-history.ts
+          db/cold-chain-alarm-engine.ts
           app/api/v1/gateway/ingest/route.ts
           app/api/v1/gateway/_lib/ingest-v2.ts
           app/api/v1/telemetry/metrics
