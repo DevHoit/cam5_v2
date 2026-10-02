@@ -36,6 +36,7 @@ jobs:
           db/schema.ts
           db/seed.ts
           db/hoit-metrics.ts
+          db/pm5560.ts
           db/cold-chain.ts
           db/cold-chain-history.ts
           db/cold-chain-alarm-engine.ts
@@ -45,10 +46,13 @@ jobs:
           app/api/v1/gateway/_lib/ingest-v2.ts
           app/api/v1/telemetry/metrics
           app/api/v1/cold-chain
+          app/api/v1/electrical
           app/cold-chain-view.tsx
           app/cold-chain-detail.tsx
+          app/electrical-view.tsx
           app/reports-view.tsx
           tests/gateway-ingest-v2.test.ts
+          tests/pm5560-e2e.test.ts
           tests/cold-chain-e2e.test.ts
           tests/cold-chain.test.ts
           tests/cold-chain-history.test.ts
