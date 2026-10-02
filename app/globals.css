@@ -2323,3 +2323,33 @@ button.module-table-row { width: 100%; }
 @media (max-width: 640px) {
   .report-meter-grid article > div { grid-template-columns: 1fr; }
 }
+
+.ats-units { display: grid; gap: 14px; }
+.ats-unit-card { border: 1px solid var(--border); border-radius: 14px; background: var(--surface); overflow: hidden; }
+.ats-unit-card > header { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; padding: 16px 18px; border-bottom: 1px solid var(--border); }
+.ats-unit-card > header > div:first-child { display: grid; gap: 3px; }
+.ats-unit-card > header span { color: var(--muted); font-size: .72rem; }
+.ats-unit-card > header h3 { margin: 0; font-size: 1.05rem; }
+.ats-unit-card > header p { margin: 0; color: var(--muted); font-size: .78rem; }
+.ats-controller-card { padding: 16px 18px 18px; display: grid; gap: 14px; border-top: 1px solid var(--border); }
+.ats-unit-card > header + .ats-controller-card { border-top: 0; }
+.ats-source-grid { display: grid; grid-template-columns: minmax(0, 1fr) 150px minmax(0, 1fr); gap: 12px; align-items: stretch; }
+.ats-source-grid > article { border: 1px solid var(--border); border-radius: 12px; padding: 12px; display: grid; gap: 10px; background: var(--surface-2); }
+.ats-source-grid > article.source-unavailable { border-style: dashed; }
+.ats-source-grid > article header { display: grid; grid-template-columns: auto 1fr auto; gap: 7px; align-items: center; }
+.ats-source-grid > article header b { font-size: .7rem; }
+.ats-source-grid > article > div { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.ats-source-grid > article > div span { display: grid; gap: 2px; font-size: .68rem; color: var(--muted); }
+.ats-source-grid > article > div b { color: inherit; font-size: .78rem; }
+.ats-source-grid > article footer { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: .7rem; }
+.ats-transfer-core { border: 1px solid var(--border); border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; text-align: center; padding: 10px; background: var(--surface-2); }
+.ats-transfer-core small, .ats-transfer-core span { color: var(--muted); font-size: .68rem; }
+.ats-transfer-core strong { font-size: .95rem; text-transform: uppercase; }
+.ats-transfer-core b { font-size: .66rem; }
+.ats-transfer-core .ats-alarm-active { font-weight: 800; }
+.ats-checkbox { display: flex !important; flex-direction: row !important; align-items: center; gap: 8px !important; min-height: 42px; }
+.ats-checkbox input { width: 16px; height: 16px; }
+@media (max-width: 900px) {
+  .ats-source-grid { grid-template-columns: 1fr; }
+  .ats-transfer-core { min-height: 120px; }
+}
