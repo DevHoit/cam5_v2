@@ -154,12 +154,20 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
             set: { activeAlarmId: id, currentSeverity: target.severity, currentKind: target.kind, breachCount: 0, recoveryCount: 0, updatedAt: new Date() },
           });
         }
-        await tx.update(operationalConditionStates).set({
-          activeAlarmId: id,
-          observed: true,
-          firstObservedAt: new Date(),
-          updatedAt: new Date(),
-        }).where(eq(operationalConditionStates.assetId, target.assetId));
+        const conditionKey = target.context?.source === "cold_chain" && typeof target.context.conditionKey === "string"
+          ? target.context.conditionKey
+          : null;
+        if (conditionKey) {
+          await tx.update(operationalConditionStates).set({
+            activeAlarmId: id,
+            observed: true,
+            firstObservedAt: new Date(),
+            updatedAt: new Date(),
+          }).where(and(
+            eq(operationalConditionStates.assetId, target.assetId),
+            eq(operationalConditionStates.conditionKey, conditionKey),
+          ));
+        }
         eventType = "reopened_manually";
       } else if (action === "assign") {
         requirePermission("alarms.acknowledge");
