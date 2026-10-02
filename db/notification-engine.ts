@@ -95,6 +95,7 @@ export async function queueAlarmNotifications(
     assetId: alarms.assetId,
     assetCode: assets.code,
     assetName: assets.name,
+    assetState: assets.state,
     channelCode: channels.code,
     channelName: channels.name,
     siteName: sites.name,
@@ -105,7 +106,7 @@ export async function queueAlarmNotifications(
     .leftJoin(channels, eq(channels.id, alarms.channelId))
     .where(and(eq(alarms.id, input.alarmId), eq(alarms.siteId, input.siteId)))
     .limit(1);
-  if (!alarm) return 0;
+  if (!alarm || alarm.assetState === "maintenance") return 0;
 
   const policies = await db.select({
     id: notificationPolicies.id,
@@ -187,6 +188,7 @@ export async function queueRepeatingNotifications(db: Cam5Database, now = new Da
     detail: alarms.detail,
     assetCode: assets.code,
     assetName: assets.name,
+    assetState: assets.state,
     siteName: sites.name,
     siteTimezone: sites.timezone,
   }).from(alarms)
@@ -203,6 +205,7 @@ export async function queueRepeatingNotifications(db: Cam5Database, now = new Da
 
   const values = rows.flatMap((row) => {
     const interval = row.intervalMinutes;
+    if (row.assetState === "maintenance") return [];
     if (!interval || now.getTime() < row.openedAt.getTime() + interval * 60_000) return [];
     if (severityRank[row.severity] < severityRank[row.minimumSeverity]) return [];
     if (!policyMatches(normalizedFilters(row.filters), { kind: row.kind as NotificationAlarmKind, assetId: row.assetId, eventType: "repeat" })) return [];
