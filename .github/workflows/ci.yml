@@ -37,6 +37,9 @@ jobs:
           db/seed.ts
           db/hoit-metrics.ts
           db/pm5560.ts
+          db/operational-condition-engine.ts
+          db/electrical-alarm-engine.ts
+          db/electrical.ts
           db/cold-chain.ts
           db/cold-chain-history.ts
           db/cold-chain-alarm-engine.ts
