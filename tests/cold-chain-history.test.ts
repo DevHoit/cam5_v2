@@ -69,3 +69,26 @@ test("keeps current excursion active at the end of the range", () => {
   assert.equal(low?.active, true);
   assert.equal(low?.extremeC, 0.5);
 });
+
+
+test("caps a thermal excursion at the stale boundary when telemetry stops", () => {
+  const result = detectTemperatureExcursions({
+    points: [
+      t("2026-10-02T10:00:00Z", 9),
+      t("2026-10-02T10:01:00Z", 9.4),
+    ],
+    minimumC: 2,
+    maximumC: 8,
+    staleAfterSeconds: 120,
+    excursionDelaySeconds: 60,
+    rangeEnd: new Date("2026-10-02T10:10:00Z"),
+  });
+
+  const high = result.find((item) => item.type === "high");
+  const gap = result.find((item) => item.type === "data_gap");
+  assert.equal(high?.active, false);
+  assert.equal(high?.endedAt?.toISOString(), "2026-10-02T10:03:00.000Z");
+  assert.equal(high?.durationSeconds, 180);
+  assert.equal(gap?.active, true);
+  assert.equal(gap?.startedAt.toISOString(), "2026-10-02T10:03:00.000Z");
+});
