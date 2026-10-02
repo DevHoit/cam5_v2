@@ -66,7 +66,8 @@ type View = "overview" | "cabinet" | "electrical" | "ats" | "cold-chain" | "diag
 type Severity = "critical" | "warning" | "info";
 type SensorState = "normal" | "warning" | "critical";
 type HistoryTab = "measurements" | "alarms" | "audit";
-type UserRole = "Administrador" | "Ingeniero" | "Operador" | "Solo lectura";
+type PortalRoleKey = "platform_admin" | "client_admin" | "site_admin" | "engineer" | "operator" | "viewer";
+type UserRole = "Administrador HOIT" | "Administrador de cliente" | "Administrador de sitio" | "Ingeniero" | "Operador" | "Solo lectura";
 type AlarmWorkflowStatus = "open" | "acknowledged" | "resolved" | "closed";
 type PortalAlarm = {
   id: string;
@@ -119,12 +120,12 @@ type AlarmRuleRecord = {
   lastEvaluatedAt: string | null;
 };
 type TrendWindow = { from: string; to: string };
-type PortalSiteScope = { id: string; code: string; name: string; clientId: string; clientCode: string; clientName: string; roleKey: "administrator" | "engineer" | "operator" | "viewer"; roleName: UserRole };
+type PortalSiteScope = { id: string; code: string; name: string; clientId: string; clientCode: string; clientName: string; roleKey: PortalRoleKey; roleName: UserRole };
 type PortalSessionUser = {
   id: string;
   email: string;
   displayName: string;
-  roleKey: "administrator" | "engineer" | "operator" | "viewer";
+  roleKey: PortalRoleKey;
   roleName: UserRole;
   mustChangePassword: boolean;
   clientId: string;
@@ -134,6 +135,7 @@ type PortalSessionUser = {
   siteCode: string;
   siteName: string;
   sites: PortalSiteScope[];
+  clientScopes: Array<{ id: string; code: string; name: string; roleKey: PortalRoleKey; roleName: UserRole }>;
   permissions: string[];
 };
 type PortalHierarchy = {
@@ -215,7 +217,7 @@ const FeedbackContext = createContext<(message: string, tone?: NoticeTone) => vo
 const useFeedback = () => useContext(FeedbackContext);
 const ConfirmContext = createContext<(request: ConfirmRequest) => void>(() => undefined);
 const useConfirm = () => useContext(ConfirmContext);
-const RoleContext = createContext<UserRole>("Administrador");
+const RoleContext = createContext<UserRole>("Solo lectura");
 const useActiveRole = () => useContext(RoleContext);
 const TelemetryContext = createContext<PortalTelemetryState>({ status: "loading", data: null });
 
@@ -1002,11 +1004,13 @@ function OperationalHierarchyView({
   const [editorSaving, setEditorSaving] = useState(false);
   const [form, setForm] = useState({ code: "", name: "", clientId: "", area: "", voltage: "", ipAddress: "", pointId: "", gatewayId: "", host: "", port: "502", unitId: "1" });
 
-  const canManageClients = permissions.includes("users.manage");
+  const canManageClients = permissions.includes("clients.manage");
+  const canManageSites = permissions.includes("sites.manage");
   const canManagePoints = permissions.includes("assets.write");
   const canManageConnections = permissions.includes("settings.write");
   const availableResources: Array<{ value: Resource; label: string }> = [
-    ...(canManageClients ? [{ value: "client" as const, label: "Cliente" }, { value: "site" as const, label: "Sitio" }] : []),
+    ...(canManageClients ? [{ value: "client" as const, label: "Cliente" }] : []),
+    ...(canManageSites ? [{ value: "site" as const, label: "Sitio" }] : []),
     ...(canManagePoints ? [{ value: "point" as const, label: "Punto de medición" }] : []),
     ...(canManageConnections ? [{ value: "gateway" as const, label: "Gateway" }, { value: "controller" as const, label: "Controlador CAM5" }] : []),
   ];
@@ -1211,14 +1215,50 @@ function OperationalHierarchyView({
   </>;
 }
 
-function UsersView({ currentUserId, sites, activeSiteId }: { currentUserId: string; sites: PortalSiteScope[]; activeSiteId: string }) {
+function UsersView({
+  currentUserId,
+  currentRoleKey,
+  clientScopes,
+  sites,
+  activeSiteId,
+  activeClientId,
+  canManageUsers,
+}: {
+  currentUserId: string;
+  currentRoleKey: PortalRoleKey;
+  clientScopes: PortalSessionUser["clientScopes"];
+  sites: PortalSiteScope[];
+  activeSiteId: string;
+  activeClientId: string;
+  canManageUsers: boolean;
+}) {
   const notify = useFeedback();
   const confirm = useConfirm();
-  const currentRole = useActiveRole();
-  const manageableSites = sites.filter((site) => site.roleKey === "administrator");
-  type UserRow = { id: string; displayName: string; email: string; status: "active" | "suspended" | "invited"; mustChangePassword: boolean; lastLoginAt: string | null; createdAt: string; role: { key: "administrator" | "engineer" | "operator" | "viewer"; name: UserRole }; siteIds: string[] };
+  const manageableSites = sites.filter((site) => ["platform_admin", "client_admin", "site_admin"].includes(site.roleKey));
+  const manageableClients = clientScopes.filter((client) => ["platform_admin", "client_admin"].includes(client.roleKey));
+  type UserRow = {
+    id: string;
+    displayName: string;
+    email: string;
+    status: "active" | "suspended" | "invited";
+    mustChangePassword: boolean;
+    lastLoginAt: string | null;
+    createdAt: string;
+    role: { key: PortalRoleKey; name: UserRole };
+    scopeType: "platform" | "client" | "site";
+    clientId: string | null;
+    siteIds: string[];
+  };
   type UserResult = PaginationMeta & { items: UserRow[]; summary: { total: number; active: number; administrators: number; invited: number } };
-  const blankForm = { displayName: "", email: "", password: "", role: "operator" as UserRow["role"]["key"], status: "active" as UserRow["status"], siteIds: [activeSiteId] };
+  const blankForm = {
+    displayName: "",
+    email: "",
+    password: "",
+    role: "operator" as PortalRoleKey,
+    status: "active" as UserRow["status"],
+    clientId: activeClientId,
+    siteIds: [activeSiteId],
+  };
   const [result, setResult] = useState<UserResult | null>(null);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -1232,7 +1272,7 @@ function UsersView({ currentUserId, sites, activeSiteId }: { currentUserId: stri
   const [reload, setReload] = useState(0);
 
   useEffect(() => {
-    if (currentRole !== "Administrador") return;
+    if (!canManageUsers) return;
     let active = true;
     const timeout = window.setTimeout(async () => {
       setLoading(true);
@@ -1249,10 +1289,10 @@ function UsersView({ currentUserId, sites, activeSiteId }: { currentUserId: stri
       }
     }, 250);
     return () => { active = false; window.clearTimeout(timeout); };
-  }, [currentRole, page, query, statusFilter, reload]);
+  }, [canManageUsers, page, query, statusFilter, reload]);
 
   const openCreate = () => { setEditingId(null); setForm(blankForm); setShowForm(true); };
-  const openEdit = (user: UserRow) => { setEditingId(user.id); setForm({ displayName: user.displayName, email: user.email, password: "", role: user.role.key, status: user.status, siteIds: user.siteIds }); setShowForm(true); };
+  const openEdit = (user: UserRow) => { setEditingId(user.id); setForm({ displayName: user.displayName, email: user.email, password: "", role: user.role.key, status: user.status, clientId: user.clientId ?? activeClientId, siteIds: user.siteIds.length ? user.siteIds : [activeSiteId] }); setShowForm(true); };
   const toggleSite = (siteId: string) => setForm((current) => ({ ...current, siteIds: current.siteIds.includes(siteId) ? current.siteIds.filter((id) => id !== siteId) : [...current.siteIds, siteId] }));
   const submitUser = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -1275,13 +1315,13 @@ function UsersView({ currentUserId, sites, activeSiteId }: { currentUserId: stri
   };
   const deleteUser = (user: UserRow) => confirm({
     title: `Quitar acceso de ${user.displayName}`,
-    detail: "Se revocará su acceso al sitio activo. Sus accesos a otros sitios se conservarán y la acción quedará registrada en auditoría.",
+    detail: "Se revocará el acceso que está dentro de tu alcance administrativo. Los accesos fuera de ese alcance se conservarán y la acción quedará registrada en auditoría.",
     confirmLabel: "Quitar acceso",
     tone: "danger",
     onConfirm: async () => {
       try {
         await portalRequest(`/api/v1/users/${user.id}`, { method: "DELETE" });
-        notify(`Se quitó el acceso de ${user.displayName} al sitio activo.`);
+        notify(`Se actualizó el acceso de ${user.displayName} dentro de tu alcance administrativo.`);
         if ((result?.items.length ?? 0) === 1 && page > 1) setPage(page - 1);
         else setReload((value) => value + 1);
       } catch (requestError) {
@@ -1290,19 +1330,19 @@ function UsersView({ currentUserId, sites, activeSiteId }: { currentUserId: stri
     },
   });
 
-  if (currentRole !== "Administrador") return <PermissionState area="usuarios y roles" />;
+  if (!canManageUsers) return <PermissionState area="usuarios y roles" />;
 
   return (
     <>
       <section className="module-summary-grid user-summary-grid"><article><span className="module-summary-icon blue"><Users size={19} /></span><div><small>Usuarios registrados</small><strong>{result?.summary.total ?? 0}</strong><span>{result?.summary.active ?? 0} activos</span></div></article><article><span className="module-summary-icon green"><ShieldCheck size={19} /></span><div><small>Administradores</small><strong>{result?.summary.administrators ?? 0}</strong><span>Acceso total</span></div></article><article><span className="module-summary-icon amber"><Mail size={19} /></span><div><small>Invitaciones pendientes</small><strong>{result?.summary.invited ?? 0}</strong><span>Sin primer acceso</span></div></article></section>
       <article className="panel module-panel users-module">
         <div className="module-toolbar"><div><span className="eyebrow">Control de acceso</span><h2>Equipo con acceso al portal</h2></div><button className="primary-button" onClick={showForm ? () => setShowForm(false) : openCreate}><UserPlus size={16} />{showForm ? "Cancelar" : "Crear usuario"}</button></div>
-        {showForm && <form className="user-editor-form" onSubmit={submitUser}><div><span className="eyebrow">{editingId ? "Editar acceso" : "Nuevo acceso"}</span><h3>{editingId ? "Actualizar usuario" : "Crear usuario conectado a PostgreSQL"}</h3></div><label><span>Nombre completo</span><input required minLength={3} value={form.displayName} onChange={(event) => setForm({ ...form, displayName: event.target.value })} /></label><label><span>Correo electrónico</span><input type="email" required value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label><label><span>{editingId ? "Nueva contraseña temporal (opcional)" : "Contraseña temporal"}</span><input type="password" required={!editingId} minLength={10} autoComplete="new-password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} placeholder="Mínimo 10 caracteres" /><small>{editingId ? "Si defines una nueva, se cerrarán sus sesiones y deberá cambiarla al ingresar." : "El usuario deberá reemplazarla durante su primer acceso."}</small></label><label><span>Perfil</span><select value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value as UserRow["role"]["key"] })}><option value="administrator">Administrador</option><option value="engineer">Ingeniero</option><option value="operator">Operador</option><option value="viewer">Solo lectura</option></select></label><label><span>Estado</span><select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as UserRow["status"] })}><option value="active">Activo</option><option value="suspended">Suspendido</option><option value="invited">Invitado</option></select></label><fieldset className="user-site-access"><legend>Sitios autorizados</legend><p>El perfil seleccionado se aplicará en cada sitio donde tienes administración.</p><div>{manageableSites.map((site) => <label key={site.id} className={form.siteIds.includes(site.id) ? "selected" : ""}><input type="checkbox" checked={form.siteIds.includes(site.id)} onChange={() => toggleSite(site.id)} /><span><strong>{site.name}</strong><small>{site.clientName} · {site.code}</small></span></label>)}</div>{!form.siteIds.length && <small className="field-error">Selecciona al menos un sitio.</small>}</fieldset><div className="user-editor-actions"><button type="button" className="secondary-button" onClick={() => setShowForm(false)}>Cancelar</button><button type="submit" className="primary-button" disabled={saving || !form.siteIds.length}>{saving ? "Guardando…" : editingId ? "Guardar cambios" : "Crear usuario"}</button></div></form>}
+        {showForm && <form className="user-editor-form" onSubmit={submitUser}><div><span className="eyebrow">{editingId ? "Editar acceso" : "Nuevo acceso"}</span><h3>{editingId ? "Actualizar usuario" : "Crear usuario conectado a PostgreSQL"}</h3></div><label><span>Nombre completo</span><input required minLength={3} value={form.displayName} onChange={(event) => setForm({ ...form, displayName: event.target.value })} /></label><label><span>Correo electrónico</span><input type="email" required value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label><label><span>{editingId ? "Nueva contraseña temporal (opcional)" : "Contraseña temporal"}</span><input type="password" required={!editingId} minLength={10} autoComplete="new-password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} placeholder="Mínimo 10 caracteres" /><small>{editingId ? "Si defines una nueva, se cerrarán sus sesiones y deberá cambiarla al ingresar." : "El usuario deberá reemplazarla durante su primer acceso."}</small></label><label><span>Perfil</span><select value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value as PortalRoleKey })}>{currentRoleKey === "platform_admin" && <option value="platform_admin">Administrador HOIT</option>}{(currentRoleKey === "platform_admin" || currentRoleKey === "client_admin") && <option value="client_admin">Administrador de cliente</option>}<option value="site_admin">Administrador de sitio</option><option value="engineer">Ingeniero</option><option value="operator">Operador</option><option value="viewer">Solo lectura</option></select></label><label><span>Estado</span><select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as UserRow["status"] })}><option value="active">Activo</option><option value="suspended">Suspendido</option><option value="invited">Invitado</option></select></label>{form.role === "client_admin" && <fieldset className="user-site-access"><legend>Cliente administrado</legend><p>Este perfil hereda automáticamente todos los sitios actuales y futuros del cliente.</p><div>{manageableClients.map((client) => <label key={client.id} className={form.clientId === client.id ? "selected" : ""}><input type="radio" name="clientId" checked={form.clientId === client.id} onChange={() => setForm({ ...form, clientId: client.id, siteIds: [] })} /><span><strong>{client.name}</strong><small>{client.code}</small></span></label>)}</div></fieldset>}{form.role !== "platform_admin" && form.role !== "client_admin" && <fieldset className="user-site-access"><legend>Sitios autorizados</legend><p>El perfil se aplica sólo a los sitios seleccionados.</p><div>{manageableSites.map((site) => <label key={site.id} className={form.siteIds.includes(site.id) ? "selected" : ""}><input type="checkbox" checked={form.siteIds.includes(site.id)} onChange={() => toggleSite(site.id)} /><span><strong>{site.name}</strong><small>{site.clientName} · {site.code}</small></span></label>)}</div>{!form.siteIds.length && <small className="field-error">Selecciona al menos un sitio.</small>}</fieldset>}<div className="user-editor-actions"><button type="button" className="secondary-button" onClick={() => setShowForm(false)}>Cancelar</button><button type="submit" className="primary-button" disabled={saving || (form.role === "client_admin" ? !form.clientId : form.role === "platform_admin" ? false : !form.siteIds.length)}>{saving ? "Guardando…" : editingId ? "Guardar cambios" : "Crear usuario"}</button></div></form>}
         <div className="user-list-toolbar"><label className="search-field"><Search size={17} /><input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="Buscar por nombre o correo…" /></label><label className="status-filter"><span>Estado</span><select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPage(1); }}><option value="all">Todos</option><option value="active">Activos</option><option value="suspended">Suspendidos</option><option value="invited">Invitados</option></select><ChevronDown size={13} /></label></div>
         {error && <div className="data-error"><AlertTriangle size={18} /><div><strong>No se pudieron cargar los usuarios</strong><p>{error}</p></div></div>}
         {loading && <div className="data-loading"><Refresh className="spin" size={18} /> Consultando usuarios…</div>}
-        {!loading && !error && <><div className="module-table-wrap"><div className="users-table"><div className="module-table-head"><span>Usuario</span><span>Rol</span><span>Sitios</span><span>Estado</span><span>Último acceso</span><span>Acciones</span></div>{result?.items.map((user) => <div className="module-table-row" key={user.id}><span className="user-identity"><b>{user.displayName.split(" ").map((part) => part[0]).slice(0, 2).join("").toUpperCase()}</b><span><strong>{user.displayName}{user.id === currentUserId ? " · Tú" : ""}</strong><small>{user.email}</small></span></span><span><i className="role-chip">{user.role.name}</i></span><span><i className="site-count-chip">{user.siteIds.length} {user.siteIds.length === 1 ? "sitio" : "sitios"}</i></span><span className="user-security-state"><i className={`user-status status-${user.status}`}>{user.status === "active" ? "Activo" : user.status === "suspended" ? "Suspendido" : "Invitado"}</i>{user.mustChangePassword && <small>Cambio requerido</small>}</span><span>{formatDateTime(user.lastLoginAt)}</span><span className="row-actions"><button className="ghost-button" onClick={() => openEdit(user)}><Pencil size={14} /> Editar</button><button className="icon-danger-button" disabled={user.id === currentUserId} onClick={() => deleteUser(user)} aria-label={`Quitar acceso de ${user.displayName} al sitio activo`}><Trash size={15} /></button></span></div>)}{result?.items.length === 0 && <TableEmptyState title="No hay usuarios con estos filtros" detail="Cambia la búsqueda o crea un nuevo acceso." />}</div></div>{result && <Pagination page={result.page} totalPages={result.totalPages} total={result.total} pageSize={result.pageSize} onPageChange={setPage} itemLabel="usuarios" />}</>}
-        <div className="role-matrix"><div><span className="eyebrow">Matriz de permisos</span><h3>Alcance de cada rol</h3></div><div className="role-matrix-grid"><span><strong>Administrador</strong><small>Configuración, usuarios y operación completa</small></span><span><strong>Ingeniero</strong><small>Diagnóstico, umbrales y reportes</small></span><span><strong>Operador</strong><small>Supervisión y reconocimiento de alarmas</small></span><span><strong>Solo lectura</strong><small>Consulta sin capacidad de modificación</small></span></div></div>
+        {!loading && !error && <><div className="module-table-wrap"><div className="users-table"><div className="module-table-head"><span>Usuario</span><span>Rol</span><span>Sitios</span><span>Estado</span><span>Último acceso</span><span>Acciones</span></div>{result?.items.map((user) => <div className="module-table-row" key={user.id}><span className="user-identity"><b>{user.displayName.split(" ").map((part) => part[0]).slice(0, 2).join("").toUpperCase()}</b><span><strong>{user.displayName}{user.id === currentUserId ? " · Tú" : ""}</strong><small>{user.email}</small></span></span><span><i className="role-chip">{user.role.name}</i></span><span><i className="site-count-chip">{user.scopeType === "platform" ? "Toda la plataforma" : user.scopeType === "client" ? "Todo el cliente" : `${user.siteIds.length} ${user.siteIds.length === 1 ? "sitio" : "sitios"}`}</i></span><span className="user-security-state"><i className={`user-status status-${user.status}`}>{user.status === "active" ? "Activo" : user.status === "suspended" ? "Suspendido" : "Invitado"}</i>{user.mustChangePassword && <small>Cambio requerido</small>}</span><span>{formatDateTime(user.lastLoginAt)}</span><span className="row-actions"><button className="ghost-button" onClick={() => openEdit(user)}><Pencil size={14} /> Editar</button><button className="icon-danger-button" disabled={user.id === currentUserId} onClick={() => deleteUser(user)} aria-label={`Quitar acceso de ${user.displayName} al sitio activo`}><Trash size={15} /></button></span></div>)}{result?.items.length === 0 && <TableEmptyState title="No hay usuarios con estos filtros" detail="Cambia la búsqueda o crea un nuevo acceso." />}</div></div>{result && <Pagination page={result.page} totalPages={result.totalPages} total={result.total} pageSize={result.pageSize} onPageChange={setPage} itemLabel="usuarios" />}</>}
+        <div className="role-matrix"><div><span className="eyebrow">Matriz de permisos</span><h3>Alcance de cada rol</h3></div><div className="role-matrix-grid"><span><strong>Administrador HOIT</strong><small>Plataforma completa y creación de clientes</small></span><span><strong>Administrador de cliente</strong><small>Todos los sitios y usuarios de un cliente</small></span><span><strong>Administrador de sitio</strong><small>Uno o varios sitios asignados</small></span><span><strong>Ingeniero</strong><small>Diagnóstico, umbrales y reportes</small></span><span><strong>Operador</strong><small>Supervisión y reconocimiento de alarmas</small></span><span><strong>Solo lectura</strong><small>Consulta sin capacidad de modificación</small></span></div></div>
       </article>
     </>
   );
@@ -1778,7 +1818,7 @@ export default function Home() {
             {view === "reports" && <DatabaseReportsView assetId={activePoint?.id ?? ""} assetLabel={activePoint ? `${activePoint.code} · ${activePoint.name}` : "Sin punto seleccionado"} timezone={hierarchy?.sites.find((site) => site.id === sessionUser.siteId)?.timezone ?? "America/Santiago"} canGenerate={sessionUser.permissions.includes("reports.generate")} canSchedule={sessionUser.permissions.includes("reports.schedule")} notify={notify} confirm={(request) => setConfirmRequest(request)} />}
             {view === "settings" && <DatabaseSettingsView assetId={activePoint?.id ?? ""} canWrite={sessionUser.permissions.includes("settings.write")} notify={notify} confirm={(request) => setConfirmRequest(request)} onReloadHierarchy={loadHierarchy} />}
             {view === "provisioning" && <GatewayProvisioningView canWrite={sessionUser.permissions.includes("settings.write")} notify={notify} confirm={(request) => setConfirmRequest(request)} />}
-            {view === "users" && <UsersView currentUserId={sessionUser.id} sites={sessionUser.sites} activeSiteId={sessionUser.siteId} />}
+            {view === "users" && <UsersView currentUserId={sessionUser.id} currentRoleKey={sessionUser.roleKey} clientScopes={sessionUser.clientScopes} sites={sessionUser.sites} activeSiteId={sessionUser.siteId} activeClientId={sessionUser.clientId} canManageUsers={sessionUser.permissions.includes("users.manage")} />}
             {view === "notifications" && <NotificationsView canWrite={sessionUser.permissions.includes("notifications.write")} />}
             {view === "account" && <AccountView notify={notify} confirm={(request) => setConfirmRequest(request)} onProfileUpdated={(displayName) => setSessionUser((current) => current ? { ...current, displayName } : current)} />}
           </div>
