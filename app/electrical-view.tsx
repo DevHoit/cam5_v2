@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { ElectricalHistoryDialog } from "./electrical-history";
 import {
   IconBolt as Bolt,
   IconCpu as Cpu,
@@ -90,6 +91,7 @@ export function ElectricalView({
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [dialog, setDialog] = useState<"point" | "meter" | "alarms" | null>(null);
   const [busy, setBusy] = useState(false);
+  const [historyMeter, setHistoryMeter] = useState<Meter | null>(null);
   const [error, setError] = useState("");
   const [pointForm, setPointForm] = useState({ code: "", name: "", area: "", nominalVoltageKv: "0.4" });
   const [meterForm, setMeterForm] = useState({
@@ -320,7 +322,10 @@ export function ElectricalView({
           <div className="pm-meter-heading">
             <div className="pm-meter-icon"><Cpu size={20} /></div>
             <div><span>{meter.code}</span><h4>{meter.name}</h4><p>{meter.gateway ? meter.gateway.code + " · RS485 · ID " + (meter.unitId ?? "—") : "Sin gateway asociado"}</p></div>
-            <div className={meter.online ? "pm-online" : "pm-offline"}>{meter.online ? "Telemetría vigente" : "Sin telemetría vigente"}<small>{age(meter.lastReadingAt)}</small></div>
+            <div className="pm-meter-actions">
+              <button className="secondary-button" onClick={() => setHistoryMeter(meter)}>Histórico</button>
+              <div className={meter.online ? "pm-online" : "pm-offline"}>{meter.online ? "Telemetría vigente" : "Sin telemetría vigente"}<small>{age(meter.lastReadingAt)}</small></div>
+            </div>
           </div>
 
           <div className="pm-phase-grid">
@@ -343,6 +348,12 @@ export function ElectricalView({
         </article>)}
       </section>)}
     </div>
+
+    {historyMeter && <ElectricalHistoryDialog
+      device={{ id: historyMeter.id, code: historyMeter.code, name: historyMeter.name }}
+      metrics={historyMeter.metrics.map((item) => ({ key: item.key, name: item.name, unit: item.unit }))}
+      onClose={() => setHistoryMeter(null)}
+    />}
 
     {dialog && <div className="cold-config-backdrop" role="presentation">
       <section className="cold-config-dialog electrical-dialog" role="dialog" aria-modal="true">
