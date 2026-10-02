@@ -72,6 +72,7 @@ export async function GET(request: NextRequest) {
       .leftJoin(latestMetricReadings, eq(latestMetricReadings.deviceMetricId, deviceMetrics.id))
       .where(and(
         inArray(devices.assetId, chamberIds),
+        eq(devices.deviceType, "temperature_sensor"),
         eq(devices.active, true),
       ))
       .orderBy(devices.code);
