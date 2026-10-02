@@ -2276,3 +2276,6 @@ button.module-table-row { width: 100%; }
   .pm-meter-heading { grid-template-columns: auto 1fr; }
   .pm-online, .pm-offline { grid-column: 1 / -1; text-align: left; }
 }
+
+.electrical-point-actions { display: flex; align-items: flex-start; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.electrical-point-actions .secondary-button { min-height: 30px; padding: 5px 9px; font-size: .74rem; }
