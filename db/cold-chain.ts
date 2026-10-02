@@ -80,7 +80,7 @@ function sensorStatus(
   const stale = !sensor.temperatureRecordedAt
     || now.getTime() - sensor.temperatureRecordedAt.getTime() > config.staleAfterSeconds * 1000;
 
-  if (sensor.deviceState === "offline" || sensor.deviceState === "decommissioned" || stale || sensor.temperatureC === null) {
+  if (sensor.deviceState === "offline" || sensor.deviceState === "decommissioned" || stale || sensor.temperatureC === null || sensor.temperatureQuality === "bad") {
     return { ...sensor, status: "offline", stale };
   }
 
