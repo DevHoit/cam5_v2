@@ -135,9 +135,54 @@ test("platform client and site administrators inherit only their intended sites"
     assert.deepEqual(new Set(clientScopes.sites.map((scope) => scope.siteId)), new Set([a1.id, a2.id]));
     assert.ok(clientScopes.sites.every((scope) => scope.roleKey === "client_admin"));
 
+    const [a3] = await db.insert(schema.sites).values({ clientId: clientA.id, code: "A3", name: "A3" }).returning();
+    const inheritedAfterCreation = await resolveUserAccessScopes(db, clientUser.id);
+    assert.deepEqual(new Set(inheritedAfterCreation.sites.map((scope) => scope.siteId)), new Set([a1.id, a2.id, a3.id]));
+    assert.equal(inheritedAfterCreation.sites.some((scope) => scope.siteId === b1.id), false);
+
     const siteScopes = await resolveUserAccessScopes(db, siteUser.id);
     assert.deepEqual(siteScopes.sites.map((scope) => scope.siteId), [a1.id]);
     assert.equal(siteScopes.sites[0]?.roleKey, "site_admin");
+  } finally {
+    await client.close();
+  }
+});
+
+
+test("administrative roles expose only the intended management permissions", async () => {
+  const client = new PGlite();
+  try {
+    for (const filename of [...beforeScopeMigration, "0023_access_scope_roles.sql"]) await apply(client, filename);
+    const db = drizzle(client, { schema }) as unknown as Cam5Database;
+
+    const rows = await db.select({
+      roleKey: schema.roles.key,
+      permissionCode: schema.permissions.code,
+    }).from(schema.rolePermissions)
+      .innerJoin(schema.roles, eq(schema.roles.id, schema.rolePermissions.roleId))
+      .innerJoin(schema.permissions, eq(schema.permissions.id, schema.rolePermissions.permissionId));
+
+    const permissionsFor = (roleKey: string) => new Set(rows.filter((row) => row.roleKey === roleKey).map((row) => row.permissionCode));
+
+    const platform = permissionsFor("platform_admin");
+    assert.equal(platform.has("clients.manage"), true);
+    assert.equal(platform.has("sites.manage"), true);
+    assert.equal(platform.has("users.manage"), true);
+
+    const clientAdmin = permissionsFor("client_admin");
+    assert.equal(clientAdmin.has("clients.manage"), false);
+    assert.equal(clientAdmin.has("sites.manage"), true);
+    assert.equal(clientAdmin.has("users.manage"), true);
+
+    const siteAdmin = permissionsFor("site_admin");
+    assert.equal(siteAdmin.has("clients.manage"), false);
+    assert.equal(siteAdmin.has("sites.manage"), false);
+    assert.equal(siteAdmin.has("users.manage"), true);
+
+    const engineer = permissionsFor("engineer");
+    assert.equal(engineer.has("clients.manage"), false);
+    assert.equal(engineer.has("sites.manage"), false);
+    assert.equal(engineer.has("users.manage"), false);
   } finally {
     await client.close();
   }
