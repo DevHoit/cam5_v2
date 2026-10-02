@@ -58,16 +58,22 @@ test("PM5560 normalized telemetry persists all V1 electrical metrics", async () 
       code: "GW-PM01",
       name: "Gateway PM",
     }).returning();
-    const [device] = await db.insert(schema.devices).values({
-      assetId: asset.id,
-      code: "PM5560-01",
-      name: "PM5560 principal",
-      deviceType: "power_meter",
-      driver: "schneider_pm5560",
-      protocol: "modbus_rtu",
-      unitId: 1,
-      state: "commissioning",
-    }).returning();
+    let device: typeof schema.devices.$inferSelect;
+    try {
+      [device] = await db.insert(schema.devices).values({
+        assetId: asset.id,
+        code: "PM5560-01",
+        name: "PM5560 principal",
+        deviceType: "power_meter",
+        driver: "schneider_pm5560",
+        protocol: "modbus_rtu",
+        unitId: 1,
+        state: "commissioning",
+      }).returning();
+    } catch (error) {
+      console.error("PM5560 device insert cause:", error instanceof Error && "cause" in error ? error.cause : error);
+      throw error;
+    }
     await db.insert(schema.gatewayDeviceBindings).values({
       gatewayId: gateway.id,
       deviceId: device.id,
