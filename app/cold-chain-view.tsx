@@ -121,10 +121,12 @@ function numberOrNull(value: string) {
 }
 
 export function ColdChainView({
-  canWrite = false,
+  canWriteAssets = false,
+  canWriteSettings = false,
   canAcknowledge = false,
 }: {
-  canWrite?: boolean;
+  canWriteAssets?: boolean;
+  canWriteSettings?: boolean;
   canAcknowledge?: boolean;
 }) {
   const [state, setState] = useState<{ status: "loading" | "ready" | "error"; data: ColdChainResponse | null }>({
@@ -175,13 +177,13 @@ export function ColdChainView({
   }, [refreshKey]);
 
   useEffect(() => {
-    if (!canWrite) return;
+    if (!canWriteSettings) return;
     let active = true;
     void requestJson<ConfigurationResponse>("/api/v1/cold-chain/configuration")
       .then((data) => { if (active) setGateways(data.gateways.filter((gateway) => gateway.active)); })
       .catch(() => { if (active) setGateways([]); });
     return () => { active = false; };
-  }, [canWrite, refreshKey]);
+  }, [canWriteSettings, refreshKey]);
 
   const closeDialog = () => {
     setDialog(null);
@@ -316,7 +318,7 @@ export function ColdChainView({
   const offline = chambers.filter((chamber) => chamber.status === "offline").length;
 
   return <div className="cold-chain-view">
-    {canWrite && <div className="cold-chain-toolbar">
+    {canWriteAssets && <div className="cold-chain-toolbar">
       <button className="primary-button" onClick={openCreateChamber}><Plus size={16} /> Nueva cámara</button>
     </div>}
 
@@ -336,7 +338,7 @@ export function ColdChainView({
           <div><span>{chamber.code}</span><h2>{chamber.name}</h2><p>{chamber.area || "Sin área definida"}</p></div>
           <div className="cold-room-header-actions">
             <b>{statusLabel[chamber.status]}</b>
-            {canWrite && <button className="cold-room-action" onClick={() => openEditChamber(chamber)} aria-label={"Configurar " + chamber.name}><Settings size={16} /></button>}
+            {canWriteAssets && <button className="cold-room-action" onClick={() => openEditChamber(chamber)} aria-label={"Configurar " + chamber.name}><Settings size={16} /></button>}
           </div>
         </header>
 
@@ -370,7 +372,7 @@ export function ColdChainView({
 
         <footer className="cold-room-footer">
           <button className="secondary-button" onClick={() => setDetailChamberId(chamber.id)}>Ver histórico y excursiones</button>
-          {canWrite && <button className="secondary-button" onClick={() => openCreateSensor(chamber)}><Plus size={15} /> Agregar sensor BLE</button>}
+          {canWriteSettings && <button className="secondary-button" onClick={() => openCreateSensor(chamber)}><Plus size={15} /> Agregar sensor BLE</button>}
         </footer>
       </article>)}
     </section>
@@ -380,7 +382,7 @@ export function ColdChainView({
     {detailChamberId && <ColdChainDetail
       chamberId={detailChamberId}
       canAcknowledge={canAcknowledge}
-      canWrite={canWrite}
+      canWrite={canWriteAssets}
       onConfigure={() => {
         const chamber = chambers.find((item) => item.id === detailChamberId);
         if (chamber) {
