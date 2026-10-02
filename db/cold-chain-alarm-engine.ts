@@ -297,72 +297,88 @@ export async function evaluateColdChainAsset(db: Cam5Database, assetId: string, 
       maintenance: chamber.state === "maintenance",
     });
 
-    if (!communicationLost && device.temperature !== null) {
-      freshTemperatures.push({ deviceId: device.id, code: device.code, value: device.temperature });
-      if (config.maximumC !== null) {
-        const key = `sensor:${device.id}:temperature_high`;
-        const boundary = previousObserved.has(key) ? config.maximumC - config.temperatureHysteresisC : config.maximumC;
-        conditions.push({
-          assetId, siteId: chamber.siteId, deviceId: device.id, conditionKey: key,
-          observed: device.temperature > boundary,
-          severity: "critical", kind: "threshold",
-          title: `Temperatura alta · ${device.code}`,
-          detail: `${chamber.name} registra ${device.temperature.toFixed(1)} °C en ${device.name}; máximo configurado ${config.maximumC.toFixed(1)} °C.`,
-          value: device.temperature, threshold: config.maximumC,
-          delaySeconds: config.excursionDelaySeconds,
-          context: { subtype: "temperature_high", sensorCode: device.code, hysteresisC: config.temperatureHysteresisC },
-          maintenance: chamber.state === "maintenance",
-        });
-      }
-      if (config.minimumC !== null) {
-        const key = `sensor:${device.id}:temperature_low`;
-        const boundary = previousObserved.has(key) ? config.minimumC + config.temperatureHysteresisC : config.minimumC;
-        conditions.push({
-          assetId, siteId: chamber.siteId, deviceId: device.id, conditionKey: key,
-          observed: device.temperature < boundary,
-          severity: "critical", kind: "threshold",
-          title: `Temperatura baja · ${device.code}`,
-          detail: `${chamber.name} registra ${device.temperature.toFixed(1)} °C en ${device.name}; mínimo configurado ${config.minimumC.toFixed(1)} °C.`,
-          value: device.temperature, threshold: config.minimumC,
-          delaySeconds: config.excursionDelaySeconds,
-          context: { subtype: "temperature_low", sensorCode: device.code, hysteresisC: config.temperatureHysteresisC },
-          maintenance: chamber.state === "maintenance",
-        });
-      }
+    const temperatureAvailable = !communicationLost && device.temperature !== null;
+    if (temperatureAvailable) {
+      freshTemperatures.push({ deviceId: device.id, code: device.code, value: device.temperature as number });
     }
 
-    if (config.batteryLowVoltage !== null && device.battery !== null) {
-      conditions.push({
-        assetId, siteId: chamber.siteId, deviceId: device.id,
-        conditionKey: `sensor:${device.id}:battery_low`,
-        observed: device.battery < config.batteryLowVoltage,
-        severity: "warning", kind: "threshold",
-        title: `Batería baja · ${device.code}`,
-        detail: `${device.name} reporta ${device.battery.toFixed(2)} V; umbral configurado ${config.batteryLowVoltage.toFixed(2)} V.`,
-        value: device.battery, threshold: config.batteryLowVoltage,
-        delaySeconds: config.excursionDelaySeconds,
-        context: { subtype: "battery_low", sensorCode: device.code },
-        maintenance: chamber.state === "maintenance",
-      });
-    }
-  }
-
-  if (config.disagreementThresholdC !== null && freshTemperatures.length >= 2) {
-    const values = freshTemperatures.map((sensor) => sensor.value);
-    const spread = Math.max(...values) - Math.min(...values);
+    const highKey = `sensor:${device.id}:temperature_high`;
+    const highBoundary = config.maximumC === null
+      ? null
+      : previousObserved.has(highKey)
+        ? config.maximumC - config.temperatureHysteresisC
+        : config.maximumC;
     conditions.push({
-      assetId, siteId: chamber.siteId, deviceId: null,
-      conditionKey: "chamber:sensor_disagreement",
-      observed: spread > config.disagreementThresholdC,
-      severity: "warning", kind: "data_quality",
-      title: `Discrepancia entre sensores · ${chamber.code}`,
-      detail: `${chamber.name} presenta una diferencia de ${spread.toFixed(1)} °C entre sensores; límite configurado ${config.disagreementThresholdC.toFixed(1)} °C.`,
-      value: spread, threshold: config.disagreementThresholdC,
+      assetId, siteId: chamber.siteId, deviceId: device.id, conditionKey: highKey,
+      observed: Boolean(temperatureAvailable && highBoundary !== null && (device.temperature as number) > highBoundary),
+      severity: "critical", kind: "threshold",
+      title: `Temperatura alta · ${device.code}`,
+      detail: config.maximumC === null || device.temperature === null
+        ? `${chamber.name} no tiene una condición de alta temperatura activa.`
+        : `${chamber.name} registra ${device.temperature.toFixed(1)} °C en ${device.name}; máximo configurado ${config.maximumC.toFixed(1)} °C.`,
+      value: temperatureAvailable ? device.temperature : null,
+      threshold: config.maximumC,
       delaySeconds: config.excursionDelaySeconds,
-      context: { subtype: "sensor_disagreement", sensors: freshTemperatures.map((sensor) => ({ code: sensor.code, valueC: sensor.value })) },
+      context: { subtype: "temperature_high", sensorCode: device.code, hysteresisC: config.temperatureHysteresisC },
+      maintenance: chamber.state === "maintenance",
+    });
+
+    const lowKey = `sensor:${device.id}:temperature_low`;
+    const lowBoundary = config.minimumC === null
+      ? null
+      : previousObserved.has(lowKey)
+        ? config.minimumC + config.temperatureHysteresisC
+        : config.minimumC;
+    conditions.push({
+      assetId, siteId: chamber.siteId, deviceId: device.id, conditionKey: lowKey,
+      observed: Boolean(temperatureAvailable && lowBoundary !== null && (device.temperature as number) < lowBoundary),
+      severity: "critical", kind: "threshold",
+      title: `Temperatura baja · ${device.code}`,
+      detail: config.minimumC === null || device.temperature === null
+        ? `${chamber.name} no tiene una condición de baja temperatura activa.`
+        : `${chamber.name} registra ${device.temperature.toFixed(1)} °C en ${device.name}; mínimo configurado ${config.minimumC.toFixed(1)} °C.`,
+      value: temperatureAvailable ? device.temperature : null,
+      threshold: config.minimumC,
+      delaySeconds: config.excursionDelaySeconds,
+      context: { subtype: "temperature_low", sensorCode: device.code, hysteresisC: config.temperatureHysteresisC },
+      maintenance: chamber.state === "maintenance",
+    });
+
+    conditions.push({
+      assetId, siteId: chamber.siteId, deviceId: device.id,
+      conditionKey: `sensor:${device.id}:battery_low`,
+      observed: Boolean(config.batteryLowVoltage !== null && device.battery !== null && device.battery < config.batteryLowVoltage),
+      severity: "warning", kind: "threshold",
+      title: `Batería baja · ${device.code}`,
+      detail: config.batteryLowVoltage === null || device.battery === null
+        ? `${device.name} no tiene una condición de batería baja activa.`
+        : `${device.name} reporta ${device.battery.toFixed(2)} V; umbral configurado ${config.batteryLowVoltage.toFixed(2)} V.`,
+      value: device.battery,
+      threshold: config.batteryLowVoltage,
+      delaySeconds: config.excursionDelaySeconds,
+      context: { subtype: "battery_low", sensorCode: device.code },
       maintenance: chamber.state === "maintenance",
     });
   }
+
+  const spread = freshTemperatures.length >= 2
+    ? Math.max(...freshTemperatures.map((sensor) => sensor.value)) - Math.min(...freshTemperatures.map((sensor) => sensor.value))
+    : null;
+  conditions.push({
+    assetId, siteId: chamber.siteId, deviceId: null,
+    conditionKey: "chamber:sensor_disagreement",
+    observed: Boolean(config.disagreementThresholdC !== null && spread !== null && spread > config.disagreementThresholdC),
+    severity: "warning", kind: "data_quality",
+    title: `Discrepancia entre sensores · ${chamber.code}`,
+    detail: config.disagreementThresholdC === null || spread === null
+      ? `${chamber.name} no tiene una condición de discrepancia activa.`
+      : `${chamber.name} presenta una diferencia de ${spread.toFixed(1)} °C entre sensores; límite configurado ${config.disagreementThresholdC.toFixed(1)} °C.`,
+    value: spread,
+    threshold: config.disagreementThresholdC,
+    delaySeconds: config.excursionDelaySeconds,
+    context: { subtype: "sensor_disagreement", sensors: freshTemperatures.map((sensor) => ({ code: sensor.code, valueC: sensor.value })) },
+    maintenance: chamber.state === "maintenance",
+  });
 
   let opened = 0;
   let resolved = 0;
