@@ -377,7 +377,20 @@ export function ColdChainView({
 
     {state.status === "error" && state.data && <p className="cold-chain-refresh-warning">Se muestran las últimas lecturas disponibles; la actualización automática falló temporalmente.</p>}
 
-    {detailChamberId && <ColdChainDetail chamberId={detailChamberId} canAcknowledge={canAcknowledge} onClose={() => setDetailChamberId(null)} />}
+    {detailChamberId && <ColdChainDetail
+      chamberId={detailChamberId}
+      canAcknowledge={canAcknowledge}
+      canWrite={canWrite}
+      onConfigure={() => {
+        const chamber = chambers.find((item) => item.id === detailChamberId);
+        if (chamber) {
+          setDetailChamberId(null);
+          openEditChamber(chamber);
+        }
+      }}
+      onChanged={() => setRefreshKey((value) => value + 1)}
+      onClose={() => setDetailChamberId(null)}
+    />}
 
     {dialog && <div className="cold-config-backdrop" role="presentation" onMouseDown={closeDialog}>
       <section className="cold-config-dialog" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
