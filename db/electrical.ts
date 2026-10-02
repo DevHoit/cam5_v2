@@ -56,6 +56,9 @@ export function validateElectricalAlarmConfig(config: ElectricalAlarmConfig) {
     throw new Error("frequencyMinHz debe ser menor que frequencyMaxHz.");
   }
   if (config.currentMaxA !== null && config.currentMaxA <= 0) throw new Error("currentMaxA debe ser mayor que cero.");
+  if (config.voltageHysteresisV < 0 || config.currentHysteresisA < 0 || config.frequencyHysteresisHz < 0 || config.powerFactorHysteresis < 0) {
+    throw new Error("Las histéresis no pueden ser negativas.");
+  }
   if (config.powerFactorMin !== null && (config.powerFactorMin < 0 || config.powerFactorMin > 1)) {
     throw new Error("powerFactorMin debe estar entre 0 y 1.");
   }
