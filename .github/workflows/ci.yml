@@ -36,10 +36,13 @@ jobs:
           db/schema.ts
           db/seed.ts
           db/hoit-metrics.ts
+          db/cold-chain.ts
           app/api/v1/gateway/ingest/route.ts
           app/api/v1/gateway/_lib/ingest-v2.ts
           app/api/v1/telemetry/metrics
+          app/api/v1/cold-chain
           tests/gateway-ingest-v2.test.ts
+          tests/cold-chain.test.ts
           tests/database-schema.test.mjs
           tests/database-seed.test.ts
 
