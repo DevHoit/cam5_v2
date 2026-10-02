@@ -10,8 +10,6 @@ import {
   permissions,
   passwordResetTokens,
   rolePermissions,
-  roles,
-  userRoleAssignments,
   users,
 } from "./schema";
 
