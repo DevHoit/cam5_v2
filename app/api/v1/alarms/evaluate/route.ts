@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { eq } from "drizzle-orm";
 import { evaluateStaleCommunications } from "../../../../../db/alarm-engine";
+import { evaluateAtsSite } from "../../../../../db/ats-alarm-engine";
 import { evaluateColdChainSite } from "../../../../../db/cold-chain-alarm-engine";
 import { evaluateElectricalSite } from "../../../../../db/electrical-alarm-engine";
 import { getDb } from "../../../../../db/index";
@@ -35,6 +36,7 @@ export async function GET(request: NextRequest) {
       evaluateStaleCommunications(db, site.id, evaluatedAt),
       evaluateColdChainSite(db, site.id, evaluatedAt),
       evaluateElectricalSite(db, site.id, evaluatedAt),
+      evaluateAtsSite(db, site.id, evaluatedAt),
     ]));
     const failed = results.filter((result) => result.status === "rejected").length;
     return Response.json({
