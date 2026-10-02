@@ -30,9 +30,11 @@ export async function GET(request: NextRequest) {
       .orderBy(asc(reportTemplates.name));
     const filtered = assetType === "cold_room"
       ? items.filter((item) => item.key === "cold-chain-summary")
-      : assetType
-        ? items.filter((item) => item.key !== "cold-chain-summary")
-        : items;
+      : assetType === "electrical_point"
+        ? items.filter((item) => item.key === "electrical-summary")
+        : assetType
+          ? items.filter((item) => item.key !== "cold-chain-summary" && item.key !== "electrical-summary")
+          : items;
     return Response.json({ items: filtered }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return apiErrorResponse(error);
