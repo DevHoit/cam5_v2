@@ -188,6 +188,7 @@ export async function POST(request: NextRequest) {
       eq(assets.active, true),
     )).limit(1);
     if (!device) throw new ApiError(404, "El controlador no está registrado para este gateway y Unit ID.");
+    if (!device.modelId) throw new ApiError(409, "El dispositivo legacy CAM5 no tiene un modelo de registros configurado.");
 
     const [existing] = await db.select({ id: ingestionBatches.id, success: ingestionBatches.success, receivedRegisters: ingestionBatches.receivedRegisters })
       .from(ingestionBatches)
