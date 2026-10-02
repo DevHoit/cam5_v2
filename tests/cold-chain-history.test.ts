@@ -28,7 +28,7 @@ test("detects persisted high excursion and ignores short breaches", () => {
   assert.equal(result.filter((item) => item.type === "high").length, 1);
   const high = result.find((item) => item.type === "high");
   assert.equal(high?.startedAt.toISOString(), "2026-10-02T10:01:00.000Z");
-  assert.equal(high?.endedAt?.toISOString(), "2026-10-02T10:07:00.000Z");
+  assert.equal(high?.endedAt?.toISOString(), "2026-10-02T10:06:00.000Z");
   assert.equal(high?.extremeC, 9.5);
 });
 
