@@ -89,3 +89,95 @@ test("reportXlsx creates an OOXML workbook with cold-chain sheets", () => {
   assert.match(text, /Alarmas/);
   assert.match(text, /application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet\.main\+xml/);
 });
+
+
+test("reportXlsx creates an electrical workbook with meter summaries", () => {
+  const electrical: ReportSnapshot = {
+    ...snapshot,
+    template: { id: "tpl-electrical", key: "electrical-summary", name: "Informe de monitoreo eléctrico", description: null },
+    asset: { id: "asset-electrical", code: "TAB-01", name: "Tablero 01", area: "Sala eléctrica", nominalVoltageKv: 0.4, assetType: "electrical_point" },
+    coldChain: undefined,
+    summary: {
+      condition: "critical",
+      channelCount: 3,
+      sampleCount: 300,
+      validSampleCount: 299,
+      qualityPercent: 99.67,
+      alarmCount: 1,
+      warningCount: 0,
+      criticalCount: 1,
+    },
+    channels: [{
+      code: "PM01:P_ACTIVE",
+      name: "PM5560 · Potencia activa total",
+      zone: "Sala eléctrica",
+      unit: "kW",
+      sampleCount: 100,
+      validSampleCount: 100,
+      minimum: 18,
+      average: 24.5,
+      maximum: 31,
+      latest: 25,
+      latestAt: "2026-10-02T11:59:00.000Z",
+    }],
+    electrical: {
+      meterCount: 1,
+      limits: {
+        staleAfterSeconds: 30,
+        thresholdDelaySeconds: 5,
+        voltageMinV: 210,
+        voltageMaxV: 250,
+        currentMaxA: 80,
+        frequencyMinHz: 49,
+        frequencyMaxHz: 51,
+        powerFactorMin: 0.9,
+      },
+      meters: [{
+        code: "PM01",
+        name: "PM5560 principal",
+        sampleCount: 300,
+        validSampleCount: 299,
+        qualityPercent: 99.67,
+        voltageMinimumV: 225,
+        voltageAverageV: 230,
+        voltageMaximumV: 235,
+        currentMaximumA: 76,
+        activePowerAverageKw: 24.5,
+        activePowerMaximumKw: 31,
+        apparentPowerAverageKva: 25.8,
+        reactivePowerAverageKvar: 6.2,
+        powerFactorMinimum: 0.91,
+        powerFactorAverage: 0.95,
+        frequencyMinimumHz: 49.92,
+        frequencyAverageHz: 50,
+        frequencyMaximumHz: 50.08,
+        energyImportStartKwh: 1000,
+        energyImportEndKwh: 1040,
+        energyImportDeltaKwh: 40,
+        energyExportStartKwh: 0,
+        energyExportEndKwh: 0,
+        energyExportDeltaKwh: 0,
+        peakDemandKw: 31,
+      }],
+    },
+    alarms: [{
+      code: "EL-001",
+      title: "Sobrecorriente L1",
+      severity: "critical",
+      status: "resolved",
+      openedAt: "2026-10-02T10:00:00.000Z",
+      channelCode: "PM01",
+      triggerValue: 85,
+      thresholdValue: 80,
+    }],
+  };
+
+  const bytes = reportXlsx(electrical);
+  assert.equal(bytes[0], 0x50);
+  assert.equal(bytes[1], 0x4b);
+  const text = new TextDecoder().decode(bytes);
+  assert.match(text, /Medidores/);
+  assert.match(text, /Variables/);
+  assert.match(text, /PM5560 principal/);
+  assert.match(text, /E imp/);
+});
