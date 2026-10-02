@@ -92,6 +92,13 @@
       "when": 1790956800000,
       "tag": "0012_hoit_core_foundation",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1790956860000,
+      "tag": "0013_hoit_generic_telemetry",
+      "breakpoints": true
     }
   ]
 }
