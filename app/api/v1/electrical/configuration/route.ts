@@ -10,6 +10,7 @@ import {
   gateways,
   metricDefinitions,
 } from "../../../../../db/schema";
+import { parseElectricalAlarmConfig, validateElectricalAlarmConfig } from "../../../../../db/electrical";
 import { PM5560_CAPABILITIES, PM5560_CORE_METRIC_KEYS, PM5560_DEFAULT_RS485, pm5560MetricCode } from "../../../../../db/pm5560";
 import { apiErrorResponse, ApiError, requestMetadata, requireApiSession } from "../../_lib/auth";
 
@@ -112,7 +113,26 @@ export async function POST(request: NextRequest) {
         assetType: "electrical_point",
         nominalVoltageKv: nominalVoltageKv === null ? null : String(nominalVoltageKv),
         state: "offline",
-        metadata: { electrical: { phases: 3, readOnly: true } },
+        metadata: {
+          electrical: {
+            phases: 3,
+            readOnly: true,
+            alarms: {
+              staleAfterSeconds: 30,
+              thresholdDelaySeconds: 0,
+              voltageMinV: null,
+              voltageMaxV: null,
+              currentMaxA: null,
+              frequencyMinHz: null,
+              frequencyMaxHz: null,
+              powerFactorMin: null,
+              voltageHysteresisV: 0,
+              currentHysteresisA: 0,
+              frequencyHysteresisHz: 0,
+              powerFactorHysteresis: 0,
+            },
+          },
+        },
       }).returning();
 
       await db.insert(auditLogs).values({
@@ -249,6 +269,84 @@ export async function POST(request: NextRequest) {
     }
 
     throw new ApiError(400, "La acción no es válida.");
+  } catch (error) {
+    return apiErrorResponse(error);
+  }
+}
+
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const { db, user } = await requireApiSession(request, "assets.write");
+    const body = object(await request.json().catch(() => null), "El cuerpo");
+    const pointId = text(body.pointId, "El punto eléctrico");
+    const meta = requestMetadata(request);
+
+    const [current] = await db.select().from(assets).where(and(
+      eq(assets.id, pointId),
+      eq(assets.siteId, user.siteId),
+      eq(assets.assetType, "electrical_point"),
+      eq(assets.active, true),
+    )).limit(1);
+    if (!current) throw new ApiError(404, "El punto eléctrico no existe en el sitio activo.");
+
+    const currentMetadata = current.metadata ?? {};
+    const currentElectrical = currentMetadata.electrical && typeof currentMetadata.electrical === "object" && !Array.isArray(currentMetadata.electrical)
+      ? currentMetadata.electrical as Record<string, unknown>
+      : {};
+    const existing = parseElectricalAlarmConfig(currentMetadata);
+    const next = {
+      ...existing,
+      ...(body.staleAfterSeconds !== undefined ? { staleAfterSeconds: integer(body.staleAfterSeconds, "staleAfterSeconds", existing.staleAfterSeconds, 5, 86400) } : {}),
+      ...(body.thresholdDelaySeconds !== undefined ? { thresholdDelaySeconds: integer(body.thresholdDelaySeconds, "thresholdDelaySeconds", existing.thresholdDelaySeconds, 0, 86400) } : {}),
+      ...(body.voltageMinV !== undefined ? { voltageMinV: optionalNumber(body.voltageMinV, "voltageMinV") } : {}),
+      ...(body.voltageMaxV !== undefined ? { voltageMaxV: optionalNumber(body.voltageMaxV, "voltageMaxV") } : {}),
+      ...(body.currentMaxA !== undefined ? { currentMaxA: optionalNumber(body.currentMaxA, "currentMaxA") } : {}),
+      ...(body.frequencyMinHz !== undefined ? { frequencyMinHz: optionalNumber(body.frequencyMinHz, "frequencyMinHz") } : {}),
+      ...(body.frequencyMaxHz !== undefined ? { frequencyMaxHz: optionalNumber(body.frequencyMaxHz, "frequencyMaxHz") } : {}),
+      ...(body.powerFactorMin !== undefined ? { powerFactorMin: optionalNumber(body.powerFactorMin, "powerFactorMin") } : {}),
+      ...(body.voltageHysteresisV !== undefined ? { voltageHysteresisV: optionalNumber(body.voltageHysteresisV, "voltageHysteresisV") ?? 0 } : {}),
+      ...(body.currentHysteresisA !== undefined ? { currentHysteresisA: optionalNumber(body.currentHysteresisA, "currentHysteresisA") ?? 0 } : {}),
+      ...(body.frequencyHysteresisHz !== undefined ? { frequencyHysteresisHz: optionalNumber(body.frequencyHysteresisHz, "frequencyHysteresisHz") ?? 0 } : {}),
+      ...(body.powerFactorHysteresis !== undefined ? { powerFactorHysteresis: optionalNumber(body.powerFactorHysteresis, "powerFactorHysteresis") ?? 0 } : {}),
+    };
+    try {
+      validateElectricalAlarmConfig(next);
+    } catch (error) {
+      throw new ApiError(400, error instanceof Error ? error.message : "La configuración de alarmas no es válida.");
+    }
+
+    const [updated] = await db.update(assets).set({
+      ...(typeof body.name === "string" && body.name.trim() ? { name: body.name.trim() } : {}),
+      ...(typeof body.area === "string" ? { area: body.area.trim() || null } : {}),
+      ...(body.nominalVoltageKv !== undefined ? {
+        nominalVoltageKv: optionalNumber(body.nominalVoltageKv, "nominalVoltageKv") === null
+          ? null
+          : String(optionalNumber(body.nominalVoltageKv, "nominalVoltageKv")),
+      } : {}),
+      metadata: {
+        ...currentMetadata,
+        electrical: {
+          ...currentElectrical,
+          alarms: next,
+        },
+      },
+      updatedAt: new Date(),
+    }).where(eq(assets.id, pointId)).returning();
+
+    await db.insert(auditLogs).values({
+      siteId: user.siteId,
+      actorUserId: user.id,
+      action: "electrical.point.update",
+      resourceType: "asset",
+      resourceId: pointId,
+      ipAddress: meta.ipAddress,
+      userAgent: meta.userAgent,
+      before: current,
+      after: updated,
+    });
+
+    return Response.json({ point: updated }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return apiErrorResponse(error);
   }
