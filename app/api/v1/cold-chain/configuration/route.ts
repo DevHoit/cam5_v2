@@ -28,6 +28,13 @@ function optionalNumber(value: unknown, label: string): number | null {
   if (typeof value !== "number" || !Number.isFinite(value)) throw new ApiError(400, label + " debe ser numérico.");
   return value;
 }
+function hexId(value: unknown, label: string, length: number): string {
+  const normalized = text(value, label, length).toUpperCase();
+  if (normalized.length !== length || !/^[0-9A-F]+$/.test(normalized)) {
+    throw new ApiError(400, `${label} debe contener exactamente ${length} caracteres hexadecimales.`);
+  }
+  return normalized;
+}
 function positiveInt(value: unknown, label: string, fallback: number): number {
   if (value === undefined || value === null || value === "") return fallback;
   if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) throw new ApiError(400, label + " debe ser un entero positivo.");
@@ -161,8 +168,8 @@ export async function POST(request: NextRequest) {
       const gatewayId = text(body.gatewayId, "El gateway");
       const code = text(body.code, "El código", 2).toUpperCase();
       const name = text(body.name, "El nombre", 2);
-      const namespaceId = text(body.namespaceId, "namespaceId", 4).toUpperCase();
-      const instanceId = text(body.instanceId, "instanceId", 4).toUpperCase();
+      const namespaceId = hexId(body.namespaceId, "namespaceId", 20);
+      const instanceId = hexId(body.instanceId, "instanceId", 12);
 
       const [[chamber], [gateway]] = await Promise.all([
         db.select({ id: assets.id }).from(assets).where(and(
@@ -179,6 +186,24 @@ export async function POST(request: NextRequest) {
       ]);
       if (!chamber) throw new ApiError(404, "La cámara no existe en el sitio activo.");
       if (!gateway) throw new ApiError(404, "El gateway no existe en el sitio activo.");
+
+      const existingSensors = await db.select({
+        id: devices.id,
+        code: devices.code,
+        metadata: devices.metadata,
+      }).from(devices)
+        .innerJoin(assets, eq(assets.id, devices.assetId))
+        .where(and(
+          eq(assets.siteId, user.siteId),
+          eq(devices.deviceType, "temperature_sensor"),
+          eq(devices.driver, "eddystone_tlm"),
+          eq(devices.active, true),
+        ));
+      const duplicateBeacon = existingSensors.find((item) => {
+        const metadata = item.metadata ?? {};
+        return metadata.namespaceId === namespaceId && metadata.instanceId === instanceId;
+      });
+      if (duplicateBeacon) throw new ApiError(409, `El beacon ya está asignado al sensor ${duplicateBeacon.code}.`);
 
       const metrics = await db.select({ id: metricDefinitions.id, key: metricDefinitions.key, name: metricDefinitions.name })
         .from(metricDefinitions)
@@ -224,18 +249,18 @@ export async function POST(request: NextRequest) {
           displayOrder: index,
         })));
 
-        return row;
-      });
+        await tx.insert(auditLogs).values({
+          siteId: user.siteId,
+          actorUserId: user.id,
+          action: "cold_chain.sensor.create",
+          resourceType: "device",
+          resourceId: row.id,
+          ipAddress: meta.ipAddress,
+          userAgent: meta.userAgent,
+          after: row,
+        });
 
-      await db.insert(auditLogs).values({
-        siteId: user.siteId,
-        actorUserId: user.id,
-        action: "cold_chain.sensor.create",
-        resourceType: "device",
-        resourceId: sensor.id,
-        ipAddress: meta.ipAddress,
-        userAgent: meta.userAgent,
-        after: sensor,
+        return row;
       });
 
       return Response.json({ sensor }, { status: 201 });
