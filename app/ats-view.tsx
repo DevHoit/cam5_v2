@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { AtsHistoryDialog } from "./ats-history";
 import {
   IconArrowsExchange as Transfer,
   IconBolt as Bolt,
@@ -118,6 +119,7 @@ export function AtsView({
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [dialog, setDialog] = useState<"unit" | "controller" | "settings" | null>(null);
   const [busy, setBusy] = useState(false);
+  const [historyTarget, setHistoryTarget] = useState<{ assetId: string; controller: Controller } | null>(null);
   const [error, setError] = useState("");
   const [unitForm, setUnitForm] = useState({ code: "", name: "", area: "", source1Label: "Fuente 1", source2Label: "Fuente 2" });
   const [controllerForm, setControllerForm] = useState({
@@ -323,7 +325,10 @@ export function AtsView({
             <div className="pm-meter-heading">
               <div className="pm-meter-icon"><Cpu size={20} /></div>
               <div><span>{controller.code}</span><h4>{controller.name}</h4><p>{controller.gateway ? controller.gateway.code + " · RS485 · ID " + (controller.unitId ?? "—") : "Sin gateway asociado"}</p></div>
-              <div className={controller.online ? "pm-online" : "pm-offline"}>{controller.online ? "Telemetría vigente" : "Sin telemetría vigente"}<small>{age(controller.lastReadingAt)}</small></div>
+              <div className="pm-meter-actions">
+                <button className="secondary-button" onClick={() => setHistoryTarget({ assetId: unit.id, controller })}>Histórico</button>
+                <div className={controller.online ? "pm-online" : "pm-offline"}>{controller.online ? "Telemetría vigente" : "Sin telemetría vigente"}<small>{age(controller.lastReadingAt)}</small></div>
+              </div>
             </div>
 
             <div className="ats-source-grid">
@@ -359,6 +364,13 @@ export function AtsView({
         })}
       </section>)}
     </div>
+
+    {historyTarget && <AtsHistoryDialog
+      assetId={historyTarget.assetId}
+      controller={{ id: historyTarget.controller.id, code: historyTarget.controller.code, name: historyTarget.controller.name }}
+      metrics={historyTarget.controller.metrics.map((item) => ({ key: item.key, name: item.name, unit: item.unit, dataType: item.dataType }))}
+      onClose={() => setHistoryTarget(null)}
+    />}
 
     {dialog && <div className="cold-config-backdrop" role="presentation">
       <section className="cold-config-dialog electrical-dialog" role="dialog" aria-modal="true">
