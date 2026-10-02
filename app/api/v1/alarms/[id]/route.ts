@@ -6,6 +6,7 @@ import {
   alarmEvents,
   alarmRuleStates,
   alarms,
+  operationalConditionStates,
   assets,
   auditLogs,
   channels,
@@ -128,6 +129,12 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         if (target.status === "closed") throw new ApiError(409, "La alarma ya está cerrada.");
         await tx.update(alarms).set({ status: "closed", closedAt: new Date(), closedBy: user.id }).where(eq(alarms.id, id));
         await tx.update(alarmRuleStates).set({ activeAlarmId: null, breachCount: 0, recoveryCount: 0, updatedAt: new Date() }).where(eq(alarmRuleStates.activeAlarmId, id));
+        await tx.update(operationalConditionStates).set({
+          activeAlarmId: null,
+          observed: false,
+          firstObservedAt: null,
+          updatedAt: new Date(),
+        }).where(eq(operationalConditionStates.activeAlarmId, id));
         eventType = "closed";
       } else if (action === "reopen") {
         requirePermission("alarms.close");
@@ -147,6 +154,12 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
             set: { activeAlarmId: id, currentSeverity: target.severity, currentKind: target.kind, breachCount: 0, recoveryCount: 0, updatedAt: new Date() },
           });
         }
+        await tx.update(operationalConditionStates).set({
+          activeAlarmId: id,
+          observed: true,
+          firstObservedAt: new Date(),
+          updatedAt: new Date(),
+        }).where(eq(operationalConditionStates.assetId, target.assetId));
         eventType = "reopened_manually";
       } else if (action === "assign") {
         requirePermission("alarms.acknowledge");
