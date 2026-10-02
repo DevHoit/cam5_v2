@@ -1,5 +1,4 @@
-import { and, between, count, desc, eq, lte, sql } from "drizzle-orm";
-import { detectTemperatureExcursions } from "./cold-chain-history";
+import { and, between, count, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { parseColdChainConfig } from "./cold-chain";
 import type { Cam5Database } from "./index";
 import {
@@ -10,6 +9,7 @@ import {
   deviceMetrics,
   devices,
   metricDefinitions,
+  metricReadingAggregates,
   metricReadings,
   reportRuns,
   reportSchedules,
@@ -159,80 +159,188 @@ export async function createReportRun(db: Cam5Database, input: {
       ))
       .orderBy(devices.code);
 
-    const coldSensorRows = [];
-    const coldExcursions: NonNullable<ReportSnapshot["coldChain"]>["excursions"] = [];
+    const coldSensorRows: NonNullable<ReportSnapshot["coldChain"]>["sensors"] = [];
+    const periodMs = input.periodEnd.getTime() - input.periodStart.getTime();
+    const bucketSeconds = periodMs <= 7 * 24 * 60 * 60 * 1000 ? 300 : 3600;
     let coldSamples = 0;
     let coldValidSamples = 0;
 
     for (const sensor of sensors) {
-      const readingsRows = await db.select({
-        recordedAt: metricReadings.recordedAt,
-        valueNumeric: metricReadings.valueNumeric,
-        quality: metricReadings.quality,
-      }).from(metricReadings)
+      const aggregateRows = await db.select({
+        bucketStart: metricReadingAggregates.bucketStart,
+        sampleCount: metricReadingAggregates.sampleCount,
+        invalidSampleCount: metricReadingAggregates.invalidSampleCount,
+        minimumValue: metricReadingAggregates.minimumValue,
+        maximumValue: metricReadingAggregates.maximumValue,
+        averageValue: metricReadingAggregates.averageValue,
+      }).from(metricReadingAggregates)
         .where(and(
+          eq(metricReadingAggregates.deviceMetricId, sensor.metricId),
+          eq(metricReadingAggregates.bucketSeconds, bucketSeconds),
+          gte(metricReadingAggregates.bucketStart, input.periodStart),
+          lte(metricReadingAggregates.bucketStart, input.periodEnd),
+        ))
+        .orderBy(metricReadingAggregates.bucketStart);
+
+      let sampleCount = 0;
+      let validSampleCount = 0;
+      let minimumC: number | null = null;
+      let maximumC: number | null = null;
+      let weightedTotal = 0;
+
+      if (aggregateRows.length) {
+        for (const row of aggregateRows) {
+          const total = Number(row.sampleCount);
+          const valid = Math.max(0, total - Number(row.invalidSampleCount));
+          const minimum = numeric(row.minimumValue);
+          const maximum = numeric(row.maximumValue);
+          const average = numeric(row.averageValue);
+          sampleCount += total;
+          validSampleCount += valid;
+          if (minimum !== null) minimumC = minimumC === null ? minimum : Math.min(minimumC, minimum);
+          if (maximum !== null) maximumC = maximumC === null ? maximum : Math.max(maximumC, maximum);
+          if (average !== null) weightedTotal += average * valid;
+        }
+
+        const lastBucket = aggregateRows.at(-1)!;
+        const tailStart = new Date(Math.max(
+          input.periodStart.getTime(),
+          lastBucket.bucketStart.getTime() + bucketSeconds * 1000,
+        ));
+        if (tailStart < input.periodEnd) {
+          const [tail] = await db.select({
+            sampleCount: sql<number>`count(*)::integer`,
+            validSampleCount: sql<number>`count(*) filter (where ${metricReadings.quality} = 'good' and ${metricReadings.valueNumeric} is not null)::integer`,
+            minimum: sql<string | null>`min(${metricReadings.valueNumeric}) filter (where ${metricReadings.quality} = 'good')`,
+            maximum: sql<string | null>`max(${metricReadings.valueNumeric}) filter (where ${metricReadings.quality} = 'good')`,
+            average: sql<string | null>`avg(${metricReadings.valueNumeric}) filter (where ${metricReadings.quality} = 'good')`,
+          }).from(metricReadings).where(and(
+            eq(metricReadings.deviceMetricId, sensor.metricId),
+            gte(metricReadings.recordedAt, tailStart),
+            lte(metricReadings.recordedAt, input.periodEnd),
+          ));
+          const tailSamples = Number(tail.sampleCount);
+          const tailValid = Number(tail.validSampleCount);
+          const tailMinimum = numeric(tail.minimum);
+          const tailMaximum = numeric(tail.maximum);
+          const tailAverage = numeric(tail.average);
+          sampleCount += tailSamples;
+          validSampleCount += tailValid;
+          if (tailMinimum !== null) minimumC = minimumC === null ? tailMinimum : Math.min(minimumC, tailMinimum);
+          if (tailMaximum !== null) maximumC = maximumC === null ? tailMaximum : Math.max(maximumC, tailMaximum);
+          if (tailAverage !== null) weightedTotal += tailAverage * tailValid;
+        }
+      } else {
+        const [raw] = await db.select({
+          sampleCount: sql<number>`count(*)::integer`,
+          validSampleCount: sql<number>`count(*) filter (where ${metricReadings.quality} = 'good' and ${metricReadings.valueNumeric} is not null)::integer`,
+          minimum: sql<string | null>`min(${metricReadings.valueNumeric}) filter (where ${metricReadings.quality} = 'good')`,
+          maximum: sql<string | null>`max(${metricReadings.valueNumeric}) filter (where ${metricReadings.quality} = 'good')`,
+          average: sql<string | null>`avg(${metricReadings.valueNumeric}) filter (where ${metricReadings.quality} = 'good')`,
+        }).from(metricReadings).where(and(
           eq(metricReadings.deviceMetricId, sensor.metricId),
           between(metricReadings.recordedAt, input.periodStart, input.periodEnd),
-        ))
-        .orderBy(metricReadings.recordedAt);
+        ));
+        sampleCount = Number(raw.sampleCount);
+        validSampleCount = Number(raw.validSampleCount);
+        minimumC = numeric(raw.minimum);
+        maximumC = numeric(raw.maximum);
+        const rawAverage = numeric(raw.average);
+        weightedTotal = rawAverage === null ? 0 : rawAverage * validSampleCount;
+      }
 
-      const points = readingsRows.map((row) => ({
-        recordedAt: row.recordedAt,
-        valueC: row.valueNumeric === null ? null : Number(row.valueNumeric),
-        quality: row.quality,
-      }));
-      const valid = points.filter((point) => point.quality === "good" && point.valueC !== null).map((point) => point.valueC as number);
-      const excursions = detectTemperatureExcursions({
-        points,
-        minimumC: config.minimumC,
-        maximumC: config.maximumC,
-        staleAfterSeconds: config.staleAfterSeconds,
-        excursionDelaySeconds: config.excursionDelaySeconds,
-        rangeEnd: input.periodEnd,
-      });
-      coldSamples += points.length;
-      coldValidSamples += valid.length;
+      coldSamples += sampleCount;
+      coldValidSamples += validSampleCount;
       coldSensorRows.push({
         code: sensor.code,
         name: sensor.name,
-        minimumC: valid.length ? Math.min(...valid) : null,
-        averageC: valid.length ? valid.reduce((sum, value) => sum + value, 0) / valid.length : null,
-        maximumC: valid.length ? Math.max(...valid) : null,
-        sampleCount: points.length,
-        validSampleCount: valid.length,
-        excursionCount: excursions.filter((item) => item.type !== "data_gap").length,
-        dataGapCount: excursions.filter((item) => item.type === "data_gap").length,
+        minimumC,
+        averageC: validSampleCount ? weightedTotal / validSampleCount : null,
+        maximumC,
+        sampleCount,
+        validSampleCount,
+        excursionCount: 0,
+        dataGapCount: 0,
       });
-      coldExcursions.push(...excursions.map((item) => ({
-        sensorCode: sensor.code,
-        sensorName: sensor.name,
-        type: item.type,
-        startedAt: item.startedAt.toISOString(),
-        endedAt: item.endedAt?.toISOString() ?? null,
-        durationSeconds: item.durationSeconds,
-        extremeC: item.extremeC,
-        active: item.active,
-      })));
     }
 
-    const coldAlarmRows = await db.select({
+    const candidateAlarms = await db.select({
       code: alarms.code,
       title: alarms.title,
       severity: alarms.severity,
       status: alarms.status,
       openedAt: alarms.openedAt,
+      resolvedAt: alarms.resolvedAt,
+      closedAt: alarms.closedAt,
       triggerValue: alarms.triggerValue,
       thresholdValue: alarms.thresholdValue,
+      context: alarms.context,
     }).from(alarms)
-      .where(and(eq(alarms.assetId, input.assetId), between(alarms.openedAt, input.periodStart, input.periodEnd)))
+      .where(and(eq(alarms.assetId, input.assetId), lte(alarms.openedAt, input.periodEnd)))
       .orderBy(desc(alarms.openedAt))
-      .limit(500);
+      .limit(1000);
+
+    const coldAlarmRows = candidateAlarms.filter((alarm) => {
+      const endedAt = alarm.resolvedAt ?? alarm.closedAt;
+      return !endedAt || endedAt >= input.periodStart;
+    }).slice(0, 500);
+
+    const coldExcursions: NonNullable<ReportSnapshot["coldChain"]>["excursions"] = coldAlarmRows.flatMap((alarm) => {
+      const context = alarm.context ?? {};
+      if (context.source !== "cold_chain" || typeof context.subtype !== "string" || typeof context.sensorCode !== "string") return [];
+      const type = context.subtype === "temperature_high"
+        ? "high"
+        : context.subtype === "temperature_low"
+          ? "low"
+          : context.subtype === "communication_loss"
+            ? "data_gap"
+            : null;
+      if (!type) return [];
+      const sensor = sensors.find((item) => item.code === context.sensorCode);
+      if (!sensor) return [];
+      const endedAt = alarm.resolvedAt ?? alarm.closedAt;
+      const start = alarm.openedAt < input.periodStart ? input.periodStart : alarm.openedAt;
+      const end = endedAt && endedAt < input.periodEnd ? endedAt : input.periodEnd;
+      return [{
+        sensorCode: sensor.code,
+        sensorName: sensor.name,
+        type,
+        startedAt: start.toISOString(),
+        endedAt: endedAt ? end.toISOString() : null,
+        durationSeconds: Math.max(0, Math.round((end.getTime() - start.getTime()) / 1000)),
+        extremeC: type === "data_gap" ? null : numeric(alarm.triggerValue),
+        active: !endedAt,
+      }];
+    });
+
+    for (const sensor of coldSensorRows) {
+      sensor.excursionCount = coldExcursions.filter((item) => item.sensorCode === sensor.code && item.type !== "data_gap").length;
+      sensor.dataGapCount = coldExcursions.filter((item) => item.sensorCode === sensor.code && item.type === "data_gap").length;
+    }
 
     const criticalCount = coldAlarmRows.filter((alarm) => alarm.severity === "critical").length;
     const warningCount = coldAlarmRows.filter((alarm) => alarm.severity === "warning").length;
     const condition = criticalCount > 0 ? "critical" : warningCount > 0 ? "warning" : "normal";
     const now = new Date();
     const thermalExcursions = coldExcursions.filter((item) => item.type !== "data_gap");
+    const thermalIntervals = thermalExcursions
+      .map((item) => ({
+        start: new Date(item.startedAt).getTime(),
+        end: item.endedAt ? new Date(item.endedAt).getTime() : input.periodEnd.getTime(),
+      }))
+      .sort((left, right) => left.start - right.start);
+    let affectedMs = 0;
+    let activeInterval: { start: number; end: number } | null = null;
+    for (const interval of thermalIntervals) {
+      if (!activeInterval) activeInterval = { ...interval };
+      else if (interval.start <= activeInterval.end) activeInterval.end = Math.max(activeInterval.end, interval.end);
+      else {
+        affectedMs += activeInterval.end - activeInterval.start;
+        activeInterval = { ...interval };
+      }
+    }
+    if (activeInterval) affectedMs += activeInterval.end - activeInterval.start;
+
     const snapshot: ReportSnapshot = {
       generatedAt: now.toISOString(),
       generatedBy: input.generatedBy,
@@ -271,7 +379,7 @@ export async function createReportRun(db: Cam5Database, input: {
         excursionDelaySeconds: config.excursionDelaySeconds,
         staleAfterSeconds: config.staleAfterSeconds,
         excursionCount: thermalExcursions.length,
-        totalOutOfRangeSeconds: thermalExcursions.reduce((sum, item) => sum + item.durationSeconds, 0),
+        totalOutOfRangeSeconds: Math.round(affectedMs / 1000),
         dataGapCount: coldExcursions.filter((item) => item.type === "data_gap").length,
         sensors: coldSensorRows,
         excursions: coldExcursions.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()),
