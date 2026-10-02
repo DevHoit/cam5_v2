@@ -2279,3 +2279,32 @@ button.module-table-row { width: 100%; }
 
 .electrical-point-actions { display: flex; align-items: flex-start; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .electrical-point-actions .secondary-button { min-height: 30px; padding: 5px 9px; font-size: .74rem; }
+
+.pm-meter-actions { display: flex; align-items: center; gap: 10px; justify-content: flex-end; }
+.pm-meter-actions .secondary-button { min-height: 30px; padding: 5px 9px; font-size: .72rem; }
+.electrical-history-dialog { max-width: 980px; }
+.electrical-history-controls { display: flex; gap: 14px; justify-content: space-between; align-items: end; padding: 16px 18px 8px; }
+.electrical-history-controls label { display: grid; gap: 5px; min-width: 280px; }
+.electrical-history-controls label span { color: var(--muted); font-size: .72rem; }
+.electrical-history-controls select { min-height: 38px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); color: inherit; padding: 0 10px; }
+.electrical-history-controls nav { display: flex; gap: 6px; }
+.electrical-history-controls nav button { border: 1px solid var(--border); background: var(--surface-2); color: inherit; border-radius: 8px; padding: 7px 11px; cursor: pointer; }
+.electrical-history-controls nav button.active { border-color: currentColor; font-weight: 700; }
+.electrical-history-meta { display: flex; flex-wrap: wrap; gap: 8px 14px; padding: 8px 18px 4px; color: var(--muted); font-size: .72rem; }
+.electrical-history-kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; padding: 10px 18px; }
+.electrical-history-kpis article { display: grid; gap: 4px; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+.electrical-history-kpis span { color: var(--muted); font-size: .72rem; }
+.electrical-history-chart { padding: 4px 12px 0; overflow: hidden; }
+.electrical-history-chart svg { display: block; width: 100%; height: auto; min-height: 240px; }
+.electrical-grid-line { stroke: currentColor; opacity: .1; stroke-width: 1; }
+.electrical-axis-label { fill: currentColor; opacity: .55; font-size: 11px; }
+.electrical-history-line { fill: none; stroke: currentColor; stroke-width: 2; vector-effect: non-scaling-stroke; }
+.electrical-history-empty { min-height: 230px; display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--muted); padding: 18px; }
+.electrical-history-note { margin: 4px 18px 18px; color: var(--muted); font-size: .74rem; }
+@media (max-width: 720px) {
+  .pm-meter-actions { grid-column: 1 / -1; justify-content: space-between; }
+  .electrical-history-controls { align-items: stretch; display: grid; }
+  .electrical-history-controls label { min-width: 0; }
+  .electrical-history-controls nav { overflow-x: auto; }
+  .electrical-history-kpis { grid-template-columns: 1fr; }
+}
