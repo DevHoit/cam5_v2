@@ -155,7 +155,7 @@ export async function evaluateElectricalAsset(db: Cam5Database, assetId: string,
         value: usable ? reading.value : null,
         threshold: config.voltageMinV,
         delaySeconds: config.thresholdDelaySeconds,
-        context: { subtype: "voltage_low", metricKey: key, phase: phaseLabel(key), hysteresis: config.voltageHysteresisV },
+        context: { subtype: "voltage_low", deviceCode: meter.code, metricKey: key, phase: phaseLabel(key), hysteresis: config.voltageHysteresisV },
         maintenance: asset.state === "maintenance",
       });
 
@@ -178,7 +178,7 @@ export async function evaluateElectricalAsset(db: Cam5Database, assetId: string,
         value: usable ? reading.value : null,
         threshold: config.voltageMaxV,
         delaySeconds: config.thresholdDelaySeconds,
-        context: { subtype: "voltage_high", metricKey: key, phase: phaseLabel(key), hysteresis: config.voltageHysteresisV },
+        context: { subtype: "voltage_high", deviceCode: meter.code, metricKey: key, phase: phaseLabel(key), hysteresis: config.voltageHysteresisV },
         maintenance: asset.state === "maintenance",
       });
     }
@@ -205,7 +205,7 @@ export async function evaluateElectricalAsset(db: Cam5Database, assetId: string,
         value: usable ? reading.value : null,
         threshold: config.currentMaxA,
         delaySeconds: config.thresholdDelaySeconds,
-        context: { subtype: "current_high", metricKey: key, phase: phaseLabel(key), hysteresis: config.currentHysteresisA },
+        context: { subtype: "current_high", deviceCode: meter.code, metricKey: key, phase: phaseLabel(key), hysteresis: config.currentHysteresisA },
         maintenance: asset.state === "maintenance",
       });
     }
@@ -235,7 +235,7 @@ export async function evaluateElectricalAsset(db: Cam5Database, assetId: string,
         value: frequencyUsable ? frequency.value : null,
         threshold,
         delaySeconds: config.thresholdDelaySeconds,
-        context: { subtype: direction === "low" ? "frequency_low" : "frequency_high", metricKey: "electrical.frequency", hysteresis: config.frequencyHysteresisHz },
+        context: { subtype: direction === "low" ? "frequency_low" : "frequency_high", deviceCode: meter.code, metricKey: "electrical.frequency", hysteresis: config.frequencyHysteresisHz },
         maintenance: asset.state === "maintenance",
       });
     }
@@ -261,7 +261,7 @@ export async function evaluateElectricalAsset(db: Cam5Database, assetId: string,
       value: pfUsable ? Math.abs(pf.value as number) : null,
       threshold: config.powerFactorMin,
       delaySeconds: config.thresholdDelaySeconds,
-      context: { subtype: "power_factor_low", metricKey: "electrical.power_factor", hysteresis: config.powerFactorHysteresis },
+      context: { subtype: "power_factor_low", deviceCode: meter.code, metricKey: "electrical.power_factor", hysteresis: config.powerFactorHysteresis },
       maintenance: asset.state === "maintenance",
     });
   }
