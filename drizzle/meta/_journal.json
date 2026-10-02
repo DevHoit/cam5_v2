@@ -141,6 +141,13 @@
       "when": 1790970000000,
       "tag": "0019_nullable_device_gateway_site_guard",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1790974800000,
+      "tag": "0020_electrical_report_template",
+      "breakpoints": true
     }
   ]
 }
