@@ -493,6 +493,27 @@ export const latestMetricReadings = pgTable("latest_metric_readings", {
   check("latest_metric_readings_time_quality_chk", sql`${table.timeQuality} IN ('synced', 'estimated', 'unsynced')`),
 ]);
 
+export const metricReadingAggregates = pgTable("metric_reading_aggregates", {
+  deviceMetricId: uuid("device_metric_id").notNull().references(() => deviceMetrics.id, { onDelete: "cascade" }),
+  bucketStart: timestamp("bucket_start", { withTimezone: true }).notNull(),
+  bucketSeconds: integer("bucket_seconds").notNull(),
+  sampleCount: integer("sample_count").notNull(),
+  invalidSampleCount: integer("invalid_sample_count").default(0).notNull(),
+  minimumValue: numeric("minimum_value", { precision: 24, scale: 8 }),
+  maximumValue: numeric("maximum_value", { precision: 24, scale: 8 }),
+  averageValue: numeric("average_value", { precision: 24, scale: 8 }),
+  firstValue: numeric("first_value", { precision: 24, scale: 8 }),
+  lastValue: numeric("last_value", { precision: 24, scale: 8 }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.deviceMetricId, table.bucketStart, table.bucketSeconds] }),
+  index("metric_reading_aggregates_bucket_idx").on(table.bucketSeconds, table.bucketStart),
+  index("metric_reading_aggregates_metric_bucket_idx").on(table.deviceMetricId, table.bucketStart),
+  check("metric_reading_aggregates_bucket_chk", sql`${table.bucketSeconds} IN (60, 300, 3600, 86400)`),
+  check("metric_reading_aggregates_samples_chk", sql`${table.sampleCount} > 0 AND ${table.invalidSampleCount} >= 0 AND ${table.invalidSampleCount} <= ${table.sampleCount}`),
+]);
+
 export const registerDefinitions = pgTable("register_definitions", {
   id: uuid("id").defaultRandom().primaryKey(),
   modelId: uuid("model_id").notNull().references(() => deviceModels.id, { onDelete: "cascade" }),
