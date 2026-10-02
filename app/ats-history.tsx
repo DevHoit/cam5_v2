@@ -55,8 +55,8 @@ function HistoryChart({ data }: { data: HistoryResponse }) {
   min -= margin; max += margin;
   const x = (iso: string) => padX + ((new Date(iso).getTime() - from) / Math.max(1, to - from)) * (width - padX * 2);
   const y = (value: number) => height - padY - ((value - min) / Math.max(0.000001, max - min)) * (height - padY * 2);
-  const path = values.map((point, index) => \`\${index ? "L" : "M"} \${x(point.recordedAt).toFixed(2)} \${y(point.value).toFixed(2)}\`).join(" ");
-  return <div className="electrical-history-chart"><svg viewBox={\`0 0 \${width} \${height}\`}>
+  const path = values.map((point, index) => `${index ? "L" : "M"} ${x(point.recordedAt).toFixed(2)} ${y(point.value).toFixed(2)}`).join(" ");
+  return <div className="electrical-history-chart"><svg viewBox={`0 0 ${width} ${height}`}>
     {[0, .25, .5, .75, 1].map((ratio) => {
       const yy = padY + ratio * (height - padY * 2);
       const label = max - ratio * (max - min);
@@ -127,7 +127,7 @@ export function AtsHistoryDialog({
       {status === "ready" && <>
         {history && <>
           <div className="electrical-history-meta">
-            <span>{history.range.bucketSeconds ? \`Resolución \${history.range.bucketSeconds >= 3600 ? history.range.bucketSeconds / 3600 + " h" : history.range.bucketSeconds / 60 + " min"}\` : "Resolución cruda"}</span>
+            <span>{history.range.bucketSeconds ? `Resolución ${history.range.bucketSeconds >= 3600 ? history.range.bucketSeconds / 3600 + " h" : history.range.bucketSeconds / 60 + " min"}` : "Resolución cruda"}</span>
             <span>{history.points.reduce((sum, point) => sum + point.sampleCount, 0)} muestras representadas</span>
           </div>
           <HistoryChart data={history} />
@@ -138,7 +138,7 @@ export function AtsHistoryDialog({
           <div>{events?.events.slice().reverse().map((event, index) => <article key={event.recordedAt + event.metricKey + index}>
             <time>{new Intl.DateTimeFormat("es-CL", { dateStyle: "short", timeStyle: "medium" }).format(new Date(event.recordedAt))}</time>
             <span><strong>{event.metricName}</strong><small>{event.deviceCode}</small></span>
-            <b>{event.initialObservation ? labelValue(event.metricKey, event.value) : \`\${labelValue(event.metricKey, event.previousValue)} → \${labelValue(event.metricKey, event.value)}\`}</b>
+            <b>{event.initialObservation ? labelValue(event.metricKey, event.value) : `${labelValue(event.metricKey, event.previousValue)} → ${labelValue(event.metricKey, event.value)}`}</b>
           </article>)}</div>
           {events?.range.truncated && <p>La lista alcanzó el límite de 1.000 transiciones. Reduce el rango para ver el detalle completo.</p>}
         </section>
