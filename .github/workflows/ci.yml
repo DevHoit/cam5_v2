@@ -39,15 +39,19 @@ jobs:
           db/cold-chain.ts
           db/cold-chain-history.ts
           db/cold-chain-alarm-engine.ts
+          db/report-engine.ts
+          db/report-export.ts
           app/api/v1/gateway/ingest/route.ts
           app/api/v1/gateway/_lib/ingest-v2.ts
           app/api/v1/telemetry/metrics
           app/api/v1/cold-chain
           app/cold-chain-view.tsx
           app/cold-chain-detail.tsx
+          app/reports-view.tsx
           tests/gateway-ingest-v2.test.ts
           tests/cold-chain.test.ts
           tests/cold-chain-history.test.ts
+          tests/report-export.test.ts
           tests/database-schema.test.mjs
           tests/database-seed.test.ts
 
