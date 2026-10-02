@@ -1,6 +1,7 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Cam5Database } from "../../../../../db/index";
 import { evaluateColdChainAsset } from "../../../../../db/cold-chain-alarm-engine";
+import { evaluateElectricalAsset } from "../../../../../db/electrical-alarm-engine";
 import {
   assets,
   deviceMetrics,
@@ -324,7 +325,7 @@ export async function handleGenericIngest(input: {
       updatedAt: receivedAt,
     }).where(eq(devices.id, device.id));
 
-    if (device.assetType !== "cold_room") {
+    if (device.assetType !== "cold_room" && device.assetType !== "electrical_point") {
       await tx.update(assets).set({
         state: payload.quality === "bad" ? "warning" : "normal",
         updatedAt: receivedAt,
@@ -337,6 +338,11 @@ export async function handleGenericIngest(input: {
   if (!result.duplicate && device.assetType === "cold_room") {
     await evaluateColdChainAsset(db, device.assetId, receivedAt).catch((error: unknown) => {
       console.error("No fue posible evaluar alarmas de cadena de frío", error);
+    });
+  }
+  if (!result.duplicate && device.assetType === "electrical_point") {
+    await evaluateElectricalAsset(db, device.assetId, receivedAt).catch((error: unknown) => {
+      console.error("No fue posible evaluar alarmas eléctricas", error);
     });
   }
 
