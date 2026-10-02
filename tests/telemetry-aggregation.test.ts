@@ -53,12 +53,66 @@ test("builds time buckets and applies the configured raw retention", async () =>
       quality: "good",
     });
 
+    const [genericDefinition] = await db.insert(schema.metricDefinitions).values({
+      key: "test.temperature.generic",
+      name: "Temperatura genérica de prueba",
+      category: "test",
+      unit: "°C",
+      dataType: "float",
+      aggregation: "avg",
+    }).returning();
+    const [genericMetric] = await db.insert(schema.deviceMetrics).values({
+      deviceId: device.id,
+      metricDefinitionId: genericDefinition.id,
+      code: "TEST-TEMP",
+      name: "Temperatura genérica de prueba",
+    }).returning();
+    for (const [index, sample] of [
+      { at: "2026-09-05T11:58:10.000Z", value: "4.00000000", quality: "good" as const },
+      { at: "2026-09-05T11:58:40.000Z", value: "6.00000000", quality: "good" as const },
+      { at: "2026-09-05T11:58:50.000Z", value: null, quality: "bad" as const },
+    ].entries()) {
+      const [batch] = await db.insert(schema.telemetryBatches).values({
+        gatewayId: gateway.id,
+        deviceId: device.id,
+        batchKey: "generic-aggregate-" + index,
+        gatewayBootId: "boot-generic",
+        gatewaySequence: index + 1,
+        sentAt: new Date(sample.at),
+        sampledAt: new Date(sample.at),
+        receivedAt: new Date(sample.at),
+        quality: sample.quality,
+        timeQuality: "synced",
+        metricCount: 1,
+        success: true,
+      }).returning();
+      await db.insert(schema.metricReadings).values({
+        batchId: batch.id,
+        deviceMetricId: genericMetric.id,
+        recordedAt: new Date(sample.at),
+        receivedAt: new Date(sample.at),
+        valueNumeric: sample.value,
+        quality: sample.quality,
+        timeQuality: "synced",
+        sequence: index + 1,
+      });
+    }
+
     const result = await refreshTelemetryAggregates(aggregationDb, site.id, evaluatedAt);
     assert.deepEqual(result, { bucketsUpdated: 8, retentionApplied: true });
     const [minute] = await db.select().from(schema.readingAggregates).where(and(eq(schema.readingAggregates.channelId, channel.id), eq(schema.readingAggregates.bucketSeconds, 60))).limit(1);
     assert.equal(minute.sampleCount, 3);
     assert.equal(minute.invalidSampleCount, 1);
     assert.equal(Number(minute.averageValue), 51);
+    const [genericMinute] = await db.select().from(schema.metricReadingAggregates).where(and(
+      eq(schema.metricReadingAggregates.deviceMetricId, genericMetric.id),
+      eq(schema.metricReadingAggregates.bucketSeconds, 60),
+    )).limit(1);
+    assert.equal(genericMinute.sampleCount, 3);
+    assert.equal(genericMinute.invalidSampleCount, 1);
+    assert.equal(Number(genericMinute.minimumValue), 4);
+    assert.equal(Number(genericMinute.maximumValue), 6);
+    assert.equal(Number(genericMinute.averageValue), 5);
     const [rawCount] = await db.select({ value: count() }).from(schema.readings).where(eq(schema.readings.channelId, channel.id));
     assert.equal(rawCount.value, 3);
     const [batchCount] = await db.select({ value: count() }).from(schema.ingestionBatches).where(eq(schema.ingestionBatches.id, oldBatch.id));
