@@ -41,6 +41,31 @@ export function reportCsv(snapshot: ReportSnapshot) {
       ["Sensor", "Nombre", "Tipo", "Inicio UTC", "Fin UTC", "Duración (s)", "Extremo °C", "Activa"],
       ...snapshot.coldChain.excursions.map((item) => [item.sensorCode, item.sensorName, item.type, item.startedAt, item.endedAt, item.durationSeconds, item.extremeC, item.active ? "Sí" : "No"]),
     ] : []),
+    ...(snapshot.electrical ? [
+      [],
+      ["MONITOREO ELÉCTRICO"],
+      ["Medidores", snapshot.electrical.meterCount],
+      ["Sin telemetría después de (s)", snapshot.electrical.limits.staleAfterSeconds],
+      ["Persistencia de umbral (s)", snapshot.electrical.limits.thresholdDelaySeconds],
+      ["Voltaje mínimo L-N (V)", snapshot.electrical.limits.voltageMinV],
+      ["Voltaje máximo L-N (V)", snapshot.electrical.limits.voltageMaxV],
+      ["Corriente máxima por fase (A)", snapshot.electrical.limits.currentMaxA],
+      ["Frecuencia mínima (Hz)", snapshot.electrical.limits.frequencyMinHz],
+      ["Frecuencia máxima (Hz)", snapshot.electrical.limits.frequencyMaxHz],
+      ["Factor de potencia mínimo", snapshot.electrical.limits.powerFactorMin],
+      [],
+      ["MEDIDORES"],
+      ["Código", "Nombre", "Calidad (%)", "V mín", "V prom", "V máx", "I máx", "P prom kW", "P máx kW", "S prom kVA", "Q prom kVAr", "PF mín", "PF prom", "Hz mín", "Hz prom", "Hz máx", "E importada Δ kWh", "E exportada Δ kWh", "Demanda máx kW"],
+      ...snapshot.electrical.meters.map((meter) => [
+        meter.code, meter.name, meter.qualityPercent,
+        meter.voltageMinimumV, meter.voltageAverageV, meter.voltageMaximumV,
+        meter.currentMaximumA, meter.activePowerAverageKw, meter.activePowerMaximumKw,
+        meter.apparentPowerAverageKva, meter.reactivePowerAverageKvar,
+        meter.powerFactorMinimum, meter.powerFactorAverage,
+        meter.frequencyMinimumHz, meter.frequencyAverageHz, meter.frequencyMaximumHz,
+        meter.energyImportDeltaKwh, meter.energyExportDeltaKwh, meter.peakDemandKw,
+      ]),
+    ] : []),
     [],
     ["ALARMAS"],
     ["Código", "Título", "Severidad", "Estado", "Canal", "Valor", "Umbral", "Apertura UTC"],
@@ -84,7 +109,7 @@ export async function reportPdf(snapshot: ReportSnapshot) {
     page = document.addPage(pageSize);
     y = pageSize[1] - margin;
     page.drawText("HoitLive Core", { x: margin, y, font: bold, size: 17, color: rgb(0.05, 0.12, 0.18) });
-    page.drawText(snapshot.coldChain ? "Reporte de cadena de frío" : "Reporte de monitoreo de condición eléctrica", { x: margin, y: y - 17, font: regular, size: 8.5, color: rgb(0.38, 0.43, 0.48) });
+    page.drawText(snapshot.coldChain ? "Reporte de cadena de frío" : snapshot.electrical ? "Reporte de monitoreo eléctrico" : "Reporte de monitoreo de condición", { x: margin, y: y - 17, font: regular, size: 8.5, color: rgb(0.38, 0.43, 0.48) });
     page.drawLine({ start: { x: margin, y: y - 28 }, end: { x: pageSize[0] - margin, y: y - 28 }, thickness: 1.2, color: rgb(0.05, 0.49, 0.7) });
     y -= 48;
   };
@@ -111,14 +136,14 @@ export async function reportPdf(snapshot: ReportSnapshot) {
   text(snapshot.template.description ?? "Informe operacional consolidado.", { size: 10, color: rgb(0.38, 0.43, 0.48), gap: 14 });
   row("Cliente", snapshot.client.name);
   row("Sitio", snapshot.site.name);
-  row(snapshot.coldChain ? "Cámara" : "Punto de medición", `${snapshot.asset.code} - ${snapshot.asset.name}`);
+  row(snapshot.coldChain ? "Cámara" : snapshot.electrical ? "Punto eléctrico" : "Punto de medición", `${snapshot.asset.code} - ${snapshot.asset.name}`);
   row("Periodo", `${new Date(snapshot.period.start).toLocaleString("es-CL", { timeZone: snapshot.site.timezone })} a ${new Date(snapshot.period.end).toLocaleString("es-CL", { timeZone: snapshot.site.timezone })}`);
   row("Generado por", snapshot.generatedBy);
   row("Generado", new Date(snapshot.generatedAt).toLocaleString("es-CL", { timeZone: snapshot.site.timezone }));
 
   section("Resumen ejecutivo");
   row("Condición", snapshot.summary.condition === "critical" ? "Crítica" : snapshot.summary.condition === "warning" ? "Advertencia" : "Normal");
-  row(snapshot.coldChain ? "Sensores incluidos" : "Canales incluidos", snapshot.summary.channelCount);
+  row(snapshot.coldChain ? "Sensores incluidos" : snapshot.electrical ? "Variables incluidas" : "Canales incluidos", snapshot.summary.channelCount);
   row("Muestras recibidas", snapshot.summary.sampleCount);
   row("Calidad de datos", snapshot.summary.qualityPercent === null ? "Sin muestras" : `${snapshot.summary.qualityPercent}%`);
   row("Alarmas del periodo", `${snapshot.summary.alarmCount} (${snapshot.summary.criticalCount} críticas, ${snapshot.summary.warningCount} advertencias)`);
@@ -134,7 +159,32 @@ export async function reportPdf(snapshot: ReportSnapshot) {
     row("Gaps de datos", snapshot.coldChain.dataGapCount);
   }
 
-  section(snapshot.coldChain ? "Resumen por sensor" : "Resumen por canal");
+  if (snapshot.electrical) {
+    section("Monitoreo eléctrico");
+    row("Medidores incluidos", snapshot.electrical.meterCount);
+    row("Voltaje L-N configurado", snapshot.electrical.limits.voltageMinV === null && snapshot.electrical.limits.voltageMaxV === null
+      ? "Sin límites configurados"
+      : `${snapshot.electrical.limits.voltageMinV ?? "s/d"} V a ${snapshot.electrical.limits.voltageMaxV ?? "s/d"} V`);
+    row("Corriente máxima", snapshot.electrical.limits.currentMaxA === null ? "Sin límite configurado" : `${snapshot.electrical.limits.currentMaxA} A`);
+    row("Frecuencia configurada", snapshot.electrical.limits.frequencyMinHz === null && snapshot.electrical.limits.frequencyMaxHz === null
+      ? "Sin límites configurados"
+      : `${snapshot.electrical.limits.frequencyMinHz ?? "s/d"} Hz a ${snapshot.electrical.limits.frequencyMaxHz ?? "s/d"} Hz`);
+    row("Factor de potencia mínimo", snapshot.electrical.limits.powerFactorMin ?? "Sin límite configurado");
+    row("Pérdida de telemetría", `${snapshot.electrical.limits.staleAfterSeconds} s`);
+
+    section("Resumen por medidor");
+    if (!snapshot.electrical.meters.length) text("No hay medidores con variables eléctricas configuradas.");
+    for (const meter of snapshot.electrical.meters) {
+      ensure(78);
+      text(`${meter.code} - ${meter.name}`, { size: 9.5, font: bold, gap: 2 });
+      text(`Voltaje ${meter.voltageMinimumV ?? "s/d"} / ${meter.voltageAverageV === null ? "s/d" : meter.voltageAverageV.toFixed(1)} / ${meter.voltageMaximumV ?? "s/d"} V (mín/prom/máx) | Corriente máx ${meter.currentMaximumA ?? "s/d"} A`, { size: 8, color: rgb(0.4, 0.44, 0.48), gap: 2 });
+      text(`Potencia activa prom ${meter.activePowerAverageKw === null ? "s/d" : meter.activePowerAverageKw.toFixed(2)} kW | máx ${meter.activePowerMaximumKw ?? "s/d"} kW | Demanda máx ${meter.peakDemandKw ?? "s/d"} kW`, { size: 8, color: rgb(0.4, 0.44, 0.48), gap: 2 });
+      text(`PF prom ${meter.powerFactorAverage === null ? "s/d" : meter.powerFactorAverage.toFixed(3)} | Frecuencia ${meter.frequencyMinimumHz ?? "s/d"} / ${meter.frequencyAverageHz === null ? "s/d" : meter.frequencyAverageHz.toFixed(2)} / ${meter.frequencyMaximumHz ?? "s/d"} Hz`, { size: 8, color: rgb(0.4, 0.44, 0.48), gap: 2 });
+      text(`Energía importada período ${meter.energyImportDeltaKwh === null ? "s/d" : meter.energyImportDeltaKwh.toFixed(2)} kWh | Calidad ${meter.qualityPercent === null ? "s/d" : meter.qualityPercent + "%"}`, { size: 8, color: rgb(0.4, 0.44, 0.48), gap: 7 });
+    }
+  }
+
+  section(snapshot.coldChain ? "Resumen por sensor" : snapshot.electrical ? "Resumen por variable" : "Resumen por canal");
   if (!snapshot.channels.length) text("No hay canales habilitados para este punto de medición.");
   for (const channel of snapshot.channels) {
     ensure(38);
@@ -314,14 +364,14 @@ export function reportXlsx(snapshot: ReportSnapshot) {
     ["Plantilla", snapshot.template.name],
     ["Cliente", snapshot.client.name],
     ["Sitio", snapshot.site.name],
-    [snapshot.coldChain ? "Cámara" : "Punto de medición", `${snapshot.asset.code} - ${snapshot.asset.name}`],
+    [snapshot.coldChain ? "Cámara" : snapshot.electrical ? "Punto eléctrico" : "Punto de medición", `${snapshot.asset.code} - ${snapshot.asset.name}`],
     ["Periodo inicio UTC", snapshot.period.start],
     ["Periodo fin UTC", snapshot.period.end],
     ["Generado UTC", snapshot.generatedAt],
     [],
     ["RESUMEN"],
     ["Condición", snapshot.summary.condition],
-    [snapshot.coldChain ? "Sensores" : "Canales", snapshot.summary.channelCount],
+    [snapshot.coldChain ? "Sensores" : snapshot.electrical ? "Variables" : "Canales", snapshot.summary.channelCount],
     ["Muestras", snapshot.summary.sampleCount],
     ["Muestras válidas", snapshot.summary.validSampleCount],
     ["Calidad (%)", snapshot.summary.qualityPercent],
@@ -345,8 +395,24 @@ export function reportXlsx(snapshot: ReportSnapshot) {
     );
   }
 
+  if (snapshot.electrical) {
+    summaryRows.push(
+      [],
+      ["MONITOREO ELÉCTRICO"],
+      ["Medidores", snapshot.electrical.meterCount],
+      ["Sin telemetría después de (s)", snapshot.electrical.limits.staleAfterSeconds],
+      ["Persistencia de umbral (s)", snapshot.electrical.limits.thresholdDelaySeconds],
+      ["Voltaje mínimo L-N (V)", snapshot.electrical.limits.voltageMinV],
+      ["Voltaje máximo L-N (V)", snapshot.electrical.limits.voltageMaxV],
+      ["Corriente máxima por fase (A)", snapshot.electrical.limits.currentMaxA],
+      ["Frecuencia mínima (Hz)", snapshot.electrical.limits.frequencyMinHz],
+      ["Frecuencia máxima (Hz)", snapshot.electrical.limits.frequencyMaxHz],
+      ["Factor de potencia mínimo", snapshot.electrical.limits.powerFactorMin],
+    );
+  }
+
   const channelRows: unknown[][] = [
-    [snapshot.coldChain ? "Sensor" : "Canal", "Nombre", "Zona", "Último", "Mínimo", "Promedio", "Máximo", "Unidad", "Muestras", "Muestras válidas", "Última lectura UTC"],
+    [snapshot.coldChain ? "Sensor" : snapshot.electrical ? "Variable" : "Canal", "Nombre", "Zona", "Último", "Mínimo", "Promedio", "Máximo", "Unidad", "Muestras", "Muestras válidas", "Última lectura UTC"],
     ...snapshot.channels.map((channel) => [
       channel.code,
       channel.name,
@@ -378,7 +444,7 @@ export function reportXlsx(snapshot: ReportSnapshot) {
 
   const sheets = [
     { name: "Resumen", rows: summaryRows },
-    { name: snapshot.coldChain ? "Sensores" : "Canales", rows: channelRows },
+    { name: snapshot.coldChain ? "Sensores" : snapshot.electrical ? "Variables" : "Canales", rows: channelRows },
     ...(snapshot.coldChain ? [{
       name: "Excursiones",
       rows: [
@@ -392,6 +458,22 @@ export function reportXlsx(snapshot: ReportSnapshot) {
           item.durationSeconds,
           item.extremeC,
           item.active,
+        ]),
+      ],
+    }] : []),
+    ...(snapshot.electrical ? [{
+      name: "Medidores",
+      rows: [
+        ["Código", "Nombre", "Muestras", "Muestras válidas", "Calidad (%)", "V mín", "V prom", "V máx", "I máx", "P prom kW", "P máx kW", "S prom kVA", "Q prom kVAr", "PF mín", "PF prom", "Hz mín", "Hz prom", "Hz máx", "E imp inicio kWh", "E imp fin kWh", "E imp Δ kWh", "E exp inicio kWh", "E exp fin kWh", "E exp Δ kWh", "Demanda máx kW"],
+        ...snapshot.electrical.meters.map((meter) => [
+          meter.code, meter.name, meter.sampleCount, meter.validSampleCount, meter.qualityPercent,
+          meter.voltageMinimumV, meter.voltageAverageV, meter.voltageMaximumV, meter.currentMaximumA,
+          meter.activePowerAverageKw, meter.activePowerMaximumKw, meter.apparentPowerAverageKva, meter.reactivePowerAverageKvar,
+          meter.powerFactorMinimum, meter.powerFactorAverage,
+          meter.frequencyMinimumHz, meter.frequencyAverageHz, meter.frequencyMaximumHz,
+          meter.energyImportStartKwh, meter.energyImportEndKwh, meter.energyImportDeltaKwh,
+          meter.energyExportStartKwh, meter.energyExportEndKwh, meter.energyExportDeltaKwh,
+          meter.peakDemandKw,
         ]),
       ],
     }] : []),
