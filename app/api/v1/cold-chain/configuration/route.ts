@@ -88,6 +88,8 @@ export async function POST(request: NextRequest) {
         staleAfterSeconds: positiveInt(body.staleAfterSeconds, "staleAfterSeconds", 180),
         disagreementThresholdC: optionalNumber(body.disagreementThresholdC, "disagreementThresholdC"),
         excursionDelaySeconds: positiveInt(body.excursionDelaySeconds, "excursionDelaySeconds", 300),
+        batteryLowVoltage: optionalNumber(body.batteryLowVoltage, "batteryLowVoltage"),
+        temperatureHysteresisC: optionalNumber(body.temperatureHysteresisC, "temperatureHysteresisC") ?? 0,
       };
 
       const [row] = await db.insert(assets).values({
@@ -237,6 +239,8 @@ export async function PATCH(request: NextRequest) {
       ...(body.staleAfterSeconds !== undefined ? { staleAfterSeconds: positiveInt(body.staleAfterSeconds, "staleAfterSeconds", 180) } : {}),
       ...(body.disagreementThresholdC !== undefined ? { disagreementThresholdC: optionalNumber(body.disagreementThresholdC, "disagreementThresholdC") } : {}),
       ...(body.excursionDelaySeconds !== undefined ? { excursionDelaySeconds: positiveInt(body.excursionDelaySeconds, "excursionDelaySeconds", 300) } : {}),
+      ...(body.batteryLowVoltage !== undefined ? { batteryLowVoltage: optionalNumber(body.batteryLowVoltage, "batteryLowVoltage") } : {}),
+      ...(body.temperatureHysteresisC !== undefined ? { temperatureHysteresisC: optionalNumber(body.temperatureHysteresisC, "temperatureHysteresisC") ?? 0 } : {}),
     };
 
     const [updated] = await db.update(assets).set({
