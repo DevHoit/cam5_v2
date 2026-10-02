@@ -2209,3 +2209,19 @@ button.module-table-row { width: 100%; }
 @media (max-width: 620px) {
   .cold-alarm-kpis { grid-template-columns: 1fr; }
 }
+
+.cold-config-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
+.cold-config-summary-grid article { display: grid; gap: 5px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); }
+.cold-config-summary-grid span { color: var(--muted); font-size: .76rem; }
+.cold-config-summary-grid strong { font-size: .9rem; }
+.cold-operation-actions { display: flex; justify-content: flex-end; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+.cold-maintenance-note { margin-top: 16px; padding: 12px 14px; border: 1px dashed var(--border); border-radius: 12px; }
+.cold-maintenance-note p { margin: 4px 0 0; color: var(--muted); font-size: .8rem; }
+@media (max-width: 900px) {
+  .cold-config-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 620px) {
+  .cold-config-summary-grid { grid-template-columns: 1fr; }
+  .cold-operation-actions { justify-content: stretch; }
+  .cold-operation-actions button { width: 100%; justify-content: center; }
+}
