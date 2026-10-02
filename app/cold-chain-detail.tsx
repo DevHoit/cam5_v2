@@ -10,6 +10,35 @@ import {
 } from "@tabler/icons-react";
 
 type RangeKey = "24h" | "7d" | "30d";
+type DetailTab = "summary" | "history" | "excursions" | "alarms";
+
+type AlarmItem = {
+  id: string;
+  code: string;
+  kind: string;
+  severity: "normal" | "warning" | "critical";
+  status: "open" | "acknowledged" | "resolved" | "closed";
+  title: string;
+  detail: string | null;
+  triggerValue: number | null;
+  thresholdValue: number | null;
+  openedAt: string;
+  lastObservedAt: string;
+  acknowledgedAt: string | null;
+  resolvedAt: string | null;
+};
+
+type AlarmResponse = {
+  items: AlarmItem[];
+  total: number;
+  summary: {
+    critical: number;
+    warning: number;
+    resolved: number;
+    unassigned: number;
+    mttaMinutes: number;
+  };
+};
 
 type ColdChainHistory = {
   schemaVersion: "2.0";
@@ -162,14 +191,19 @@ function HistoryChart({ data }: { data: ColdChainHistory }) {
 
 export function ColdChainDetail({
   chamberId,
+  canAcknowledge = false,
   onClose,
 }: {
   chamberId: string;
+  canAcknowledge?: boolean;
   onClose: () => void;
 }) {
   const [range, setRange] = useState<RangeKey>("24h");
+  const [tab, setTab] = useState<DetailTab>("summary");
   const [data, setData] = useState<ColdChainHistory | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [alarmState, setAlarmState] = useState<{ status: "idle" | "loading" | "ready" | "error"; data: AlarmResponse | null }>({ status: "idle", data: null });
+  const [alarmActionId, setAlarmActionId] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -189,6 +223,47 @@ export function ColdChainDetail({
     return () => { active = false; };
   }, [chamberId, range]);
 
+  useEffect(() => {
+    if (tab !== "alarms") return;
+    let active = true;
+    const load = async () => {
+      setAlarmState((current) => ({ status: "loading", data: current.data }));
+      try {
+        const response = await fetch("/api/v1/alarms?assetId=" + encodeURIComponent(chamberId) + "&pageSize=50", {
+          credentials: "include",
+          cache: "no-store",
+        });
+        if (!response.ok) throw new Error("No fue posible cargar las alarmas.");
+        const payload = await response.json() as AlarmResponse;
+        if (active) setAlarmState({ status: "ready", data: payload });
+      } catch {
+        if (active) setAlarmState((current) => ({ status: "error", data: current.data }));
+      }
+    };
+    void load();
+    return () => { active = false; };
+  }, [chamberId, tab]);
+
+  const acknowledgeAlarm = async (alarmId: string) => {
+    setAlarmActionId(alarmId);
+    try {
+      const response = await fetch("/api/v1/alarms/" + encodeURIComponent(alarmId), {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "acknowledge" }),
+      });
+      if (!response.ok) throw new Error("No fue posible reconocer la alarma.");
+      const refresh = await fetch("/api/v1/alarms?assetId=" + encodeURIComponent(chamberId) + "&pageSize=50", {
+        credentials: "include",
+        cache: "no-store",
+      });
+      if (refresh.ok) setAlarmState({ status: "ready", data: await refresh.json() as AlarmResponse });
+    } finally {
+      setAlarmActionId(null);
+    }
+  };
+
   const thermalExcursions = useMemo(() => data?.excursions.filter((item) => item.type !== "data_gap") ?? [], [data]);
 
   return <div className="cold-detail-backdrop" onMouseDown={onClose}>
@@ -202,29 +277,38 @@ export function ColdChainDetail({
         <button onClick={onClose} aria-label="Cerrar"><X size={19} /></button>
       </header>
 
-      <nav className="cold-detail-range">
+      <nav className="cold-detail-tabs">
+        {([
+          ["summary", "Resumen"],
+          ["history", "Histórico"],
+          ["excursions", "Excursiones"],
+          ["alarms", "Alarmas"],
+        ] as Array<[DetailTab, string]>).map(([key, label]) => <button key={key} className={tab === key ? "active" : ""} onClick={() => setTab(key)}>{label}</button>)}
+      </nav>
+
+      {tab !== "alarms" && <nav className="cold-detail-range">
         {(["24h", "7d", "30d"] as RangeKey[]).map((item) => <button key={item} className={range === item ? "active" : ""} onClick={() => setRange(item)}>{item}</button>)}
       </nav>
 
       {status === "loading" && <div className="cold-detail-loading"><Refresh className="spin" size={22} /> Cargando histórico…</div>}
       {status === "error" && <div className="cold-detail-loading"><AlertTriangle size={22} /> No fue posible cargar el histórico.</div>}
 
-      {status === "ready" && data && <>
-        <section className="cold-detail-kpis">
+      {status === "ready" && data && tab !== "alarms" && <>
+        {(tab === "summary" || tab === "history") && <section className="cold-detail-kpis">
           <article><span>Mínima</span><strong>{temp(data.summary.minimumC)}</strong></article>
           <article><span>Máxima</span><strong>{temp(data.summary.maximumC)}</strong></article>
           <article><span>Promedio</span><strong>{temp(data.summary.averageC)}</strong></article>
           <article><span>Excursiones</span><strong>{data.summary.excursionCount}</strong></article>
           <article><span>Fuera de rango</span><strong>{duration(data.summary.totalOutOfRangeSeconds)}</strong></article>
           <article><span>Gaps de datos</span><strong>{data.summary.dataGapCount}</strong></article>
-        </section>
+        </section>}
 
-        <section className="cold-detail-section">
+        {(tab === "summary" || tab === "history") && <section className="cold-detail-section">
           <div className="cold-detail-heading"><Thermometer size={18} /><div><h3>Histórico de temperatura</h3><p>Los saltos sin telemetría se muestran como discontinuidades; no se interpolan.</p></div></div>
           <HistoryChart data={data} />
-        </section>
+        </section>}
 
-        <section className="cold-detail-section">
+        {(tab === "summary" || tab === "excursions") && <section className="cold-detail-section">
           <div className="cold-detail-heading"><AlertTriangle size={18} /><div><h3>Excursiones térmicas</h3><p>Se consideran sólo después del tiempo de persistencia configurado.</p></div></div>
           {!thermalExcursions.length ? <div className="cold-history-empty">No se detectaron excursiones térmicas en este rango.</div> : <div className="cold-excursion-table">
             <div className="cold-excursion-head"><span>Sensor</span><span>Tipo</span><span>Inicio</span><span>Duración</span><span>Extremo</span><span>Estado</span></div>
@@ -237,9 +321,9 @@ export function ColdChainDetail({
               <span>{item.active ? "Activa" : "Finalizada"}</span>
             </div>)}
           </div>}
-        </section>
+        </section>}
 
-        <section className="cold-detail-section">
+        {(tab === "summary" || tab === "excursions") && <section className="cold-detail-section">
           <div className="cold-detail-heading"><Clock size={18} /><div><h3>Disponibilidad de datos</h3><p>Los periodos sin lectura suficiente se separan de las excursiones térmicas.</p></div></div>
           {data.excursions.filter((item) => item.type === "data_gap").length === 0 ? <div className="cold-history-empty">Sin gaps de datos detectados.</div> :
             <div className="cold-excursion-table">
@@ -252,8 +336,39 @@ export function ColdChainDetail({
                 <span>{item.active ? "Activo" : "Finalizado"}</span>
               </div>)}
             </div>}
-        </section>
+        </section>}
       </>}
+
+      {tab === "alarms" && <section className="cold-detail-section">
+        <div className="cold-detail-heading"><AlertTriangle size={18} /><div><h3>Alarmas operacionales</h3><p>Alarmas persistentes asociadas a esta cámara, independientes del análisis histórico de excursiones.</p></div></div>
+        {alarmState.status === "loading" && <div className="cold-detail-loading"><Refresh className="spin" size={20} /> Cargando alarmas…</div>}
+        {alarmState.status === "error" && !alarmState.data && <div className="cold-history-empty">No fue posible consultar las alarmas de esta cámara.</div>}
+        {alarmState.data && <>
+          <section className="cold-alarm-kpis">
+            <article><span>Críticas activas</span><strong>{alarmState.data.summary.critical}</strong></article>
+            <article><span>Advertencias activas</span><strong>{alarmState.data.summary.warning}</strong></article>
+            <article><span>Resueltas</span><strong>{alarmState.data.summary.resolved}</strong></article>
+          </section>
+          {!alarmState.data.items.length ? <div className="cold-history-empty">Esta cámara todavía no registra alarmas.</div> : <div className="cold-alarm-list">
+            {alarmState.data.items.map((alarm) => <article className={"cold-alarm-card cold-alarm-" + alarm.severity} key={alarm.id}>
+              <header>
+                <div><span>{alarm.code}</span><h4>{alarm.title}</h4></div>
+                <b>{alarm.status === "open" ? "Abierta" : alarm.status === "acknowledged" ? "Reconocida" : alarm.status === "resolved" ? "Resuelta" : "Cerrada"}</b>
+              </header>
+              {alarm.detail && <p>{alarm.detail}</p>}
+              <div className="cold-alarm-meta">
+                <span>Inicio: {formatDate(alarm.openedAt)}</span>
+                <span>Última observación: {formatDate(alarm.lastObservedAt)}</span>
+              </div>
+              {canAcknowledge && alarm.status === "open" && <footer>
+                <button className="secondary-button" disabled={alarmActionId === alarm.id} onClick={() => void acknowledgeAlarm(alarm.id)}>
+                  {alarmActionId === alarm.id ? "Reconociendo…" : "Reconocer alarma"}
+                </button>
+              </footer>}
+            </article>)}
+          </div>}
+        </>}
+      </section>}
     </section>
   </div>;
 }
