@@ -325,6 +325,25 @@ export const deviceModels = pgTable("device_models", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [uniqueIndex("device_models_code_uidx").on(table.code)]);
 
+export const metricDefinitions = pgTable("metric_definitions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  key: varchar("key", { length: 160 }).notNull(),
+  name: varchar("name", { length: 180 }).notNull(),
+  category: varchar("category", { length: 80 }).notNull(),
+  unit: varchar("unit", { length: 40 }).notNull(),
+  dataType: varchar("data_type", { length: 24 }).default("float").notNull(),
+  aggregation: varchar("aggregation", { length: 24 }).default("last").notNull(),
+  description: text("description"),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("metric_definitions_key_uidx").on(table.key),
+  index("metric_definitions_category_idx").on(table.category),
+  check("metric_definitions_data_type_chk", sql`${table.dataType} IN ('float', 'integer', 'boolean', 'string', 'enum')`),
+  check("metric_definitions_aggregation_chk", sql`${table.aggregation} IN ('last', 'avg', 'min', 'max', 'sum', 'counter')`),
+]);
+
 export const devices = pgTable("devices", {
   id: uuid("id").defaultRandom().primaryKey(),
   assetId: uuid("asset_id").notNull().references(() => assets.id, { onDelete: "restrict" }),
@@ -336,6 +355,9 @@ export const devices = pgTable("devices", {
   serialNumber: varchar("serial_number", { length: 120 }),
   firmwareVersion: varchar("firmware_version", { length: 80 }),
   dataVersion: integer("data_version"),
+  deviceType: varchar("device_type", { length: 80 }).default("condition_monitor").notNull(),
+  driver: varchar("driver", { length: 80 }).default("cam5").notNull(),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
   state: deviceStateEnum("state").default("draft").notNull(),
   active: boolean("active").default(true).notNull(),
   protocol: varchar("protocol", { length: 24 }).default("modbus_tcp").notNull(),
@@ -357,6 +379,53 @@ export const devices = pgTable("devices", {
   check("devices_unit_id_chk", sql`${table.unitId} BETWEEN 0 AND 247`),
   check("devices_timeout_chk", sql`${table.timeoutMs} > 0`),
   check("devices_retries_chk", sql`${table.retries} BETWEEN 0 AND 10`),
+]);
+
+export const gatewayDeviceBindings = pgTable("gateway_device_bindings", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  gatewayId: uuid("gateway_id").notNull().references(() => gateways.id, { onDelete: "cascade" }),
+  deviceId: uuid("device_id").notNull().references(() => devices.id, { onDelete: "cascade" }),
+  interfaceType: varchar("interface_type", { length: 32 }).notNull(),
+  enabled: boolean("enabled").default(true).notNull(),
+  config: jsonb("config").$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("gateway_device_bindings_pair_uidx").on(table.gatewayId, table.deviceId),
+  index("gateway_device_bindings_device_idx").on(table.deviceId),
+  index("gateway_device_bindings_gateway_enabled_idx").on(table.gatewayId, table.enabled),
+  check("gateway_device_bindings_interface_chk", sql`${table.interfaceType} IN ('modbus_tcp', 'rs485', 'ble', 'ethernet', 'wifi', 'virtual')`),
+]);
+
+export const deviceCapabilities = pgTable("device_capabilities", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  deviceId: uuid("device_id").notNull().references(() => devices.id, { onDelete: "cascade" }),
+  capabilityKey: varchar("capability_key", { length: 120 }).notNull(),
+  enabled: boolean("enabled").default(true).notNull(),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("device_capabilities_device_key_uidx").on(table.deviceId, table.capabilityKey),
+  index("device_capabilities_key_idx").on(table.capabilityKey, table.enabled),
+]);
+
+export const deviceMetrics = pgTable("device_metrics", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  deviceId: uuid("device_id").notNull().references(() => devices.id, { onDelete: "cascade" }),
+  metricDefinitionId: uuid("metric_definition_id").notNull().references(() => metricDefinitions.id, { onDelete: "restrict" }),
+  code: varchar("code", { length: 100 }).notNull(),
+  name: varchar("name", { length: 180 }).notNull(),
+  enabled: boolean("enabled").default(true).notNull(),
+  displayOrder: integer("display_order").default(0).notNull(),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("device_metrics_device_code_uidx").on(table.deviceId, table.code),
+  uniqueIndex("device_metrics_device_metric_uidx").on(table.deviceId, table.metricDefinitionId),
+  index("device_metrics_device_enabled_idx").on(table.deviceId, table.enabled),
+  check("device_metrics_display_order_chk", sql`${table.displayOrder} >= 0`),
 ]);
 
 export const registerDefinitions = pgTable("register_definitions", {
