@@ -41,6 +41,7 @@ export async function GET(request: NextRequest) {
       code: assets.code,
       name: assets.name,
       area: assets.area,
+      state: assets.state,
       metadata: assets.metadata,
     }).from(assets).where(and(
       eq(assets.id, chamberId),
@@ -72,7 +73,7 @@ export async function GET(request: NextRequest) {
       return Response.json({
         schemaVersion: "2.0",
         serverTime: now.toISOString(),
-        chamber: { id: chamber.id, code: chamber.code, name: chamber.name, area: chamber.area, config },
+        chamber: { id: chamber.id, code: chamber.code, name: chamber.name, area: chamber.area, state: chamber.state, config },
         range: { from: from.toISOString(), to: to.toISOString() },
         summary: { minimumC: null, maximumC: null, averageC: null, excursionCount: 0, totalOutOfRangeSeconds: 0, dataGapCount: 0 },
         sensors: [],
@@ -162,7 +163,7 @@ export async function GET(request: NextRequest) {
     return Response.json({
       schemaVersion: "2.0",
       serverTime: now.toISOString(),
-      chamber: { id: chamber.id, code: chamber.code, name: chamber.name, area: chamber.area, config },
+      chamber: { id: chamber.id, code: chamber.code, name: chamber.name, area: chamber.area, state: chamber.state, config },
       range: { from: from.toISOString(), to: to.toISOString() },
       summary: {
         minimumC: allValues.length ? Math.min(...allValues) : null,
