@@ -17,7 +17,8 @@
     "db:migrate": "tsx db/migrate.ts",
     "db:seed": "tsx db/seed.ts",
     "db:studio": "drizzle-kit studio",
-    "gateway:token": "tsx db/create-gateway-token.ts"
+    "gateway:token": "tsx db/create-gateway-token.ts",
+    "ops:cycle": "tsx scripts/run-operations-cycle.ts"
   },
   "dependencies": {
     "@tabler/icons-react": "^3.46.0",
