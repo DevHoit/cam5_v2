@@ -168,3 +168,283 @@ export async function reportPdf(snapshot: ReportSnapshot) {
   });
   return document.save();
 }
+
+
+function xmlEscape(value: unknown) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;");
+}
+
+function columnName(index: number) {
+  let value = index + 1;
+  let result = "";
+  while (value > 0) {
+    const remainder = (value - 1) % 26;
+    result = String.fromCharCode(65 + remainder) + result;
+    value = Math.floor((value - 1) / 26);
+  }
+  return result;
+}
+
+function worksheetXml(rows: unknown[][]) {
+  const body = rows.map((row, rowIndex) => {
+    const cells = row.map((value, columnIndex) => {
+      const ref = columnName(columnIndex) + (rowIndex + 1);
+      if (typeof value === "number" && Number.isFinite(value)) return `<c r="${ref}"><v>${value}</v></c>`;
+      if (typeof value === "boolean") return `<c r="${ref}" t="b"><v>${value ? 1 : 0}</v></c>`;
+      const text = value === null || value === undefined ? "" : String(value);
+      return `<c r="${ref}" t="inlineStr"><is><t xml:space="preserve">${xmlEscape(text)}</t></is></c>`;
+    }).join("");
+    return `<row r="${rowIndex + 1}">${cells}</row>`;
+  }).join("");
+
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>${body}</sheetData>
+</worksheet>`;
+}
+
+function crc32(bytes: Uint8Array) {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let index = 0; index < 8; index += 1) {
+      crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function u16(value: number) {
+  const bytes = new Uint8Array(2);
+  new DataView(bytes.buffer).setUint16(0, value, true);
+  return bytes;
+}
+
+function u32(value: number) {
+  const bytes = new Uint8Array(4);
+  new DataView(bytes.buffer).setUint32(0, value >>> 0, true);
+  return bytes;
+}
+
+function concatBytes(parts: Uint8Array[]) {
+  const size = parts.reduce((total, part) => total + part.length, 0);
+  const output = new Uint8Array(size);
+  let offset = 0;
+  for (const part of parts) {
+    output.set(part, offset);
+    offset += part.length;
+  }
+  return output;
+}
+
+function zipStored(files: Array<{ name: string; content: string }>) {
+  const encoder = new TextEncoder();
+  const localParts: Uint8Array[] = [];
+  const centralParts: Uint8Array[] = [];
+  let offset = 0;
+
+  for (const file of files) {
+    const name = encoder.encode(file.name);
+    const data = encoder.encode(file.content);
+    const crc = crc32(data);
+    const local = concatBytes([
+      u32(0x04034b50),
+      u16(20),
+      u16(0x0800),
+      u16(0),
+      u16(0),
+      u16(0),
+      u32(crc),
+      u32(data.length),
+      u32(data.length),
+      u16(name.length),
+      u16(0),
+      name,
+      data,
+    ]);
+    localParts.push(local);
+
+    const central = concatBytes([
+      u32(0x02014b50),
+      u16(20),
+      u16(20),
+      u16(0x0800),
+      u16(0),
+      u16(0),
+      u16(0),
+      u32(crc),
+      u32(data.length),
+      u32(data.length),
+      u16(name.length),
+      u16(0),
+      u16(0),
+      u16(0),
+      u16(0),
+      u32(0),
+      u32(offset),
+      name,
+    ]);
+    centralParts.push(central);
+    offset += local.length;
+  }
+
+  const localBytes = concatBytes(localParts);
+  const centralBytes = concatBytes(centralParts);
+  const end = concatBytes([
+    u32(0x06054b50),
+    u16(0),
+    u16(0),
+    u16(files.length),
+    u16(files.length),
+    u32(centralBytes.length),
+    u32(localBytes.length),
+    u16(0),
+  ]);
+  return concatBytes([localBytes, centralBytes, end]);
+}
+
+export function reportXlsx(snapshot: ReportSnapshot) {
+  const summaryRows: unknown[][] = [
+    ["HOITLIVE CORE - REPORTE OPERACIONAL"],
+    ["Plantilla", snapshot.template.name],
+    ["Cliente", snapshot.client.name],
+    ["Sitio", snapshot.site.name],
+    [snapshot.coldChain ? "Cámara" : "Punto de medición", `${snapshot.asset.code} - ${snapshot.asset.name}`],
+    ["Periodo inicio UTC", snapshot.period.start],
+    ["Periodo fin UTC", snapshot.period.end],
+    ["Generado UTC", snapshot.generatedAt],
+    [],
+    ["RESUMEN"],
+    ["Condición", snapshot.summary.condition],
+    [snapshot.coldChain ? "Sensores" : "Canales", snapshot.summary.channelCount],
+    ["Muestras", snapshot.summary.sampleCount],
+    ["Muestras válidas", snapshot.summary.validSampleCount],
+    ["Calidad (%)", snapshot.summary.qualityPercent],
+    ["Alarmas", snapshot.summary.alarmCount],
+    ["Críticas", snapshot.summary.criticalCount],
+    ["Advertencias", snapshot.summary.warningCount],
+  ];
+
+  if (snapshot.coldChain) {
+    summaryRows.push(
+      [],
+      ["CADENA DE FRÍO"],
+      ["Rango mínimo °C", snapshot.coldChain.minimumC],
+      ["Rango máximo °C", snapshot.coldChain.maximumC],
+      ["Objetivo °C", snapshot.coldChain.targetC],
+      ["Persistencia alarma (s)", snapshot.coldChain.excursionDelaySeconds],
+      ["Lectura obsoleta (s)", snapshot.coldChain.staleAfterSeconds],
+      ["Excursiones térmicas", snapshot.coldChain.excursionCount],
+      ["Tiempo fuera de rango (s)", snapshot.coldChain.totalOutOfRangeSeconds],
+      ["Gaps de datos", snapshot.coldChain.dataGapCount],
+    );
+  }
+
+  const channelRows: unknown[][] = [
+    [snapshot.coldChain ? "Sensor" : "Canal", "Nombre", "Zona", "Último", "Mínimo", "Promedio", "Máximo", "Unidad", "Muestras", "Muestras válidas", "Última lectura UTC"],
+    ...snapshot.channels.map((channel) => [
+      channel.code,
+      channel.name,
+      channel.zone,
+      channel.latest,
+      channel.minimum,
+      channel.average,
+      channel.maximum,
+      channel.unit,
+      channel.sampleCount,
+      channel.validSampleCount,
+      channel.latestAt,
+    ]),
+  ];
+
+  const alarmRows: unknown[][] = [
+    ["Código", "Título", "Severidad", "Estado", snapshot.coldChain ? "Sensor/canal" : "Canal", "Valor", "Umbral", "Apertura UTC"],
+    ...snapshot.alarms.map((alarm) => [
+      alarm.code,
+      alarm.title,
+      alarm.severity,
+      alarm.status,
+      alarm.channelCode,
+      alarm.triggerValue,
+      alarm.thresholdValue,
+      alarm.openedAt,
+    ]),
+  ];
+
+  const sheets = [
+    { name: "Resumen", rows: summaryRows },
+    { name: snapshot.coldChain ? "Sensores" : "Canales", rows: channelRows },
+    ...(snapshot.coldChain ? [{
+      name: "Excursiones",
+      rows: [
+        ["Sensor", "Nombre", "Tipo", "Inicio UTC", "Fin UTC", "Duración (s)", "Extremo °C", "Activa"],
+        ...snapshot.coldChain.excursions.map((item) => [
+          item.sensorCode,
+          item.sensorName,
+          item.type,
+          item.startedAt,
+          item.endedAt,
+          item.durationSeconds,
+          item.extremeC,
+          item.active,
+        ]),
+      ],
+    }] : []),
+    { name: "Alarmas", rows: alarmRows },
+  ];
+
+  const workbookSheets = sheets.map((sheet, index) =>
+    `<sheet name="${xmlEscape(sheet.name)}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`
+  ).join("");
+  const relationships = sheets.map((_, index) =>
+    `<Relationship Id="rId${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${index + 1}.xml"/>`
+  ).join("");
+  const contentSheets = sheets.map((_, index) =>
+    `<Override PartName="/xl/worksheets/sheet${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`
+  ).join("");
+
+  const files: Array<{ name: string; content: string }> = [
+    {
+      name: "[Content_Types].xml",
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  ${contentSheets}
+</Types>`,
+    },
+    {
+      name: "_rels/.rels",
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+    },
+    {
+      name: "xl/workbook.xml",
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>${workbookSheets}</sheets>
+</workbook>`,
+    },
+    {
+      name: "xl/_rels/workbook.xml.rels",
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  ${relationships}
+</Relationships>`,
+    },
+    ...sheets.map((sheet, index) => ({
+      name: `xl/worksheets/sheet${index + 1}.xml`,
+      content: worksheetXml(sheet.rows),
+    })),
+  ];
+
+  return zipStored(files);
+}
