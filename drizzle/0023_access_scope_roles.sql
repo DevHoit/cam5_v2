@@ -65,3 +65,6 @@ ON CONFLICT DO NOTHING;
 -- user_client_assignments used to mirror site assignments. They now represent
 -- true client-level authority only, so remove the legacy mirrored rows.
 DELETE FROM "user_client_assignments";
+
+-- The legacy role is no longer a valid assignable scope after migration.
+DELETE FROM "roles" WHERE "key" = 'administrator';
