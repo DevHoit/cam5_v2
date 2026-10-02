@@ -1,5 +1,6 @@
-import { and, between, count, desc, eq, gte, lte, sql } from "drizzle-orm";
+import { and, between, count, desc, eq, gte, inArray, lt, lte, sql } from "drizzle-orm";
 import { parseColdChainConfig } from "./cold-chain";
+import { parseElectricalAlarmConfig } from "./electrical";
 import type { Cam5Database } from "./index";
 import {
   alarms,
@@ -81,6 +82,46 @@ export type ReportSnapshot = {
       active: boolean;
     }>;
   };
+  electrical?: {
+    meterCount: number;
+    limits: {
+      staleAfterSeconds: number;
+      thresholdDelaySeconds: number;
+      voltageMinV: number | null;
+      voltageMaxV: number | null;
+      currentMaxA: number | null;
+      frequencyMinHz: number | null;
+      frequencyMaxHz: number | null;
+      powerFactorMin: number | null;
+    };
+    meters: Array<{
+      code: string;
+      name: string;
+      sampleCount: number;
+      validSampleCount: number;
+      qualityPercent: number | null;
+      voltageMinimumV: number | null;
+      voltageAverageV: number | null;
+      voltageMaximumV: number | null;
+      currentMaximumA: number | null;
+      activePowerAverageKw: number | null;
+      activePowerMaximumKw: number | null;
+      apparentPowerAverageKva: number | null;
+      reactivePowerAverageKvar: number | null;
+      powerFactorMinimum: number | null;
+      powerFactorAverage: number | null;
+      frequencyMinimumHz: number | null;
+      frequencyAverageHz: number | null;
+      frequencyMaximumHz: number | null;
+      energyImportStartKwh: number | null;
+      energyImportEndKwh: number | null;
+      energyImportDeltaKwh: number | null;
+      energyExportStartKwh: number | null;
+      energyExportEndKwh: number | null;
+      energyExportDeltaKwh: number | null;
+      peakDemandKw: number | null;
+    }>;
+  };
   alarms: Array<{
     code: string;
     title: string;
@@ -101,6 +142,135 @@ function timestampIso(value: Date | string | null | undefined) {
   if (value === null || value === undefined) return null;
   const timestamp = value instanceof Date ? value : new Date(value);
   return Number.isNaN(timestamp.getTime()) ? null : timestamp.toISOString();
+}
+
+
+type GenericMetricStats = {
+  sampleCount: number;
+  validSampleCount: number;
+  minimum: number | null;
+  average: number | null;
+  maximum: number | null;
+  first: number | null;
+  last: number | null;
+  latestAt: Date | null;
+};
+
+type StatsPiece = {
+  deviceMetricId: string;
+  sampleCount: number;
+  invalidSampleCount: number;
+  minimum: number | null;
+  maximum: number | null;
+  average: number | null;
+  first: number | null;
+  last: number | null;
+  latestAt: Date | null;
+};
+
+function emptyStats(): GenericMetricStats {
+  return { sampleCount: 0, validSampleCount: 0, minimum: null, average: null, maximum: null, first: null, last: null, latestAt: null };
+}
+
+function mergeStats(target: Map<string, GenericMetricStats & { weightedTotal: number }>, piece: StatsPiece) {
+  let current = target.get(piece.deviceMetricId);
+  if (!current) {
+    current = { ...emptyStats(), weightedTotal: 0 };
+    target.set(piece.deviceMetricId, current);
+  }
+  const valid = Math.max(0, piece.sampleCount - piece.invalidSampleCount);
+  current.sampleCount += piece.sampleCount;
+  current.validSampleCount += valid;
+  if (piece.minimum !== null) current.minimum = current.minimum === null ? piece.minimum : Math.min(current.minimum, piece.minimum);
+  if (piece.maximum !== null) current.maximum = current.maximum === null ? piece.maximum : Math.max(current.maximum, piece.maximum);
+  if (piece.average !== null && valid > 0) current.weightedTotal += piece.average * valid;
+  if (current.first === null && piece.first !== null) current.first = piece.first;
+  if (piece.last !== null) current.last = piece.last;
+  if (piece.latestAt && (!current.latestAt || piece.latestAt > current.latestAt)) current.latestAt = piece.latestAt;
+}
+
+async function rawMetricPieces(db: Cam5Database, metricIds: string[], start: Date, end: Date): Promise<StatsPiece[]> {
+  if (!metricIds.length || start >= end) return [];
+  const rows = await db.select({
+    deviceMetricId: metricReadings.deviceMetricId,
+    sampleCount: sql<number>`count(*)::integer`,
+    invalidSampleCount: sql<number>`count(*) filter (where ${metricReadings.quality} <> 'good' or ${metricReadings.valueNumeric} is null)::integer`,
+    minimum: sql<string | null>`min(${metricReadings.valueNumeric}) filter (where ${metricReadings.quality} = 'good')`,
+    maximum: sql<string | null>`max(${metricReadings.valueNumeric}) filter (where ${metricReadings.quality} = 'good')`,
+    average: sql<string | null>`avg(${metricReadings.valueNumeric}) filter (where ${metricReadings.quality} = 'good')`,
+    first: sql<string | null>`(array_agg(${metricReadings.valueNumeric} order by ${metricReadings.recordedAt}) filter (where ${metricReadings.quality} = 'good' and ${metricReadings.valueNumeric} is not null))[1]`,
+    last: sql<string | null>`(array_agg(${metricReadings.valueNumeric} order by ${metricReadings.recordedAt} desc) filter (where ${metricReadings.quality} = 'good' and ${metricReadings.valueNumeric} is not null))[1]`,
+    latestAt: sql<Date | string | null>`max(${metricReadings.recordedAt}) filter (where ${metricReadings.quality} = 'good' and ${metricReadings.valueNumeric} is not null)`,
+  }).from(metricReadings).where(and(
+    inArray(metricReadings.deviceMetricId, metricIds),
+    gte(metricReadings.recordedAt, start),
+    lt(metricReadings.recordedAt, end),
+  )).groupBy(metricReadings.deviceMetricId);
+  return rows.map((row) => ({
+    deviceMetricId: row.deviceMetricId,
+    sampleCount: Number(row.sampleCount),
+    invalidSampleCount: Number(row.invalidSampleCount),
+    minimum: numeric(row.minimum),
+    maximum: numeric(row.maximum),
+    average: numeric(row.average),
+    first: numeric(row.first),
+    last: numeric(row.last),
+    latestAt: row.latestAt ? new Date(row.latestAt) : null,
+  }));
+}
+
+async function genericMetricStatistics(db: Cam5Database, metricIds: string[], periodStart: Date, periodEnd: Date) {
+  const result = new Map<string, GenericMetricStats & { weightedTotal: number }>();
+  if (!metricIds.length) return result;
+
+  const periodMs = periodEnd.getTime() - periodStart.getTime();
+  const bucketSeconds = periodMs <= 7 * 24 * 60 * 60 * 1000 ? 300 : 3600;
+  const bucketMs = bucketSeconds * 1000;
+  const aggregateStart = new Date(Math.ceil(periodStart.getTime() / bucketMs) * bucketMs);
+  const aggregateEnd = new Date(Math.floor(periodEnd.getTime() / bucketMs) * bucketMs);
+
+  for (const piece of await rawMetricPieces(db, metricIds, periodStart, aggregateStart < periodEnd ? aggregateStart : periodEnd)) mergeStats(result, piece);
+
+  if (aggregateStart < aggregateEnd) {
+    const aggregateRows = await db.select({
+      deviceMetricId: metricReadingAggregates.deviceMetricId,
+      bucketStart: metricReadingAggregates.bucketStart,
+      sampleCount: metricReadingAggregates.sampleCount,
+      invalidSampleCount: metricReadingAggregates.invalidSampleCount,
+      minimum: metricReadingAggregates.minimumValue,
+      maximum: metricReadingAggregates.maximumValue,
+      average: metricReadingAggregates.averageValue,
+      first: metricReadingAggregates.firstValue,
+      last: metricReadingAggregates.lastValue,
+    }).from(metricReadingAggregates).where(and(
+      inArray(metricReadingAggregates.deviceMetricId, metricIds),
+      eq(metricReadingAggregates.bucketSeconds, bucketSeconds),
+      gte(metricReadingAggregates.bucketStart, aggregateStart),
+      lt(metricReadingAggregates.bucketStart, aggregateEnd),
+    )).orderBy(metricReadingAggregates.bucketStart);
+
+    for (const row of aggregateRows) {
+      mergeStats(result, {
+        deviceMetricId: row.deviceMetricId,
+        sampleCount: Number(row.sampleCount),
+        invalidSampleCount: Number(row.invalidSampleCount),
+        minimum: numeric(row.minimum),
+        maximum: numeric(row.maximum),
+        average: numeric(row.average),
+        first: numeric(row.first),
+        last: numeric(row.last),
+        latestAt: new Date(row.bucketStart.getTime() + bucketMs),
+      });
+    }
+  }
+
+  const tailStart = aggregateEnd > periodStart ? aggregateEnd : periodStart;
+  for (const piece of await rawMetricPieces(db, metricIds, tailStart, periodEnd)) mergeStats(result, piece);
+
+  for (const stats of result.values()) {
+    stats.average = stats.validSampleCount > 0 ? stats.weightedTotal / stats.validSampleCount : null;
+  }
+  return result;
 }
 
 export async function createReportRun(db: Cam5Database, input: {
@@ -139,6 +309,8 @@ export async function createReportRun(db: Cam5Database, input: {
   if (!template || (template.siteId && template.siteId !== context.siteId)) throw new Error("La plantilla no está disponible para este sitio.");
   if (context.assetType === "cold_room" && template.key !== "cold-chain-summary") throw new Error("Selecciona la plantilla de cadena de frío para esta cámara.");
   if (context.assetType !== "cold_room" && template.key === "cold-chain-summary") throw new Error("La plantilla de cadena de frío sólo se puede usar con cámaras de refrigeración.");
+  if (context.assetType === "electrical_point" && template.key !== "electrical-summary") throw new Error("Selecciona la plantilla de monitoreo eléctrico para este punto.");
+  if (context.assetType !== "electrical_point" && template.key === "electrical-summary") throw new Error("La plantilla eléctrica sólo se puede usar con puntos eléctricos.");
 
   if (context.assetType === "cold_room") {
     const config = parseColdChainConfig(context.assetMetadata);
@@ -388,6 +560,200 @@ export async function createReportRun(db: Cam5Database, input: {
         ...alarm,
         channelCode: null,
         openedAt: alarm.openedAt.toISOString(),
+        triggerValue: numeric(alarm.triggerValue),
+        thresholdValue: numeric(alarm.thresholdValue),
+      })),
+    };
+
+    const title = `${template.name} · ${context.assetCode}`;
+    const [run] = await db.insert(reportRuns).values({
+      templateId: template.id,
+      assetId: context.assetId,
+      requestedBy: input.requestedBy ?? null,
+      title,
+      format: input.format ?? "pdf",
+      status: "completed",
+      periodStart: input.periodStart,
+      periodEnd: input.periodEnd,
+      payload: snapshot,
+      completedAt: now,
+    }).returning();
+    return { run, snapshot };
+  }
+
+  if (context.assetType === "electrical_point") {
+    const config = parseElectricalAlarmConfig(context.assetMetadata);
+    const metricRows = (await db.select({
+      deviceId: devices.id,
+      deviceCode: devices.code,
+      deviceName: devices.name,
+      deviceMetricId: deviceMetrics.id,
+      metricCode: deviceMetrics.code,
+      metricName: deviceMetrics.name,
+      metricKey: metricDefinitions.key,
+      unit: metricDefinitions.unit,
+      dataType: metricDefinitions.dataType,
+    }).from(deviceMetrics)
+      .innerJoin(devices, eq(devices.id, deviceMetrics.deviceId))
+      .innerJoin(metricDefinitions, eq(metricDefinitions.id, deviceMetrics.metricDefinitionId))
+      .where(and(
+        eq(devices.assetId, input.assetId),
+        eq(devices.active, true),
+        eq(devices.deviceType, "power_meter"),
+        eq(deviceMetrics.enabled, true),
+      ))
+      .orderBy(devices.code, deviceMetrics.displayOrder))
+      .filter((item) => item.metricKey.startsWith("electrical.") && (item.dataType === "float" || item.dataType === "integer"));
+
+    const stats = await genericMetricStatistics(db, metricRows.map((item) => item.deviceMetricId), input.periodStart, input.periodEnd);
+    const channelRows: ReportSnapshot["channels"] = metricRows.map((item) => {
+      const metricStats = stats.get(item.deviceMetricId) ?? emptyStats();
+      return {
+        code: `${item.deviceCode}:${item.metricCode}`,
+        name: `${item.deviceName} · ${item.metricName}`,
+        zone: context.area,
+        unit: item.unit,
+        sampleCount: metricStats.sampleCount,
+        validSampleCount: metricStats.validSampleCount,
+        minimum: metricStats.minimum,
+        average: metricStats.average,
+        maximum: metricStats.maximum,
+        latest: metricStats.last,
+        latestAt: metricStats.latestAt?.toISOString() ?? null,
+      };
+    });
+
+    const byMeter = new Map<string, typeof metricRows>();
+    for (const row of metricRows) {
+      const list = byMeter.get(row.deviceId) ?? [];
+      list.push(row);
+      byMeter.set(row.deviceId, list);
+    }
+    const statFor = (rows: typeof metricRows, key: string) => {
+      const metric = rows.find((item) => item.metricKey === key);
+      return metric ? stats.get(metric.deviceMetricId) ?? emptyStats() : emptyStats();
+    };
+    const finite = (values: Array<number | null>, mode: "min" | "max" | "avg") => {
+      const available = values.filter((value): value is number => value !== null && Number.isFinite(value));
+      if (!available.length) return null;
+      if (mode === "min") return Math.min(...available);
+      if (mode === "max") return Math.max(...available);
+      return available.reduce((sum, value) => sum + value, 0) / available.length;
+    };
+
+    const meterSummaries: NonNullable<ReportSnapshot["electrical"]>["meters"] = [];
+    for (const rows of byMeter.values()) {
+      const first = rows[0];
+      const voltage = ["electrical.voltage.l1_n", "electrical.voltage.l2_n", "electrical.voltage.l3_n"].map((key) => statFor(rows, key));
+      const current = ["electrical.current.l1", "electrical.current.l2", "electrical.current.l3"].map((key) => statFor(rows, key));
+      const activePower = statFor(rows, "electrical.power.active.total");
+      const apparentPower = statFor(rows, "electrical.power.apparent.total");
+      const reactivePower = statFor(rows, "electrical.power.reactive.total");
+      const powerFactor = statFor(rows, "electrical.power_factor");
+      const frequency = statFor(rows, "electrical.frequency");
+      const importEnergy = statFor(rows, "electrical.energy.import");
+      const exportEnergy = statFor(rows, "electrical.energy.export");
+      const demand = statFor(rows, "electrical.demand.active");
+      const sampleCount = rows.reduce((sum, row) => sum + (stats.get(row.deviceMetricId)?.sampleCount ?? 0), 0);
+      const validSampleCount = rows.reduce((sum, row) => sum + (stats.get(row.deviceMetricId)?.validSampleCount ?? 0), 0);
+      meterSummaries.push({
+        code: first.deviceCode,
+        name: first.deviceName,
+        sampleCount,
+        validSampleCount,
+        qualityPercent: sampleCount ? Math.round(validSampleCount / sampleCount * 10_000) / 100 : null,
+        voltageMinimumV: finite(voltage.map((item) => item.minimum), "min"),
+        voltageAverageV: finite(voltage.map((item) => item.average), "avg"),
+        voltageMaximumV: finite(voltage.map((item) => item.maximum), "max"),
+        currentMaximumA: finite(current.map((item) => item.maximum), "max"),
+        activePowerAverageKw: activePower.average,
+        activePowerMaximumKw: activePower.maximum,
+        apparentPowerAverageKva: apparentPower.average,
+        reactivePowerAverageKvar: reactivePower.average,
+        powerFactorMinimum: powerFactor.minimum,
+        powerFactorAverage: powerFactor.average,
+        frequencyMinimumHz: frequency.minimum,
+        frequencyAverageHz: frequency.average,
+        frequencyMaximumHz: frequency.maximum,
+        energyImportStartKwh: importEnergy.first,
+        energyImportEndKwh: importEnergy.last,
+        energyImportDeltaKwh: importEnergy.first !== null && importEnergy.last !== null ? Math.max(0, importEnergy.last - importEnergy.first) : null,
+        energyExportStartKwh: exportEnergy.first,
+        energyExportEndKwh: exportEnergy.last,
+        energyExportDeltaKwh: exportEnergy.first !== null && exportEnergy.last !== null ? Math.max(0, exportEnergy.last - exportEnergy.first) : null,
+        peakDemandKw: demand.maximum,
+      });
+    }
+
+    const candidateAlarms = await db.select({
+      code: alarms.code,
+      title: alarms.title,
+      severity: alarms.severity,
+      status: alarms.status,
+      openedAt: alarms.openedAt,
+      resolvedAt: alarms.resolvedAt,
+      closedAt: alarms.closedAt,
+      triggerValue: alarms.triggerValue,
+      thresholdValue: alarms.thresholdValue,
+      context: alarms.context,
+    }).from(alarms)
+      .where(and(eq(alarms.assetId, input.assetId), lte(alarms.openedAt, input.periodEnd)))
+      .orderBy(desc(alarms.openedAt))
+      .limit(1000);
+
+    const alarmRows = candidateAlarms.filter((alarm) => {
+      const alarmContext = alarm.context ?? {};
+      if (alarmContext.source !== "electrical") return false;
+      const endedAt = alarm.resolvedAt ?? alarm.closedAt;
+      return !endedAt || endedAt >= input.periodStart;
+    }).slice(0, 500);
+
+    const sampleCount = channelRows.reduce((total, row) => total + row.sampleCount, 0);
+    const validSampleCount = channelRows.reduce((total, row) => total + row.validSampleCount, 0);
+    const criticalCount = alarmRows.filter((alarm) => alarm.severity === "critical").length;
+    const warningCount = alarmRows.filter((alarm) => alarm.severity === "warning").length;
+    const condition = criticalCount > 0 ? "critical" : warningCount > 0 ? "warning" : "normal";
+    const now = new Date();
+    const snapshot: ReportSnapshot = {
+      generatedAt: now.toISOString(),
+      generatedBy: input.generatedBy,
+      template: { id: template.id, key: template.key, name: template.name, description: template.description },
+      client: { code: context.clientCode, name: context.clientName },
+      site: { code: context.siteCode, name: context.siteName, timezone: context.timezone },
+      asset: { id: context.assetId, code: context.assetCode, name: context.assetName, area: context.area, nominalVoltageKv: numeric(context.nominalVoltageKv), assetType: context.assetType },
+      period: { start: input.periodStart.toISOString(), end: input.periodEnd.toISOString() },
+      summary: {
+        condition,
+        channelCount: channelRows.length,
+        sampleCount,
+        validSampleCount,
+        qualityPercent: sampleCount ? Math.round(validSampleCount / sampleCount * 10_000) / 100 : null,
+        alarmCount: alarmRows.length,
+        warningCount,
+        criticalCount,
+      },
+      channels: channelRows,
+      electrical: {
+        meterCount: meterSummaries.length,
+        limits: {
+          staleAfterSeconds: config.staleAfterSeconds,
+          thresholdDelaySeconds: config.thresholdDelaySeconds,
+          voltageMinV: config.voltageMinV,
+          voltageMaxV: config.voltageMaxV,
+          currentMaxA: config.currentMaxA,
+          frequencyMinHz: config.frequencyMinHz,
+          frequencyMaxHz: config.frequencyMaxHz,
+          powerFactorMin: config.powerFactorMin,
+        },
+        meters: meterSummaries,
+      },
+      alarms: alarmRows.map((alarm) => ({
+        code: alarm.code,
+        title: alarm.title,
+        severity: alarm.severity,
+        status: alarm.status,
+        openedAt: alarm.openedAt.toISOString(),
+        channelCode: typeof alarm.context?.deviceCode === "string" ? alarm.context.deviceCode : null,
         triggerValue: numeric(alarm.triggerValue),
         thresholdValue: numeric(alarm.thresholdValue),
       })),
