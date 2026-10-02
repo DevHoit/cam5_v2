@@ -52,28 +52,40 @@ test("PM5560 normalized telemetry persists all V1 electrical metrics", async () 
       assetType: "electrical_point",
       nominalVoltageKv: "0.4",
       state: "offline",
+      metadata: {
+        electrical: {
+          alarms: {
+            staleAfterSeconds: 30,
+            thresholdDelaySeconds: 0,
+            voltageMinV: 210,
+            voltageMaxV: 250,
+            currentMaxA: 80,
+            frequencyMinHz: 49,
+            frequencyMaxHz: 51,
+            powerFactorMin: 0.9,
+            voltageHysteresisV: 2,
+            currentHysteresisA: 2,
+            frequencyHysteresisHz: 0.1,
+            powerFactorHysteresis: 0.02,
+          },
+        },
+      },
     }).returning();
     const [gateway] = await db.insert(schema.gateways).values({
       siteId: site.id,
       code: "GW-PM01",
       name: "Gateway PM",
     }).returning();
-    let device: typeof schema.devices.$inferSelect;
-    try {
-      [device] = await db.insert(schema.devices).values({
-        assetId: asset.id,
-        code: "PM5560-01",
-        name: "PM5560 principal",
-        deviceType: "power_meter",
-        driver: "schneider_pm5560",
-        protocol: "modbus_rtu",
-        unitId: 1,
-        state: "commissioning",
-      }).returning();
-    } catch (error) {
-      console.error("PM5560 device insert cause:", error instanceof Error && "cause" in error ? error.cause : error);
-      throw error;
-    }
+    const [device] = await db.insert(schema.devices).values({
+      assetId: asset.id,
+      code: "PM5560-01",
+      name: "PM5560 principal",
+      deviceType: "power_meter",
+      driver: "schneider_pm5560",
+      protocol: "modbus_rtu",
+      unitId: 1,
+      state: "commissioning",
+    }).returning();
     await db.insert(schema.gatewayDeviceBindings).values({
       gatewayId: gateway.id,
       deviceId: device.id,
@@ -150,6 +162,58 @@ test("PM5560 normalized telemetry persists all V1 electrical metrics", async () 
 
     const [storedAsset] = await db.select().from(schema.assets).where(and(eq(schema.assets.id, asset.id), eq(schema.assets.siteId, site.id)));
     assert.equal(storedAsset.state, "normal");
+
+    const highCurrent = { ...values, "electrical.current.l1": 96 };
+    const alarmResponse = await handleGenericIngest({
+      db,
+      credential: { gatewayId: gateway.id, gatewayCode: gateway.code, siteId: site.id },
+      rawPayload: {
+        schemaVersion: "2.0",
+        batchKey: "GW-PM01:boot-pm:2:PM5560-01",
+        sentAt: "2026-10-02T18:00:05.000Z",
+        sampledAt: "2026-10-02T18:00:05.000Z",
+        timeQuality: "synced",
+        quality: "good",
+        qualityFlags: [],
+        gateway: { code: "GW-PM01", bootId: "boot-pm", sequence: 2 },
+        device: { code: "PM5560-01", driver: "schneider_pm5560" },
+        metrics: highCurrent,
+      },
+      receivedAt: new Date("2026-10-02T18:00:05.000Z"),
+    });
+    assert.equal(alarmResponse.status, 202);
+    const [currentAlarm] = await db.select().from(schema.alarms).where(and(
+      eq(schema.alarms.assetId, asset.id),
+      eq(schema.alarms.kind, "threshold"),
+    )).limit(1);
+    assert.ok(currentAlarm);
+    assert.equal(currentAlarm.status, "open");
+    assert.equal(currentAlarm.severity, "critical");
+    assert.match(currentAlarm.title, /Sobrecorriente L1/);
+
+    const recoveryResponse = await handleGenericIngest({
+      db,
+      credential: { gatewayId: gateway.id, gatewayCode: gateway.code, siteId: site.id },
+      rawPayload: {
+        schemaVersion: "2.0",
+        batchKey: "GW-PM01:boot-pm:3:PM5560-01",
+        sentAt: "2026-10-02T18:00:10.000Z",
+        sampledAt: "2026-10-02T18:00:10.000Z",
+        timeQuality: "synced",
+        quality: "good",
+        qualityFlags: [],
+        gateway: { code: "GW-PM01", bootId: "boot-pm", sequence: 3 },
+        device: { code: "PM5560-01", driver: "schneider_pm5560" },
+        metrics: values,
+      },
+      receivedAt: new Date("2026-10-02T18:00:10.000Z"),
+    });
+    assert.equal(recoveryResponse.status, 202);
+    const [resolvedAlarm] = await db.select().from(schema.alarms).where(eq(schema.alarms.id, currentAlarm.id));
+    assert.equal(resolvedAlarm.status, "resolved");
+    assert.ok(resolvedAlarm.resolvedAt);
+    const [recoveredAsset] = await db.select().from(schema.assets).where(eq(schema.assets.id, asset.id));
+    assert.equal(recoveredAsset.state, "normal");
   } finally {
     await client.close();
   }
