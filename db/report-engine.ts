@@ -229,27 +229,45 @@ async function genericMetricStatistics(db: Cam5Database, metricIds: string[], pe
   const aggregateStart = new Date(Math.ceil(periodStart.getTime() / bucketMs) * bucketMs);
   const aggregateEnd = new Date(Math.floor(periodEnd.getTime() / bucketMs) * bucketMs);
 
-  for (const piece of await rawMetricPieces(db, metricIds, periodStart, aggregateStart < periodEnd ? aggregateStart : periodEnd)) mergeStats(result, piece);
+  const aggregateRows = aggregateStart < aggregateEnd
+    ? await db.select({
+        deviceMetricId: metricReadingAggregates.deviceMetricId,
+        bucketStart: metricReadingAggregates.bucketStart,
+        sampleCount: metricReadingAggregates.sampleCount,
+        invalidSampleCount: metricReadingAggregates.invalidSampleCount,
+        minimum: metricReadingAggregates.minimumValue,
+        maximum: metricReadingAggregates.maximumValue,
+        average: metricReadingAggregates.averageValue,
+        first: metricReadingAggregates.firstValue,
+        last: metricReadingAggregates.lastValue,
+      }).from(metricReadingAggregates).where(and(
+        inArray(metricReadingAggregates.deviceMetricId, metricIds),
+        eq(metricReadingAggregates.bucketSeconds, bucketSeconds),
+        gte(metricReadingAggregates.bucketStart, aggregateStart),
+        lt(metricReadingAggregates.bucketStart, aggregateEnd),
+      )).orderBy(metricReadingAggregates.bucketStart)
+    : [];
 
-  if (aggregateStart < aggregateEnd) {
-    const aggregateRows = await db.select({
-      deviceMetricId: metricReadingAggregates.deviceMetricId,
-      bucketStart: metricReadingAggregates.bucketStart,
-      sampleCount: metricReadingAggregates.sampleCount,
-      invalidSampleCount: metricReadingAggregates.invalidSampleCount,
-      minimum: metricReadingAggregates.minimumValue,
-      maximum: metricReadingAggregates.maximumValue,
-      average: metricReadingAggregates.averageValue,
-      first: metricReadingAggregates.firstValue,
-      last: metricReadingAggregates.lastValue,
-    }).from(metricReadingAggregates).where(and(
-      inArray(metricReadingAggregates.deviceMetricId, metricIds),
-      eq(metricReadingAggregates.bucketSeconds, bucketSeconds),
-      gte(metricReadingAggregates.bucketStart, aggregateStart),
-      lt(metricReadingAggregates.bucketStart, aggregateEnd),
-    )).orderBy(metricReadingAggregates.bucketStart);
+  const latestAggregateEndByMetric = new Map<string, number>();
+  for (const row of aggregateRows) {
+    latestAggregateEndByMetric.set(
+      row.deviceMetricId,
+      Math.max(latestAggregateEndByMetric.get(row.deviceMetricId) ?? 0, row.bucketStart.getTime() + bucketMs),
+    );
+  }
 
+  const everyMetricAggregated = metricIds.every((id) => latestAggregateEndByMetric.has(id));
+  const commonAggregateEndMs = everyMetricAggregated
+    ? Math.min(...metricIds.map((id) => latestAggregateEndByMetric.get(id)!))
+    : periodStart.getTime();
+  const commonAggregateEnd = new Date(Math.min(commonAggregateEndMs, aggregateEnd.getTime()));
+
+  const headEnd = aggregateStart < commonAggregateEnd ? aggregateStart : periodStart;
+  for (const piece of await rawMetricPieces(db, metricIds, periodStart, headEnd)) mergeStats(result, piece);
+
+  if (aggregateStart < commonAggregateEnd) {
     for (const row of aggregateRows) {
+      if (row.bucketStart < aggregateStart || row.bucketStart >= commonAggregateEnd) continue;
       mergeStats(result, {
         deviceMetricId: row.deviceMetricId,
         sampleCount: Number(row.sampleCount),
@@ -264,7 +282,7 @@ async function genericMetricStatistics(db: Cam5Database, metricIds: string[], pe
     }
   }
 
-  const tailStart = aggregateEnd > periodStart ? aggregateEnd : periodStart;
+  const tailStart = commonAggregateEnd > periodStart ? commonAggregateEnd : periodStart;
   for (const piece of await rawMetricPieces(db, metricIds, tailStart, periodEnd)) mergeStats(result, piece);
 
   for (const stats of result.values()) {
