@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ColdChainDetail } from "./cold-chain-detail";
 import {
   IconAlertTriangle as AlertTriangle,
   IconBattery as Battery,
@@ -125,6 +126,7 @@ export function ColdChainView({ canWrite = false }: { canWrite?: boolean }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [gateways, setGateways] = useState<GatewayOption[]>([]);
   const [dialog, setDialog] = useState<"chamber" | "sensor" | "edit" | null>(null);
+  const [detailChamberId, setDetailChamberId] = useState<string | null>(null);
   const [selectedChamber, setSelectedChamber] = useState<ColdChainChamber | null>(null);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
@@ -350,13 +352,16 @@ export function ColdChainView({ canWrite = false }: { canWrite?: boolean }) {
           {!chamber.sensors.length && <div className="cold-room-warning"><AlertTriangle size={16} /><span>La cámara no tiene sensores activos asociados.</span></div>}
         </div>
 
-        {canWrite && <footer className="cold-room-footer">
-          <button className="secondary-button" onClick={() => openCreateSensor(chamber)}><Plus size={15} /> Agregar sensor BLE</button>
-        </footer>}
+        <footer className="cold-room-footer">
+          <button className="secondary-button" onClick={() => setDetailChamberId(chamber.id)}>Ver histórico y excursiones</button>
+          {canWrite && <button className="secondary-button" onClick={() => openCreateSensor(chamber)}><Plus size={15} /> Agregar sensor BLE</button>}
+        </footer>
       </article>)}
     </section>
 
     {state.status === "error" && state.data && <p className="cold-chain-refresh-warning">Se muestran las últimas lecturas disponibles; la actualización automática falló temporalmente.</p>}
+
+    {detailChamberId && <ColdChainDetail chamberId={detailChamberId} onClose={() => setDetailChamberId(null)} />}
 
     {dialog && <div className="cold-config-backdrop" role="presentation" onMouseDown={closeDialog}>
       <section className="cold-config-dialog" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
