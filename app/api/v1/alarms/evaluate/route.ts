@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import { eq } from "drizzle-orm";
 import { evaluateStaleCommunications } from "../../../../../db/alarm-engine";
 import { evaluateColdChainSite } from "../../../../../db/cold-chain-alarm-engine";
+import { evaluateElectricalSite } from "../../../../../db/electrical-alarm-engine";
 import { getDb } from "../../../../../db/index";
 import { sites } from "../../../../../db/schema";
 
@@ -33,6 +34,7 @@ export async function GET(request: NextRequest) {
     const results = await Promise.allSettled(activeSites.flatMap((site) => [
       evaluateStaleCommunications(db, site.id, evaluatedAt),
       evaluateColdChainSite(db, site.id, evaluatedAt),
+      evaluateElectricalSite(db, site.id, evaluatedAt),
     ]));
     const failed = results.filter((result) => result.status === "rejected").length;
     return Response.json({
