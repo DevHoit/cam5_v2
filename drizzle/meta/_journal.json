@@ -85,6 +85,13 @@
       "when": 1788986660497,
       "tag": "0011_dear_prima",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1790956800000,
+      "tag": "0012_hoit_core_foundation",
+      "breakpoints": true
     }
   ]
 }
