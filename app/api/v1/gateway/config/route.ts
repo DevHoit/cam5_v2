@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { and, desc, eq } from "drizzle-orm";
 import { alarmRules, assets, channels, configurationSnapshots, devices, readingProfileRanges, readingProfiles, registerDefinitions } from "../../../../../db/schema";
-import { apiErrorResponse } from "../../_lib/auth";
+import { apiErrorResponse, ApiError } from "../../_lib/auth";
 import { requireGatewayCredential } from "../_lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +15,9 @@ export async function GET(request: NextRequest) {
       .orderBy(devices.unitId)
       .then((rows) => rows.map((row) => row.device));
     const payloadDevices = await Promise.all(deviceRows.map(async (device) => {
+      if (!device.modelId) {
+        throw new ApiError(409, `El dispositivo ${device.code} no tiene un modelo de registros configurado para el contrato legacy de gateway.`);
+      }
       const [ranges, registers, channelPolicies, revisions] = await Promise.all([
         device.readingProfileId ? db.select({
           name: readingProfileRanges.name,
