@@ -169,6 +169,13 @@
       "when": 1790982000000,
       "tag": "0023_access_scope_roles",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1790984400000,
+      "tag": "0024_notification_suppressed_status",
+      "breakpoints": true
     }
   ]
 }
