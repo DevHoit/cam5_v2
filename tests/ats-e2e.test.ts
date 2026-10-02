@@ -30,7 +30,7 @@ const migrations = [
   "0018_pm5560_metric_catalog.sql",
   "0019_nullable_device_gateway_site_guard.sql",
   "0020_electrical_report_template.sql",
-  "0021_dse8660_metric_catalog.sql", "0022_ats_report_template.sql",
+  "0021_dse8660_metric_catalog.sql", "0022_ats_report_template.sql", "0023_access_scope_roles.sql",
 ];
 
 async function database() {
