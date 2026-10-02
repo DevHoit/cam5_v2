@@ -99,6 +99,13 @@
       "when": 1790956860000,
       "tag": "0013_hoit_generic_telemetry",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1790956920000,
+      "tag": "0014_generic_device_transport",
+      "breakpoints": true
     }
   ]
 }
