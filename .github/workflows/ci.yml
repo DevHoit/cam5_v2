@@ -53,6 +53,7 @@ jobs:
           app/cold-chain-view.tsx
           app/cold-chain-detail.tsx
           app/electrical-view.tsx
+          app/electrical-history.tsx
           app/reports-view.tsx
           tests/gateway-ingest-v2.test.ts
           tests/pm5560-e2e.test.ts
