@@ -428,6 +428,71 @@ export const deviceMetrics = pgTable("device_metrics", {
   check("device_metrics_display_order_chk", sql`${table.displayOrder} >= 0`),
 ]);
 
+export const telemetryBatches = pgTable("telemetry_batches", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  gatewayId: uuid("gateway_id").notNull().references(() => gateways.id, { onDelete: "restrict" }),
+  deviceId: uuid("device_id").notNull().references(() => devices.id, { onDelete: "restrict" }),
+  batchKey: varchar("batch_key", { length: 160 }).notNull(),
+  schemaVersion: varchar("schema_version", { length: 16 }).default("2.0").notNull(),
+  gatewayBootId: varchar("gateway_boot_id", { length: 80 }).notNull(),
+  gatewaySequence: bigint("gateway_sequence", { mode: "number" }).notNull(),
+  sentAt: timestamp("sent_at", { withTimezone: true }).notNull(),
+  sampledAt: timestamp("sampled_at", { withTimezone: true }).notNull(),
+  receivedAt: timestamp("received_at", { withTimezone: true }).defaultNow().notNull(),
+  quality: dataQualityEnum("quality").default("good").notNull(),
+  timeQuality: varchar("time_quality", { length: 16 }).default("synced").notNull(),
+  metricCount: integer("metric_count").notNull(),
+  success: boolean("success").default(true).notNull(),
+  errorMessage: text("error_message"),
+}, (table) => [
+  uniqueIndex("telemetry_batches_gateway_key_uidx").on(table.gatewayId, table.batchKey),
+  index("telemetry_batches_device_sampled_idx").on(table.deviceId, table.sampledAt),
+  check("telemetry_batches_metric_count_chk", sql`${table.metricCount} BETWEEN 0 AND 256`),
+  check("telemetry_batches_time_quality_chk", sql`${table.timeQuality} IN ('synced', 'estimated', 'unsynced')`),
+]);
+
+export const metricReadings = pgTable("metric_readings", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  batchId: uuid("batch_id").notNull().references(() => telemetryBatches.id, { onDelete: "cascade" }),
+  deviceMetricId: uuid("device_metric_id").notNull().references(() => deviceMetrics.id, { onDelete: "restrict" }),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+  receivedAt: timestamp("received_at", { withTimezone: true }).defaultNow().notNull(),
+  valueNumeric: numeric("value_numeric", { precision: 24, scale: 8 }),
+  valueBoolean: boolean("value_boolean"),
+  valueText: text("value_text"),
+  quality: dataQualityEnum("quality").notNull(),
+  qualityFlags: jsonb("quality_flags").$type<string[]>().default(sql`'[]'::jsonb`).notNull(),
+  timeQuality: varchar("time_quality", { length: 16 }).default("synced").notNull(),
+  sequence: bigint("sequence", { mode: "number" }),
+}, (table) => [
+  uniqueIndex("metric_readings_batch_metric_uidx").on(table.batchId, table.deviceMetricId),
+  index("metric_readings_metric_recorded_idx").on(table.deviceMetricId, table.recordedAt),
+  index("metric_readings_recorded_idx").on(table.recordedAt),
+  check("metric_readings_time_quality_chk", sql`${table.timeQuality} IN ('synced', 'estimated', 'unsynced')`),
+  check("metric_readings_value_chk", sql`
+    (CASE WHEN ${table.valueNumeric} IS NULL THEN 0 ELSE 1 END) +
+    (CASE WHEN ${table.valueBoolean} IS NULL THEN 0 ELSE 1 END) +
+    (CASE WHEN ${table.valueText} IS NULL THEN 0 ELSE 1 END) <= 1
+  `),
+]);
+
+export const latestMetricReadings = pgTable("latest_metric_readings", {
+  deviceMetricId: uuid("device_metric_id").primaryKey().references(() => deviceMetrics.id, { onDelete: "cascade" }),
+  readingId: bigint("reading_id", { mode: "number" }).notNull().references(() => metricReadings.id, { onDelete: "restrict" }),
+  recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+  receivedAt: timestamp("received_at", { withTimezone: true }).notNull(),
+  valueNumeric: numeric("value_numeric", { precision: 24, scale: 8 }),
+  valueBoolean: boolean("value_boolean"),
+  valueText: text("value_text"),
+  quality: dataQualityEnum("quality").notNull(),
+  qualityFlags: jsonb("quality_flags").$type<string[]>().default(sql`'[]'::jsonb`).notNull(),
+  timeQuality: varchar("time_quality", { length: 16 }).default("synced").notNull(),
+  sequence: bigint("sequence", { mode: "number" }),
+}, (table) => [
+  index("latest_metric_readings_quality_idx").on(table.quality),
+  check("latest_metric_readings_time_quality_chk", sql`${table.timeQuality} IN ('synced', 'estimated', 'unsynced')`),
+]);
+
 export const registerDefinitions = pgTable("register_definitions", {
   id: uuid("id").defaultRandom().primaryKey(),
   modelId: uuid("model_id").notNull().references(() => deviceModels.id, { onDelete: "cascade" }),
