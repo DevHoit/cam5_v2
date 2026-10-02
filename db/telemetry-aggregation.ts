@@ -1,6 +1,9 @@
 import { sql } from "drizzle-orm";
 import type { Cam5Database } from "./index";
-import { assets, channels, deviceMetrics, deviceRegisterSamples, devices, ingestionBatches, latestReadings, metricDefinitions, metricReadingAggregates, metricReadings, readingAggregates, readingProfiles, readings } from "./schema";
+import { assets, channels, deviceMetrics, deviceRegisterSamples, devices, ingestionBatches, latestMetricReadings, latestReadings, metricDefinitions, metricReadingAggregates, metricReadings, readingAggregates, readingProfiles, readings, telemetryBatches } from "./schema";
+
+const GENERIC_RAW_RETENTION_DAYS = 30;
+const GENERIC_AGGREGATE_RETENTION_YEARS = 5;
 
 const AGGREGATION_WINDOWS = [
   { bucketSeconds: 60, lookbackMs: 30 * 60 * 60 * 1000 },
@@ -97,13 +100,38 @@ export async function refreshTelemetryAggregates(db: Cam5Database, siteId: strin
     bucketsUpdated += 1;
   }
   await db.execute(sql`
+    delete from ${metricReadings}
+    using ${deviceMetrics}, ${devices}, ${assets}
+    where ${metricReadings.deviceMetricId} = ${deviceMetrics.id}
+      and ${deviceMetrics.deviceId} = ${devices.id}
+      and ${devices.assetId} = ${assets.id}
+      and ${assets.siteId} = ${siteId}
+      and ${metricReadings.recordedAt} < ${evaluatedAtIso}::timestamptz - make_interval(days => ${sql.raw(String(GENERIC_RAW_RETENTION_DAYS))})
+      and not exists (
+        select 1 from ${latestMetricReadings}
+        where ${latestMetricReadings.readingId} = ${metricReadings.id}
+      )
+  `);
+  await db.execute(sql`
+    delete from ${telemetryBatches}
+    using ${devices}, ${assets}
+    where ${telemetryBatches.deviceId} = ${devices.id}
+      and ${devices.assetId} = ${assets.id}
+      and ${assets.siteId} = ${siteId}
+      and ${telemetryBatches.receivedAt} < ${evaluatedAtIso}::timestamptz - make_interval(days => ${sql.raw(String(GENERIC_RAW_RETENTION_DAYS))})
+      and not exists (
+        select 1 from ${metricReadings}
+        where ${metricReadings.batchId} = ${telemetryBatches.id}
+      )
+  `);
+  await db.execute(sql`
     delete from ${metricReadingAggregates}
     using ${deviceMetrics}, ${devices}, ${assets}
     where ${metricReadingAggregates.deviceMetricId} = ${deviceMetrics.id}
       and ${deviceMetrics.deviceId} = ${devices.id}
       and ${devices.assetId} = ${assets.id}
       and ${assets.siteId} = ${siteId}
-      and ${metricReadingAggregates.bucketStart} < ${evaluatedAtIso}::timestamptz - interval '5 years'
+      and ${metricReadingAggregates.bucketStart} < ${evaluatedAtIso}::timestamptz - make_interval(years => ${sql.raw(String(GENERIC_AGGREGATE_RETENTION_YEARS))})
   `);
   await db.execute(sql`
     delete from ${deviceRegisterSamples}
