@@ -48,7 +48,7 @@ test("creates an immutable report snapshot from the operational database", async
     const database = drizzle(client, { schema }) as unknown as Cam5Database;
     await seedCam5Database(database, { adminEmail: "admin@example.test", adminName: "Administrador", adminPassword: "Cam5-Prueba-2026", log: false });
     const [asset] = await database.select().from(schema.assets).limit(1);
-    const [template] = await database.select().from(schema.reportTemplates).limit(1);
+    const [template] = await database.select().from(schema.reportTemplates).where(eq(schema.reportTemplates.key, "condition-summary")).limit(1);
     const [user] = await database.select().from(schema.users).limit(1);
     const [channel] = await database.select().from(schema.channels).limit(1);
     await database.insert(schema.readings).values({
