@@ -2353,3 +2353,19 @@ button.module-table-row { width: 100%; }
   .ats-source-grid { grid-template-columns: 1fr; }
   .ats-transfer-core { min-height: 120px; }
 }
+
+.ats-history-dialog { max-width: 980px; }
+.ats-event-history { display: grid; gap: 9px; padding: 6px 18px 18px; }
+.ats-event-history h3 { margin: 0; font-size: .94rem; }
+.ats-event-history > p { margin: 0; color: var(--muted); font-size: .76rem; }
+.ats-event-history > div { display: grid; gap: 6px; max-height: 280px; overflow: auto; }
+.ats-event-history article { display: grid; grid-template-columns: 145px minmax(0,1fr) auto; gap: 10px; align-items: center; padding: 9px 10px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-2); }
+.ats-event-history time { color: var(--muted); font-size: .7rem; }
+.ats-event-history article span { display: grid; gap: 2px; min-width: 0; }
+.ats-event-history article span strong { font-size: .76rem; }
+.ats-event-history article span small { color: var(--muted); font-size: .68rem; }
+.ats-event-history article b { font-size: .72rem; text-align: right; overflow-wrap: anywhere; }
+@media (max-width: 720px) {
+  .ats-event-history article { grid-template-columns: 1fr; }
+  .ats-event-history article b { text-align: left; }
+}
