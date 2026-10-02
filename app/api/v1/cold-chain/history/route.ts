@@ -77,7 +77,7 @@ export async function GET(request: NextRequest) {
         schemaVersion: "2.0",
         serverTime: now.toISOString(),
         chamber: { id: chamber.id, code: chamber.code, name: chamber.name, area: chamber.area, state: chamber.state, config },
-        range: { from: from.toISOString(), to: to.toISOString(), source, bucketSeconds: rawMode ? null : bucketSeconds },
+        range: { from: from.toISOString(), to: to.toISOString(), source: "raw", bucketSeconds: null },
         summary: { minimumC: null, maximumC: null, averageC: null, excursionCount: 0, totalOutOfRangeSeconds: 0, dataGapCount: 0 },
         sensors: [],
         excursions: [],
@@ -219,7 +219,9 @@ export async function GET(request: NextRequest) {
         ? "high"
         : context.subtype === "temperature_low"
           ? "low"
-          : null;
+          : context.subtype === "communication_loss"
+            ? "data_gap"
+            : null;
       if (!type || typeof context.sensorCode !== "string") return [];
       const sensor = sensorMetrics.find((item) => item.deviceCode === context.sensorCode);
       if (!sensor) return [];
@@ -230,8 +232,8 @@ export async function GET(request: NextRequest) {
         startedAt: effectiveStart.toISOString(),
         endedAt: endedAt ? effectiveEnd.toISOString() : null,
         durationSeconds: Math.max(0, Math.round((effectiveEnd.getTime() - effectiveStart.getTime()) / 1000)),
-        extremeC: alarm.triggerValue === null ? null : Number(alarm.triggerValue),
-        thresholdC: alarm.thresholdValue === null ? null : Number(alarm.thresholdValue),
+        extremeC: type === "data_gap" || alarm.triggerValue === null ? null : Number(alarm.triggerValue),
+        thresholdC: type === "data_gap" || alarm.thresholdValue === null ? null : Number(alarm.thresholdValue),
         active: !endedAt,
         sensorId: sensor.deviceId,
         sensorCode: sensor.deviceCode,
@@ -282,9 +284,12 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    const allValues = sensors.flatMap((sensor) => sensor.points)
-      .filter((point) => point.quality === "good" && point.valueC !== null)
-      .map((point) => point.valueC as number);
+    const sensorMinimums = sensors.map((sensor) => sensor.summary.minimumC).filter((value): value is number => value !== null);
+    const sensorMaximums = sensors.map((sensor) => sensor.summary.maximumC).filter((value): value is number => value !== null);
+    const totalGoodSamples = sensors.reduce((sum, sensor) => sum + sensor.summary.goodSamples, 0);
+    const weightedAverage = totalGoodSamples
+      ? sensors.reduce((sum, sensor) => sum + (sensor.summary.averageC ?? 0) * sensor.summary.goodSamples, 0) / totalGoodSamples
+      : null;
     const rawExcursions = sensors.flatMap((sensor) => sensor.excursions.map((item) => ({
       ...item,
       sensorId: sensor.id,
@@ -318,11 +323,11 @@ export async function GET(request: NextRequest) {
       schemaVersion: "2.0",
       serverTime: now.toISOString(),
       chamber: { id: chamber.id, code: chamber.code, name: chamber.name, area: chamber.area, state: chamber.state, config },
-      range: { from: from.toISOString(), to: to.toISOString() },
+      range: { from: from.toISOString(), to: to.toISOString(), source, bucketSeconds: rawMode ? null : bucketSeconds },
       summary: {
-        minimumC: allValues.length ? Math.min(...allValues) : null,
-        maximumC: allValues.length ? Math.max(...allValues) : null,
-        averageC: allValues.length ? allValues.reduce((total, value) => total + value, 0) / allValues.length : null,
+        minimumC: sensorMinimums.length ? Math.min(...sensorMinimums) : null,
+        maximumC: sensorMaximums.length ? Math.max(...sensorMaximums) : null,
+        averageC: weightedAverage,
         excursionCount: thermalExcursions.length,
         totalOutOfRangeSeconds: Math.round(affectedMs / 1000),
         dataGapCount: excursions.filter((item) => item.type === "data_gap").length,
