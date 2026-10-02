@@ -49,7 +49,7 @@ type OverviewResponse = {
 };
 
 type ConfigurationResponse = {
-  points: Array<{ id: string; code: string; name: string }>;
+  points: Array<{ id: string; code: string; name: string; metadata: Record<string, unknown> }>;
   gateways: Array<{ id: string; code: string; name: string; state: string }>;
   meters: Array<{ id: string; assetId: string; code: string; name: string; unitId: number | null; gatewayId: string | null }>;
 };
@@ -88,7 +88,7 @@ export function ElectricalView({
   const [overview, setOverview] = useState<OverviewResponse | null>(null);
   const [configuration, setConfiguration] = useState<ConfigurationResponse | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
-  const [dialog, setDialog] = useState<"point" | "meter" | null>(null);
+  const [dialog, setDialog] = useState<"point" | "meter" | "alarms" | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [pointForm, setPointForm] = useState({ code: "", name: "", area: "", nominalVoltageKv: "0.4" });
@@ -101,6 +101,21 @@ export function ElectricalView({
     baudRate: "19200",
     parity: "even",
     pollIntervalMs: "1000",
+  });
+  const [alarmForm, setAlarmForm] = useState({
+    pointId: "",
+    staleAfterSeconds: "30",
+    thresholdDelaySeconds: "0",
+    voltageMinV: "",
+    voltageMaxV: "",
+    currentMaxA: "",
+    frequencyMinHz: "",
+    frequencyMaxHz: "",
+    powerFactorMin: "",
+    voltageHysteresisV: "0",
+    currentHysteresisA: "0",
+    frequencyHysteresisHz: "0",
+    powerFactorHysteresis: "0",
   });
 
   const refresh = async () => {
@@ -150,6 +165,67 @@ export function ElectricalView({
 
   const meters = useMemo(() => overview?.points.flatMap((point) => point.meters) ?? [], [overview]);
   const onlineMeters = meters.filter((item) => item.online).length;
+
+  const openAlarmConfig = (pointId: string) => {
+    const point = configuration?.points.find((item) => item.id === pointId);
+    const electrical = point?.metadata?.electrical && typeof point.metadata.electrical === "object" && !Array.isArray(point.metadata.electrical)
+      ? point.metadata.electrical as Record<string, unknown>
+      : {};
+    const alarms = electrical.alarms && typeof electrical.alarms === "object" && !Array.isArray(electrical.alarms)
+      ? electrical.alarms as Record<string, unknown>
+      : {};
+    const field = (key: string, fallback = "") => typeof alarms[key] === "number" ? String(alarms[key]) : fallback;
+    setAlarmForm({
+      pointId,
+      staleAfterSeconds: field("staleAfterSeconds", "30"),
+      thresholdDelaySeconds: field("thresholdDelaySeconds", "0"),
+      voltageMinV: field("voltageMinV"),
+      voltageMaxV: field("voltageMaxV"),
+      currentMaxA: field("currentMaxA"),
+      frequencyMinHz: field("frequencyMinHz"),
+      frequencyMaxHz: field("frequencyMaxHz"),
+      powerFactorMin: field("powerFactorMin"),
+      voltageHysteresisV: field("voltageHysteresisV", "0"),
+      currentHysteresisA: field("currentHysteresisA", "0"),
+      frequencyHysteresisHz: field("frequencyHysteresisHz", "0"),
+      powerFactorHysteresis: field("powerFactorHysteresis", "0"),
+    });
+    setError("");
+    setDialog("alarms");
+  };
+
+  const saveAlarmConfig = async () => {
+    setBusy(true);
+    setError("");
+    const optional = (value: string) => value.trim() === "" ? null : Number(value);
+    try {
+      await json("/api/v1/electrical/configuration", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pointId: alarmForm.pointId,
+          staleAfterSeconds: Number(alarmForm.staleAfterSeconds),
+          thresholdDelaySeconds: Number(alarmForm.thresholdDelaySeconds),
+          voltageMinV: optional(alarmForm.voltageMinV),
+          voltageMaxV: optional(alarmForm.voltageMaxV),
+          currentMaxA: optional(alarmForm.currentMaxA),
+          frequencyMinHz: optional(alarmForm.frequencyMinHz),
+          frequencyMaxHz: optional(alarmForm.frequencyMaxHz),
+          powerFactorMin: optional(alarmForm.powerFactorMin),
+          voltageHysteresisV: Number(alarmForm.voltageHysteresisV || 0),
+          currentHysteresisA: Number(alarmForm.currentHysteresisA || 0),
+          frequencyHysteresisHz: Number(alarmForm.frequencyHysteresisHz || 0),
+          powerFactorHysteresis: Number(alarmForm.powerFactorHysteresis || 0),
+        }),
+      });
+      setDialog(null);
+      await refresh();
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "No fue posible guardar las alarmas.");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const createPoint = async () => {
     setBusy(true);
@@ -233,7 +309,10 @@ export function ElectricalView({
       {overview?.points.map((point) => <section className="electrical-point" key={point.id}>
         <header>
           <div><span>{point.code}</span><h3>{point.name}</h3><p>{point.area || "Sin área"}{point.nominalVoltageKv ? " · " + point.nominalVoltageKv + " kV nominal" : ""}</p></div>
-          <b className={"electrical-state electrical-state-" + point.state}>{point.state}</b>
+          <div className="electrical-point-actions">
+            {canWriteAssets && <button className="secondary-button" onClick={() => openAlarmConfig(point.id)}><Settings size={14} /> Alarmas</button>}
+            <b className={"electrical-state electrical-state-" + point.state}>{point.state}</b>
+          </div>
         </header>
 
         {!point.meters.length && <div className="electrical-empty compact">Sin PM5560 asociado.</div>}
@@ -267,7 +346,7 @@ export function ElectricalView({
 
     {dialog && <div className="cold-config-backdrop" role="presentation">
       <section className="cold-config-dialog electrical-dialog" role="dialog" aria-modal="true">
-        <header><div><span><Settings size={16} /></span><div><strong>{dialog === "point" ? "Nuevo punto eléctrico" : "Configurar PM5560"}</strong><small>{dialog === "point" ? "Objeto operacional que será monitoreado." : "Adquisición RS485 en modo sólo lectura."}</small></div></div><button onClick={() => setDialog(null)} aria-label="Cerrar"><X size={18} /></button></header>
+        <header><div><span><Settings size={16} /></span><div><strong>{dialog === "point" ? "Nuevo punto eléctrico" : dialog === "meter" ? "Configurar PM5560" : "Alarmas eléctricas"}</strong><small>{dialog === "point" ? "Objeto operacional que será monitoreado." : dialog === "meter" ? "Adquisición RS485 en modo sólo lectura." : "Umbrales operacionales del punto eléctrico; los límites quedan sin configurar cuando se dejan vacíos."}</small></div></div><button onClick={() => setDialog(null)} aria-label="Cerrar"><X size={18} /></button></header>
         <div className="cold-config-form">
           {dialog === "point" ? <>
             <div className="cold-config-columns">
@@ -277,6 +356,32 @@ export function ElectricalView({
             <div className="cold-config-columns">
               <label><span>Área</span><input value={pointForm.area} onChange={(event) => setPointForm({ ...pointForm, area: event.target.value })} /></label>
               <label><span>Tensión nominal kV</span><input type="number" step="0.001" min="0" value={pointForm.nominalVoltageKv} onChange={(event) => setPointForm({ ...pointForm, nominalVoltageKv: event.target.value })} /></label>
+            </div>
+          </> : dialog === "alarms" ? <>
+            <div className="cold-maintenance-note"><strong>Sin límites inventados</strong><p>Voltaje, corriente, frecuencia y factor de potencia sólo generan alarmas cuando se configura un umbral explícito. La pérdida de comunicación sí utiliza el tiempo de espera configurado.</p></div>
+            <div className="cold-config-columns">
+              <label><span>Sin telemetría después de (s)</span><input type="number" min="5" value={alarmForm.staleAfterSeconds} onChange={(event) => setAlarmForm({ ...alarmForm, staleAfterSeconds: event.target.value })} /></label>
+              <label><span>Persistencia de umbral (s)</span><input type="number" min="0" value={alarmForm.thresholdDelaySeconds} onChange={(event) => setAlarmForm({ ...alarmForm, thresholdDelaySeconds: event.target.value })} /></label>
+            </div>
+            <div className="cold-config-columns">
+              <label><span>Voltaje mínimo L-N (V)</span><input type="number" step="0.1" value={alarmForm.voltageMinV} onChange={(event) => setAlarmForm({ ...alarmForm, voltageMinV: event.target.value })} placeholder="Sin configurar" /></label>
+              <label><span>Voltaje máximo L-N (V)</span><input type="number" step="0.1" value={alarmForm.voltageMaxV} onChange={(event) => setAlarmForm({ ...alarmForm, voltageMaxV: event.target.value })} placeholder="Sin configurar" /></label>
+            </div>
+            <div className="cold-config-columns">
+              <label><span>Corriente máxima por fase (A)</span><input type="number" step="0.1" value={alarmForm.currentMaxA} onChange={(event) => setAlarmForm({ ...alarmForm, currentMaxA: event.target.value })} placeholder="Sin configurar" /></label>
+              <label><span>Factor de potencia mínimo</span><input type="number" min="0" max="1" step="0.001" value={alarmForm.powerFactorMin} onChange={(event) => setAlarmForm({ ...alarmForm, powerFactorMin: event.target.value })} placeholder="Sin configurar" /></label>
+            </div>
+            <div className="cold-config-columns">
+              <label><span>Frecuencia mínima (Hz)</span><input type="number" step="0.01" value={alarmForm.frequencyMinHz} onChange={(event) => setAlarmForm({ ...alarmForm, frequencyMinHz: event.target.value })} placeholder="Sin configurar" /></label>
+              <label><span>Frecuencia máxima (Hz)</span><input type="number" step="0.01" value={alarmForm.frequencyMaxHz} onChange={(event) => setAlarmForm({ ...alarmForm, frequencyMaxHz: event.target.value })} placeholder="Sin configurar" /></label>
+            </div>
+            <div className="cold-config-columns">
+              <label><span>Histéresis voltaje (V)</span><input type="number" min="0" step="0.1" value={alarmForm.voltageHysteresisV} onChange={(event) => setAlarmForm({ ...alarmForm, voltageHysteresisV: event.target.value })} /></label>
+              <label><span>Histéresis corriente (A)</span><input type="number" min="0" step="0.1" value={alarmForm.currentHysteresisA} onChange={(event) => setAlarmForm({ ...alarmForm, currentHysteresisA: event.target.value })} /></label>
+            </div>
+            <div className="cold-config-columns">
+              <label><span>Histéresis frecuencia (Hz)</span><input type="number" min="0" step="0.01" value={alarmForm.frequencyHysteresisHz} onChange={(event) => setAlarmForm({ ...alarmForm, frequencyHysteresisHz: event.target.value })} /></label>
+              <label><span>Histéresis factor potencia</span><input type="number" min="0" step="0.001" value={alarmForm.powerFactorHysteresis} onChange={(event) => setAlarmForm({ ...alarmForm, powerFactorHysteresis: event.target.value })} /></label>
             </div>
           </> : <>
             <div className="cold-config-columns">
@@ -299,7 +404,7 @@ export function ElectricalView({
           </>}
           {error && <div className="cold-config-error">{error}</div>}
         </div>
-        <footer><button className="secondary-button" onClick={() => setDialog(null)} disabled={busy}>Cancelar</button><button className="primary-button" onClick={() => void (dialog === "point" ? createPoint() : createMeter())} disabled={busy}>{busy ? "Guardando…" : dialog === "point" ? "Crear punto" : "Crear PM5560"}</button></footer>
+        <footer><button className="secondary-button" onClick={() => setDialog(null)} disabled={busy}>Cancelar</button><button className="primary-button" onClick={() => void (dialog === "point" ? createPoint() : dialog === "alarms" ? saveAlarmConfig() : createMeter())} disabled={busy}>{busy ? "Guardando…" : dialog === "point" ? "Crear punto" : dialog === "alarms" ? "Guardar alarmas" : "Crear PM5560"}</button></footer>
       </section>
     </div>}
   </div>;
