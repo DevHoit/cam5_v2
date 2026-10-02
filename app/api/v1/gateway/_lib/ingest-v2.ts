@@ -173,6 +173,7 @@ export async function handleGenericIngest(input: {
     .where(and(
       eq(devices.code, payload.device.code),
       eq(devices.active, true),
+      eq(assets.siteId, credential.siteId),
       eq(assets.active, true),
     ))
     .limit(1);
