@@ -322,7 +322,7 @@ export function ColdChainDetail({
 
       {tab !== "alarms" && tab !== "configuration" && <nav className="cold-detail-range">
         {(["24h", "7d", "30d"] as RangeKey[]).map((item) => <button key={item} className={range === item ? "active" : ""} onClick={() => setRange(item)}>{item}</button>)}
-      </nav>
+      </nav>}
 
       {status === "loading" && <div className="cold-detail-loading"><Refresh className="spin" size={22} /> Cargando histórico…</div>}
       {status === "error" && <div className="cold-detail-loading"><AlertTriangle size={22} /> No fue posible cargar el histórico.</div>}
