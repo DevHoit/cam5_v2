@@ -450,6 +450,7 @@ export async function processNotificationDelivery(
   const now = options.now ?? new Date();
   const [candidate] = await db.select({
     id: notificationDeliveries.id,
+    alarmId: notificationDeliveries.alarmId,
     subject: notificationDeliveries.subject,
     payload: notificationDeliveries.payload,
     attemptCount: notificationDeliveries.attemptCount,
@@ -457,11 +458,25 @@ export async function processNotificationDelivery(
     kind: notificationEndpoints.kind,
     configuration: notificationEndpoints.configuration,
     secretReference: notificationEndpoints.secretReference,
+    assetState: assets.state,
   }).from(notificationDeliveries)
     .innerJoin(notificationEndpoints, eq(notificationEndpoints.id, notificationDeliveries.endpointId))
+    .leftJoin(alarms, eq(alarms.id, notificationDeliveries.alarmId))
+    .leftJoin(assets, eq(assets.id, alarms.assetId))
     .where(and(eq(notificationDeliveries.id, deliveryId), eq(notificationEndpoints.enabled, true)))
     .limit(1);
   if (!candidate) return { status: "missing" as const, error: "La entrega o su canal ya no están disponibles." };
+  if (candidate.alarmId && candidate.assetState === "maintenance") {
+    await db.update(notificationDeliveries).set({
+      status: "suppressed",
+      errorMessage: "Entrega suprimida porque el activo se encuentra en mantenimiento.",
+      updatedAt: now,
+    }).where(and(
+      eq(notificationDeliveries.id, candidate.id),
+      inArray(notificationDeliveries.status, ["queued", "failed"]),
+    ));
+    return { status: "suppressed" as const, error: null };
+  }
   const [claimed] = await db.update(notificationDeliveries).set({ status: "sending", lastAttemptAt: now, updatedAt: now })
     .where(and(eq(notificationDeliveries.id, candidate.id), or(eq(notificationDeliveries.status, "queued"), eq(notificationDeliveries.status, "failed"))))
     .returning({ id: notificationDeliveries.id });
@@ -514,10 +529,12 @@ export async function processNotificationQueue(
 
   let delivered = 0;
   let failed = 0;
+  let suppressed = 0;
   for (const candidate of candidates) {
     const result = await processNotificationDelivery(db, candidate.id, { ...options, now });
     if (result.status === "delivered") delivered += 1;
     if (result.status === "failed") failed += 1;
+    if (result.status === "suppressed") suppressed += 1;
   }
-  return { recovered: recoveredRows.length, repeated, processed: candidates.length, delivered, failed };
+  return { recovered: recoveredRows.length, repeated, processed: candidates.length, delivered, failed, suppressed };
 }
