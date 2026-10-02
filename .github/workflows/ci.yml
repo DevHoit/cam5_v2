@@ -58,6 +58,7 @@ jobs:
           app/electrical-view.tsx
           app/api/v1/ats
           app/ats-view.tsx
+          app/ats-history.tsx
           app/electrical-history.tsx
           app/reports-view.tsx
           tests/gateway-ingest-v2.test.ts
