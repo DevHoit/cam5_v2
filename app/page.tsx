@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { AccountView } from "./account-view";
+import { AtsView } from "./ats-view";
 import { Cam5CommissioningView } from "./cam5-engineering";
 import { ColdChainView } from "./cold-chain-view";
 import { ElectricalView } from "./electrical-view";
@@ -15,6 +16,7 @@ import { TrendsView } from "./trends-view";
 import {
   IconActivity as Activity,
   IconAdjustmentsHorizontal as AdjustmentsHorizontal,
+  IconArrowsExchange as Transfer,
   IconAlertTriangle as AlertTriangle,
   IconBellRinging as BellRing,
   IconBolt as Zap,
@@ -60,7 +62,7 @@ import {
   IconX as X,
 } from "@tabler/icons-react";
 
-type View = "overview" | "cabinet" | "electrical" | "cold-chain" | "diagnostics" | "commissioning" | "trends" | "alarms" | "history" | "assets" | "reports" | "settings" | "provisioning" | "users" | "notifications" | "account";
+type View = "overview" | "cabinet" | "electrical" | "ats" | "cold-chain" | "diagnostics" | "commissioning" | "trends" | "alarms" | "history" | "assets" | "reports" | "settings" | "provisioning" | "users" | "notifications" | "account";
 type Severity = "critical" | "warning" | "info";
 type SensorState = "normal" | "warning" | "critical";
 type HistoryTab = "measurements" | "alarms" | "audit";
@@ -341,6 +343,7 @@ const navGroups = [
       { id: "overview" as View, label: "Resumen operativo", description: "Condición general", icon: LayoutDashboard },
       { id: "cabinet" as View, label: "Mapa de condición", description: "Sensores y cabina", icon: CircuitBoard },
       { id: "electrical" as View, label: "Monitoreo eléctrico", description: "PM5560 y variables eléctricas", icon: Zap },
+      { id: "ats" as View, label: "ATS", description: "DSE8660 y transferencia", icon: Transfer },
       { id: "cold-chain" as View, label: "Cadena de frío", description: "Cámaras de refrigeración", icon: Thermometer },
     ],
   },
@@ -380,6 +383,7 @@ const viewTitles: Record<View, { title: string; description: string }> = {
   overview: { title: "Resumen de condición", description: "Estado predictivo de activos críticos en tiempo real." },
   cabinet: { title: "Mapa de condición", description: "Ubicación, lectura y estado de cada canal instrumentado." },
   electrical: { title: "Monitoreo eléctrico", description: "Supervisión trifásica normalizada de medidores Schneider PowerLogic PM5560." },
+  ats: { title: "ATS", description: "Supervisión normalizada de controladores Deep Sea Electronics DSE8660 MKII y transferencia entre fuentes." },
   "cold-chain": { title: "Cadena de frío", description: "Supervisión de una o más cámaras de refrigeración y sus sensores asociados." },
   diagnostics: { title: "Diagnóstico de comunicación", description: "Comprobación de la cadena Controlador → Gateway → HoitLive Core." },
   commissioning: { title: "Puesta en marcha CAM-5", description: "Identidad, entradas, registros, alarmas y controles previos a la conexión productiva." },
@@ -1753,6 +1757,10 @@ export default function Home() {
             {view === "overview" && <Overview onNavigate={navigate} onOpenTrend={openChannelTrend} onAcknowledge={acknowledge} activeAlarms={alarmPreview} alarmSummary={alarmSummary} point={activePoint} />}
             {view === "cabinet" && <CabinetView onOpenTrend={openChannelTrend} />}
             {view === "electrical" && <ElectricalView
+              canWriteAssets={sessionUser.permissions.includes("assets.write")}
+              canWriteSettings={sessionUser.permissions.includes("settings.write")}
+            />}
+            {view === "ats" && <AtsView
               canWriteAssets={sessionUser.permissions.includes("assets.write")}
               canWriteSettings={sessionUser.permissions.includes("settings.write")}
             />}
