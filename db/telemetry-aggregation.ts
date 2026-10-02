@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import type { Cam5Database } from "./index";
-import { assets, channels, deviceMetrics, deviceRegisterSamples, devices, ingestionBatches, latestReadings, metricReadingAggregates, metricReadings, readingAggregates, readingProfiles, readings } from "./schema";
+import { assets, channels, deviceMetrics, deviceRegisterSamples, devices, ingestionBatches, latestReadings, metricDefinitions, metricReadingAggregates, metricReadings, readingAggregates, readingProfiles, readings } from "./schema";
 
 const AGGREGATION_WINDOWS = [
   { bucketSeconds: 60, lookbackMs: 30 * 60 * 60 * 1000 },
@@ -35,12 +35,13 @@ export async function refreshTelemetryAggregates(db: Cam5Database, siteId: strin
         ${evaluatedAtIso}::timestamptz
       from ${metricReadings}
       inner join ${deviceMetrics} on ${deviceMetrics.id} = ${metricReadings.deviceMetricId}
+      inner join ${metricDefinitions} on ${metricDefinitions.id} = ${deviceMetrics.metricDefinitionId}
       inner join ${devices} on ${devices.id} = ${deviceMetrics.deviceId}
       inner join ${assets} on ${assets.id} = ${devices.assetId}
       where ${assets.siteId} = ${siteId}
         and ${metricReadings.recordedAt} >= ${fromIso}::timestamptz
         and ${metricReadings.recordedAt} <= ${evaluatedAtIso}::timestamptz
-        and ${metricReadings.valueNumeric} is not null
+        and ${metricDefinitions.dataType} in ('float', 'integer')
       group by ${metricReadings.deviceMetricId}, date_bin(make_interval(secs => ${bucketSeconds}), ${metricReadings.recordedAt}, '1970-01-01 00:00:00+00'::timestamptz)
       on conflict (device_metric_id, bucket_start, bucket_seconds) do update set
         sample_count = excluded.sample_count,
