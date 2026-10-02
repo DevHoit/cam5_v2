@@ -14,7 +14,7 @@ import * as schema from "../db/schema";
 test("seeds the initial CAM5 installation and remains idempotent", async () => {
   const client = new PGlite();
   try {
-    for (const filename of ["0000_cam5_initial_schema.sql", "0001_eager_blockbuster.sql", "0002_sparkling_wallow.sql", "0003_rich_charles_xavier.sql", "0004_windy_gauntlet.sql", "0005_milky_caretaker.sql", "0006_smiling_frightful_four.sql", "0007_big_frightful_four.sql", "0008_sloppy_mister_sinister.sql", "0009_cuddly_infant_terrible.sql", "0010_robust_wallop.sql", "0011_dear_prima.sql"]) {
+    for (const filename of ["0000_cam5_initial_schema.sql", "0001_eager_blockbuster.sql", "0002_sparkling_wallow.sql", "0003_rich_charles_xavier.sql", "0004_windy_gauntlet.sql", "0005_milky_caretaker.sql", "0006_smiling_frightful_four.sql", "0007_big_frightful_four.sql", "0008_sloppy_mister_sinister.sql", "0009_cuddly_infant_terrible.sql", "0010_robust_wallop.sql", "0011_dear_prima.sql", "0012_hoit_core_foundation.sql", "0013_hoit_generic_telemetry.sql"]) {
       const migration = await readFile(new URL(`../drizzle/${filename}`, import.meta.url), "utf8");
       await client.exec(migration.replaceAll("--> statement-breakpoint", ""));
     }
@@ -56,6 +56,7 @@ test("seeds the initial CAM5 installation and remains idempotent", async () => {
     const [adminCount] = await db.select({ value: count() }).from(schema.users).where(eq(schema.users.email, "admin@example.test"));
     const [identityCount] = await db.select({ value: count() }).from(schema.authIdentities);
     const [clientAssignmentCount] = await db.select({ value: count() }).from(schema.userClientAssignments);
+    const [metricDefinitionCount] = await db.select({ value: count() }).from(schema.metricDefinitions);
 
     assert.equal(clientCount.value, 1);
     assert.equal(siteCount.value, 1);
@@ -72,6 +73,7 @@ test("seeds the initial CAM5 installation and remains idempotent", async () => {
     assert.equal(adminCount.value, 1);
     assert.equal(identityCount.value, 1);
     assert.equal(clientAssignmentCount.value, 1);
+    assert.ok(metricDefinitionCount.value >= 20);
 
     const [preservedClient] = await db.select().from(schema.clients).where(eq(schema.clients.id, seededClient.id)).limit(1);
     const [preservedSite] = await db.select().from(schema.sites).where(eq(schema.sites.id, seededSite.id)).limit(1);
