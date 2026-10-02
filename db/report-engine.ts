@@ -137,6 +137,8 @@ export async function createReportRun(db: Cam5Database, input: {
     .where(and(eq(reportTemplates.id, input.templateId), eq(reportTemplates.active, true)))
     .limit(1);
   if (!template || (template.siteId && template.siteId !== context.siteId)) throw new Error("La plantilla no está disponible para este sitio.");
+  if (context.assetType === "cold_room" && template.key !== "cold-chain-summary") throw new Error("Selecciona la plantilla de cadena de frío para esta cámara.");
+  if (context.assetType !== "cold_room" && template.key === "cold-chain-summary") throw new Error("La plantilla de cadena de frío sólo se puede usar con cámaras de refrigeración.");
 
   if (context.assetType === "cold_room") {
     const config = parseColdChainConfig(context.assetMetadata);
