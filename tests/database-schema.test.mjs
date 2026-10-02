@@ -16,14 +16,18 @@ const expectedTables = [
   "clients",
   "commissioning_items",
   "configuration_snapshots",
+  "device_capabilities",
+  "device_metrics",
   "device_models",
   "device_register_samples",
   "devices",
   "gateway_api_credentials",
+  "gateway_device_bindings",
   "gateways",
   "ingestion_batches",
   "integrations",
   "latest_readings",
+  "metric_definitions",
   "notification_endpoints",
   "notification_deliveries",
   "notification_policies",
@@ -55,7 +59,7 @@ const expectedTables = [
 test("applies the CAM5 PostgreSQL migration with access profiles and telemetry constraints", async () => {
   const database = new PGlite();
   try {
-    for (const filename of ["0000_cam5_initial_schema.sql", "0001_eager_blockbuster.sql", "0002_sparkling_wallow.sql", "0003_rich_charles_xavier.sql", "0004_windy_gauntlet.sql", "0005_milky_caretaker.sql", "0006_smiling_frightful_four.sql", "0007_big_frightful_four.sql", "0008_sloppy_mister_sinister.sql", "0009_cuddly_infant_terrible.sql", "0010_robust_wallop.sql", "0011_dear_prima.sql"]) {
+    for (const filename of ["0000_cam5_initial_schema.sql", "0001_eager_blockbuster.sql", "0002_sparkling_wallow.sql", "0003_rich_charles_xavier.sql", "0004_windy_gauntlet.sql", "0005_milky_caretaker.sql", "0006_smiling_frightful_four.sql", "0007_big_frightful_four.sql", "0008_sloppy_mister_sinister.sql", "0009_cuddly_infant_terrible.sql", "0010_robust_wallop.sql", "0011_dear_prima.sql", "0012_hoit_core_foundation.sql"]) {
       const migration = await readFile(new URL(`../drizzle/${filename}`, import.meta.url), "utf8");
       await database.exec(migration.replaceAll("--> statement-breakpoint", ""));
     }
@@ -180,6 +184,30 @@ test("applies the CAM5 PostgreSQL migration with access profiles and telemetry c
       order by table_name
     `);
     assert.deepEqual(operationalActiveColumns.rows.map((row) => row.table_name), ["assets", "devices", "gateways"]);
+
+    const genericDeviceColumns = await database.query(`
+      select column_name, is_nullable
+      from information_schema.columns
+      where table_schema = 'public' and table_name = 'devices'
+        and column_name in ('device_type', 'driver', 'metadata')
+      order by column_name
+    `);
+    assert.deepEqual(genericDeviceColumns.rows, [
+      { column_name: "device_type", is_nullable: "NO" },
+      { column_name: "driver", is_nullable: "NO" },
+      { column_name: "metadata", is_nullable: "NO" },
+    ]);
+
+    const genericFoundationTables = ["device_capabilities", "device_metrics", "gateway_device_bindings", "metric_definitions"];
+    for (const table of genericFoundationTables) assert.ok(expectedTables.includes(table), `Falta la tabla HOIT genérica ${table}`);
+
+    await assert.rejects(
+      database.query(`
+        insert into metric_definitions (key, name, category, unit, data_type, aggregation)
+        values ('invalid.metric', 'Inválida', 'test', 'x', 'binary', 'last')
+      `),
+      /metric_definitions_data_type_chk/,
+    );
   } finally {
     await database.close();
   }
