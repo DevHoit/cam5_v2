@@ -55,7 +55,7 @@ WHERE ura.role_id = legacy.id
 -- The bootstrap administrator was the only legacy administrator created without
 -- a grantor. Promote that installation bootstrap identity to platform_admin.
 INSERT INTO "user_role_assignments" ("user_id","role_id","site_id","granted_by","granted_at")
-SELECT DISTINCT ura.user_id, platform_admin.id, NULL, NULL, now()
+SELECT DISTINCT ura.user_id, platform_admin.id, NULL::uuid, NULL::uuid, now()
 FROM "user_role_assignments" ura
 JOIN "roles" site_admin ON site_admin.id = ura.role_id AND site_admin.key = 'site_admin'
 JOIN "roles" platform_admin ON platform_admin.key = 'platform_admin'
