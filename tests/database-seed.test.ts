@@ -72,7 +72,7 @@ test("seeds the initial CAM5 installation and remains idempotent", async () => {
     assert.equal(profileRangeCount.value, 4);
     assert.equal(adminCount.value, 1);
     assert.equal(identityCount.value, 1);
-    assert.equal(clientAssignmentCount.value, 1);
+    assert.equal(clientAssignmentCount.value, 0);
     assert.ok(metricDefinitionCount.value >= 20);
 
     const [preservedClient] = await db.select().from(schema.clients).where(eq(schema.clients.id, seededClient.id)).limit(1);
@@ -101,7 +101,7 @@ test("seeds the initial CAM5 installation and remains idempotent", async () => {
     const session = await createPortalSession(seedDb, authenticatedUserId);
     const resolvedSession = await resolvePortalSession(seedDb, session.token);
     assert.equal(resolvedSession?.email, "admin@example.test");
-    assert.equal(resolvedSession?.roleKey, "administrator");
+    assert.equal(resolvedSession?.roleKey, "platform_admin");
     assert.equal(resolvedSession?.clientName, "Cliente administrado");
     assert.equal(resolvedSession?.siteName, "Sitio administrado");
     assert.equal(resolvedSession?.sites.length, 1);
@@ -109,8 +109,6 @@ test("seeds the initial CAM5 installation and remains idempotent", async () => {
 
     const [secondClient] = await db.insert(schema.clients).values({ code: "CLIENTE-02", name: "Segundo cliente" }).returning();
     const [secondSite] = await db.insert(schema.sites).values({ clientId: secondClient.id, code: "SITE-02", name: "Segundo sitio" }).returning();
-    const [administratorRole] = await db.select().from(schema.roles).where(eq(schema.roles.key, "administrator")).limit(1);
-    await db.insert(schema.userRoleAssignments).values({ userId: authenticatedUserId, roleId: administratorRole.id, siteId: secondSite.id });
     const switchedSession = await switchPortalSessionSite(seedDb, session.token, secondSite.id);
     assert.equal(switchedSession?.clientName, "Segundo cliente");
     assert.equal(switchedSession?.siteName, "Segundo sitio");
