@@ -15,6 +15,7 @@ export const HOIT_METRIC_CATALOG = [
   { key: "electrical.frequency", name: "Frecuencia", category: "electrical.frequency", unit: "Hz", dataType: "float", aggregation: "avg" },
   { key: "electrical.energy.import", name: "Energía importada", category: "electrical.energy", unit: "kWh", dataType: "float", aggregation: "counter" },
   { key: "electrical.energy.export", name: "Energía exportada", category: "electrical.energy", unit: "kWh", dataType: "float", aggregation: "counter" },
+  { key: "electrical.demand.active", name: "Demanda activa", category: "electrical.demand", unit: "kW", dataType: "float", aggregation: "max" },
   { key: "environment.temperature", name: "Temperatura", category: "environment", unit: "°C", dataType: "float", aggregation: "avg" },
   { key: "sensor.battery_voltage", name: "Voltaje de batería", category: "sensor.health", unit: "V", dataType: "float", aggregation: "last" },
   { key: "sensor.rssi", name: "RSSI", category: "sensor.health", unit: "dBm", dataType: "integer", aggregation: "avg" },
