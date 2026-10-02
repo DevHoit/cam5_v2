@@ -37,6 +37,7 @@ jobs:
           db/seed.ts
           db/hoit-metrics.ts
           db/pm5560.ts
+          db/access-scope.ts
           db/dse8660.ts
           db/ats-alarm-engine.ts
           db/ats.ts
@@ -64,6 +65,7 @@ jobs:
           tests/gateway-ingest-v2.test.ts
           tests/pm5560-e2e.test.ts
           tests/ats-e2e.test.ts
+          tests/access-scope.test.ts
           tests/cold-chain-e2e.test.ts
           tests/cold-chain.test.ts
           tests/cold-chain-history.test.ts
