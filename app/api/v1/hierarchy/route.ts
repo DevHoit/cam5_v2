@@ -379,13 +379,13 @@ export async function DELETE(request: NextRequest) {
     await db.transaction(async (tx) => {
       let record: Record<string, unknown> | undefined;
       if (resource === "client") {
-        requirePermission(user.permissions, resource === "client" ? "clients.manage" : "sites.manage");
+        requirePermission(user.permissions, "clients.manage");
         if (!user.clientScopes.some((scope) => scope.id === id && scope.roleKey === "platform_admin")) throw new ApiError(403, "No administras el cliente indicado.");
         const [dependencies] = await tx.select({ value: count() }).from(sites).where(eq(sites.clientId, id));
         if (Number(dependencies.value)) throw new ApiError(409, "El cliente conserva sitios. Desactívalo o elimina primero sus sitios vacíos.");
         [record] = await tx.delete(clients).where(eq(clients.id, id)).returning();
       } else if (resource === "site") {
-        requirePermission(user.permissions, resource === "client" ? "clients.manage" : "sites.manage");
+        requirePermission(user.permissions, "sites.manage");
         if (id === user.siteId) throw new ApiError(409, "Cambia primero a otro sitio antes de eliminar el contexto activo.");
         const siteScope = user.sites.find((scope) => scope.id === id);
         if (!siteScope || (siteScope.roleKey !== "platform_admin" && siteScope.roleKey !== "client_admin")) throw new ApiError(403, "No administras el sitio indicado.");
