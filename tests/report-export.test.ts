@@ -181,3 +181,89 @@ test("reportXlsx creates an electrical workbook with meter summaries", () => {
   assert.match(text, /PM5560 principal/);
   assert.match(text, /E imp/);
 });
+
+
+test("reportXlsx creates an ATS workbook with controller summaries", () => {
+  const ats: ReportSnapshot = {
+    ...snapshot,
+    template: { id: "tpl-ats", key: "ats-summary", name: "Informe ATS", description: null },
+    asset: { id: "asset-ats", code: "ATS-01", name: "ATS principal", area: "Sala eléctrica", nominalVoltageKv: null, assetType: "ats" },
+    coldChain: undefined,
+    electrical: undefined,
+    summary: {
+      condition: "warning",
+      channelCount: 4,
+      sampleCount: 400,
+      validSampleCount: 398,
+      qualityPercent: 99.5,
+      alarmCount: 1,
+      warningCount: 1,
+      criticalCount: 0,
+    },
+    channels: [{
+      code: "DSE01:P_ACTIVE",
+      name: "DSE8660 · Potencia activa",
+      zone: "Sala eléctrica",
+      unit: "kW",
+      sampleCount: 100,
+      validSampleCount: 100,
+      minimum: 20,
+      average: 30,
+      maximum: 40,
+      latest: 31,
+      latestAt: "2026-10-02T11:59:00.000Z",
+    }],
+    ats: {
+      controllerCount: 1,
+      config: {
+        source1Label: "Red",
+        source2Label: "Respaldo",
+        staleAfterSeconds: 30,
+        source1Required: true,
+        source2Required: false,
+        expectedPosition: "source1",
+      },
+      controllers: [{
+        code: "DSE01",
+        name: "DSE8660 MKII",
+        sampleCount: 400,
+        validSampleCount: 398,
+        qualityPercent: 99.5,
+        source1VoltageAverageV: 230,
+        source1FrequencyAverageHz: 50,
+        source2VoltageAverageV: 229,
+        source2FrequencyAverageHz: 50.02,
+        loadCurrentMaximumA: 70,
+        activePowerAverageKw: 30,
+        activePowerMaximumKw: 40,
+        apparentPowerAverageKva: 32,
+        reactivePowerAverageKvar: 8,
+        powerFactorAverage: 0.95,
+        lastPosition: "source1",
+        lastMode: "auto",
+        source1Available: true,
+        source2Available: true,
+        commonAlarm: false,
+      }],
+    },
+    alarms: [{
+      code: "ATS-001",
+      title: "Posición ATS distinta a la esperada",
+      severity: "warning",
+      status: "resolved",
+      openedAt: "2026-10-02T10:00:00.000Z",
+      channelCode: "DSE01",
+      triggerValue: null,
+      thresholdValue: null,
+    }],
+  };
+
+  const bytes = reportXlsx(ats);
+  assert.equal(bytes[0], 0x50);
+  assert.equal(bytes[1], 0x4b);
+  const text = new TextDecoder().decode(bytes);
+  assert.match(text, /Controladores/);
+  assert.match(text, /DSE8660 MKII/);
+  assert.match(text, /Última posición/);
+  assert.match(text, /Alarmas/);
+});
