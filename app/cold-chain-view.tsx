@@ -47,6 +47,8 @@ type ColdChainChamber = {
     staleAfterSeconds: number;
     disagreementThresholdC: number | null;
     excursionDelaySeconds: number;
+    batteryLowVoltage: number | null;
+    temperatureHysteresisC: number;
   };
   summary: {
     minimumObservedC: number | null;
@@ -140,6 +142,8 @@ export function ColdChainView({ canWrite = false }: { canWrite?: boolean }) {
     staleAfterSeconds: "180",
     disagreementThresholdC: "",
     excursionDelaySeconds: "300",
+    batteryLowVoltage: "",
+    temperatureHysteresisC: "0",
   });
   const [sensorForm, setSensorForm] = useState({
     code: "",
@@ -190,6 +194,8 @@ export function ColdChainView({ canWrite = false }: { canWrite?: boolean }) {
       staleAfterSeconds: "180",
       disagreementThresholdC: "",
       excursionDelaySeconds: "300",
+      batteryLowVoltage: "",
+      temperatureHysteresisC: "0",
     });
     setDialog("chamber");
     setSelectedChamber(null);
@@ -208,6 +214,8 @@ export function ColdChainView({ canWrite = false }: { canWrite?: boolean }) {
       staleAfterSeconds: String(chamber.config.staleAfterSeconds),
       disagreementThresholdC: chamber.config.disagreementThresholdC === null ? "" : String(chamber.config.disagreementThresholdC),
       excursionDelaySeconds: String(chamber.config.excursionDelaySeconds),
+      batteryLowVoltage: chamber.config.batteryLowVoltage === null ? "" : String(chamber.config.batteryLowVoltage),
+      temperatureHysteresisC: String(chamber.config.temperatureHysteresisC),
     });
     setDialog("edit");
     setFormError("");
@@ -239,6 +247,8 @@ export function ColdChainView({ canWrite = false }: { canWrite?: boolean }) {
         staleAfterSeconds: Number(chamberForm.staleAfterSeconds),
         disagreementThresholdC: numberOrNull(chamberForm.disagreementThresholdC),
         excursionDelaySeconds: Number(chamberForm.excursionDelaySeconds),
+        batteryLowVoltage: numberOrNull(chamberForm.batteryLowVoltage),
+        temperatureHysteresisC: numberOrNull(chamberForm.temperatureHysteresisC) ?? 0,
       };
       if (dialog === "edit" && selectedChamber) {
         await requestJson("/api/v1/cold-chain/configuration", {
@@ -382,7 +392,11 @@ export function ColdChainView({ canWrite = false }: { canWrite?: boolean }) {
           <div className="cold-config-columns">
             <label><span>Lectura obsoleta después de (s)</span><input type="number" min="1" value={chamberForm.staleAfterSeconds} onChange={(event) => setChamberForm({ ...chamberForm, staleAfterSeconds: event.target.value })} /></label>
             <label><span>Diferencia máxima sensores °C</span><input type="number" step="0.1" min="0" value={chamberForm.disagreementThresholdC} onChange={(event) => setChamberForm({ ...chamberForm, disagreementThresholdC: event.target.value })} /></label>
-            <label><span>Persistencia excursión (s)</span><input type="number" min="1" value={chamberForm.excursionDelaySeconds} onChange={(event) => setChamberForm({ ...chamberForm, excursionDelaySeconds: event.target.value })} /></label>
+            <label><span>Persistencia alarma (s)</span><input type="number" min="1" value={chamberForm.excursionDelaySeconds} onChange={(event) => setChamberForm({ ...chamberForm, excursionDelaySeconds: event.target.value })} /></label>
+          </div>
+          <div className="cold-config-columns">
+            <label><span>Histéresis temperatura °C</span><input type="number" step="0.1" min="0" value={chamberForm.temperatureHysteresisC} onChange={(event) => setChamberForm({ ...chamberForm, temperatureHysteresisC: event.target.value })} /></label>
+            <label><span>Batería baja bajo (V)</span><input type="number" step="0.01" min="0" value={chamberForm.batteryLowVoltage} onChange={(event) => setChamberForm({ ...chamberForm, batteryLowVoltage: event.target.value })} placeholder="Opcional" /></label>
           </div>
         </div> : <div className="cold-config-form">
           <p className="cold-config-context">{selectedChamber?.code} · {selectedChamber?.name}</p>
