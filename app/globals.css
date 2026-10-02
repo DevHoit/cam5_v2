@@ -2308,3 +2308,18 @@ button.module-table-row { width: 100%; }
   .electrical-history-controls nav { overflow-x: auto; }
   .electrical-history-kpis { grid-template-columns: 1fr; }
 }
+
+.report-electrical-summary { display: grid; gap: 12px; }
+.report-electrical-summary > h2 { margin: 0; font-size: 1rem; }
+.report-meter-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 10px; }
+.report-meter-grid article { border: 1px solid var(--border); border-radius: 12px; padding: 12px; background: var(--surface-2); }
+.report-meter-grid article > header { display: grid; gap: 2px; margin-bottom: 10px; }
+.report-meter-grid article > header strong { font-size: .9rem; }
+.report-meter-grid article > header small { color: var(--muted); }
+.report-meter-grid article > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.report-meter-grid article span { display: grid; gap: 2px; min-width: 0; }
+.report-meter-grid article span small { color: var(--muted); font-size: .68rem; }
+.report-meter-grid article span b { font-size: .78rem; overflow-wrap: anywhere; }
+@media (max-width: 640px) {
+  .report-meter-grid article > div { grid-template-columns: 1fr; }
+}
