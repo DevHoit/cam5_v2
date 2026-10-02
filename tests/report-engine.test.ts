@@ -351,3 +351,151 @@ test("creates an electrical report from generic PM5560 telemetry and operational
     await client.close();
   }
 });
+
+
+test("creates an ATS report from DSE8660 telemetry and operational alarms", async () => {
+  const client = new PGlite();
+  try {
+    for (const filename of ["0000_cam5_initial_schema.sql", "0001_eager_blockbuster.sql", "0002_sparkling_wallow.sql", "0003_rich_charles_xavier.sql", "0004_windy_gauntlet.sql", "0005_milky_caretaker.sql", "0006_smiling_frightful_four.sql", "0007_big_frightful_four.sql", "0008_sloppy_mister_sinister.sql", "0009_cuddly_infant_terrible.sql", "0010_robust_wallop.sql", "0011_dear_prima.sql", "0012_hoit_core_foundation.sql", "0013_hoit_generic_telemetry.sql", "0014_generic_device_transport.sql", "0015_operational_condition_states.sql", "0016_cold_chain_report_template.sql", "0017_generic_metric_aggregates.sql", "0018_pm5560_metric_catalog.sql", "0019_nullable_device_gateway_site_guard.sql", "0020_electrical_report_template.sql", "0021_dse8660_metric_catalog.sql", "0022_ats_report_template.sql"]) {
+      const migration = await readFile(new URL(`../drizzle/${filename}`, import.meta.url), "utf8");
+      await client.exec(migration.replaceAll("--> statement-breakpoint", ""));
+    }
+    const database = drizzle(client, { schema }) as unknown as Cam5Database;
+    await seedCam5Database(database, { adminEmail: "admin@example.test", adminName: "Administrador", adminPassword: "Cam5-Prueba-2026", log: false });
+    const [site] = await database.select().from(schema.sites).limit(1);
+    const [gateway] = await database.select().from(schema.gateways).limit(1);
+    const [user] = await database.select().from(schema.users).limit(1);
+    const [template] = await database.select().from(schema.reportTemplates).where(eq(schema.reportTemplates.key, "ats-summary")).limit(1);
+    assert.ok(template);
+
+    const [asset] = await database.insert(schema.assets).values({
+      siteId: site.id,
+      code: "ATS-REPORT",
+      name: "ATS reporte",
+      assetType: "ats",
+      metadata: {
+        ats: {
+          source1Label: "Red",
+          source2Label: "Respaldo",
+          expectedPosition: "source1",
+          alarms: { staleAfterSeconds: 30, source1Required: true, source2Required: false },
+        },
+      },
+    }).returning();
+    const [device] = await database.insert(schema.devices).values({
+      assetId: asset.id,
+      code: "DSE-REPORT",
+      name: "DSE8660 reporte",
+      deviceType: "ats_controller",
+      driver: "dse8660_mkii",
+      protocol: "modbus_rtu",
+      unitId: 2,
+    }).returning();
+
+    const definitions = await database.select().from(schema.metricDefinitions);
+    const byKey = new Map(definitions.map((definition) => [definition.key, definition]));
+    const keys = [
+      "ats.source1.voltage.l1_n",
+      "ats.source1.frequency",
+      "ats.source2.voltage.l1_n",
+      "ats.source2.frequency",
+      "ats.load.current.l1",
+      "ats.load.power.active.total",
+      "ats.load.power_factor",
+      "ats.transfer.position",
+      "dse.mode",
+      "ats.source1.available",
+      "ats.source2.available",
+      "ats.common_alarm",
+    ];
+    const metricIds = new Map<string, string>();
+    for (const [index, key] of keys.entries()) {
+      const definition = byKey.get(key);
+      assert.ok(definition, "Falta definición " + key);
+      const [metric] = await database.insert(schema.deviceMetrics).values({
+        deviceId: device.id,
+        metricDefinitionId: definition.id,
+        code: "ATS-R-" + index,
+        name: definition.name,
+        displayOrder: index,
+      }).returning();
+      metricIds.set(key, metric.id);
+    }
+
+    const [batch] = await database.insert(schema.telemetryBatches).values({
+      gatewayId: gateway.id,
+      deviceId: device.id,
+      batchKey: "ats-report-1",
+      gatewayBootId: "ats-report-boot",
+      gatewaySequence: 1,
+      sentAt: new Date("2026-10-01T10:00:00.000Z"),
+      sampledAt: new Date("2026-10-01T10:00:00.000Z"),
+      receivedAt: new Date("2026-10-01T10:00:00.000Z"),
+      quality: "good",
+      timeQuality: "synced",
+      metricCount: keys.length,
+      success: true,
+    }).returning();
+
+    const numericValues: Record<string, number> = {
+      "ats.source1.voltage.l1_n": 230,
+      "ats.source1.frequency": 50,
+      "ats.source2.voltage.l1_n": 229,
+      "ats.source2.frequency": 50.02,
+      "ats.load.current.l1": 48,
+      "ats.load.power.active.total": 32,
+      "ats.load.power_factor": 0.96,
+    };
+    for (const key of keys) {
+      const definition = byKey.get(key)!;
+      await database.insert(schema.metricReadings).values({
+        batchId: batch.id,
+        deviceMetricId: metricIds.get(key)!,
+        recordedAt: new Date("2026-10-01T10:00:00.000Z"),
+        receivedAt: new Date("2026-10-01T10:00:00.000Z"),
+        valueNumeric: definition.dataType === "float" || definition.dataType === "integer" ? String(numericValues[key] ?? 0) : null,
+        valueBoolean: definition.dataType === "boolean" ? (key === "ats.common_alarm" ? false : true) : null,
+        valueText: definition.dataType === "enum" ? (key === "ats.transfer.position" ? "source1" : "auto") : null,
+        quality: "good",
+        timeQuality: "synced",
+        sequence: 1,
+      });
+    }
+
+    await database.insert(schema.alarms).values({
+      siteId: site.id,
+      assetId: asset.id,
+      code: "ATS-REPORT-ALM",
+      kind: "threshold",
+      severity: "critical",
+      status: "resolved",
+      title: "Red no disponible",
+      openedAt: new Date("2026-10-01T09:00:00.000Z"),
+      lastObservedAt: new Date("2026-10-01T09:05:00.000Z"),
+      resolvedAt: new Date("2026-10-01T09:05:00.000Z"),
+      context: { source: "ats", subtype: "source1_unavailable", deviceCode: "DSE-REPORT" },
+    });
+
+    const result = await createReportRun(database, {
+      templateId: template.id,
+      assetId: asset.id,
+      requestedBy: user.id,
+      generatedBy: user.displayName,
+      periodStart: new Date("2026-10-01T00:00:00.000Z"),
+      periodEnd: new Date("2026-10-02T00:00:00.000Z"),
+      format: "pdf",
+    });
+
+    assert.equal(result.snapshot.asset.assetType, "ats");
+    assert.equal(result.snapshot.ats?.controllerCount, 1);
+    assert.equal(result.snapshot.ats?.controllers[0]?.source1VoltageAverageV, 230);
+    assert.equal(result.snapshot.ats?.controllers[0]?.activePowerAverageKw, 32);
+    assert.equal(result.snapshot.ats?.controllers[0]?.lastPosition, "source1");
+    assert.equal(result.snapshot.ats?.controllers[0]?.lastMode, "auto");
+    assert.equal(result.snapshot.ats?.controllers[0]?.source1Available, true);
+    assert.equal(result.snapshot.summary.alarmCount, 1);
+    assert.equal(result.snapshot.alarms[0]?.channelCode, "DSE-REPORT");
+  } finally {
+    await client.close();
+  }
+});
