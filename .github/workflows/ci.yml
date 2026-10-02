@@ -49,6 +49,7 @@ jobs:
           app/cold-chain-detail.tsx
           app/reports-view.tsx
           tests/gateway-ingest-v2.test.ts
+          tests/cold-chain-e2e.test.ts
           tests/cold-chain.test.ts
           tests/cold-chain-history.test.ts
           tests/report-export.test.ts
