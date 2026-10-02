@@ -4,6 +4,7 @@ import { cam5InputInventory, cam5OperationalChannels, cam5RegisterCatalog, cam5R
 import { PORTAL_PERMISSIONS, PORTAL_ROLES } from "./access-control";
 import { hashPassword } from "./auth";
 import { COMMISSIONING_CHECKLIST } from "./commissioning-engine";
+import { HOIT_METRIC_CATALOG } from "./hoit-metrics";
 import { closeDb, getDb, type Cam5Database } from "./index";
 import { loadDatabaseEnvironment } from "./load-env";
 import {
@@ -16,6 +17,7 @@ import {
   deviceModels,
   devices,
   gateways,
+  metricDefinitions,
   permissions,
   physicalInputs,
   readingProfileRanges,
@@ -85,6 +87,27 @@ export async function seedCam5Database(
   } = {},
 ) {
   await db.transaction(async (tx) => {
+    for (const metric of HOIT_METRIC_CATALOG) {
+      await tx.insert(metricDefinitions).values({
+        key: metric.key,
+        name: metric.name,
+        category: metric.category,
+        unit: metric.unit,
+        dataType: metric.dataType,
+        aggregation: metric.aggregation,
+      }).onConflictDoUpdate({
+        target: metricDefinitions.key,
+        set: {
+          name: metric.name,
+          category: metric.category,
+          unit: metric.unit,
+          dataType: metric.dataType,
+          aggregation: metric.aggregation,
+          updatedAt: new Date(),
+        },
+      });
+    }
+
     const clientCode = options.clientCode ?? process.env.CAM5_CLIENT_CODE ?? "CLIENTE-PRINCIPAL";
     const clientName = options.clientName ?? process.env.CAM5_CLIENT_NAME ?? "Cliente principal";
     await tx.insert(clients).values({
