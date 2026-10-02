@@ -5,6 +5,8 @@ export type ColdChainConfig = {
   staleAfterSeconds: number;
   disagreementThresholdC: number | null;
   excursionDelaySeconds: number;
+  batteryLowVoltage: number | null;
+  temperatureHysteresisC: number;
 };
 
 export type ColdChainSensorSnapshot = {
@@ -55,6 +57,8 @@ export function parseColdChainConfig(metadata: Record<string, unknown> | null | 
   const maximumC = finiteNumber(coldChain.maximumC);
   const targetC = finiteNumber(coldChain.targetC);
   const disagreementThresholdC = finiteNumber(coldChain.disagreementThresholdC);
+  const batteryLowVoltage = finiteNumber(coldChain.batteryLowVoltage);
+  const temperatureHysteresisC = finiteNumber(coldChain.temperatureHysteresisC);
 
   return {
     minimumC,
@@ -63,6 +67,8 @@ export function parseColdChainConfig(metadata: Record<string, unknown> | null | 
     staleAfterSeconds: positiveInteger(coldChain.staleAfterSeconds, 180),
     disagreementThresholdC: disagreementThresholdC !== null && disagreementThresholdC >= 0 ? disagreementThresholdC : null,
     excursionDelaySeconds: positiveInteger(coldChain.excursionDelaySeconds, 300),
+    batteryLowVoltage: batteryLowVoltage !== null && batteryLowVoltage > 0 ? batteryLowVoltage : null,
+    temperatureHysteresisC: temperatureHysteresisC !== null && temperatureHysteresisC >= 0 ? temperatureHysteresisC : 0,
   };
 }
 
