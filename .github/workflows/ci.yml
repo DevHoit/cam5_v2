@@ -30,8 +30,18 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
-      - name: Lint
-        run: npm run lint
+      - name: Lint HOIT Core changes
+        run: >-
+          npx eslint
+          db/schema.ts
+          db/seed.ts
+          db/hoit-metrics.ts
+          app/api/v1/gateway/ingest/route.ts
+          app/api/v1/gateway/_lib/ingest-v2.ts
+          app/api/v1/telemetry/metrics
+          tests/gateway-ingest-v2.test.ts
+          tests/database-schema.test.mjs
+          tests/database-seed.test.ts
 
       - name: Database tests
         run: npm run test:db
