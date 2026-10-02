@@ -100,14 +100,15 @@ export function ReportsView({ assetId, assetLabel, timezone, canGenerate, canSch
 
   useEffect(() => {
     let active = true;
-    void requestJson<{ items: Template[] }>("/api/v1/reports/templates").then((result) => {
+    if (!assetId) return () => { active = false; };
+    void requestJson<{ items: Template[] }>("/api/v1/reports/templates?assetId=" + encodeURIComponent(assetId)).then((result) => {
       if (!active) return;
       setTemplates(result.items);
       setTemplateId((current) => current || result.items[0]?.id || "");
       setScheduleForm((current) => ({ ...current, templateId: current.templateId || result.items[0]?.id || "" }));
     }).catch((loadError) => { if (active) setError(loadError instanceof Error ? loadError.message : "No fue posible cargar las plantillas."); });
     return () => { active = false; };
-  }, []);
+  }, [assetId]);
 
   useEffect(() => {
     if (!assetId) return;
