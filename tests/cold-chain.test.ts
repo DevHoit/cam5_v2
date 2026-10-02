@@ -11,6 +11,8 @@ test("parses cold-chain configuration without inventing temperature limits", () 
       staleAfterSeconds: 120,
       disagreementThresholdC: 1.5,
       excursionDelaySeconds: 300,
+      batteryLowVoltage: 3.1,
+      temperatureHysteresisC: 0.5,
     },
   });
   assert.deepEqual(config, {
@@ -20,11 +22,15 @@ test("parses cold-chain configuration without inventing temperature limits", () 
     staleAfterSeconds: 120,
     disagreementThresholdC: 1.5,
     excursionDelaySeconds: 300,
+    batteryLowVoltage: 3.1,
+    temperatureHysteresisC: 0.5,
   });
 
   const unconfigured = parseColdChainConfig({});
   assert.equal(unconfigured.minimumC, null);
   assert.equal(unconfigured.maximumC, null);
+  assert.equal(unconfigured.batteryLowVoltage, null);
+  assert.equal(unconfigured.temperatureHysteresisC, 0);
 });
 
 test("summarizes multiple sensors in one refrigeration chamber", () => {
