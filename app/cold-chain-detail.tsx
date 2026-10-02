@@ -228,7 +228,6 @@ export function ColdChainDetail({
     let active = true;
     const from = rangeStart(range);
     const to = new Date();
-    setStatus("loading");
     fetch("/api/v1/cold-chain/history?chamberId=" + encodeURIComponent(chamberId) + "&from=" + encodeURIComponent(from.toISOString()) + "&to=" + encodeURIComponent(to.toISOString()), {
       credentials: "include",
       cache: "no-store",
@@ -331,7 +330,7 @@ export function ColdChainDetail({
       </nav>
 
       {tab !== "alarms" && tab !== "configuration" && <nav className="cold-detail-range">
-        {(["24h", "7d", "30d"] as RangeKey[]).map((item) => <button key={item} className={range === item ? "active" : ""} onClick={() => setRange(item)}>{item}</button>)}
+        {(["24h", "7d", "30d"] as RangeKey[]).map((item) => <button key={item} className={range === item ? "active" : ""} onClick={() => { setStatus("loading"); setRange(item); }}>{item}</button>)}
       </nav>}
 
       {status === "loading" && <div className="cold-detail-loading"><Refresh className="spin" size={22} /> Cargando histórico…</div>}
