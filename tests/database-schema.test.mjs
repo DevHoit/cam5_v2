@@ -26,8 +26,10 @@ const expectedTables = [
   "gateways",
   "ingestion_batches",
   "integrations",
+  "latest_metric_readings",
   "latest_readings",
   "metric_definitions",
+  "metric_readings",
   "notification_endpoints",
   "notification_deliveries",
   "notification_policies",
@@ -46,6 +48,7 @@ const expectedTables = [
   "role_permissions",
   "roles",
   "sites",
+  "telemetry_batches",
   "user_asset_scopes",
   "user_channel_preferences",
   "user_client_assignments",
@@ -59,7 +62,7 @@ const expectedTables = [
 test("applies the CAM5 PostgreSQL migration with access profiles and telemetry constraints", async () => {
   const database = new PGlite();
   try {
-    for (const filename of ["0000_cam5_initial_schema.sql", "0001_eager_blockbuster.sql", "0002_sparkling_wallow.sql", "0003_rich_charles_xavier.sql", "0004_windy_gauntlet.sql", "0005_milky_caretaker.sql", "0006_smiling_frightful_four.sql", "0007_big_frightful_four.sql", "0008_sloppy_mister_sinister.sql", "0009_cuddly_infant_terrible.sql", "0010_robust_wallop.sql", "0011_dear_prima.sql", "0012_hoit_core_foundation.sql"]) {
+    for (const filename of ["0000_cam5_initial_schema.sql", "0001_eager_blockbuster.sql", "0002_sparkling_wallow.sql", "0003_rich_charles_xavier.sql", "0004_windy_gauntlet.sql", "0005_milky_caretaker.sql", "0006_smiling_frightful_four.sql", "0007_big_frightful_four.sql", "0008_sloppy_mister_sinister.sql", "0009_cuddly_infant_terrible.sql", "0010_robust_wallop.sql", "0011_dear_prima.sql", "0012_hoit_core_foundation.sql", "0013_hoit_generic_telemetry.sql"]) {
       const migration = await readFile(new URL(`../drizzle/${filename}`, import.meta.url), "utf8");
       await database.exec(migration.replaceAll("--> statement-breakpoint", ""));
     }
@@ -207,6 +210,21 @@ test("applies the CAM5 PostgreSQL migration with access profiles and telemetry c
         values ('invalid.metric', 'Inválida', 'test', 'x', 'binary', 'last')
       `),
       /metric_definitions_data_type_chk/,
+    );
+
+    const genericTelemetryTables = ["telemetry_batches", "metric_readings", "latest_metric_readings"];
+    for (const table of genericTelemetryTables) assert.ok(expectedTables.includes(table), `Falta la tabla de telemetría HOIT ${table}`);
+
+    await assert.rejects(
+      database.query(`
+        insert into telemetry_batches
+          (gateway_id, device_id, batch_key, gateway_boot_id, gateway_sequence, sent_at, sampled_at, quality, time_quality, metric_count)
+        values
+          ('00000000-0000-0000-0000-000000000001',
+           '00000000-0000-0000-0000-000000000002',
+           'invalid', 'boot', 1, now(), now(), 'good', 'future', 1)
+      `),
+      /(foreign key|telemetry_batches_time_quality_chk)/i,
     );
   } finally {
     await database.close();
