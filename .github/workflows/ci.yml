@@ -38,6 +38,7 @@ jobs:
           db/hoit-metrics.ts
           db/pm5560.ts
           db/access-scope.ts
+          db/auth.ts
           db/dse8660.ts
           db/ats-alarm-engine.ts
           db/ats.ts
@@ -54,6 +55,9 @@ jobs:
           app/api/v1/telemetry/metrics
           app/api/v1/cold-chain
           app/api/v1/electrical
+          app/api/v1/hierarchy/route.ts
+          app/api/v1/users/route.ts
+          app/api/v1/users/[id]/route.ts
           app/cold-chain-view.tsx
           app/cold-chain-detail.tsx
           app/electrical-view.tsx
