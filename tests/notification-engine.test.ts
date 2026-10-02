@@ -10,7 +10,7 @@ import * as schema from "../db/schema";
 
 async function notificationDatabase() {
   const client = new PGlite();
-  for (const filename of ["0000_cam5_initial_schema.sql", "0001_eager_blockbuster.sql", "0002_sparkling_wallow.sql", "0003_rich_charles_xavier.sql", "0004_windy_gauntlet.sql", "0005_milky_caretaker.sql", "0006_smiling_frightful_four.sql", "0007_big_frightful_four.sql", "0008_sloppy_mister_sinister.sql", "0009_cuddly_infant_terrible.sql", "0010_robust_wallop.sql", "0011_dear_prima.sql"]) {
+  for (const filename of ["0000_cam5_initial_schema.sql", "0001_eager_blockbuster.sql", "0002_sparkling_wallow.sql", "0003_rich_charles_xavier.sql", "0004_windy_gauntlet.sql", "0005_milky_caretaker.sql", "0006_smiling_frightful_four.sql", "0007_big_frightful_four.sql", "0008_sloppy_mister_sinister.sql", "0009_cuddly_infant_terrible.sql", "0010_robust_wallop.sql", "0011_dear_prima.sql", "0024_notification_suppressed_status.sql"]) {
     const migration = await readFile(new URL(`../drizzle/${filename}`, import.meta.url), "utf8");
     await client.exec(migration.replaceAll("--> statement-breakpoint", ""));
   }
@@ -35,7 +35,7 @@ test("queues one deduplicated delivery per eligible policy and delivers it throu
 
     let body = "";
     const result = await processNotificationQueue(engineDb, { now, includeRepeats: false, fetchImpl: async (_input, init) => { body = String(init?.body || ""); return new Response(null, { status: 204, headers: { "x-request-id": "provider-1" } }); } });
-    assert.deepEqual(result, { recovered: 0, repeated: 0, processed: 1, delivered: 1, failed: 0 });
+    assert.deepEqual(result, { recovered: 0, repeated: 0, processed: 1, delivered: 1, failed: 0, suppressed: 0 });
     assert.match(body, /Temperatura crítica/);
     const [delivery] = await db.select().from(schema.notificationDeliveries).where(eq(schema.notificationDeliveries.alarmId, alarm.id));
     assert.equal(delivery.status, "delivered");
@@ -116,4 +116,71 @@ test("sends a responsive branded email with a plain-text fallback", async () => 
   assert.match(String(providerBody.html), /&lt;script&gt;/);
   assert.doesNotMatch(String(providerBody.html), /<script>alert/);
   assert.match(String(providerBody.text), /Subestación Norte/);
+});
+
+
+test("suppresses a queued alarm delivery if the asset enters maintenance before dispatch", async () => {
+  const { client, db } = await notificationDatabase();
+  try {
+    const [customer] = await db.insert(schema.clients).values({ code: "MAINT", name: "Maintenance" }).returning();
+    const [site] = await db.insert(schema.sites).values({ clientId: customer.id, code: "M-01", name: "Mantenimiento" }).returning();
+    const [asset] = await db.insert(schema.assets).values({ siteId: site.id, code: "ASSET-M", name: "Activo M" }).returning();
+    const now = new Date("2026-09-06T14:00:00.000Z");
+    const [alarm] = await db.insert(schema.alarms).values({
+      siteId: site.id,
+      assetId: asset.id,
+      code: "AL-MAINT",
+      kind: "threshold",
+      severity: "critical",
+      title: "Alarma antes de mantenimiento",
+      openedAt: now,
+      lastObservedAt: now,
+    }).returning();
+    const [event] = await db.insert(schema.alarmEvents).values({ alarmId: alarm.id, eventType: "opened" }).returning();
+    const [endpoint] = await db.insert(schema.notificationEndpoints).values({
+      siteId: site.id,
+      name: "Webhook",
+      kind: "webhook",
+      configuration: { url: "https://maintenance.example.test/events" },
+    }).returning();
+    await db.insert(schema.notificationPolicies).values({
+      siteId: site.id,
+      endpointId: endpoint.id,
+      name: "Críticas",
+      minimumSeverity: "critical",
+      filters: { alarmKinds: ["threshold"] },
+    });
+
+    const engineDb = db as unknown as Cam5Database;
+    assert.equal(await queueAlarmNotifications(engineDb, {
+      siteId: site.id,
+      alarmId: alarm.id,
+      alarmEventId: event.id,
+      severity: "critical",
+      kind: "threshold",
+      eventType: "opened",
+      occurredAt: now,
+    }), 1);
+
+    await db.update(schema.assets).set({ state: "maintenance" }).where(eq(schema.assets.id, asset.id));
+    let sent = false;
+    const result = await processNotificationQueue(engineDb, {
+      now,
+      includeRepeats: false,
+      fetchImpl: async () => {
+        sent = true;
+        return new Response(null, { status: 204 });
+      },
+    });
+    assert.equal(sent, false);
+    assert.equal(result.suppressed, 1);
+    assert.equal(result.delivered, 0);
+
+    const [delivery] = await db.select().from(schema.notificationDeliveries).where(eq(schema.notificationDeliveries.alarmId, alarm.id));
+    assert.equal(delivery.status, "suppressed");
+    assert.equal(delivery.attemptCount, 0);
+    assert.match(delivery.errorMessage ?? "", /mantenimiento/i);
+  } finally {
+    await client.close();
+  }
 });
