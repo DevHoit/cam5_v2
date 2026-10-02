@@ -1750,7 +1750,8 @@ export default function Home() {
             {view === "overview" && <Overview onNavigate={navigate} onOpenTrend={openChannelTrend} onAcknowledge={acknowledge} activeAlarms={alarmPreview} alarmSummary={alarmSummary} point={activePoint} />}
             {view === "cabinet" && <CabinetView onOpenTrend={openChannelTrend} />}
             {view === "cold-chain" && <ColdChainView
-              canWrite={sessionUser.permissions.includes("settings.write")}
+              canWriteAssets={sessionUser.permissions.includes("assets.write")}
+              canWriteSettings={sessionUser.permissions.includes("settings.write")}
               canAcknowledge={sessionUser.permissions.includes("alarms.acknowledge")}
             />}
             {view === "diagnostics" && <DatabaseDiagnosticsView assetId={activePoint?.id ?? ""} canExecute={sessionUser.permissions.includes("diagnostics.execute")} notify={notify} />}
