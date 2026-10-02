@@ -97,6 +97,31 @@ test("builds time buckets and applies the configured raw retention", async () =>
         sequence: index + 1,
       });
     }
+    const [oldGenericBatch] = await db.insert(schema.telemetryBatches).values({
+      gatewayId: gateway.id,
+      deviceId: device.id,
+      batchKey: "generic-aggregate-old",
+      gatewayBootId: "boot-generic",
+      gatewaySequence: 99,
+      sentAt: new Date("2026-08-04T12:00:00.000Z"),
+      sampledAt: new Date("2026-08-04T12:00:00.000Z"),
+      receivedAt: new Date("2026-08-04T12:00:00.000Z"),
+      quality: "good",
+      timeQuality: "synced",
+      metricCount: 1,
+      success: true,
+    }).returning();
+    await db.insert(schema.metricReadings).values({
+      batchId: oldGenericBatch.id,
+      deviceMetricId: genericMetric.id,
+      recordedAt: new Date("2026-08-04T12:00:00.000Z"),
+      receivedAt: new Date("2026-08-04T12:00:00.000Z"),
+      valueNumeric: "3.00000000",
+      quality: "good",
+      timeQuality: "synced",
+      sequence: 99,
+    });
+
 
     const result = await refreshTelemetryAggregates(aggregationDb, site.id, evaluatedAt);
     assert.deepEqual(result, { bucketsUpdated: 8, retentionApplied: true });
@@ -113,6 +138,10 @@ test("builds time buckets and applies the configured raw retention", async () =>
     assert.equal(Number(genericMinute.minimumValue), 4);
     assert.equal(Number(genericMinute.maximumValue), 6);
     assert.equal(Number(genericMinute.averageValue), 5);
+    const [genericRawCount] = await db.select({ value: count() }).from(schema.metricReadings).where(eq(schema.metricReadings.deviceMetricId, genericMetric.id));
+    assert.equal(genericRawCount.value, 3);
+    const [oldGenericBatchCount] = await db.select({ value: count() }).from(schema.telemetryBatches).where(eq(schema.telemetryBatches.id, oldGenericBatch.id));
+    assert.equal(oldGenericBatchCount.value, 0);
     const [rawCount] = await db.select({ value: count() }).from(schema.readings).where(eq(schema.readings.channelId, channel.id));
     assert.equal(rawCount.value, 3);
     const [batchCount] = await db.select({ value: count() }).from(schema.ingestionBatches).where(eq(schema.ingestionBatches.id, oldBatch.id));
