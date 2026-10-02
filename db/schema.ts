@@ -768,6 +768,25 @@ export const alarmRuleStates = pgTable("alarm_rule_states", {
   check("alarm_rule_states_counts_chk", sql`${table.breachCount} >= 0 AND ${table.recoveryCount} >= 0`),
 ]);
 
+export const operationalConditionStates = pgTable("operational_condition_states", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  assetId: uuid("asset_id").notNull().references(() => assets.id, { onDelete: "cascade" }),
+  deviceId: uuid("device_id").references(() => devices.id, { onDelete: "cascade" }),
+  conditionKey: varchar("condition_key", { length: 180 }).notNull(),
+  activeAlarmId: uuid("active_alarm_id").references(() => alarms.id, { onDelete: "set null" }),
+  observed: boolean("observed").default(false).notNull(),
+  firstObservedAt: timestamp("first_observed_at", { withTimezone: true }),
+  lastObservedAt: timestamp("last_observed_at", { withTimezone: true }),
+  lastValue: numeric("last_value", { precision: 18, scale: 6 }),
+  severity: severityEnum("severity").default("normal").notNull(),
+  context: jsonb("context").$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("operational_condition_states_asset_key_uidx").on(table.assetId, table.conditionKey),
+  index("operational_condition_states_device_idx").on(table.deviceId),
+  index("operational_condition_states_alarm_idx").on(table.activeAlarmId),
+]);
+
 export const workOrders = pgTable("work_orders", {
   id: uuid("id").defaultRandom().primaryKey(),
   siteId: uuid("site_id").notNull().references(() => sites.id, { onDelete: "restrict" }),
