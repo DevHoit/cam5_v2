@@ -134,6 +134,13 @@
       "when": 1790962500000,
       "tag": "0018_pm5560_metric_catalog",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1790970000000,
+      "tag": "0019_nullable_device_gateway_site_guard",
+      "breakpoints": true
     }
   ]
 }
