@@ -1,4 +1,5 @@
 import { and, between, count, desc, eq, gte, inArray, lt, lte, sql } from "drizzle-orm";
+import { parseAtsConfig } from "./ats";
 import { parseColdChainConfig } from "./cold-chain";
 import { parseElectricalAlarmConfig } from "./electrical";
 import type { Cam5Database } from "./index";
@@ -120,6 +121,39 @@ export type ReportSnapshot = {
       energyExportEndKwh: number | null;
       energyExportDeltaKwh: number | null;
       peakDemandKw: number | null;
+    }>;
+  };
+  ats?: {
+    controllerCount: number;
+    config: {
+      source1Label: string;
+      source2Label: string;
+      staleAfterSeconds: number;
+      source1Required: boolean;
+      source2Required: boolean;
+      expectedPosition: "source1" | "source2" | null;
+    };
+    controllers: Array<{
+      code: string;
+      name: string;
+      sampleCount: number;
+      validSampleCount: number;
+      qualityPercent: number | null;
+      source1VoltageAverageV: number | null;
+      source1FrequencyAverageHz: number | null;
+      source2VoltageAverageV: number | null;
+      source2FrequencyAverageHz: number | null;
+      loadCurrentMaximumA: number | null;
+      activePowerAverageKw: number | null;
+      activePowerMaximumKw: number | null;
+      apparentPowerAverageKva: number | null;
+      reactivePowerAverageKvar: number | null;
+      powerFactorAverage: number | null;
+      lastPosition: string | null;
+      lastMode: string | null;
+      source1Available: boolean | null;
+      source2Available: boolean | null;
+      commonAlarm: boolean | null;
     }>;
   };
   alarms: Array<{
@@ -329,6 +363,8 @@ export async function createReportRun(db: Cam5Database, input: {
   if (context.assetType !== "cold_room" && template.key === "cold-chain-summary") throw new Error("La plantilla de cadena de frío sólo se puede usar con cámaras de refrigeración.");
   if (context.assetType === "electrical_point" && template.key !== "electrical-summary") throw new Error("Selecciona la plantilla de monitoreo eléctrico para este punto.");
   if (context.assetType !== "electrical_point" && template.key === "electrical-summary") throw new Error("La plantilla eléctrica sólo se puede usar con puntos eléctricos.");
+  if (context.assetType === "ats" && template.key !== "ats-summary") throw new Error("Selecciona la plantilla ATS para este activo.");
+  if (context.assetType !== "ats" && template.key === "ats-summary") throw new Error("La plantilla ATS sólo se puede usar con activos ATS.");
 
   if (context.assetType === "cold_room") {
     const config = parseColdChainConfig(context.assetMetadata);
@@ -764,6 +800,214 @@ export async function createReportRun(db: Cam5Database, input: {
           powerFactorMin: config.powerFactorMin,
         },
         meters: meterSummaries,
+      },
+      alarms: alarmRows.map((alarm) => ({
+        code: alarm.code,
+        title: alarm.title,
+        severity: alarm.severity,
+        status: alarm.status,
+        openedAt: alarm.openedAt.toISOString(),
+        channelCode: typeof alarm.context?.deviceCode === "string" ? alarm.context.deviceCode : null,
+        triggerValue: numeric(alarm.triggerValue),
+        thresholdValue: numeric(alarm.thresholdValue),
+      })),
+    };
+
+    const title = `${template.name} · ${context.assetCode}`;
+    const [run] = await db.insert(reportRuns).values({
+      templateId: template.id,
+      assetId: context.assetId,
+      requestedBy: input.requestedBy ?? null,
+      title,
+      format: input.format ?? "pdf",
+      status: "completed",
+      periodStart: input.periodStart,
+      periodEnd: input.periodEnd,
+      payload: snapshot,
+      completedAt: now,
+    }).returning();
+    return { run, snapshot };
+  }
+
+  if (context.assetType === "ats") {
+    const config = parseAtsConfig(context.assetMetadata);
+    const metricRows = await db.select({
+      deviceId: devices.id,
+      deviceCode: devices.code,
+      deviceName: devices.name,
+      deviceMetricId: deviceMetrics.id,
+      metricCode: deviceMetrics.code,
+      metricName: deviceMetrics.name,
+      metricKey: metricDefinitions.key,
+      unit: metricDefinitions.unit,
+      dataType: metricDefinitions.dataType,
+    }).from(deviceMetrics)
+      .innerJoin(devices, eq(devices.id, deviceMetrics.deviceId))
+      .innerJoin(metricDefinitions, eq(metricDefinitions.id, deviceMetrics.metricDefinitionId))
+      .where(and(
+        eq(devices.assetId, input.assetId),
+        eq(devices.active, true),
+        eq(devices.deviceType, "ats_controller"),
+        eq(deviceMetrics.enabled, true),
+      ))
+      .orderBy(devices.code, deviceMetrics.displayOrder);
+
+    const numericRows = metricRows.filter((item) =>
+      (item.metricKey.startsWith("ats.") || item.metricKey.startsWith("dse."))
+      && (item.dataType === "float" || item.dataType === "integer")
+    );
+    const stats = await genericMetricStatistics(db, numericRows.map((item) => item.deviceMetricId), input.periodStart, input.periodEnd);
+    const channelRows: ReportSnapshot["channels"] = numericRows.map((item) => {
+      const metricStats = stats.get(item.deviceMetricId) ?? emptyStats();
+      return {
+        code: `${item.deviceCode}:${item.metricCode}`,
+        name: `${item.deviceName} · ${item.metricName}`,
+        zone: context.area,
+        unit: item.unit,
+        sampleCount: metricStats.sampleCount,
+        validSampleCount: metricStats.validSampleCount,
+        minimum: metricStats.minimum,
+        average: metricStats.average,
+        maximum: metricStats.maximum,
+        latest: metricStats.last,
+        latestAt: metricStats.latestAt?.toISOString() ?? null,
+      };
+    });
+
+    const byController = new Map<string, typeof metricRows>();
+    for (const row of metricRows) {
+      const list = byController.get(row.deviceId) ?? [];
+      list.push(row);
+      byController.set(row.deviceId, list);
+    }
+    const statFor = (rows: typeof metricRows, key: string) => {
+      const metric = rows.find((item) => item.metricKey === key);
+      return metric ? stats.get(metric.deviceMetricId) ?? emptyStats() : emptyStats();
+    };
+    const finite = (values: Array<number | null>, mode: "max" | "avg") => {
+      const available = values.filter((value): value is number => value !== null && Number.isFinite(value));
+      if (!available.length) return null;
+      if (mode === "max") return Math.max(...available);
+      return available.reduce((sum, value) => sum + value, 0) / available.length;
+    };
+    const latestDiscrete = async (rows: typeof metricRows, key: string) => {
+      const metric = rows.find((item) => item.metricKey === key);
+      if (!metric) return null;
+      const [reading] = await db.select({
+        valueBoolean: metricReadings.valueBoolean,
+        valueText: metricReadings.valueText,
+      }).from(metricReadings).where(and(
+        eq(metricReadings.deviceMetricId, metric.deviceMetricId),
+        gte(metricReadings.recordedAt, input.periodStart),
+        lte(metricReadings.recordedAt, input.periodEnd),
+      )).orderBy(desc(metricReadings.recordedAt)).limit(1);
+      return reading ?? null;
+    };
+
+    const controllerSummaries: NonNullable<ReportSnapshot["ats"]>["controllers"] = [];
+    for (const rows of byController.values()) {
+      const first = rows[0];
+      const source1Voltage = ["ats.source1.voltage.l1_n", "ats.source1.voltage.l2_n", "ats.source1.voltage.l3_n"].map((key) => statFor(rows, key));
+      const source2Voltage = ["ats.source2.voltage.l1_n", "ats.source2.voltage.l2_n", "ats.source2.voltage.l3_n"].map((key) => statFor(rows, key));
+      const loadCurrent = ["ats.load.current.l1", "ats.load.current.l2", "ats.load.current.l3"].map((key) => statFor(rows, key));
+      const source1Frequency = statFor(rows, "ats.source1.frequency");
+      const source2Frequency = statFor(rows, "ats.source2.frequency");
+      const activePower = statFor(rows, "ats.load.power.active.total");
+      const apparentPower = statFor(rows, "ats.load.power.apparent.total");
+      const reactivePower = statFor(rows, "ats.load.power.reactive.total");
+      const powerFactor = statFor(rows, "ats.load.power_factor");
+      const position = await latestDiscrete(rows, "ats.transfer.position");
+      const mode = await latestDiscrete(rows, "dse.mode");
+      const source1Available = await latestDiscrete(rows, "ats.source1.available");
+      const source2Available = await latestDiscrete(rows, "ats.source2.available");
+      const commonAlarm = await latestDiscrete(rows, "ats.common_alarm");
+      const sampleCount = numericRows.filter((item) => item.deviceId === first.deviceId)
+        .reduce((sum, row) => sum + (stats.get(row.deviceMetricId)?.sampleCount ?? 0), 0);
+      const validSampleCount = numericRows.filter((item) => item.deviceId === first.deviceId)
+        .reduce((sum, row) => sum + (stats.get(row.deviceMetricId)?.validSampleCount ?? 0), 0);
+
+      controllerSummaries.push({
+        code: first.deviceCode,
+        name: first.deviceName,
+        sampleCount,
+        validSampleCount,
+        qualityPercent: sampleCount ? Math.round(validSampleCount / sampleCount * 10_000) / 100 : null,
+        source1VoltageAverageV: finite(source1Voltage.map((item) => item.average), "avg"),
+        source1FrequencyAverageHz: source1Frequency.average,
+        source2VoltageAverageV: finite(source2Voltage.map((item) => item.average), "avg"),
+        source2FrequencyAverageHz: source2Frequency.average,
+        loadCurrentMaximumA: finite(loadCurrent.map((item) => item.maximum), "max"),
+        activePowerAverageKw: activePower.average,
+        activePowerMaximumKw: activePower.maximum,
+        apparentPowerAverageKva: apparentPower.average,
+        reactivePowerAverageKvar: reactivePower.average,
+        powerFactorAverage: powerFactor.average,
+        lastPosition: position?.valueText ?? null,
+        lastMode: mode?.valueText ?? null,
+        source1Available: source1Available?.valueBoolean ?? null,
+        source2Available: source2Available?.valueBoolean ?? null,
+        commonAlarm: commonAlarm?.valueBoolean ?? null,
+      });
+    }
+
+    const candidateAlarms = await db.select({
+      code: alarms.code,
+      title: alarms.title,
+      severity: alarms.severity,
+      status: alarms.status,
+      openedAt: alarms.openedAt,
+      resolvedAt: alarms.resolvedAt,
+      closedAt: alarms.closedAt,
+      triggerValue: alarms.triggerValue,
+      thresholdValue: alarms.thresholdValue,
+      context: alarms.context,
+    }).from(alarms)
+      .where(and(eq(alarms.assetId, input.assetId), lte(alarms.openedAt, input.periodEnd)))
+      .orderBy(desc(alarms.openedAt))
+      .limit(1000);
+    const alarmRows = candidateAlarms.filter((alarm) => {
+      const alarmContext = alarm.context ?? {};
+      if (alarmContext.source !== "ats") return false;
+      const endedAt = alarm.resolvedAt ?? alarm.closedAt;
+      return !endedAt || endedAt >= input.periodStart;
+    }).slice(0, 500);
+
+    const sampleCount = channelRows.reduce((total, row) => total + row.sampleCount, 0);
+    const validSampleCount = channelRows.reduce((total, row) => total + row.validSampleCount, 0);
+    const criticalCount = alarmRows.filter((alarm) => alarm.severity === "critical").length;
+    const warningCount = alarmRows.filter((alarm) => alarm.severity === "warning").length;
+    const condition = criticalCount > 0 ? "critical" : warningCount > 0 ? "warning" : "normal";
+    const now = new Date();
+    const snapshot: ReportSnapshot = {
+      generatedAt: now.toISOString(),
+      generatedBy: input.generatedBy,
+      template: { id: template.id, key: template.key, name: template.name, description: template.description },
+      client: { code: context.clientCode, name: context.clientName },
+      site: { code: context.siteCode, name: context.siteName, timezone: context.timezone },
+      asset: { id: context.assetId, code: context.assetCode, name: context.assetName, area: context.area, nominalVoltageKv: null, assetType: context.assetType },
+      period: { start: input.periodStart.toISOString(), end: input.periodEnd.toISOString() },
+      summary: {
+        condition,
+        channelCount: channelRows.length,
+        sampleCount,
+        validSampleCount,
+        qualityPercent: sampleCount ? Math.round(validSampleCount / sampleCount * 10_000) / 100 : null,
+        alarmCount: alarmRows.length,
+        warningCount,
+        criticalCount,
+      },
+      channels: channelRows,
+      ats: {
+        controllerCount: controllerSummaries.length,
+        config: {
+          source1Label: config.source1Label,
+          source2Label: config.source2Label,
+          staleAfterSeconds: config.staleAfterSeconds,
+          source1Required: config.source1Required,
+          source2Required: config.source2Required,
+          expectedPosition: config.expectedPosition,
+        },
+        controllers: controllerSummaries,
       },
       alarms: alarmRows.map((alarm) => ({
         code: alarm.code,
