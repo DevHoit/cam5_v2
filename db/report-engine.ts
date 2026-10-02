@@ -1,10 +1,16 @@
 import { and, between, count, desc, eq, lte, sql } from "drizzle-orm";
+import { detectTemperatureExcursions } from "./cold-chain-history";
+import { parseColdChainConfig } from "./cold-chain";
 import type { Cam5Database } from "./index";
 import {
   alarms,
   assets,
   channels,
   clients,
+  deviceMetrics,
+  devices,
+  metricDefinitions,
+  metricReadings,
   reportRuns,
   reportSchedules,
   reportTemplates,
@@ -19,7 +25,7 @@ export type ReportSnapshot = {
   template: { id: string; key: string; name: string; description: string | null };
   client: { code: string; name: string };
   site: { code: string; name: string; timezone: string };
-  asset: { id: string; code: string; name: string; area: string | null; nominalVoltageKv: number | null };
+  asset: { id: string; code: string; name: string; area: string | null; nominalVoltageKv: number | null; assetType?: string };
   period: { start: string; end: string };
   summary: {
     condition: "normal" | "warning" | "critical";
@@ -44,6 +50,37 @@ export type ReportSnapshot = {
     latest: number | null;
     latestAt: string | null;
   }>;
+  coldChain?: {
+    minimumC: number | null;
+    maximumC: number | null;
+    targetC: number | null;
+    excursionDelaySeconds: number;
+    staleAfterSeconds: number;
+    excursionCount: number;
+    totalOutOfRangeSeconds: number;
+    dataGapCount: number;
+    sensors: Array<{
+      code: string;
+      name: string;
+      minimumC: number | null;
+      averageC: number | null;
+      maximumC: number | null;
+      sampleCount: number;
+      validSampleCount: number;
+      excursionCount: number;
+      dataGapCount: number;
+    }>;
+    excursions: Array<{
+      sensorCode: string;
+      sensorName: string;
+      type: "low" | "high" | "data_gap";
+      startedAt: string;
+      endedAt: string | null;
+      durationSeconds: number;
+      extremeC: number | null;
+      active: boolean;
+    }>;
+  };
   alarms: Array<{
     code: string;
     title: string;
@@ -81,6 +118,8 @@ export async function createReportRun(db: Cam5Database, input: {
     assetName: assets.name,
     area: assets.area,
     nominalVoltageKv: assets.nominalVoltageKv,
+    assetType: assets.assetType,
+    assetMetadata: assets.metadata,
     siteId: sites.id,
     siteCode: sites.code,
     siteName: sites.name,
@@ -98,6 +137,167 @@ export async function createReportRun(db: Cam5Database, input: {
     .where(and(eq(reportTemplates.id, input.templateId), eq(reportTemplates.active, true)))
     .limit(1);
   if (!template || (template.siteId && template.siteId !== context.siteId)) throw new Error("La plantilla no está disponible para este sitio.");
+
+  if (context.assetType === "cold_room") {
+    const config = parseColdChainConfig(context.assetMetadata);
+    const sensors = await db.select({
+      id: devices.id,
+      code: devices.code,
+      name: devices.name,
+      metricId: deviceMetrics.id,
+    }).from(deviceMetrics)
+      .innerJoin(devices, eq(devices.id, deviceMetrics.deviceId))
+      .innerJoin(metricDefinitions, eq(metricDefinitions.id, deviceMetrics.metricDefinitionId))
+      .where(and(
+        eq(devices.assetId, input.assetId),
+        eq(devices.active, true),
+        eq(devices.deviceType, "temperature_sensor"),
+        eq(deviceMetrics.enabled, true),
+        eq(metricDefinitions.key, "environment.temperature"),
+      ))
+      .orderBy(devices.code);
+
+    const coldSensorRows = [];
+    const coldExcursions: NonNullable<ReportSnapshot["coldChain"]>["excursions"] = [];
+    let coldSamples = 0;
+    let coldValidSamples = 0;
+
+    for (const sensor of sensors) {
+      const readingsRows = await db.select({
+        recordedAt: metricReadings.recordedAt,
+        valueNumeric: metricReadings.valueNumeric,
+        quality: metricReadings.quality,
+      }).from(metricReadings)
+        .where(and(
+          eq(metricReadings.deviceMetricId, sensor.metricId),
+          between(metricReadings.recordedAt, input.periodStart, input.periodEnd),
+        ))
+        .orderBy(metricReadings.recordedAt);
+
+      const points = readingsRows.map((row) => ({
+        recordedAt: row.recordedAt,
+        valueC: row.valueNumeric === null ? null : Number(row.valueNumeric),
+        quality: row.quality,
+      }));
+      const valid = points.filter((point) => point.quality === "good" && point.valueC !== null).map((point) => point.valueC as number);
+      const excursions = detectTemperatureExcursions({
+        points,
+        minimumC: config.minimumC,
+        maximumC: config.maximumC,
+        staleAfterSeconds: config.staleAfterSeconds,
+        excursionDelaySeconds: config.excursionDelaySeconds,
+        rangeEnd: input.periodEnd,
+      });
+      coldSamples += points.length;
+      coldValidSamples += valid.length;
+      coldSensorRows.push({
+        code: sensor.code,
+        name: sensor.name,
+        minimumC: valid.length ? Math.min(...valid) : null,
+        averageC: valid.length ? valid.reduce((sum, value) => sum + value, 0) / valid.length : null,
+        maximumC: valid.length ? Math.max(...valid) : null,
+        sampleCount: points.length,
+        validSampleCount: valid.length,
+        excursionCount: excursions.filter((item) => item.type !== "data_gap").length,
+        dataGapCount: excursions.filter((item) => item.type === "data_gap").length,
+      });
+      coldExcursions.push(...excursions.map((item) => ({
+        sensorCode: sensor.code,
+        sensorName: sensor.name,
+        type: item.type,
+        startedAt: item.startedAt.toISOString(),
+        endedAt: item.endedAt?.toISOString() ?? null,
+        durationSeconds: item.durationSeconds,
+        extremeC: item.extremeC,
+        active: item.active,
+      })));
+    }
+
+    const coldAlarmRows = await db.select({
+      code: alarms.code,
+      title: alarms.title,
+      severity: alarms.severity,
+      status: alarms.status,
+      openedAt: alarms.openedAt,
+      triggerValue: alarms.triggerValue,
+      thresholdValue: alarms.thresholdValue,
+    }).from(alarms)
+      .where(and(eq(alarms.assetId, input.assetId), between(alarms.openedAt, input.periodStart, input.periodEnd)))
+      .orderBy(desc(alarms.openedAt))
+      .limit(500);
+
+    const criticalCount = coldAlarmRows.filter((alarm) => alarm.severity === "critical").length;
+    const warningCount = coldAlarmRows.filter((alarm) => alarm.severity === "warning").length;
+    const condition = criticalCount > 0 ? "critical" : warningCount > 0 ? "warning" : "normal";
+    const now = new Date();
+    const thermalExcursions = coldExcursions.filter((item) => item.type !== "data_gap");
+    const snapshot: ReportSnapshot = {
+      generatedAt: now.toISOString(),
+      generatedBy: input.generatedBy,
+      template: { id: template.id, key: template.key, name: template.name, description: template.description },
+      client: { code: context.clientCode, name: context.clientName },
+      site: { code: context.siteCode, name: context.siteName, timezone: context.timezone },
+      asset: { id: context.assetId, code: context.assetCode, name: context.assetName, area: context.area, nominalVoltageKv: null, assetType: context.assetType },
+      period: { start: input.periodStart.toISOString(), end: input.periodEnd.toISOString() },
+      summary: {
+        condition,
+        channelCount: sensors.length,
+        sampleCount: coldSamples,
+        validSampleCount: coldValidSamples,
+        qualityPercent: coldSamples ? Math.round(coldValidSamples / coldSamples * 10_000) / 100 : null,
+        alarmCount: coldAlarmRows.length,
+        warningCount,
+        criticalCount,
+      },
+      channels: coldSensorRows.map((sensor) => ({
+        code: sensor.code,
+        name: sensor.name,
+        zone: context.area,
+        unit: "°C",
+        sampleCount: sensor.sampleCount,
+        validSampleCount: sensor.validSampleCount,
+        minimum: sensor.minimumC,
+        average: sensor.averageC,
+        maximum: sensor.maximumC,
+        latest: null,
+        latestAt: null,
+      })),
+      coldChain: {
+        minimumC: config.minimumC,
+        maximumC: config.maximumC,
+        targetC: config.targetC,
+        excursionDelaySeconds: config.excursionDelaySeconds,
+        staleAfterSeconds: config.staleAfterSeconds,
+        excursionCount: thermalExcursions.length,
+        totalOutOfRangeSeconds: thermalExcursions.reduce((sum, item) => sum + item.durationSeconds, 0),
+        dataGapCount: coldExcursions.filter((item) => item.type === "data_gap").length,
+        sensors: coldSensorRows,
+        excursions: coldExcursions.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()),
+      },
+      alarms: coldAlarmRows.map((alarm) => ({
+        ...alarm,
+        channelCode: null,
+        openedAt: alarm.openedAt.toISOString(),
+        triggerValue: numeric(alarm.triggerValue),
+        thresholdValue: numeric(alarm.thresholdValue),
+      })),
+    };
+
+    const title = `${template.name} · ${context.assetCode}`;
+    const [run] = await db.insert(reportRuns).values({
+      templateId: template.id,
+      assetId: context.assetId,
+      requestedBy: input.requestedBy ?? null,
+      title,
+      format: input.format ?? "pdf",
+      status: "completed",
+      periodStart: input.periodStart,
+      periodEnd: input.periodEnd,
+      payload: snapshot,
+      completedAt: now,
+    }).returning();
+    return { run, snapshot };
+  }
 
   const channelRows = await db.select({
     code: channels.code,
@@ -146,7 +346,7 @@ export async function createReportRun(db: Cam5Database, input: {
     template: { id: template.id, key: template.key, name: template.name, description: template.description },
     client: { code: context.clientCode, name: context.clientName },
     site: { code: context.siteCode, name: context.siteName, timezone: context.timezone },
-    asset: { id: context.assetId, code: context.assetCode, name: context.assetName, area: context.area, nominalVoltageKv: numeric(context.nominalVoltageKv) },
+    asset: { id: context.assetId, code: context.assetCode, name: context.assetName, area: context.area, nominalVoltageKv: numeric(context.nominalVoltageKv), assetType: context.assetType },
     period: { start: input.periodStart.toISOString(), end: input.periodEnd.toISOString() },
     summary: {
       condition,
