@@ -28,7 +28,6 @@ import {
   rolePermissions,
   roles,
   sites,
-  userClientAssignments,
   userRoleAssignments,
   users,
 } from "./schema";
@@ -368,10 +367,9 @@ export async function seedCam5Database(
       const adminName = configuredAdminName?.trim() || "Administrador CAM5";
       await tx.insert(users).values({ email: adminEmail, displayName: adminName, status: "active" }).onConflictDoNothing();
       const [admin] = await tx.select().from(users).where(sql`lower(${users.email}) = ${adminEmail}`).limit(1);
-      const [adminRole] = await tx.select().from(roles).where(eq(roles.key, "administrator")).limit(1);
-      if (!admin || !adminRole) throw new Error("No fue posible asignar el administrador inicial.");
-      await tx.insert(userClientAssignments).values({ userId: admin.id, clientId: client.id, roleId: adminRole.id }).onConflictDoNothing();
-      await tx.insert(userRoleAssignments).values({ userId: admin.id, roleId: adminRole.id, siteId: site.id }).onConflictDoNothing();
+      const [adminRole] = await tx.select().from(roles).where(eq(roles.key, "platform_admin")).limit(1);
+      if (!admin || !adminRole) throw new Error("No fue posible asignar el administrador HOIT inicial.");
+      await tx.insert(userRoleAssignments).values({ userId: admin.id, roleId: adminRole.id, siteId: null }).onConflictDoNothing();
       if (configuredAdminPassword) {
         const passwordHash = await hashPassword(configuredAdminPassword);
         await tx.insert(authIdentities).values({
