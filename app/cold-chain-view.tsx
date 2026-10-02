@@ -120,7 +120,13 @@ function numberOrNull(value: string) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-export function ColdChainView({ canWrite = false }: { canWrite?: boolean }) {
+export function ColdChainView({
+  canWrite = false,
+  canAcknowledge = false,
+}: {
+  canWrite?: boolean;
+  canAcknowledge?: boolean;
+}) {
   const [state, setState] = useState<{ status: "loading" | "ready" | "error"; data: ColdChainResponse | null }>({
     status: "loading",
     data: null,
@@ -371,7 +377,7 @@ export function ColdChainView({ canWrite = false }: { canWrite?: boolean }) {
 
     {state.status === "error" && state.data && <p className="cold-chain-refresh-warning">Se muestran las últimas lecturas disponibles; la actualización automática falló temporalmente.</p>}
 
-    {detailChamberId && <ColdChainDetail chamberId={detailChamberId} onClose={() => setDetailChamberId(null)} />}
+    {detailChamberId && <ColdChainDetail chamberId={detailChamberId} canAcknowledge={canAcknowledge} onClose={() => setDetailChamberId(null)} />}
 
     {dialog && <div className="cold-config-backdrop" role="presentation" onMouseDown={closeDialog}>
       <section className="cold-config-dialog" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
