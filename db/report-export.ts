@@ -66,6 +66,28 @@ export function reportCsv(snapshot: ReportSnapshot) {
         meter.energyImportDeltaKwh, meter.energyExportDeltaKwh, meter.peakDemandKw,
       ]),
     ] : []),
+    ...(snapshot.ats ? [
+      [],
+      ["ATS"],
+      ["Controladores", snapshot.ats.controllerCount],
+      ["Fuente 1", snapshot.ats.config.source1Label],
+      ["Fuente 2", snapshot.ats.config.source2Label],
+      ["Fuente 1 requerida", snapshot.ats.config.source1Required ? "Sí" : "No"],
+      ["Fuente 2 requerida", snapshot.ats.config.source2Required ? "Sí" : "No"],
+      ["Posición esperada", snapshot.ats.config.expectedPosition],
+      ["Sin telemetría después de (s)", snapshot.ats.config.staleAfterSeconds],
+      [],
+      ["CONTROLADORES"],
+      ["Código", "Nombre", "Calidad (%)", "F1 V prom", "F1 Hz prom", "F2 V prom", "F2 Hz prom", "I carga máx", "P prom kW", "P máx kW", "S prom kVA", "Q prom kVAr", "PF prom", "Última posición", "Modo", "F1 disponible", "F2 disponible", "Alarma común"],
+      ...snapshot.ats.controllers.map((controller) => [
+        controller.code, controller.name, controller.qualityPercent,
+        controller.source1VoltageAverageV, controller.source1FrequencyAverageHz,
+        controller.source2VoltageAverageV, controller.source2FrequencyAverageHz,
+        controller.loadCurrentMaximumA, controller.activePowerAverageKw, controller.activePowerMaximumKw,
+        controller.apparentPowerAverageKva, controller.reactivePowerAverageKvar, controller.powerFactorAverage,
+        controller.lastPosition, controller.lastMode, controller.source1Available, controller.source2Available, controller.commonAlarm,
+      ]),
+    ] : []),
     [],
     ["ALARMAS"],
     ["Código", "Título", "Severidad", "Estado", "Canal", "Valor", "Umbral", "Apertura UTC"],
@@ -109,7 +131,7 @@ export async function reportPdf(snapshot: ReportSnapshot) {
     page = document.addPage(pageSize);
     y = pageSize[1] - margin;
     page.drawText("HoitLive Core", { x: margin, y, font: bold, size: 17, color: rgb(0.05, 0.12, 0.18) });
-    page.drawText(snapshot.coldChain ? "Reporte de cadena de frío" : snapshot.electrical ? "Reporte de monitoreo eléctrico" : "Reporte de monitoreo de condición", { x: margin, y: y - 17, font: regular, size: 8.5, color: rgb(0.38, 0.43, 0.48) });
+    page.drawText(snapshot.coldChain ? "Reporte de cadena de frío" : snapshot.electrical ? "Reporte de monitoreo eléctrico" : snapshot.ats ? "Reporte ATS" : "Reporte de monitoreo de condición", { x: margin, y: y - 17, font: regular, size: 8.5, color: rgb(0.38, 0.43, 0.48) });
     page.drawLine({ start: { x: margin, y: y - 28 }, end: { x: pageSize[0] - margin, y: y - 28 }, thickness: 1.2, color: rgb(0.05, 0.49, 0.7) });
     y -= 48;
   };
@@ -136,14 +158,14 @@ export async function reportPdf(snapshot: ReportSnapshot) {
   text(snapshot.template.description ?? "Informe operacional consolidado.", { size: 10, color: rgb(0.38, 0.43, 0.48), gap: 14 });
   row("Cliente", snapshot.client.name);
   row("Sitio", snapshot.site.name);
-  row(snapshot.coldChain ? "Cámara" : snapshot.electrical ? "Punto eléctrico" : "Punto de medición", `${snapshot.asset.code} - ${snapshot.asset.name}`);
+  row(snapshot.coldChain ? "Cámara" : snapshot.electrical ? "Punto eléctrico" : snapshot.ats ? "ATS" : "Punto de medición", `${snapshot.asset.code} - ${snapshot.asset.name}`);
   row("Periodo", `${new Date(snapshot.period.start).toLocaleString("es-CL", { timeZone: snapshot.site.timezone })} a ${new Date(snapshot.period.end).toLocaleString("es-CL", { timeZone: snapshot.site.timezone })}`);
   row("Generado por", snapshot.generatedBy);
   row("Generado", new Date(snapshot.generatedAt).toLocaleString("es-CL", { timeZone: snapshot.site.timezone }));
 
   section("Resumen ejecutivo");
   row("Condición", snapshot.summary.condition === "critical" ? "Crítica" : snapshot.summary.condition === "warning" ? "Advertencia" : "Normal");
-  row(snapshot.coldChain ? "Sensores incluidos" : snapshot.electrical ? "Variables incluidas" : "Canales incluidos", snapshot.summary.channelCount);
+  row(snapshot.coldChain ? "Sensores incluidos" : snapshot.electrical ? "Variables incluidas" : snapshot.ats ? "Variables incluidas" : "Canales incluidos", snapshot.summary.channelCount);
   row("Muestras recibidas", snapshot.summary.sampleCount);
   row("Calidad de datos", snapshot.summary.qualityPercent === null ? "Sin muestras" : `${snapshot.summary.qualityPercent}%`);
   row("Alarmas del periodo", `${snapshot.summary.alarmCount} (${snapshot.summary.criticalCount} críticas, ${snapshot.summary.warningCount} advertencias)`);
@@ -157,6 +179,25 @@ export async function reportPdf(snapshot: ReportSnapshot) {
     row("Excursiones térmicas", snapshot.coldChain.excursionCount);
     row("Tiempo total fuera de rango", `${Math.round(snapshot.coldChain.totalOutOfRangeSeconds / 60)} min`);
     row("Gaps de datos", snapshot.coldChain.dataGapCount);
+  }
+
+  if (snapshot.ats) {
+    section("ATS");
+    row("Controladores incluidos", snapshot.ats.controllerCount);
+    row("Fuente 1", snapshot.ats.config.source1Label + (snapshot.ats.config.source1Required ? " (requerida)" : ""));
+    row("Fuente 2", snapshot.ats.config.source2Label + (snapshot.ats.config.source2Required ? " (requerida)" : ""));
+    row("Posición esperada", snapshot.ats.config.expectedPosition ?? "No supervisada");
+    row("Pérdida de telemetría", `${snapshot.ats.config.staleAfterSeconds} s`);
+
+    section("Resumen por controlador");
+    if (!snapshot.ats.controllers.length) text("No hay controladores ATS configurados.");
+    for (const controller of snapshot.ats.controllers) {
+      ensure(86);
+      text(`${controller.code} - ${controller.name}`, { size: 9.5, font: bold, gap: 2 });
+      text(`${snapshot.ats.config.source1Label}: ${controller.source1VoltageAverageV === null ? "s/d" : controller.source1VoltageAverageV.toFixed(1)} V / ${controller.source1FrequencyAverageHz === null ? "s/d" : controller.source1FrequencyAverageHz.toFixed(2)} Hz | ${snapshot.ats.config.source2Label}: ${controller.source2VoltageAverageV === null ? "s/d" : controller.source2VoltageAverageV.toFixed(1)} V / ${controller.source2FrequencyAverageHz === null ? "s/d" : controller.source2FrequencyAverageHz.toFixed(2)} Hz`, { size: 8, color: rgb(0.4, 0.44, 0.48), gap: 2 });
+      text(`Carga: I máx ${controller.loadCurrentMaximumA ?? "s/d"} A | P prom ${controller.activePowerAverageKw === null ? "s/d" : controller.activePowerAverageKw.toFixed(2)} kW | P máx ${controller.activePowerMaximumKw ?? "s/d"} kW | PF prom ${controller.powerFactorAverage === null ? "s/d" : controller.powerFactorAverage.toFixed(3)}`, { size: 8, color: rgb(0.4, 0.44, 0.48), gap: 2 });
+      text(`Posición final ${controller.lastPosition ?? "s/d"} | Modo ${controller.lastMode ?? "s/d"} | F1 ${controller.source1Available === null ? "s/d" : controller.source1Available ? "disponible" : "no disponible"} | F2 ${controller.source2Available === null ? "s/d" : controller.source2Available ? "disponible" : "no disponible"} | Alarma común ${controller.commonAlarm === null ? "s/d" : controller.commonAlarm ? "activa" : "no"}`, { size: 8, color: rgb(0.4, 0.44, 0.48), gap: 7 });
+    }
   }
 
   if (snapshot.electrical) {
@@ -184,7 +225,7 @@ export async function reportPdf(snapshot: ReportSnapshot) {
     }
   }
 
-  section(snapshot.coldChain ? "Resumen por sensor" : snapshot.electrical ? "Resumen por variable" : "Resumen por canal");
+  section(snapshot.coldChain ? "Resumen por sensor" : snapshot.electrical || snapshot.ats ? "Resumen por variable" : "Resumen por canal");
   if (!snapshot.channels.length) text("No hay canales habilitados para este punto de medición.");
   for (const channel of snapshot.channels) {
     ensure(38);
@@ -364,14 +405,14 @@ export function reportXlsx(snapshot: ReportSnapshot) {
     ["Plantilla", snapshot.template.name],
     ["Cliente", snapshot.client.name],
     ["Sitio", snapshot.site.name],
-    [snapshot.coldChain ? "Cámara" : snapshot.electrical ? "Punto eléctrico" : "Punto de medición", `${snapshot.asset.code} - ${snapshot.asset.name}`],
+    [snapshot.coldChain ? "Cámara" : snapshot.electrical ? "Punto eléctrico" : snapshot.ats ? "ATS" : "Punto de medición", `${snapshot.asset.code} - ${snapshot.asset.name}`],
     ["Periodo inicio UTC", snapshot.period.start],
     ["Periodo fin UTC", snapshot.period.end],
     ["Generado UTC", snapshot.generatedAt],
     [],
     ["RESUMEN"],
     ["Condición", snapshot.summary.condition],
-    [snapshot.coldChain ? "Sensores" : snapshot.electrical ? "Variables" : "Canales", snapshot.summary.channelCount],
+    [snapshot.coldChain ? "Sensores" : snapshot.electrical || snapshot.ats ? "Variables" : "Canales", snapshot.summary.channelCount],
     ["Muestras", snapshot.summary.sampleCount],
     ["Muestras válidas", snapshot.summary.validSampleCount],
     ["Calidad (%)", snapshot.summary.qualityPercent],
@@ -411,8 +452,22 @@ export function reportXlsx(snapshot: ReportSnapshot) {
     );
   }
 
+  if (snapshot.ats) {
+    summaryRows.push(
+      [],
+      ["ATS"],
+      ["Controladores", snapshot.ats.controllerCount],
+      ["Fuente 1", snapshot.ats.config.source1Label],
+      ["Fuente 2", snapshot.ats.config.source2Label],
+      ["Fuente 1 requerida", snapshot.ats.config.source1Required],
+      ["Fuente 2 requerida", snapshot.ats.config.source2Required],
+      ["Posición esperada", snapshot.ats.config.expectedPosition],
+      ["Sin telemetría después de (s)", snapshot.ats.config.staleAfterSeconds],
+    );
+  }
+
   const channelRows: unknown[][] = [
-    [snapshot.coldChain ? "Sensor" : snapshot.electrical ? "Variable" : "Canal", "Nombre", "Zona", "Último", "Mínimo", "Promedio", "Máximo", "Unidad", "Muestras", "Muestras válidas", "Última lectura UTC"],
+    [snapshot.coldChain ? "Sensor" : snapshot.electrical || snapshot.ats ? "Variable" : "Canal", "Nombre", "Zona", "Último", "Mínimo", "Promedio", "Máximo", "Unidad", "Muestras", "Muestras válidas", "Última lectura UTC"],
     ...snapshot.channels.map((channel) => [
       channel.code,
       channel.name,
@@ -444,7 +499,7 @@ export function reportXlsx(snapshot: ReportSnapshot) {
 
   const sheets = [
     { name: "Resumen", rows: summaryRows },
-    { name: snapshot.coldChain ? "Sensores" : snapshot.electrical ? "Variables" : "Canales", rows: channelRows },
+    { name: snapshot.coldChain ? "Sensores" : snapshot.electrical || snapshot.ats ? "Variables" : "Canales", rows: channelRows },
     ...(snapshot.coldChain ? [{
       name: "Excursiones",
       rows: [
@@ -474,6 +529,20 @@ export function reportXlsx(snapshot: ReportSnapshot) {
           meter.energyImportStartKwh, meter.energyImportEndKwh, meter.energyImportDeltaKwh,
           meter.energyExportStartKwh, meter.energyExportEndKwh, meter.energyExportDeltaKwh,
           meter.peakDemandKw,
+        ]),
+      ],
+    }] : []),
+    ...(snapshot.ats ? [{
+      name: "Controladores",
+      rows: [
+        ["Código", "Nombre", "Muestras", "Muestras válidas", "Calidad (%)", "F1 V prom", "F1 Hz prom", "F2 V prom", "F2 Hz prom", "I carga máx", "P prom kW", "P máx kW", "S prom kVA", "Q prom kVAr", "PF prom", "Última posición", "Modo", "F1 disponible", "F2 disponible", "Alarma común"],
+        ...snapshot.ats.controllers.map((controller) => [
+          controller.code, controller.name, controller.sampleCount, controller.validSampleCount, controller.qualityPercent,
+          controller.source1VoltageAverageV, controller.source1FrequencyAverageHz,
+          controller.source2VoltageAverageV, controller.source2FrequencyAverageHz,
+          controller.loadCurrentMaximumA, controller.activePowerAverageKw, controller.activePowerMaximumKw,
+          controller.apparentPowerAverageKva, controller.reactivePowerAverageKvar, controller.powerFactorAverage,
+          controller.lastPosition, controller.lastMode, controller.source1Available, controller.source2Available, controller.commonAlarm,
         ]),
       ],
     }] : []),
