@@ -26,6 +26,8 @@ type ColdChainHistory = {
       staleAfterSeconds: number;
       disagreementThresholdC: number | null;
       excursionDelaySeconds: number;
+      batteryLowVoltage: number | null;
+      temperatureHysteresisC: number;
     };
   };
   range: { from: string; to: string };
