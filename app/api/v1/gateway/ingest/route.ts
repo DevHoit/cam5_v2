@@ -15,6 +15,7 @@ import {
 } from "../../../../../db/schema";
 import { apiErrorResponse, ApiError } from "../../_lib/auth";
 import { requireGatewayCredential } from "../_lib/auth";
+import { handleGenericIngest } from "../_lib/ingest-v2";
 
 export const dynamic = "force-dynamic";
 
@@ -161,7 +162,11 @@ export async function POST(request: NextRequest) {
     const receivedAt = new Date();
     const rawBody = await request.text();
     if (new TextEncoder().encode(rawBody).byteLength > MAX_BODY_BYTES) throw new ApiError(413, "El lote supera el máximo de 256 KiB.");
-    const payload = parsePayload((() => { try { return JSON.parse(rawBody) as unknown; } catch { return null; } })(), receivedAt);
+    const parsedBody = (() => { try { return JSON.parse(rawBody) as unknown; } catch { return null; } })();
+    if (parsedBody && typeof parsedBody === "object" && !Array.isArray(parsedBody) && (parsedBody as Record<string, unknown>).schemaVersion === "2.0") {
+      return handleGenericIngest({ db, credential, rawPayload: parsedBody, receivedAt });
+    }
+    const payload = parsePayload(parsedBody, receivedAt);
     if (payload.gateway.code !== credential.gatewayCode) throw new ApiError(403, "El código del gateway no corresponde a la credencial utilizada.");
 
     const [device] = await db.select({
