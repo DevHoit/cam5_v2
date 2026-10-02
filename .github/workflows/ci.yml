@@ -62,6 +62,7 @@ jobs:
           app/reports-view.tsx
           tests/gateway-ingest-v2.test.ts
           tests/pm5560-e2e.test.ts
+          tests/ats-e2e.test.ts
           tests/cold-chain-e2e.test.ts
           tests/cold-chain.test.ts
           tests/cold-chain-history.test.ts
