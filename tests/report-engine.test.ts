@@ -177,3 +177,177 @@ test("creates a cold-chain report from generic telemetry and persisted operation
     await client.close();
   }
 });
+
+
+test("creates an electrical report from generic PM5560 telemetry and operational alarms", async () => {
+  const client = new PGlite();
+  try {
+    for (const filename of ["0000_cam5_initial_schema.sql", "0001_eager_blockbuster.sql", "0002_sparkling_wallow.sql", "0003_rich_charles_xavier.sql", "0004_windy_gauntlet.sql", "0005_milky_caretaker.sql", "0006_smiling_frightful_four.sql", "0007_big_frightful_four.sql", "0008_sloppy_mister_sinister.sql", "0009_cuddly_infant_terrible.sql", "0010_robust_wallop.sql", "0011_dear_prima.sql", "0012_hoit_core_foundation.sql", "0013_hoit_generic_telemetry.sql", "0014_generic_device_transport.sql", "0015_operational_condition_states.sql", "0016_cold_chain_report_template.sql", "0017_generic_metric_aggregates.sql", "0018_pm5560_metric_catalog.sql", "0019_nullable_device_gateway_site_guard.sql", "0020_electrical_report_template.sql"]) {
+      const migration = await readFile(new URL(`../drizzle/${filename}`, import.meta.url), "utf8");
+      await client.exec(migration.replaceAll("--> statement-breakpoint", ""));
+    }
+    const database = drizzle(client, { schema }) as unknown as Cam5Database;
+    await seedCam5Database(database, { adminEmail: "admin@example.test", adminName: "Administrador", adminPassword: "Cam5-Prueba-2026", log: false });
+    const [site] = await database.select().from(schema.sites).limit(1);
+    const [gateway] = await database.select().from(schema.gateways).limit(1);
+    const [user] = await database.select().from(schema.users).limit(1);
+    const [template] = await database.select().from(schema.reportTemplates).where(eq(schema.reportTemplates.key, "electrical-summary")).limit(1);
+    assert.ok(template);
+
+    const [asset] = await database.insert(schema.assets).values({
+      siteId: site.id,
+      code: "TAB-REPORT",
+      name: "Tablero reporte",
+      assetType: "electrical_point",
+      nominalVoltageKv: "0.4",
+      metadata: {
+        electrical: {
+          alarms: {
+            staleAfterSeconds: 30,
+            thresholdDelaySeconds: 0,
+            voltageMinV: 210,
+            voltageMaxV: 250,
+            currentMaxA: 80,
+            frequencyMinHz: 49,
+            frequencyMaxHz: 51,
+            powerFactorMin: 0.9,
+          },
+        },
+      },
+    }).returning();
+
+    const [device] = await database.insert(schema.devices).values({
+      assetId: asset.id,
+      code: "PM5560-REPORT",
+      name: "PM5560 reporte",
+      deviceType: "power_meter",
+      driver: "schneider_pm5560",
+      protocol: "modbus_rtu",
+      unitId: 1,
+    }).returning();
+
+    const definitions = await database.select().from(schema.metricDefinitions);
+    const byKey = new Map(definitions.map((definition) => [definition.key, definition]));
+    const keys = [
+      "electrical.voltage.l1_n",
+      "electrical.voltage.l2_n",
+      "electrical.voltage.l3_n",
+      "electrical.current.l1",
+      "electrical.power.active.total",
+      "electrical.power_factor",
+      "electrical.frequency",
+      "electrical.energy.import",
+      "electrical.demand.active",
+    ];
+    const metricIds = new Map<string, string>();
+    for (const [index, key] of keys.entries()) {
+      const definition = byKey.get(key);
+      assert.ok(definition, "Falta definición " + key);
+      const [metric] = await database.insert(schema.deviceMetrics).values({
+        deviceId: device.id,
+        metricDefinitionId: definition.id,
+        code: "REPORT-" + index,
+        name: definition.name,
+        displayOrder: index,
+      }).returning();
+      metricIds.set(key, metric.id);
+    }
+
+    const samples = [
+      {
+        at: "2026-10-01T10:00:00.000Z",
+        values: {
+          "electrical.voltage.l1_n": 230,
+          "electrical.voltage.l2_n": 229,
+          "electrical.voltage.l3_n": 231,
+          "electrical.current.l1": 42,
+          "electrical.power.active.total": 24,
+          "electrical.power_factor": 0.96,
+          "electrical.frequency": 49.98,
+          "electrical.energy.import": 1000,
+          "electrical.demand.active": 28,
+        },
+      },
+      {
+        at: "2026-10-01T11:00:00.000Z",
+        values: {
+          "electrical.voltage.l1_n": 232,
+          "electrical.voltage.l2_n": 230,
+          "electrical.voltage.l3_n": 231.5,
+          "electrical.current.l1": 55,
+          "electrical.power.active.total": 26,
+          "electrical.power_factor": 0.94,
+          "electrical.frequency": 50.04,
+          "electrical.energy.import": 1010,
+          "electrical.demand.active": 31,
+        },
+      },
+    ];
+
+    for (const [index, sample] of samples.entries()) {
+      const [batch] = await database.insert(schema.telemetryBatches).values({
+        gatewayId: gateway.id,
+        deviceId: device.id,
+        batchKey: "electrical-report-" + index,
+        gatewayBootId: "report-boot",
+        gatewaySequence: index + 1,
+        sentAt: new Date(sample.at),
+        sampledAt: new Date(sample.at),
+        receivedAt: new Date(sample.at),
+        quality: "good",
+        timeQuality: "synced",
+        metricCount: keys.length,
+        success: true,
+      }).returning();
+      await database.insert(schema.metricReadings).values(keys.map((key) => ({
+        batchId: batch.id,
+        deviceMetricId: metricIds.get(key)!,
+        recordedAt: new Date(sample.at),
+        receivedAt: new Date(sample.at),
+        valueNumeric: String(sample.values[key as keyof typeof sample.values]),
+        quality: "good" as const,
+        timeQuality: "synced" as const,
+        sequence: index + 1,
+      })));
+    }
+
+    await database.insert(schema.alarms).values({
+      siteId: site.id,
+      assetId: asset.id,
+      code: "EL-REPORT-CURRENT",
+      kind: "threshold",
+      severity: "critical",
+      status: "resolved",
+      title: "Sobrecorriente L1 · PM5560-REPORT",
+      triggerValue: "85",
+      thresholdValue: "80",
+      openedAt: new Date("2026-10-01T10:30:00.000Z"),
+      lastObservedAt: new Date("2026-10-01T10:40:00.000Z"),
+      resolvedAt: new Date("2026-10-01T10:40:00.000Z"),
+      context: { source: "electrical", subtype: "current_high", deviceCode: "PM5560-REPORT", metricKey: "electrical.current.l1", phase: "L1" },
+    });
+
+    const result = await createReportRun(database, {
+      templateId: template.id,
+      assetId: asset.id,
+      requestedBy: user.id,
+      generatedBy: user.displayName,
+      periodStart: new Date("2026-10-01T00:00:00.000Z"),
+      periodEnd: new Date("2026-10-02T00:00:00.000Z"),
+      format: "pdf",
+    });
+
+    assert.equal(result.snapshot.asset.assetType, "electrical_point");
+    assert.equal(result.snapshot.electrical?.meterCount, 1);
+    assert.equal(result.snapshot.electrical?.meters[0]?.voltageMinimumV, 229);
+    assert.equal(result.snapshot.electrical?.meters[0]?.voltageMaximumV, 232);
+    assert.equal(result.snapshot.electrical?.meters[0]?.activePowerAverageKw, 25);
+    assert.equal(result.snapshot.electrical?.meters[0]?.energyImportDeltaKwh, 10);
+    assert.equal(result.snapshot.electrical?.meters[0]?.peakDemandKw, 31);
+    assert.equal(result.snapshot.summary.alarmCount, 1);
+    assert.equal(result.snapshot.summary.criticalCount, 1);
+    assert.equal(result.snapshot.alarms[0]?.channelCode, "PM5560-REPORT");
+  } finally {
+    await client.close();
+  }
+});
