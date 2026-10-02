@@ -34,6 +34,7 @@ const expectedTables = [
   "notification_endpoints",
   "notification_deliveries",
   "notification_policies",
+  "operational_condition_states",
   "password_reset_tokens",
   "permissions",
   "physical_inputs",
