@@ -37,6 +37,9 @@ jobs:
           db/seed.ts
           db/hoit-metrics.ts
           db/pm5560.ts
+          db/dse8660.ts
+          db/ats-alarm-engine.ts
+          db/ats.ts
           db/operational-condition-engine.ts
           db/electrical-alarm-engine.ts
           db/electrical.ts
@@ -53,6 +56,8 @@ jobs:
           app/cold-chain-view.tsx
           app/cold-chain-detail.tsx
           app/electrical-view.tsx
+          app/api/v1/ats
+          app/ats-view.tsx
           app/electrical-history.tsx
           app/reports-view.tsx
           tests/gateway-ingest-v2.test.ts
