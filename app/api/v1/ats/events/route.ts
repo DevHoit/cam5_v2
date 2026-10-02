@@ -75,15 +75,15 @@ export async function GET(request: NextRequest) {
       }, { headers: { "Cache-Control": "no-store" } });
     }
 
-    const stateValue = sql<string | null>\`
+    const stateValue = sql<string | null>`
       case
-        when \${metricDefinitions.dataType} = 'boolean' then
-          case when \${metricReadings.valueBoolean} is true then 'true'
-               when \${metricReadings.valueBoolean} is false then 'false'
+        when ${metricDefinitions.dataType} = 'boolean' then
+          case when ${metricReadings.valueBoolean} is true then 'true'
+               when ${metricReadings.valueBoolean} is false then 'false'
                else null end
-        else \${metricReadings.valueText}
+        else ${metricReadings.valueText}
       end
-    \`;
+    `;
     const ordered = db.select({
       recordedAt: metricReadings.recordedAt,
       deviceCode: devices.code,
@@ -91,10 +91,10 @@ export async function GET(request: NextRequest) {
       metricKey: metricDefinitions.key,
       metricName: metricDefinitions.name,
       currentValue: stateValue.as("current_value"),
-      previousValue: sql<string | null>\`lag(\${stateValue}) over (
-        partition by \${metricReadings.deviceMetricId}
-        order by \${metricReadings.recordedAt}
-      )\`.as("previous_value"),
+      previousValue: sql<string | null>`lag(${stateValue}) over (
+        partition by ${metricReadings.deviceMetricId}
+        order by ${metricReadings.recordedAt}
+      )`.as("previous_value"),
       quality: metricReadings.quality,
     }).from(metricReadings)
       .innerJoin(deviceMetrics, eq(deviceMetrics.id, metricReadings.deviceMetricId))
@@ -108,7 +108,7 @@ export async function GET(request: NextRequest) {
       .as("ats_state_ordered");
 
     const events = await db.select().from(ordered)
-      .where(sql\`\${ordered.currentValue} is distinct from \${ordered.previousValue}\`)
+      .where(sql`${ordered.currentValue} is distinct from ${ordered.previousValue}`)
       .orderBy(asc(ordered.recordedAt))
       .limit(1000);
 
