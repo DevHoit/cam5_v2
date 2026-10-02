@@ -2225,3 +2225,5 @@ button.module-table-row { width: 100%; }
   .cold-operation-actions { justify-content: stretch; }
   .cold-operation-actions button { width: 100%; justify-content: center; }
 }
+
+.cold-history-resolution { margin: -4px 0 12px; color: var(--muted); font-size: .76rem; }
