@@ -27,6 +27,20 @@ export function reportCsv(snapshot: ReportSnapshot) {
     ["CANALES"],
     ["Código", "Nombre", "Zona", "Último", "Mínimo", "Promedio", "Máximo", "Unidad", "Muestras", "Muestras válidas", "Última lectura UTC"],
     ...snapshot.channels.map((channel) => [channel.code, channel.name, channel.zone, channel.latest, channel.minimum, channel.average, channel.maximum, channel.unit, channel.sampleCount, channel.validSampleCount, channel.latestAt]),
+    ...(snapshot.coldChain ? [
+      [],
+      ["CADENA DE FRÍO"],
+      ["Rango mínimo °C", snapshot.coldChain.minimumC],
+      ["Rango máximo °C", snapshot.coldChain.maximumC],
+      ["Objetivo °C", snapshot.coldChain.targetC],
+      ["Excursiones térmicas", snapshot.coldChain.excursionCount],
+      ["Tiempo fuera de rango (s)", snapshot.coldChain.totalOutOfRangeSeconds],
+      ["Gaps de datos", snapshot.coldChain.dataGapCount],
+      [],
+      ["EXCURSIONES"],
+      ["Sensor", "Nombre", "Tipo", "Inicio UTC", "Fin UTC", "Duración (s)", "Extremo °C", "Activa"],
+      ...snapshot.coldChain.excursions.map((item) => [item.sensorCode, item.sensorName, item.type, item.startedAt, item.endedAt, item.durationSeconds, item.extremeC, item.active ? "Sí" : "No"]),
+    ] : []),
     [],
     ["ALARMAS"],
     ["Código", "Título", "Severidad", "Estado", "Canal", "Valor", "Umbral", "Apertura UTC"],
@@ -70,7 +84,7 @@ export async function reportPdf(snapshot: ReportSnapshot) {
     page = document.addPage(pageSize);
     y = pageSize[1] - margin;
     page.drawText("HoitLive Core", { x: margin, y, font: bold, size: 17, color: rgb(0.05, 0.12, 0.18) });
-    page.drawText("Reporte de monitoreo de condición eléctrica", { x: margin, y: y - 17, font: regular, size: 8.5, color: rgb(0.38, 0.43, 0.48) });
+    page.drawText(snapshot.coldChain ? "Reporte de cadena de frío" : "Reporte de monitoreo de condición eléctrica", { x: margin, y: y - 17, font: regular, size: 8.5, color: rgb(0.38, 0.43, 0.48) });
     page.drawLine({ start: { x: margin, y: y - 28 }, end: { x: pageSize[0] - margin, y: y - 28 }, thickness: 1.2, color: rgb(0.05, 0.49, 0.7) });
     y -= 48;
   };
@@ -97,24 +111,46 @@ export async function reportPdf(snapshot: ReportSnapshot) {
   text(snapshot.template.description ?? "Informe operacional consolidado.", { size: 10, color: rgb(0.38, 0.43, 0.48), gap: 14 });
   row("Cliente", snapshot.client.name);
   row("Sitio", snapshot.site.name);
-  row("Punto de medición", `${snapshot.asset.code} - ${snapshot.asset.name}`);
+  row(snapshot.coldChain ? "Cámara" : "Punto de medición", `${snapshot.asset.code} - ${snapshot.asset.name}`);
   row("Periodo", `${new Date(snapshot.period.start).toLocaleString("es-CL", { timeZone: snapshot.site.timezone })} a ${new Date(snapshot.period.end).toLocaleString("es-CL", { timeZone: snapshot.site.timezone })}`);
   row("Generado por", snapshot.generatedBy);
   row("Generado", new Date(snapshot.generatedAt).toLocaleString("es-CL", { timeZone: snapshot.site.timezone }));
 
   section("Resumen ejecutivo");
   row("Condición", snapshot.summary.condition === "critical" ? "Crítica" : snapshot.summary.condition === "warning" ? "Advertencia" : "Normal");
-  row("Canales incluidos", snapshot.summary.channelCount);
+  row(snapshot.coldChain ? "Sensores incluidos" : "Canales incluidos", snapshot.summary.channelCount);
   row("Muestras recibidas", snapshot.summary.sampleCount);
   row("Calidad de datos", snapshot.summary.qualityPercent === null ? "Sin muestras" : `${snapshot.summary.qualityPercent}%`);
   row("Alarmas del periodo", `${snapshot.summary.alarmCount} (${snapshot.summary.criticalCount} críticas, ${snapshot.summary.warningCount} advertencias)`);
 
-  section("Resumen por canal");
+  if (snapshot.coldChain) {
+    section("Cadena de frío");
+    row("Rango configurado", snapshot.coldChain.minimumC === null || snapshot.coldChain.maximumC === null
+      ? "Sin rango configurado"
+      : `${snapshot.coldChain.minimumC} °C a ${snapshot.coldChain.maximumC} °C`);
+    row("Objetivo", snapshot.coldChain.targetC === null ? "Sin objetivo configurado" : `${snapshot.coldChain.targetC} °C`);
+    row("Excursiones térmicas", snapshot.coldChain.excursionCount);
+    row("Tiempo total fuera de rango", `${Math.round(snapshot.coldChain.totalOutOfRangeSeconds / 60)} min`);
+    row("Gaps de datos", snapshot.coldChain.dataGapCount);
+  }
+
+  section(snapshot.coldChain ? "Resumen por sensor" : "Resumen por canal");
   if (!snapshot.channels.length) text("No hay canales habilitados para este punto de medición.");
   for (const channel of snapshot.channels) {
     ensure(38);
     text(`${channel.code} - ${channel.name}`, { size: 9.5, font: bold, gap: 2 });
     text(`Último ${channel.latest ?? "s/d"} ${channel.unit} | Mín ${channel.minimum ?? "s/d"} | Prom ${channel.average === null ? "s/d" : channel.average.toFixed(2)} | Máx ${channel.maximum ?? "s/d"} | ${channel.sampleCount} muestras`, { size: 8, color: rgb(0.4, 0.44, 0.48), gap: 6 });
+  }
+
+  if (snapshot.coldChain) {
+    section("Excursiones y disponibilidad");
+    if (!snapshot.coldChain.excursions.length) text("No se detectaron excursiones térmicas ni gaps de datos en el periodo seleccionado.");
+    for (const item of snapshot.coldChain.excursions.slice(0, 100)) {
+      ensure(34);
+      const type = item.type === "high" ? "Alta temperatura" : item.type === "low" ? "Baja temperatura" : "Sin telemetría";
+      text(`${item.sensorCode} - ${type}`, { size: 9, font: bold, gap: 2 });
+      text(`${new Date(item.startedAt).toLocaleString("es-CL", { timeZone: snapshot.site.timezone })} | ${Math.round(item.durationSeconds / 60)} min | ${item.extremeC === null ? "sin valor térmico" : `extremo ${item.extremeC} °C`}`, { size: 8, color: rgb(0.4, 0.44, 0.48), gap: 6 });
+    }
   }
 
   section("Alarmas del periodo");
