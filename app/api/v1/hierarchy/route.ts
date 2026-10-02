@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { and, count, desc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, count, eq, inArray } from "drizzle-orm";
 import { COMMISSIONING_CHECKLIST } from "../../../../db/commissioning-engine";
 import {
   alarms,
@@ -13,10 +13,7 @@ import {
   gateways,
   ingestionBatches,
   readingProfiles,
-  roles,
   sites,
-  userClientAssignments,
-  userRoleAssignments,
   workOrders,
 } from "../../../../db/schema";
 import { apiErrorResponse, ApiError, requestMetadata, requireApiSession } from "../_lib/auth";
@@ -54,35 +51,38 @@ function parseResource(body: Record<string, unknown>) {
 export async function GET(request: NextRequest) {
   try {
     const { db, user } = await requireApiSession(request, "assets.read");
-    const now = new Date();
-    const [clientRows, siteMembershipRows] = await Promise.all([
-      db.select({ id: clients.id, code: clients.code, name: clients.name, legalName: clients.legalName, taxId: clients.taxId, contactEmail: clients.contactEmail, active: clients.active, roleKey: roles.key, roleName: roles.name })
-        .from(userClientAssignments)
-        .innerJoin(clients, eq(clients.id, userClientAssignments.clientId))
-        .innerJoin(roles, eq(roles.id, userClientAssignments.roleId))
-        .where(eq(userClientAssignments.userId, user.id))
-        .orderBy(clients.name),
-      db.select({
-        id: sites.id,
-        code: sites.code,
-        name: sites.name,
-        description: sites.description,
-        timezone: sites.timezone,
-        active: sites.active,
-        clientId: clients.id,
-        clientCode: clients.code,
-        clientName: clients.name,
-        roleKey: roles.key,
-        roleName: roles.name,
-      }).from(userRoleAssignments)
-        .innerJoin(roles, eq(roles.id, userRoleAssignments.roleId))
-        .innerJoin(sites, eq(sites.id, userRoleAssignments.siteId))
-        .innerJoin(clients, eq(clients.id, sites.clientId))
-        .where(and(eq(userRoleAssignments.userId, user.id), or(isNull(userRoleAssignments.expiresAt), gt(userRoleAssignments.expiresAt, now))))
-        .orderBy(sites.name, desc(sql<number>`case ${roles.key} when 'administrator' then 4 when 'engineer' then 3 when 'operator' then 2 else 1 end`)),
+    const siteIds = user.sites.map((site) => site.id);
+    const clientIds = [...new Set(user.clientScopes.map((client) => client.id))];
+    const [clientBaseRows, siteBaseRows] = await Promise.all([
+      clientIds.length
+        ? db.select({ id: clients.id, code: clients.code, name: clients.name, legalName: clients.legalName, taxId: clients.taxId, contactEmail: clients.contactEmail, active: clients.active })
+            .from(clients).where(inArray(clients.id, clientIds)).orderBy(clients.name)
+        : Promise.resolve([]),
+      siteIds.length
+        ? db.select({
+            id: sites.id,
+            code: sites.code,
+            name: sites.name,
+            description: sites.description,
+            timezone: sites.timezone,
+            active: sites.active,
+            clientId: clients.id,
+            clientCode: clients.code,
+            clientName: clients.name,
+          }).from(sites)
+            .innerJoin(clients, eq(clients.id, sites.clientId))
+            .where(inArray(sites.id, siteIds))
+            .orderBy(clients.name, sites.name)
+        : Promise.resolve([]),
     ]);
-    const managedSites = siteMembershipRows.filter((site, index, rows) => rows.findIndex((candidate) => candidate.id === site.id) === index);
-    const siteIds = managedSites.map((site) => site.id);
+    const clientRows = clientBaseRows.map((client) => {
+      const scope = user.clientScopes.find((item) => item.id === client.id);
+      return { ...client, roleKey: scope?.roleKey ?? "viewer", roleName: scope?.roleName ?? "Solo lectura" };
+    });
+    const managedSites = siteBaseRows.map((site) => {
+      const scope = user.sites.find((item) => item.id === site.id);
+      return { ...site, roleKey: scope?.roleKey ?? "viewer", roleName: scope?.roleName ?? "Solo lectura" };
+    });
     const [pointCounts, gatewayCounts, controllerCounts, pointRows, gatewayRows, controllerRows] = await Promise.all([
       db.select({ siteId: assets.siteId, value: count() }).from(assets).where(inArray(assets.siteId, siteIds)).groupBy(assets.siteId),
       db.select({ siteId: gateways.siteId, value: count() }).from(gateways).where(inArray(gateways.siteId, siteIds)).groupBy(gateways.siteId),
@@ -172,7 +172,7 @@ export async function POST(request: NextRequest) {
     const created = await db.transaction(async (tx) => {
       let record: Record<string, unknown>;
       if (resource === "client") {
-        requirePermission(user.permissions, "users.manage");
+        requirePermission(user.permissions, "clients.manage");
         const [row] = await tx.insert(clients).values({
           code,
           name,
@@ -180,17 +180,14 @@ export async function POST(request: NextRequest) {
           taxId: optionalText(body, "taxId"),
           contactEmail: optionalText(body, "contactEmail"),
         }).returning();
-        const [role] = await tx.select({ id: roles.id }).from(roles).where(eq(roles.key, user.roleKey)).limit(1);
-        if (!role) throw new ApiError(409, "No fue posible asignar el acceso al cliente.");
-        await tx.insert(userClientAssignments).values({ userId: user.id, clientId: row.id, roleId: role.id, grantedBy: user.id });
         record = row;
       } else if (resource === "site") {
-        requirePermission(user.permissions, "users.manage");
+        requirePermission(user.permissions, "sites.manage");
         const clientId = textField(body, "clientId", "El cliente");
-        const [membership] = await tx.select({ id: userClientAssignments.id }).from(userClientAssignments)
-          .innerJoin(clients, eq(clients.id, userClientAssignments.clientId))
-          .where(and(eq(userClientAssignments.userId, user.id), eq(userClientAssignments.clientId, clientId), eq(clients.active, true))).limit(1);
-        if (!membership) throw new ApiError(403, "No tienes acceso al cliente indicado.");
+        const manageableClientIds = user.clientScopes
+          .filter((scope) => scope.roleKey === "platform_admin" || scope.roleKey === "client_admin")
+          .map((scope) => scope.id);
+        if (!manageableClientIds.includes(clientId)) throw new ApiError(403, "No administras el cliente indicado.");
         const [row] = await tx.insert(sites).values({
           clientId,
           code,
@@ -198,9 +195,6 @@ export async function POST(request: NextRequest) {
           timezone: optionalText(body, "timezone") ?? "America/Santiago",
           description: optionalText(body, "description"),
         }).returning();
-        const [role] = await tx.select({ id: roles.id }).from(roles).where(eq(roles.key, user.roleKey)).limit(1);
-        if (!role) throw new ApiError(409, "No fue posible asignar el acceso al nuevo sitio.");
-        await tx.insert(userRoleAssignments).values({ userId: user.id, roleId: role.id, siteId: row.id, grantedBy: user.id });
         record = row;
       } else if (resource === "point") {
         requirePermission(user.permissions, "assets.write");
@@ -292,10 +286,8 @@ export async function PATCH(request: NextRequest) {
     const updated = await db.transaction(async (tx) => {
       let record: Record<string, unknown> | undefined;
       if (resource === "client") {
-        requirePermission(user.permissions, "users.manage");
-        const [membership] = await tx.select({ id: userClientAssignments.id }).from(userClientAssignments)
-          .where(and(eq(userClientAssignments.userId, user.id), eq(userClientAssignments.clientId, id))).limit(1);
-        if (!membership) throw new ApiError(403, "No tienes acceso al cliente indicado.");
+        requirePermission(user.permissions, "clients.manage");
+        if (!user.clientScopes.some((scope) => scope.id === id && scope.roleKey === "platform_admin")) throw new ApiError(403, "No administras el cliente indicado.");
         if (body.active === false && id === user.clientId) throw new ApiError(409, "Cambia primero a otro cliente antes de desactivar el contexto activo.");
         [record] = await tx.update(clients).set({
           ...(typeof body.name === "string" ? { name: textField(body, "name", "El nombre") } : {}),
@@ -306,10 +298,9 @@ export async function PATCH(request: NextRequest) {
           updatedAt: new Date(),
         }).where(eq(clients.id, id)).returning();
       } else if (resource === "site") {
-        requirePermission(user.permissions, "users.manage");
-        const [membership] = await tx.select({ id: userRoleAssignments.id }).from(userRoleAssignments)
-          .where(and(eq(userRoleAssignments.userId, user.id), eq(userRoleAssignments.siteId, id), or(isNull(userRoleAssignments.expiresAt), gt(userRoleAssignments.expiresAt, new Date())))).limit(1);
-        if (!membership) throw new ApiError(403, "No tienes acceso al sitio indicado.");
+        requirePermission(user.permissions, "sites.manage");
+        const siteScope = user.sites.find((scope) => scope.id === id);
+        if (!siteScope || (siteScope.roleKey !== "platform_admin" && siteScope.roleKey !== "client_admin")) throw new ApiError(403, "No administras el sitio indicado.");
         if (body.active === false && id === user.siteId) throw new ApiError(409, "Cambia primero a otro sitio antes de desactivar el contexto activo.");
         [record] = await tx.update(sites).set({
           ...(typeof body.name === "string" ? { name: textField(body, "name", "El nombre") } : {}),
@@ -388,19 +379,16 @@ export async function DELETE(request: NextRequest) {
     await db.transaction(async (tx) => {
       let record: Record<string, unknown> | undefined;
       if (resource === "client") {
-        requirePermission(user.permissions, "users.manage");
-        const [membership] = await tx.select({ id: userClientAssignments.id }).from(userClientAssignments)
-          .where(and(eq(userClientAssignments.userId, user.id), eq(userClientAssignments.clientId, id))).limit(1);
-        if (!membership) throw new ApiError(403, "No tienes acceso al cliente indicado.");
+        requirePermission(user.permissions, resource === "client" ? "clients.manage" : "sites.manage");
+        if (!user.clientScopes.some((scope) => scope.id === id && scope.roleKey === "platform_admin")) throw new ApiError(403, "No administras el cliente indicado.");
         const [dependencies] = await tx.select({ value: count() }).from(sites).where(eq(sites.clientId, id));
         if (Number(dependencies.value)) throw new ApiError(409, "El cliente conserva sitios. Desactívalo o elimina primero sus sitios vacíos.");
         [record] = await tx.delete(clients).where(eq(clients.id, id)).returning();
       } else if (resource === "site") {
-        requirePermission(user.permissions, "users.manage");
+        requirePermission(user.permissions, resource === "client" ? "clients.manage" : "sites.manage");
         if (id === user.siteId) throw new ApiError(409, "Cambia primero a otro sitio antes de eliminar el contexto activo.");
-        const [membership] = await tx.select({ id: userRoleAssignments.id }).from(userRoleAssignments)
-          .where(and(eq(userRoleAssignments.userId, user.id), eq(userRoleAssignments.siteId, id), or(isNull(userRoleAssignments.expiresAt), gt(userRoleAssignments.expiresAt, new Date())))).limit(1);
-        if (!membership) throw new ApiError(403, "No tienes acceso al sitio indicado.");
+        const siteScope = user.sites.find((scope) => scope.id === id);
+        if (!siteScope || (siteScope.roleKey !== "platform_admin" && siteScope.roleKey !== "client_admin")) throw new ApiError(403, "No administras el sitio indicado.");
         const [[pointCount], [gatewayCount], [auditCount]] = await Promise.all([
           tx.select({ value: count() }).from(assets).where(eq(assets.siteId, id)),
           tx.select({ value: count() }).from(gateways).where(eq(gateways.siteId, id)),
