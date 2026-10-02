@@ -60,7 +60,13 @@ type ColdChainHistory = {
       temperatureHysteresisC: number;
     };
   };
-  range: { from: string; to: string };
+  range: {
+    from: string;
+    to: string;
+    source?: "raw" | "stored_aggregate" | "hybrid" | "raw_grouped_fallback";
+    bucketSeconds?: number | null;
+    excursionSource?: "raw_telemetry" | "persisted_alarms";
+  };
   summary: {
     minimumC: number | null;
     maximumC: number | null;
@@ -125,6 +131,10 @@ function HistoryChart({ data }: { data: ColdChainHistory }) {
   const usableH = height - pad.top - pad.bottom;
   const from = new Date(data.range.from).getTime();
   const to = new Date(data.range.to).getTime();
+  const gapThresholdSeconds = Math.max(
+    data.chamber.config.staleAfterSeconds,
+    data.range.bucketSeconds ? Math.ceil(data.range.bucketSeconds * 1.5) : 0,
+  );
 
   const allValues = data.sensors.flatMap((sensor) => sensor.points)
     .filter((point) => point.valueC !== null && point.quality === "good")
@@ -163,7 +173,7 @@ function HistoryChart({ data }: { data: ColdChainHistory }) {
         for (let index = 0; index < valid.length; index += 1) {
           const point = valid[index];
           const previous = index > 0 ? valid[index - 1] : null;
-          if (previous && new Date(point.recordedAt).getTime() - new Date(previous.recordedAt).getTime() > data.chamber.config.staleAfterSeconds * 1000) {
+          if (previous && new Date(point.recordedAt).getTime() - new Date(previous.recordedAt).getTime() > gapThresholdSeconds * 1000) {
             if (chunk.length) chunks.push(chunk);
             chunk = [];
           }
@@ -339,6 +349,7 @@ export function ColdChainDetail({
 
         {(tab === "summary" || tab === "history") && <section className="cold-detail-section">
           <div className="cold-detail-heading"><Thermometer size={18} /><div><h3>Histórico de temperatura</h3><p>Los saltos sin telemetría se muestran como discontinuidades; no se interpolan.</p></div></div>
+          {data.range.bucketSeconds && <p className="cold-history-resolution">Resolución de visualización: {data.range.bucketSeconds >= 3600 ? Math.round(data.range.bucketSeconds / 3600) + " h" : Math.round(data.range.bucketSeconds / 60) + " min"}. Las excursiones se obtienen de alarmas operacionales persistidas.</p>}
           <HistoryChart data={data} />
         </section>}
 
