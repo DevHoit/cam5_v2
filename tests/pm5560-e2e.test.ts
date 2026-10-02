@@ -28,7 +28,7 @@ const migrations = [
   "0015_operational_condition_states.sql",
   "0016_cold_chain_report_template.sql",
   "0017_generic_metric_aggregates.sql",
-  "0018_pm5560_metric_catalog.sql",
+  "0018_pm5560_metric_catalog.sql", "0019_nullable_device_gateway_site_guard.sql",
 ];
 
 async function database() {
