@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { and, eq, inArray } from "drizzle-orm";
+import { evaluateColdChainAsset } from "../../../../../db/cold-chain-alarm-engine";
 import {
   assets,
   auditLogs,
@@ -114,6 +115,44 @@ export async function POST(request: NextRequest) {
       });
 
       return Response.json({ chamber: row }, { status: 201 });
+    }
+
+    if (action === "set_maintenance") {
+      if (!user.permissions.includes("assets.write")) throw new ApiError(403, "No tienes permisos para cambiar el estado operacional.");
+      const chamberId = text(body.chamberId, "La cámara");
+      if (typeof body.enabled !== "boolean") throw new ApiError(400, "enabled debe ser booleano.");
+
+      const [current] = await db.select().from(assets).where(and(
+        eq(assets.id, chamberId),
+        eq(assets.siteId, user.siteId),
+        eq(assets.assetType, "cold_room"),
+        eq(assets.active, true),
+      )).limit(1);
+      if (!current) throw new ApiError(404, "La cámara no existe en el sitio activo.");
+
+      const nextState = body.enabled ? "maintenance" : "offline";
+      const [updated] = await db.update(assets).set({
+        state: nextState,
+        updatedAt: new Date(),
+      }).where(eq(assets.id, chamberId)).returning();
+
+      await db.insert(auditLogs).values({
+        siteId: user.siteId,
+        actorUserId: user.id,
+        action: body.enabled ? "cold_chain.maintenance.enable" : "cold_chain.maintenance.disable",
+        resourceType: "asset",
+        resourceId: chamberId,
+        ipAddress: meta.ipAddress,
+        userAgent: meta.userAgent,
+        before: current,
+        after: updated,
+      });
+
+      if (!body.enabled) {
+        await evaluateColdChainAsset(db, chamberId, new Date());
+      }
+
+      return Response.json({ chamber: updated }, { headers: { "Cache-Control": "no-store" } });
     }
 
     if (action === "create_sensor") {
