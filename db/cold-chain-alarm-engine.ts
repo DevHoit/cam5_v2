@@ -293,7 +293,7 @@ export async function evaluateColdChainAsset(db: Cam5Database, assetId: string, 
       value: Number.isFinite(ageSeconds) ? ageSeconds : null,
       threshold: config.staleAfterSeconds,
       delaySeconds: 0,
-      context: { sensorCode: device.code, ageSeconds: Number.isFinite(ageSeconds) ? ageSeconds : null, staleAfterSeconds: config.staleAfterSeconds },
+      context: { subtype: "communication_loss", sensorCode: device.code, ageSeconds: Number.isFinite(ageSeconds) ? ageSeconds : null, staleAfterSeconds: config.staleAfterSeconds },
       maintenance: chamber.state === "maintenance",
     });
 
