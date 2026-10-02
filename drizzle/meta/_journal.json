@@ -127,6 +127,13 @@
       "when": 1790961000000,
       "tag": "0017_generic_metric_aggregates",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1790962500000,
+      "tag": "0018_pm5560_metric_catalog",
+      "breakpoints": true
     }
   ]
 }
