@@ -2112,3 +2112,26 @@ button.module-table-row { width: 100%; }
   .cold-sensor-row { grid-template-columns: 12px 1fr auto; }
   .cold-sensor-health { grid-column: 2 / -1; }
 }
+
+.cold-chain-toolbar { display: flex; justify-content: flex-end; }
+.cold-room-header-actions { display: flex; align-items: center; gap: 8px; }
+.cold-room-action { width: 32px; height: 32px; display: grid; place-items: center; border: 1px solid var(--border); border-radius: 10px; background: transparent; cursor: pointer; }
+.cold-room-footer { display: flex; justify-content: flex-end; padding: 12px 16px 16px; border-top: 1px solid var(--border); }
+.cold-config-backdrop { position: fixed; inset: 0; z-index: 120; background: rgba(0,0,0,.48); display: grid; place-items: center; padding: 20px; }
+.cold-config-dialog { width: min(720px, 100%); max-height: 90vh; overflow: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 18px; box-shadow: 0 22px 70px rgba(0,0,0,.22); }
+.cold-config-dialog > header { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; padding: 18px 20px; border-bottom: 1px solid var(--border); }
+.cold-config-dialog > header h2 { margin: 3px 0 0; }
+.cold-config-dialog > header button { border: 0; background: transparent; cursor: pointer; }
+.cold-config-form { display: grid; gap: 14px; padding: 18px 20px; }
+.cold-config-form label { display: grid; gap: 6px; font-size: .82rem; }
+.cold-config-form label > span { color: var(--muted); }
+.cold-config-form input, .cold-config-form select { width: 100%; min-height: 40px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: inherit; }
+.cold-config-columns { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.cold-config-context { margin: 0; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); color: var(--muted); }
+.cold-config-error { margin: 0 20px; display: flex; gap: 8px; align-items: flex-start; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); }
+.cold-config-dialog > footer { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 20px 20px; border-top: 1px solid var(--border); }
+@media (max-width: 720px) {
+  .cold-config-columns { grid-template-columns: 1fr; }
+  .cold-chain-toolbar { justify-content: stretch; }
+  .cold-chain-toolbar .primary-button { width: 100%; justify-content: center; }
+}
