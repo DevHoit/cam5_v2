@@ -17,8 +17,8 @@ export const dynamic = "force-dynamic";
 
 const DEFAULT_RANGE_MS = 24 * 60 * 60 * 1000;
 const MAX_RANGE_MS = 31 * 24 * 60 * 60 * 1000;
-const RAW_RANGE_MS = 30 * 60 * 60 * 1000;
-const MAX_RAW_POINTS = 25_000;
+const RAW_RANGE_MS = 2 * 60 * 60 * 1000;
+const MAX_RAW_POINTS = 50_000;
 
 function parseDate(value: string | null, fallback: Date, label: string) {
   if (!value) return fallback;
@@ -99,7 +99,7 @@ export async function GET(request: NextRequest) {
       totalSamples: number;
     };
     const grouped = new Map<string, HistoryPoint[]>(metricIds.map((id) => [id, []]));
-    let source: "raw" | "stored_aggregate" | "raw_grouped_fallback" = rawMode ? "raw" : "stored_aggregate";
+    let source: "raw" | "stored_aggregate" | "hybrid" | "raw_grouped_fallback" = rawMode ? "raw" : "stored_aggregate";
 
     if (rawMode) {
       const rows = await db.select({
@@ -145,7 +145,7 @@ export async function GET(request: NextRequest) {
         ))
         .orderBy(asc(metricReadingAggregates.bucketStart));
 
-      const coveredMetrics = new Set(aggregateRows.map((row) => row.metricId));
+      const latestAggregateEnd = new Map<string, Date>();
       for (const row of aggregateRows) {
         const totalSamples = Number(row.sampleCount);
         const invalidSamples = Number(row.invalidSampleCount);
@@ -158,13 +158,19 @@ export async function GET(request: NextRequest) {
           validSamples: Math.max(0, totalSamples - invalidSamples),
           totalSamples,
         });
+        const end = new Date(row.recordedAt.getTime() + bucketSeconds * 1000);
+        const previous = latestAggregateEnd.get(row.metricId);
+        if (!previous || end > previous) latestAggregateEnd.set(row.metricId, end);
       }
 
-      const missingMetricIds = metricIds.filter((id) => !coveredMetrics.has(id));
-      if (missingMetricIds.length) {
-        source = "raw_grouped_fallback";
+      const tailFrom = metricIds.reduce((earliest, metricId) => {
+        const candidate = latestAggregateEnd.get(metricId) ?? from;
+        return candidate < earliest ? candidate : earliest;
+      }, to);
+
+      if (tailFrom < to) {
         const bucket = sql<Date>`date_bin(make_interval(secs => ${sql.raw(String(bucketSeconds))}), ${metricReadings.recordedAt}, '1970-01-01 00:00:00+00'::timestamptz)`;
-        const fallbackRows = await db.select({
+        const tailRows = await db.select({
           metricId: metricReadings.deviceMetricId,
           recordedAt: bucket,
           averageValue: sql<string | null>`avg(${metricReadings.valueNumeric}) filter (where ${metricReadings.quality} = 'good')`,
@@ -174,16 +180,18 @@ export async function GET(request: NextRequest) {
           invalidSampleCount: sql<number>`count(*) filter (where ${metricReadings.quality} <> 'good' or ${metricReadings.valueNumeric} is null)::integer`,
         }).from(metricReadings)
           .where(and(
-            inArray(metricReadings.deviceMetricId, missingMetricIds),
-            gte(metricReadings.recordedAt, from),
+            inArray(metricReadings.deviceMetricId, metricIds),
+            gte(metricReadings.recordedAt, tailFrom),
             lte(metricReadings.recordedAt, to),
           ))
           .groupBy(metricReadings.deviceMetricId, bucket)
           .orderBy(asc(bucket));
-        for (const row of fallbackRows) {
+
+        const replace = new Map<string, HistoryPoint>();
+        for (const row of tailRows) {
           const totalSamples = Number(row.sampleCount);
           const invalidSamples = Number(row.invalidSampleCount);
-          grouped.get(row.metricId)?.push({
+          replace.set(row.metricId + ":" + new Date(row.recordedAt).toISOString(), {
             recordedAt: new Date(row.recordedAt),
             valueC: row.averageValue === null ? null : Number(row.averageValue),
             minimumC: row.minimumValue === null ? null : Number(row.minimumValue),
@@ -193,6 +201,15 @@ export async function GET(request: NextRequest) {
             totalSamples,
           });
         }
+        for (const metricId of metricIds) {
+          const existing = grouped.get(metricId) ?? [];
+          const byBucket = new Map(existing.map((point) => [metricId + ":" + point.recordedAt.toISOString(), point]));
+          for (const [key, point] of replace) if (key.startsWith(metricId + ":")) byBucket.set(key, point);
+          grouped.set(metricId, [...byBucket.values()]);
+        }
+
+        if (!aggregateRows.length) source = "raw_grouped_fallback";
+        else if (tailRows.length) source = "hybrid";
       }
     }
 
@@ -323,7 +340,13 @@ export async function GET(request: NextRequest) {
       schemaVersion: "2.0",
       serverTime: now.toISOString(),
       chamber: { id: chamber.id, code: chamber.code, name: chamber.name, area: chamber.area, state: chamber.state, config },
-      range: { from: from.toISOString(), to: to.toISOString(), source, bucketSeconds: rawMode ? null : bucketSeconds },
+      range: {
+        from: from.toISOString(),
+        to: to.toISOString(),
+        source,
+        bucketSeconds: rawMode ? null : bucketSeconds,
+        excursionSource: rawMode ? "raw_telemetry" : "persisted_alarms",
+      },
       summary: {
         minimumC: sensorMinimums.length ? Math.min(...sensorMinimums) : null,
         maximumC: sensorMaximums.length ? Math.max(...sensorMaximums) : null,
