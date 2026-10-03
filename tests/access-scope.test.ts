@@ -190,3 +190,25 @@ test("administrative roles expose only the intended management permissions", asy
     await client.close();
   }
 });
+
+
+test("legacy administrator remains usable before migration 0023", async () => {
+  const client = new PGlite();
+  try {
+    for (const filename of beforeScopeMigration) await apply(client, filename);
+    const db = drizzle(client, { schema }) as unknown as Cam5Database;
+
+    const [customer] = await db.insert(schema.clients).values({ code: "LEGACY", name: "Legacy Client" }).returning();
+    const [site] = await db.insert(schema.sites).values({ clientId: customer.id, code: "LEGACY-S", name: "Legacy Site" }).returning();
+    const [legacyRole] = await db.insert(schema.roles).values({ key: "administrator", name: "Administrador", isSystem: true }).returning();
+    const [legacyUser] = await db.insert(schema.users).values({ email: "legacy@example.test", displayName: "Legacy Admin", status: "active" }).returning();
+    await db.insert(schema.userRoleAssignments).values({ userId: legacyUser.id, roleId: legacyRole.id, siteId: site.id });
+
+    const scopes = await resolveUserAccessScopes(db, legacyUser.id);
+    assert.equal(scopes.sites.length, 1);
+    assert.equal(scopes.sites[0]?.siteId, site.id);
+    assert.equal(scopes.sites[0]?.roleKey, "site_admin");
+  } finally {
+    await client.close();
+  }
+});
