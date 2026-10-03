@@ -77,7 +77,7 @@ type DeliveryRecord = {
 type Summary = {
   endpoints: { total: number; active: number; verified: number };
   policies: { total: number; active: number };
-  deliveries: { total24h: number; delivered24h: number; failed24h: number; pending24h: number; successRate: number | null };
+  deliveries: { total24h: number; delivered24h: number; failed24h: number; suppressed24h: number; pending24h: number; successRate: number | null };
 };
 
 const emptyEndpointForm = { name: "", kind: "email" as EndpointKind, recipients: "", channel: "", url: "", destination: "", secretReference: "", enabled: true };
