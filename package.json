@@ -18,7 +18,8 @@
     "db:seed": "tsx db/seed.ts",
     "db:studio": "drizzle-kit studio",
     "gateway:token": "tsx db/create-gateway-token.ts",
-    "ops:cycle": "tsx scripts/run-operations-cycle.ts"
+    "ops:cycle": "tsx scripts/run-operations-cycle.ts",
+    "admin:promote": "tsx scripts/promote-platform-admin.ts"
   },
   "dependencies": {
     "@tabler/icons-react": "^3.46.0",
