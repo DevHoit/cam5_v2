@@ -323,7 +323,7 @@ export function ElectricalView({
         {point.meters.map((meter) => <article className="pm-meter-card" key={meter.id}>
           <div className="pm-meter-heading">
             <div className="pm-meter-icon"><Cpu size={20} /></div>
-            <div><span>{meter.code}</span><h4>{meter.name}</h4><p>{meter.gateway ? meter.gateway.code + " · RS485 · ID " + (meter.unitId ?? "—") : "Sin gateway asociado"}</p></div>
+            <div><span>{meter.code}</span><h4>{meter.name}</h4><p>{meter.gateway ? meter.gateway.code + " · " + String(meter.acquisition.interfaceKey || "RS485") + " · ID " + (meter.unitId ?? "—") : "Sin gateway asociado"}</p></div>
             <div className="pm-meter-actions">
               <button className="secondary-button" onClick={() => setHistoryMeter(meter)}>Histórico</button>
               <div className={meter.online ? "pm-online" : "pm-offline"}>{meter.online ? "Telemetría vigente" : "Sin telemetría vigente"}<small>{age(meter.lastReadingAt)}</small></div>
