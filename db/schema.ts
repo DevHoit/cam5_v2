@@ -972,7 +972,7 @@ export const notificationDeliveries = pgTable("notification_deliveries", {
   index("notification_deliveries_alarm_idx").on(table.alarmId),
   uniqueIndex("notification_deliveries_dedupe_uidx").on(table.dedupeKey),
   check("notification_deliveries_attempt_chk", sql`${table.attemptCount} >= 0 AND ${table.maxAttempts} > 0 AND ${table.attemptCount} <= ${table.maxAttempts}`),
-  check("notification_deliveries_status_chk", sql`${table.status} IN ('queued', 'sending', 'delivered', 'failed')`),
+  check("notification_deliveries_status_chk", sql`${table.status} IN ('queued', 'sending', 'delivered', 'failed', 'suppressed')`),
 ]);
 
 export const integrations = pgTable("integrations", {
