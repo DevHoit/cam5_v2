@@ -31,7 +31,7 @@ const migrations = [
   "0022_ats_report_template.sql",
   "0023_access_scope_roles.sql",
   "0024_notification_suppressed_status.sql",
-  "0025_rs485_bus_addressing.sql",
+  "0025_rs485_bus_addressing.sql", "0026_hoit_v1_control_plane.sql",
 ];
 
 async function database() {
