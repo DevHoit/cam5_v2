@@ -87,7 +87,7 @@ export async function queueAlarmNotifications(
     occurredAt?: Date;
   },
 ) {
-  if (input.severity === "normal" || input.severity === "info") return 0;
+  if (input.severity === "normal") return 0;
   const [alarm] = await db.select({
     id: alarms.id,
     code: alarms.code,
