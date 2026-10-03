@@ -61,6 +61,10 @@ jobs:
           app/api/v1/users/route.ts
           app/api/v1/users/[id]/route.ts
           app/api/v1/system/operations/route.ts
+          app/api/v1/notification-deliveries/route.ts
+          app/api/v1/notifications/summary/route.ts
+          app/notifications-view.tsx
+          scripts/run-operations-cycle.ts
           app/cold-chain-view.tsx
           app/cold-chain-detail.tsx
           app/electrical-view.tsx
