@@ -13,7 +13,7 @@ import {
   readingProfiles,
 } from "./schema";
 
-export type AlarmSeverity = "normal" | "warning" | "critical";
+export type AlarmSeverity = "normal" | "info" | "warning" | "critical";
 export type AlarmKind = "threshold" | "communication" | "data_quality";
 type ReadingQuality = "good" | "stale" | "bad" | "disabled";
 
@@ -25,7 +25,7 @@ export type AlarmEvaluationReading = {
 };
 
 const ACTIVE_STATUSES = ["open", "acknowledged", "resolved"] as const;
-const severityRank: Record<AlarmSeverity, number> = { normal: 0, warning: 1, critical: 2 };
+const severityRank: Record<AlarmSeverity, number> = { normal: 0, info: 1, warning: 2, critical: 3 };
 
 function alarmCode(prefix: string, reference: string, now: Date) {
   const compactReference = reference.replace(/[^A-Z0-9]/gi, "").toUpperCase().slice(0, 14) || "EVENT";
