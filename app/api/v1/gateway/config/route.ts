@@ -3,12 +3,16 @@ import { and, desc, eq } from "drizzle-orm";
 import { alarmRules, assets, channels, configurationSnapshots, devices, readingProfileRanges, readingProfiles, registerDefinitions } from "../../../../../db/schema";
 import { apiErrorResponse, ApiError } from "../../_lib/auth";
 import { requireGatewayCredential } from "../_lib/auth";
+import { handleSpecGatewayConfig, hasSpecGatewayConfig } from "../_lib/config-spec-v1";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   try {
     const { db, credential } = await requireGatewayCredential(request);
+    if (await hasSpecGatewayConfig(db, credential.gatewayId)) {
+      return handleSpecGatewayConfig(db, credential);
+    }
     const deviceRows = await db.select({ device: devices }).from(devices)
       .innerJoin(assets, eq(assets.id, devices.assetId))
       .where(and(eq(devices.gatewayId, credential.gatewayId), eq(devices.active, true), eq(assets.active, true)))

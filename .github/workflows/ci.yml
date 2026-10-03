@@ -57,6 +57,8 @@ jobs:
           app/api/v1/gateway/_lib/ingest-v2.ts
           app/api/v1/gateway/_lib/ingest-spec-v1.ts
           app/api/v1/gateway/_lib/heartbeat-spec-v1.ts
+          app/api/v1/gateway/_lib/config-spec-v1.ts
+          app/api/v1/gateway/config/route.ts
           app/api/v1/gateway/heartbeat/route.ts
           app/api/v1/telemetry/metrics
           app/api/v1/cold-chain
@@ -81,6 +83,7 @@ jobs:
           tests/gateway-ingest-v2.test.ts
           tests/gateway-ingest-spec-v1.test.ts
           tests/gateway-heartbeat-spec-v1.test.ts
+          tests/gateway-config-spec-v1.test.ts
           tests/pm5560-e2e.test.ts
           tests/ats-e2e.test.ts
           tests/access-scope.test.ts
