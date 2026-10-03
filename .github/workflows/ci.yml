@@ -43,6 +43,7 @@ jobs:
           db/maintenance-engine.ts
           db/maintenance-window-service.ts
           db/escalation-engine.ts
+          db/on-call-engine.ts
           db/rule-engine.ts
           db/operations-cycle.ts
           db/auth.ts
@@ -95,6 +96,7 @@ jobs:
           tests/notification-engine.test.ts
           tests/maintenance-window.test.ts
           tests/escalation-engine.test.ts
+          tests/on-call-engine.test.ts
           tests/rule-engine.test.ts
           tests/operations-cycle.test.ts
           tests/rs485-topology.test.ts
