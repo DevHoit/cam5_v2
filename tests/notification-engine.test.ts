@@ -184,3 +184,107 @@ test("suppresses a queued alarm delivery if the asset enters maintenance before 
     await client.close();
   }
 });
+
+
+test("persists a suppressed delivery during an active maintenance window", async () => {
+  const { client, db } = await notificationDatabase();
+  try {
+    const [customer] = await db.insert(schema.clients).values({ code: "MW", name: "Maintenance Window" }).returning();
+    const [site] = await db.insert(schema.sites).values({ clientId: customer.id, code: "MW-01", name: "Sitio MW" }).returning();
+    const [asset] = await db.insert(schema.assets).values({ siteId: site.id, code: "PANEL-MW", name: "Panel MW" }).returning();
+    const now = new Date("2026-10-03T18:00:00.000Z");
+    const [alarm] = await db.insert(schema.alarms).values({
+      siteId: site.id, assetId: asset.id, code: "AL-MW", kind: "threshold", severity: "critical",
+      title: "Alarma bajo mantenimiento", openedAt: now, lastObservedAt: now,
+    }).returning();
+    const [event] = await db.insert(schema.alarmEvents).values({ alarmId: alarm.id, eventType: "opened" }).returning();
+    const [endpoint] = await db.insert(schema.notificationEndpoints).values({
+      siteId: site.id, name: "Webhook MW", kind: "webhook",
+      configuration: { url: "https://maintenance-window.example.test/events" },
+    }).returning();
+    await db.insert(schema.notificationPolicies).values({
+      siteId: site.id, endpointId: endpoint.id, name: "Critical MW",
+      minimumSeverity: "critical", filters: { alarmKinds: ["threshold"] },
+    });
+    await db.insert(schema.maintenanceWindows).values({
+      clientId: customer.id, scopeType: "asset", scopeId: asset.id,
+      startsAt: new Date("2026-10-03T17:30:00.000Z"),
+      endsAt: new Date("2026-10-03T19:30:00.000Z"),
+      reason: "Trabajo programado",
+    });
+
+    const engineDb = db as unknown as Cam5Database;
+    assert.equal(await queueAlarmNotifications(engineDb, {
+      siteId: site.id, alarmId: alarm.id, alarmEventId: event.id,
+      severity: "critical", kind: "threshold", eventType: "opened", occurredAt: now,
+    }), 1);
+
+    const [delivery] = await db.select().from(schema.notificationDeliveries)
+      .where(eq(schema.notificationDeliveries.alarmId, alarm.id));
+    assert.equal(delivery.status, "suppressed");
+    assert.equal(delivery.attemptCount, 0);
+    assert.match(delivery.errorMessage ?? "", /ventana de mantenimiento/i);
+
+    let sent = false;
+    const result = await processNotificationQueue(engineDb, {
+      now, includeRepeats: false,
+      fetchImpl: async () => { sent = true; return new Response(null, { status: 204 }); },
+    });
+    assert.equal(sent, false);
+    assert.equal(result.processed, 0);
+  } finally {
+    await client.close();
+  }
+});
+
+test("suppresses a queued delivery if maintenance starts before dispatch", async () => {
+  const { client, db } = await notificationDatabase();
+  try {
+    const [customer] = await db.insert(schema.clients).values({ code: "MWQ", name: "Maintenance Queue" }).returning();
+    const [site] = await db.insert(schema.sites).values({ clientId: customer.id, code: "MWQ-01", name: "Sitio MWQ" }).returning();
+    const [asset] = await db.insert(schema.assets).values({ siteId: site.id, code: "PANEL-MWQ", name: "Panel MWQ" }).returning();
+    const openedAt = new Date("2026-10-03T17:00:00.000Z");
+    const [alarm] = await db.insert(schema.alarms).values({
+      siteId: site.id, assetId: asset.id, code: "AL-MWQ", kind: "threshold", severity: "critical",
+      title: "Alarma antes de ventana", openedAt, lastObservedAt: openedAt,
+    }).returning();
+    const [event] = await db.insert(schema.alarmEvents).values({ alarmId: alarm.id, eventType: "opened" }).returning();
+    const [endpoint] = await db.insert(schema.notificationEndpoints).values({
+      siteId: site.id, name: "Webhook MWQ", kind: "webhook",
+      configuration: { url: "https://maintenance-queue.example.test/events" },
+    }).returning();
+    await db.insert(schema.notificationPolicies).values({
+      siteId: site.id, endpointId: endpoint.id, name: "Critical MWQ",
+      minimumSeverity: "critical", filters: { alarmKinds: ["threshold"] },
+    });
+
+    const engineDb = db as unknown as Cam5Database;
+    assert.equal(await queueAlarmNotifications(engineDb, {
+      siteId: site.id, alarmId: alarm.id, alarmEventId: event.id,
+      severity: "critical", kind: "threshold", eventType: "opened", occurredAt: openedAt,
+    }), 1);
+
+    await db.insert(schema.maintenanceWindows).values({
+      clientId: customer.id, scopeType: "site", scopeId: site.id,
+      startsAt: new Date("2026-10-03T17:30:00.000Z"),
+      endsAt: new Date("2026-10-03T19:00:00.000Z"),
+      reason: "Ventana de sitio",
+    });
+
+    const dispatchAt = new Date("2026-10-03T18:00:00.000Z");
+    let sent = false;
+    const result = await processNotificationQueue(engineDb, {
+      now: dispatchAt, includeRepeats: false,
+      fetchImpl: async () => { sent = true; return new Response(null, { status: 204 }); },
+    });
+    assert.equal(sent, false);
+    assert.equal(result.suppressed, 1);
+
+    const [delivery] = await db.select().from(schema.notificationDeliveries)
+      .where(eq(schema.notificationDeliveries.alarmId, alarm.id));
+    assert.equal(delivery.status, "suppressed");
+    assert.match(delivery.errorMessage ?? "", /mantenimiento activo/i);
+  } finally {
+    await client.close();
+  }
+});

@@ -1,6 +1,7 @@
 import { createHmac } from "node:crypto";
 import { and, eq, inArray, lte, or, sql } from "drizzle-orm";
 import type { Cam5Database } from "./index";
+import { isMaintenanceActive } from "./maintenance-engine";
 import {
   alarms,
   assets,
@@ -93,6 +94,7 @@ export async function queueAlarmNotifications(
     title: alarms.title,
     detail: alarms.detail,
     assetId: alarms.assetId,
+    deviceId: alarms.deviceId,
     assetCode: assets.code,
     assetName: assets.name,
     assetState: assets.state,
@@ -106,7 +108,7 @@ export async function queueAlarmNotifications(
     .leftJoin(channels, eq(channels.id, alarms.channelId))
     .where(and(eq(alarms.id, input.alarmId), eq(alarms.siteId, input.siteId)))
     .limit(1);
-  if (!alarm || alarm.assetState === "maintenance") return 0;
+  if (!alarm) return 0;
 
   const policies = await db.select({
     id: notificationPolicies.id,
@@ -125,6 +127,12 @@ export async function queueAlarmNotifications(
     ));
 
   const occurredAt = input.occurredAt ?? new Date();
+  const maintenanceActive = alarm.assetState === "maintenance" || await isMaintenanceActive(db, {
+    siteId: input.siteId,
+    assetId: alarm.assetId,
+    deviceId: alarm.deviceId,
+    at: occurredAt,
+  });
   const eligible = policies.filter((policy) => (
     severityRank[input.severity] >= severityRank[policy.minimumSeverity]
     && policyMatches(normalizedFilters(policy.filters), { kind: input.kind, assetId: alarm.assetId, eventType: input.eventType })
@@ -157,6 +165,8 @@ export async function queueAlarmNotifications(
         portalUrl: `${process.env.APP_URL || "https://cam5v2.vercel.app"}/?view=alarms&record=${encodeURIComponent(alarm.id)}`,
       },
       recipient: endpointRecipient(policy.endpointKind, configuration),
+      status: maintenanceActive ? "suppressed" as const : "queued" as const,
+      errorMessage: maintenanceActive ? "Entrega suprimida por ventana de mantenimiento activa." : null,
       scheduledAt,
       nextAttemptAt: scheduledAt,
       dedupeKey: input.alarmEventId
@@ -173,6 +183,7 @@ export async function queueRepeatingNotifications(db: Cam5Database, now = new Da
     alarmId: alarms.id,
     siteId: alarms.siteId,
     assetId: alarms.assetId,
+    deviceId: alarms.deviceId,
     severity: alarms.severity,
     kind: alarms.kind,
     openedAt: alarms.openedAt,
@@ -203,9 +214,14 @@ export async function queueRepeatingNotifications(db: Cam5Database, now = new Da
       sql`${notificationPolicies.repeatIntervalMinutes} is not null`,
     ));
 
-  const values = rows.flatMap((row) => {
+  const maintenanceStates = await Promise.all(rows.map((row) => (
+    row.assetState === "maintenance"
+      ? Promise.resolve(true)
+      : isMaintenanceActive(db, { siteId: row.siteId, assetId: row.assetId, deviceId: row.deviceId, at: now })
+  )));
+  const values = rows.flatMap((row, index) => {
     const interval = row.intervalMinutes;
-    if (row.assetState === "maintenance") return [];
+    if (maintenanceStates[index]) return [];
     if (!interval || now.getTime() < row.openedAt.getTime() + interval * 60_000) return [];
     if (severityRank[row.severity] < severityRank[row.minimumSeverity]) return [];
     if (!policyMatches(normalizedFilters(row.filters), { kind: row.kind as NotificationAlarmKind, assetId: row.assetId, eventType: "repeat" })) return [];
@@ -458,6 +474,9 @@ export async function processNotificationDelivery(
     kind: notificationEndpoints.kind,
     configuration: notificationEndpoints.configuration,
     secretReference: notificationEndpoints.secretReference,
+    siteId: alarms.siteId,
+    assetId: alarms.assetId,
+    deviceId: alarms.deviceId,
     assetState: assets.state,
   }).from(notificationDeliveries)
     .innerJoin(notificationEndpoints, eq(notificationEndpoints.id, notificationDeliveries.endpointId))
@@ -466,10 +485,19 @@ export async function processNotificationDelivery(
     .where(and(eq(notificationDeliveries.id, deliveryId), eq(notificationEndpoints.enabled, true)))
     .limit(1);
   if (!candidate) return { status: "missing" as const, error: "La entrega o su canal ya no están disponibles." };
-  if (candidate.alarmId && candidate.assetState === "maintenance") {
+  const maintenanceActive = Boolean(candidate.alarmId && candidate.siteId && candidate.assetId && (
+    candidate.assetState === "maintenance"
+    || await isMaintenanceActive(db, {
+      siteId: candidate.siteId,
+      assetId: candidate.assetId,
+      deviceId: candidate.deviceId,
+      at: now,
+    })
+  ));
+  if (maintenanceActive) {
     await db.update(notificationDeliveries).set({
       status: "suppressed",
-      errorMessage: "Entrega suprimida porque el activo se encuentra en mantenimiento.",
+      errorMessage: "Entrega suprimida porque existe mantenimiento activo para su alcance.",
       updatedAt: now,
     }).where(and(
       eq(notificationDeliveries.id, candidate.id),

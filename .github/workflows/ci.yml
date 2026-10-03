@@ -40,6 +40,7 @@ jobs:
           db/access-scope.ts
           db/platform-admin.ts
           db/notification-engine.ts
+          db/maintenance-engine.ts
           db/operations-cycle.ts
           db/auth.ts
           db/dse8660.ts
