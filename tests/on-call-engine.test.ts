@@ -45,7 +45,7 @@ test("weekly schedules are evaluated in the shift timezone including overnight w
     validTo: "2026-10-31",
   };
   assert.equal(scheduleMatches({
-    at: new Date("2026-10-03T02:30:00.000Z"),
+    at: new Date("2026-10-03T07:30:00.000Z"),
     timezone: "America/Santiago",
     schedule,
   }), true);
