@@ -183,6 +183,13 @@
       "when": 1790985600000,
       "tag": "0025_rs485_bus_addressing",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1791049200000,
+      "tag": "0026_hoit_v1_control_plane",
+      "breakpoints": true
     }
   ]
 }

@@ -4,6 +4,7 @@ import {
   bigserial,
   boolean,
   check,
+  date,
   index,
   integer,
   jsonb,
@@ -13,6 +14,7 @@ import {
   primaryKey,
   smallint,
   text,
+  time,
   timestamp,
   unique,
   uniqueIndex,
@@ -82,9 +84,27 @@ export const sites = pgTable("sites", {
   index("sites_client_active_idx").on(table.clientId, table.active),
 ]);
 
+export const areas = pgTable("areas", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  clientId: uuid("client_id").notNull().references(() => clients.id, { onDelete: "restrict" }),
+  siteId: uuid("site_id").notNull().references(() => sites.id, { onDelete: "cascade" }),
+  parentAreaId: uuid("parent_area_id"),
+  code: varchar("code", { length: 60 }).notNull(),
+  name: varchar("name", { length: 160 }).notNull(),
+  type: varchar("type", { length: 80 }).default("operational").notNull(),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("areas_site_code_uidx").on(table.siteId, table.code),
+  index("areas_site_parent_idx").on(table.siteId, table.parentAreaId),
+  check("areas_parent_self_chk", sql`${table.parentAreaId} IS NULL OR ${table.parentAreaId} <> ${table.id}`),
+]);
+
 export const assets = pgTable("assets", {
   id: uuid("id").defaultRandom().primaryKey(),
   siteId: uuid("site_id").notNull().references(() => sites.id, { onDelete: "restrict" }),
+  areaId: uuid("area_id").references(() => areas.id, { onDelete: "set null" }),
   code: varchar("code", { length: 60 }).notNull(),
   name: varchar("name", { length: 180 }).notNull(),
   area: varchar("area", { length: 160 }),
@@ -97,6 +117,7 @@ export const assets = pgTable("assets", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("assets_site_code_uidx").on(table.siteId, table.code),
+  index("assets_site_area_idx").on(table.siteId, table.areaId),
   index("assets_site_state_idx").on(table.siteId, table.state),
 ]);
 
@@ -235,6 +256,137 @@ export const userAssetScopes = pgTable("user_asset_scopes", {
   assetId: uuid("asset_id").notNull().references(() => assets.id, { onDelete: "cascade" }),
   grantedAt: timestamp("granted_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [primaryKey({ columns: [table.userId, table.assetId] })]);
+
+export const escalationPolicies = pgTable("escalation_policies", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  clientId: uuid("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 160 }).notNull(),
+  enabled: boolean("enabled").default(true).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("escalation_policies_client_name_uidx").on(table.clientId, table.name),
+  index("escalation_policies_client_enabled_idx").on(table.clientId, table.enabled),
+]);
+
+export const escalationLevels = pgTable("escalation_levels", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  policyId: uuid("policy_id").notNull().references(() => escalationPolicies.id, { onDelete: "cascade" }),
+  levelNumber: smallint("level_number").notNull(),
+  delaySeconds: integer("delay_seconds").default(0).notNull(),
+  recipientType: varchar("recipient_type", { length: 24 }).$type<"user" | "role" | "on_call_group">().notNull(),
+  recipientRef: varchar("recipient_ref", { length: 160 }).notNull(),
+  channels: jsonb("channels").$type<string[]>().default(sql`'[]'::jsonb`).notNull(),
+  repeatCount: integer("repeat_count").default(1).notNull(),
+}, (table) => [
+  uniqueIndex("escalation_levels_policy_level_uidx").on(table.policyId, table.levelNumber),
+  check("escalation_levels_level_chk", sql`${table.levelNumber} > 0`),
+  check("escalation_levels_delay_chk", sql`${table.delaySeconds} >= 0`),
+  check("escalation_levels_recipient_type_chk", sql`${table.recipientType} IN ('user', 'role', 'on_call_group')`),
+  check("escalation_levels_repeat_chk", sql`${table.repeatCount} > 0`),
+]);
+
+export const shifts = pgTable("shifts", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  clientId: uuid("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 160 }).notNull(),
+  timezone: varchar("timezone", { length: 80 }).notNull(),
+  active: boolean("active").default(true).notNull(),
+}, (table) => [
+  uniqueIndex("shifts_client_name_uidx").on(table.clientId, table.name),
+  index("shifts_client_active_idx").on(table.clientId, table.active),
+]);
+
+export const shiftSchedules = pgTable("shift_schedules", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  shiftId: uuid("shift_id").notNull().references(() => shifts.id, { onDelete: "cascade" }),
+  dayOfWeek: smallint("day_of_week").notNull(),
+  startTime: time("start_time").notNull(),
+  endTime: time("end_time").notNull(),
+  validFrom: date("valid_from"),
+  validTo: date("valid_to"),
+}, (table) => [
+  index("shift_schedules_shift_day_idx").on(table.shiftId, table.dayOfWeek),
+  check("shift_schedules_day_chk", sql`${table.dayOfWeek} BETWEEN 0 AND 6`),
+  check("shift_schedules_time_chk", sql`${table.startTime} <> ${table.endTime}`),
+  check("shift_schedules_validity_chk", sql`${table.validFrom} IS NULL OR ${table.validTo} IS NULL OR ${table.validTo} >= ${table.validFrom}`),
+]);
+
+export const onCallAssignments = pgTable("on_call_assignments", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  shiftId: uuid("shift_id").notNull().references(() => shifts.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+  endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+  priority: smallint("priority").default(0).notNull(),
+}, (table) => [
+  index("on_call_assignments_shift_window_idx").on(table.shiftId, table.startsAt, table.endsAt),
+  index("on_call_assignments_user_window_idx").on(table.userId, table.startsAt, table.endsAt),
+  check("on_call_assignments_window_chk", sql`${table.endsAt} > ${table.startsAt}`),
+  check("on_call_assignments_priority_chk", sql`${table.priority} >= 0`),
+]);
+
+export const maintenanceWindows = pgTable("maintenance_windows", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  clientId: uuid("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  scopeType: varchar("scope_type", { length: 16 }).$type<"tenant" | "site" | "area" | "asset" | "device">().notNull(),
+  scopeId: uuid("scope_id").notNull(),
+  startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+  endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+  reason: text("reason").notNull(),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+  cancelledBy: uuid("cancelled_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("maintenance_windows_client_window_idx").on(table.clientId, table.startsAt, table.endsAt),
+  index("maintenance_windows_scope_window_idx").on(table.scopeType, table.scopeId, table.startsAt, table.endsAt),
+  check("maintenance_windows_scope_chk", sql`${table.scopeType} IN ('tenant', 'site', 'area', 'asset', 'device')`),
+  check("maintenance_windows_time_chk", sql`${table.endsAt} > ${table.startsAt}`),
+]);
+
+export const rules = pgTable("rules", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  clientId: uuid("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  siteId: uuid("site_id").references(() => sites.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 180 }).notNull(),
+  description: text("description"),
+  enabled: boolean("enabled").default(true).notNull(),
+  scopeType: varchar("scope_type", { length: 16 }).$type<"tenant" | "site" | "area" | "asset" | "device">().notNull(),
+  scopeId: uuid("scope_id").notNull(),
+  severity: varchar("severity", { length: 16 }).$type<"info" | "warning" | "critical">().notNull(),
+  expression: jsonb("expression").$type<Record<string, unknown>>().notNull(),
+  durationSeconds: integer("duration_seconds").default(0).notNull(),
+  hysteresis: jsonb("hysteresis").$type<Record<string, unknown>>(),
+  scheduleId: uuid("schedule_id"),
+  escalationPolicyId: uuid("escalation_policy_id").references(() => escalationPolicies.id, { onDelete: "set null" }),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("rules_client_enabled_idx").on(table.clientId, table.enabled),
+  index("rules_site_enabled_idx").on(table.siteId, table.enabled),
+  index("rules_scope_idx").on(table.scopeType, table.scopeId),
+  check("rules_scope_chk", sql`${table.scopeType} IN ('tenant', 'site', 'area', 'asset', 'device')`),
+  check("rules_severity_chk", sql`${table.severity} IN ('info', 'warning', 'critical')`),
+  check("rules_duration_chk", sql`${table.durationSeconds} >= 0`),
+]);
+
+export const ruleEvaluationStates = pgTable("rule_evaluation_states", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  ruleId: uuid("rule_id").notNull().references(() => rules.id, { onDelete: "cascade" }),
+  scopeId: uuid("scope_id").notNull(),
+  conditionStartedAt: timestamp("condition_started_at", { withTimezone: true }),
+  lastTrueAt: timestamp("last_true_at", { withTimezone: true }),
+  lastFalseAt: timestamp("last_false_at", { withTimezone: true }),
+  currentState: varchar("current_state", { length: 16 }).$type<"false" | "pending" | "firing" | "recovering">().default("false").notNull(),
+  lastValue: jsonb("last_value").$type<Record<string, unknown>>(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("rule_evaluation_states_rule_scope_uidx").on(table.ruleId, table.scopeId),
+  index("rule_evaluation_states_state_idx").on(table.currentState, table.updatedAt),
+  check("rule_evaluation_states_state_chk", sql`${table.currentState} IN ('false', 'pending', 'firing', 'recovering')`),
+]);
 
 export const authSessions = pgTable("auth_sessions", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -748,8 +900,10 @@ export const alarms = pgTable("alarms", {
   id: uuid("id").defaultRandom().primaryKey(),
   siteId: uuid("site_id").notNull().references(() => sites.id, { onDelete: "restrict" }),
   assetId: uuid("asset_id").notNull().references(() => assets.id, { onDelete: "restrict" }),
+  deviceId: uuid("device_id").references(() => devices.id, { onDelete: "set null" }),
   channelId: uuid("channel_id").references(() => channels.id, { onDelete: "set null" }),
   ruleId: uuid("rule_id").references(() => alarmRules.id, { onDelete: "set null" }),
+  genericRuleId: uuid("generic_rule_id").references(() => rules.id, { onDelete: "set null" }),
   code: varchar("code", { length: 80 }).notNull(),
   kind: varchar("kind", { length: 40 }).default("threshold").notNull(),
   severity: severityEnum("severity").notNull(),
@@ -773,6 +927,8 @@ export const alarms = pgTable("alarms", {
   uniqueIndex("alarms_code_uidx").on(table.code),
   index("alarms_site_status_severity_idx").on(table.siteId, table.status, table.severity),
   index("alarms_asset_opened_idx").on(table.assetId, table.openedAt),
+  index("alarms_device_opened_idx").on(table.deviceId, table.openedAt),
+  index("alarms_generic_rule_idx").on(table.genericRuleId, table.openedAt),
   index("alarms_channel_opened_idx").on(table.channelId, table.openedAt),
   index("alarms_assignee_status_idx").on(table.assignedTo, table.status),
   index("alarms_kind_status_idx").on(table.kind, table.status),
@@ -789,6 +945,29 @@ export const alarmEvents = pgTable("alarm_events", {
   payload: jsonb("payload").$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [index("alarm_events_alarm_created_idx").on(table.alarmId, table.createdAt)]);
+
+export const escalationJobs = pgTable("escalation_jobs", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  alarmId: uuid("alarm_id").notNull().references(() => alarms.id, { onDelete: "cascade" }),
+  policyId: uuid("policy_id").notNull().references(() => escalationPolicies.id, { onDelete: "cascade" }),
+  levelId: uuid("level_id").notNull().references(() => escalationLevels.id, { onDelete: "cascade" }),
+  status: varchar("status", { length: 20 }).$type<"pending" | "processing" | "completed" | "cancelled" | "failed">().default("pending").notNull(),
+  dueAt: timestamp("due_at", { withTimezone: true }).notNull(),
+  recipientType: varchar("recipient_type", { length: 24 }).$type<"user" | "role" | "on_call_group">().notNull(),
+  recipientRef: varchar("recipient_ref", { length: 160 }).notNull(),
+  resolvedRecipientUserId: uuid("resolved_recipient_user_id").references(() => users.id, { onDelete: "set null" }),
+  attemptCount: integer("attempt_count").default(0).notNull(),
+  lastError: text("last_error"),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("escalation_jobs_alarm_level_uidx").on(table.alarmId, table.levelId),
+  index("escalation_jobs_due_idx").on(table.status, table.dueAt),
+  check("escalation_jobs_status_chk", sql`${table.status} IN ('pending', 'processing', 'completed', 'cancelled', 'failed')`),
+  check("escalation_jobs_recipient_type_chk", sql`${table.recipientType} IN ('user', 'role', 'on_call_group')`),
+  check("escalation_jobs_attempt_chk", sql`${table.attemptCount} >= 0`),
+]);
 
 export const alarmRuleStates = pgTable("alarm_rule_states", {
   ruleId: uuid("rule_id").primaryKey().references(() => alarmRules.id, { onDelete: "cascade" }),

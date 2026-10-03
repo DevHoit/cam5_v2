@@ -5,6 +5,16 @@ import { PGlite } from "@electric-sql/pglite";
 
 const expectedTables = [
   "alarm_events",
+  "areas",
+  "escalation_jobs",
+  "escalation_levels",
+  "escalation_policies",
+  "maintenance_windows",
+  "on_call_assignments",
+  "rule_evaluation_states",
+  "rules",
+  "shift_schedules",
+  "shifts",
   "alarm_rules",
   "alarm_rule_states",
   "alarms",
@@ -64,7 +74,7 @@ const expectedTables = [
 test("applies the CAM5 PostgreSQL migration with access profiles and telemetry constraints", async () => {
   const database = new PGlite();
   try {
-    for (const filename of ["0000_cam5_initial_schema.sql", "0001_eager_blockbuster.sql", "0002_sparkling_wallow.sql", "0003_rich_charles_xavier.sql", "0004_windy_gauntlet.sql", "0005_milky_caretaker.sql", "0006_smiling_frightful_four.sql", "0007_big_frightful_four.sql", "0008_sloppy_mister_sinister.sql", "0009_cuddly_infant_terrible.sql", "0010_robust_wallop.sql", "0011_dear_prima.sql", "0012_hoit_core_foundation.sql", "0013_hoit_generic_telemetry.sql", "0014_generic_device_transport.sql", "0015_operational_condition_states.sql", "0016_cold_chain_report_template.sql", "0017_generic_metric_aggregates.sql", "0018_pm5560_metric_catalog.sql", "0019_nullable_device_gateway_site_guard.sql", "0020_electrical_report_template.sql", "0021_dse8660_metric_catalog.sql", "0022_ats_report_template.sql", "0023_access_scope_roles.sql", "0024_notification_suppressed_status.sql", "0025_rs485_bus_addressing.sql"]) {
+    for (const filename of ["0000_cam5_initial_schema.sql", "0001_eager_blockbuster.sql", "0002_sparkling_wallow.sql", "0003_rich_charles_xavier.sql", "0004_windy_gauntlet.sql", "0005_milky_caretaker.sql", "0006_smiling_frightful_four.sql", "0007_big_frightful_four.sql", "0008_sloppy_mister_sinister.sql", "0009_cuddly_infant_terrible.sql", "0010_robust_wallop.sql", "0011_dear_prima.sql", "0012_hoit_core_foundation.sql", "0013_hoit_generic_telemetry.sql", "0014_generic_device_transport.sql", "0015_operational_condition_states.sql", "0016_cold_chain_report_template.sql", "0017_generic_metric_aggregates.sql", "0018_pm5560_metric_catalog.sql", "0019_nullable_device_gateway_site_guard.sql", "0020_electrical_report_template.sql", "0021_dse8660_metric_catalog.sql", "0022_ats_report_template.sql", "0023_access_scope_roles.sql", "0024_notification_suppressed_status.sql", "0025_rs485_bus_addressing.sql", "0026_hoit_v1_control_plane.sql"]) {
       const migration = await readFile(new URL(`../drizzle/${filename}`, import.meta.url), "utf8");
       await database.exec(migration.replaceAll("--> statement-breakpoint", ""));
     }
@@ -180,6 +190,35 @@ test("applies the CAM5 PostgreSQL migration with access profiles and telemetry c
       where table_schema = 'public' and table_name = 'sites' and column_name = 'client_id'
     `);
     assert.equal(siteColumns.rows[0]?.is_nullable, "NO");
+
+    const v1ControlPlaneTables = ["areas", "rules", "rule_evaluation_states", "maintenance_windows", "escalation_policies", "escalation_levels", "escalation_jobs", "shifts", "shift_schedules", "on_call_assignments"];
+    for (const table of v1ControlPlaneTables) assert.ok(expectedTables.includes(table), `Falta la tabla HOIT V1 ${table}`);
+
+    const normalizedScopeColumns = await database.query(`
+      select table_name, column_name
+      from information_schema.columns
+      where table_schema = 'public'
+        and ((table_name = 'assets' and column_name = 'area_id')
+          or (table_name = 'alarms' and column_name in ('device_id', 'generic_rule_id')))
+      order by table_name, column_name
+    `);
+    assert.deepEqual(normalizedScopeColumns.rows, [
+      { table_name: "alarms", column_name: "device_id" },
+      { table_name: "alarms", column_name: "generic_rule_id" },
+      { table_name: "assets", column_name: "area_id" },
+    ]);
+
+    const controlClientResult = await database.query(`insert into clients (code, name) values ('CTRL', 'Control') returning id`);
+    const controlClient = controlClientResult.rows[0];
+    const controlSiteResult = await database.query(`insert into sites (client_id, code, name) values ('${controlClient.id}', 'CTRL-01', 'Control') returning id`);
+    const controlSite = controlSiteResult.rows[0];
+    await assert.rejects(
+      database.query(`
+        insert into maintenance_windows (client_id, scope_type, scope_id, starts_at, ends_at, reason)
+        values ('${controlClient.id}', 'site', '${controlSite.id}', '2026-10-03T10:00:00Z', '2026-10-03T09:00:00Z', 'Inválida')
+      `),
+      /maintenance_windows_time_chk/,
+    );
 
     const operationalActiveColumns = await database.query(`
       select table_name
