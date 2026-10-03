@@ -1,6 +1,6 @@
 import { ApiError } from "./auth";
 
-export const NOTIFICATION_KINDS = ["email", "teams", "webhook"] as const;
+export const NOTIFICATION_KINDS = ["email", "teams", "webhook", "whatsapp_meta"] as const;
 export const NOTIFICATION_SEVERITIES = ["info", "warning", "critical"] as const;
 export const NOTIFICATION_ALARM_KINDS = ["threshold", "communication", "data_quality"] as const;
 
@@ -45,6 +45,21 @@ export function parseEndpointBody(body: Record<string, unknown>, current?: { kin
     const normalized = [...new Set(recipients.map((recipient) => String(recipient).trim().toLowerCase()))];
     if (normalized.some((recipient) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient))) throw new ApiError(400, "Hay una dirección de correo no válida.");
     return { name, kind, enabled, configuration: { recipients: normalized }, secretReference: null };
+  }
+
+  if (kind === "whatsapp_meta") {
+    const phoneNumberId = requiredText(submitted.phoneNumberId, "El Phone Number ID de Meta", 32);
+    if (!/^[0-9]{5,32}$/.test(phoneNumberId)) throw new ApiError(400, "El Phone Number ID de Meta no es válido.");
+    const apiVersion = requiredText(submitted.apiVersion, "La versión de Graph API", 16);
+    if (!/^v[0-9]+\.[0-9]+$/.test(apiVersion)) throw new ApiError(400, "La versión de Graph API debe tener formato vNN.N.");
+    const languageCode = typeof submitted.languageCode === "string" && submitted.languageCode.trim()
+      ? submitted.languageCode.trim().slice(0, 16)
+      : "es_CL";
+    const templateName = typeof submitted.templateName === "string" && submitted.templateName.trim()
+      ? submitted.templateName.trim().slice(0, 120)
+      : "hoit_alarm_escalated_es";
+    if (!secretReference) throw new ApiError(400, "WhatsApp Meta requiere la variable de entorno que contiene el access token.");
+    return { name, kind, enabled, configuration: { phoneNumberId, apiVersion, languageCode, templateName }, secretReference };
   }
 
   if (kind === "teams") {
