@@ -44,6 +44,7 @@ jobs:
           db/maintenance-window-service.ts
           db/escalation-engine.ts
           db/escalation-notification-engine.ts
+          db/whatsapp-webhook.ts
           db/on-call-engine.ts
           db/rule-engine.ts
           db/operations-cycle.ts
@@ -75,6 +76,7 @@ jobs:
           app/api/v1/system/operations/route.ts
           app/api/v1/notification-deliveries/route.ts
           app/api/v1/maintenance-windows/route.ts
+          app/api/v1/webhooks/whatsapp/route.ts
           app/api/v1/notifications/summary/route.ts
           app/notifications-view.tsx
           scripts/run-operations-cycle.ts
@@ -99,6 +101,7 @@ jobs:
           tests/maintenance-window.test.ts
           tests/escalation-engine.test.ts
           tests/escalation-notification.test.ts
+          tests/whatsapp-webhook.test.ts
           tests/on-call-engine.test.ts
           tests/rule-engine.test.ts
           tests/operations-cycle.test.ts
