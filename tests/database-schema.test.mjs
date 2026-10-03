@@ -5,6 +5,7 @@ import { PGlite } from "@electric-sql/pglite";
 
 const expectedTables = [
   "alarm_events",
+  "alarm_transitions",
   "areas",
   "escalation_jobs",
   "escalation_levels",
@@ -44,6 +45,7 @@ const expectedTables = [
   "notification_endpoints",
   "notification_deliveries",
   "notification_policies",
+  "notification_provider_events",
   "operational_condition_states",
   "password_reset_tokens",
   "permissions",
