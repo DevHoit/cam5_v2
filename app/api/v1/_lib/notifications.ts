@@ -1,7 +1,7 @@
 import { ApiError } from "./auth";
 
 export const NOTIFICATION_KINDS = ["email", "teams", "webhook"] as const;
-export const NOTIFICATION_SEVERITIES = ["warning", "critical"] as const;
+export const NOTIFICATION_SEVERITIES = ["info", "warning", "critical"] as const;
 export const NOTIFICATION_ALARM_KINDS = ["threshold", "communication", "data_quality"] as const;
 
 type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
@@ -64,13 +64,13 @@ function integer(value: unknown, label: string, minimum: number, maximum: number
   return parsed;
 }
 
-export function parsePolicyBody(body: Record<string, unknown>, current?: { name: string; endpointId: string; minimumSeverity: "normal" | "warning" | "critical"; escalationDelayMinutes: number; repeatIntervalMinutes: number | null; active: boolean; filters: Record<string, unknown> }) {
+export function parsePolicyBody(body: Record<string, unknown>, current?: { name: string; endpointId: string; minimumSeverity: "normal" | "info" | "warning" | "critical"; escalationDelayMinutes: number; repeatIntervalMinutes: number | null; active: boolean; filters: Record<string, unknown> }) {
   const name = requiredText(body.name ?? current?.name, "El nombre de la regla", 160);
   const endpointId = typeof (body.endpointId ?? current?.endpointId) === "string" ? String(body.endpointId ?? current?.endpointId) : "";
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(endpointId)) throw new ApiError(400, "Selecciona un canal válido.");
   const severityValue = body.minimumSeverity ?? current?.minimumSeverity;
   if (!NOTIFICATION_SEVERITIES.includes(severityValue as (typeof NOTIFICATION_SEVERITIES)[number])) throw new ApiError(400, "La severidad mínima no es válida.");
-  const minimumSeverity = severityValue as "warning" | "critical";
+  const minimumSeverity = severityValue as "info" | "warning" | "critical";
   const escalationDelayMinutes = integer(body.escalationDelayMinutes ?? current?.escalationDelayMinutes ?? 0, "La espera", 0, 1_440);
   const repeatValue = body.repeatIntervalMinutes === undefined ? current?.repeatIntervalMinutes : body.repeatIntervalMinutes;
   const repeatIntervalMinutes = repeatValue === null || repeatValue === "" || repeatValue === undefined ? null : integer(repeatValue, "El intervalo de repetición", 5, 10_080);
