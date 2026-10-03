@@ -5,6 +5,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { and, eq, isNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import { resolveUserAccessScopes } from "../db/access-scope";
+import { ensurePlatformAdmin } from "../db/platform-admin";
 import type { Cam5Database } from "../db/index";
 import * as schema from "../db/schema";
 
@@ -208,6 +209,35 @@ test("legacy administrator remains usable before migration 0023", async () => {
     assert.equal(scopes.sites.length, 1);
     assert.equal(scopes.sites[0]?.siteId, site.id);
     assert.equal(scopes.sites[0]?.roleKey, "site_admin");
+  } finally {
+    await client.close();
+  }
+});
+
+
+test("explicit platform admin recovery grants global scope idempotently", async () => {
+  const client = new PGlite();
+  try {
+    for (const filename of [...beforeScopeMigration, "0023_access_scope_roles.sql"]) await apply(client, filename);
+    const db = drizzle(client, { schema }) as unknown as Cam5Database;
+
+    const [customer] = await db.insert(schema.clients).values({ code: "RECOVERY", name: "Recovery" }).returning();
+    await db.insert(schema.sites).values({ clientId: customer.id, code: "RECOVERY-S", name: "Recovery Site" });
+    const [user] = await db.insert(schema.users).values({
+      email: "owner@example.test",
+      displayName: "Owner",
+      status: "active",
+    }).returning();
+
+    const first = await ensurePlatformAdmin(db, "OWNER@example.test");
+    assert.equal(first.created, true);
+    const second = await ensurePlatformAdmin(db, "owner@example.test");
+    assert.equal(second.created, false);
+
+    const scopes = await resolveUserAccessScopes(db, user.id);
+    assert.equal(scopes.platformAdmin, true);
+    assert.equal(scopes.sites.length, 1);
+    assert.equal(scopes.sites[0]?.roleKey, "platform_admin");
   } finally {
     await client.close();
   }
