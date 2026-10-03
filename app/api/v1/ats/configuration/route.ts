@@ -78,6 +78,12 @@ export async function GET(request: NextRequest) {
         unitId: devices.unitId,
         metadata: devices.metadata,
         gatewayId: gatewayDeviceBindings.gatewayId,
+        busKey: gatewayDeviceBindings.interfaceKey,
+        address: gatewayDeviceBindings.address,
+        baudRate: gatewayDeviceBindings.baudRate,
+        parity: gatewayDeviceBindings.parity,
+        dataBits: gatewayDeviceBindings.dataBits,
+        stopBits: gatewayDeviceBindings.stopBits,
         bindingConfig: gatewayDeviceBindings.config,
       }).from(devices)
         .innerJoin(assets, eq(assets.id, devices.assetId))
@@ -157,6 +163,8 @@ export async function POST(request: NextRequest) {
       const code = text(body.code, "El código", 2).toUpperCase();
       const name = text(body.name, "El nombre", 2);
       const unitId = requiredInteger(body.unitId, "unitId", 1, 247);
+      const busKey = typeof body.busKey === "string" && body.busKey.trim() ? body.busKey.trim().toLowerCase() : "rs485-1";
+      if (!/^[a-z0-9._-]{1,64}$/.test(busKey)) throw new ApiError(400, "busKey sólo admite letras, números, punto, guion y guion bajo.");
       const baudRate = requiredInteger(body.baudRate, "baudRate", 1200, 115200);
       const pollIntervalMs = integer(body.pollIntervalMs, "pollIntervalMs", DSE8660_DEFAULT_ACQUISITION.pollIntervalMs, 250, 60000);
       const parity = typeof body.parity === "string" ? body.parity.toLowerCase() : "";
@@ -183,11 +191,36 @@ export async function POST(request: NextRequest) {
         .where(and(
           eq(gatewayDeviceBindings.gatewayId, gatewayId),
           eq(gatewayDeviceBindings.interfaceType, "rs485"),
+          eq(gatewayDeviceBindings.interfaceKey, busKey),
+          eq(gatewayDeviceBindings.address, unitId),
           eq(gatewayDeviceBindings.enabled, true),
-          eq(devices.unitId, unitId),
           eq(devices.active, true),
         )).limit(1);
-      if (duplicateAddress) throw new ApiError(409, `La dirección Modbus ${unitId} ya está asignada a ${duplicateAddress.code} en este gateway.`);
+      if (duplicateAddress) throw new ApiError(409, `La dirección Modbus ${unitId} ya está asignada a ${duplicateAddress.code} en el bus ${busKey}.`);
+
+      const [busPeer] = await db.select({
+        code: devices.code,
+        baudRate: gatewayDeviceBindings.baudRate,
+        parity: gatewayDeviceBindings.parity,
+        dataBits: gatewayDeviceBindings.dataBits,
+        stopBits: gatewayDeviceBindings.stopBits,
+      }).from(gatewayDeviceBindings)
+        .innerJoin(devices, eq(devices.id, gatewayDeviceBindings.deviceId))
+        .where(and(
+          eq(gatewayDeviceBindings.gatewayId, gatewayId),
+          eq(gatewayDeviceBindings.interfaceType, "rs485"),
+          eq(gatewayDeviceBindings.interfaceKey, busKey),
+          eq(gatewayDeviceBindings.enabled, true),
+          eq(devices.active, true),
+        )).limit(1);
+      if (busPeer && (
+        (busPeer.baudRate !== null && busPeer.baudRate !== baudRate)
+        || (busPeer.parity !== null && busPeer.parity !== parity)
+        || (busPeer.dataBits !== null && busPeer.dataBits !== DSE8660_DEFAULT_ACQUISITION.dataBits)
+        || (busPeer.stopBits !== null && busPeer.stopBits !== DSE8660_DEFAULT_ACQUISITION.stopBits)
+      )) {
+        throw new ApiError(409, `El bus ${busKey} ya usa otra configuración serial en ${busPeer.code}. Todos los equipos del mismo bus deben compartir baud rate, paridad, bits de datos y stop bits.`);
+      }
 
       const metrics = await db.select({ id: metricDefinitions.id, key: metricDefinitions.key, name: metricDefinitions.name })
         .from(metricDefinitions)
@@ -226,8 +259,15 @@ export async function POST(request: NextRequest) {
           gatewayId,
           deviceId: row.id,
           interfaceType: "rs485",
+          interfaceKey: busKey,
+          address: unitId,
+          baudRate,
+          parity,
+          dataBits: DSE8660_DEFAULT_ACQUISITION.dataBits,
+          stopBits: DSE8660_DEFAULT_ACQUISITION.stopBits,
           config: {
             protocol: "modbus_rtu",
+            interfaceKey: busKey,
             unitId,
             baudRate,
             parity,
@@ -262,7 +302,7 @@ export async function POST(request: NextRequest) {
           userAgent: meta.userAgent,
           after: {
             ...row,
-            acquisition: { gatewayId, interfaceType: "rs485", unitId, baudRate, parity, pollIntervalMs, readOnly: true },
+            acquisition: { gatewayId, interfaceType: "rs485", busKey, unitId, baudRate, parity, dataBits: DSE8660_DEFAULT_ACQUISITION.dataBits, stopBits: DSE8660_DEFAULT_ACQUISITION.stopBits, pollIntervalMs, readOnly: true },
           },
         });
         return row;
