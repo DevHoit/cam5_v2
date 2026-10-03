@@ -57,12 +57,19 @@ async function assertLastAdminProtection(
   db: Awaited<ReturnType<typeof requireApiSession>>["db"],
   targetId: string,
   scope: ReturnType<typeof actorScope>,
+  proposal?: {
+    status: string;
+    roleKey: PortalRoleKey;
+    requestedClientId: string;
+    requestedSiteIds: string[];
+  },
 ) {
   const [platformRole] = await db.select({ id: roles.id }).from(roles).where(eq(roles.key, "platform_admin")).limit(1);
   if (platformRole && scope.platformAdmin) {
     const [targetGlobal] = await db.select({ id: userRoleAssignments.id }).from(userRoleAssignments)
       .where(and(eq(userRoleAssignments.userId, targetId), eq(userRoleAssignments.roleId, platformRole.id), isNull(userRoleAssignments.siteId))).limit(1);
-    if (targetGlobal) {
+    const removesPlatformAdmin = !proposal || proposal.status !== "active" || proposal.roleKey !== "platform_admin";
+    if (targetGlobal && removesPlatformAdmin) {
       const [remaining] = await db.select({ value: count() }).from(userRoleAssignments)
         .innerJoin(users, eq(users.id, userRoleAssignments.userId))
         .where(and(eq(userRoleAssignments.roleId, platformRole.id), isNull(userRoleAssignments.siteId), eq(users.status, "active")));
@@ -75,6 +82,11 @@ async function assertLastAdminProtection(
     const targetClients = await db.select({ clientId: userClientAssignments.clientId }).from(userClientAssignments)
       .where(and(eq(userClientAssignments.userId, targetId), eq(userClientAssignments.roleId, clientRole.id), inArray(userClientAssignments.clientId, scope.clientIds)));
     for (const { clientId } of targetClients) {
+      const removesClientAdmin = !proposal
+        || proposal.status !== "active"
+        || proposal.roleKey !== "client_admin"
+        || proposal.requestedClientId !== clientId;
+      if (!removesClientAdmin) continue;
       const [remaining] = await db.select({ value: count() }).from(userClientAssignments)
         .innerJoin(users, eq(users.id, userClientAssignments.userId))
         .where(and(eq(userClientAssignments.clientId, clientId), eq(userClientAssignments.roleId, clientRole.id), eq(users.status, "active")));
@@ -88,6 +100,11 @@ async function assertLastAdminProtection(
       .where(and(eq(userRoleAssignments.userId, targetId), eq(userRoleAssignments.roleId, siteRole.id), inArray(userRoleAssignments.siteId, scope.siteIds)));
     for (const { siteId } of targetSites) {
       if (!siteId) continue;
+      const removesSiteAdmin = !proposal
+        || proposal.status !== "active"
+        || proposal.roleKey !== "site_admin"
+        || !proposal.requestedSiteIds.includes(siteId);
+      if (!removesSiteAdmin) continue;
       const [remaining] = await db.select({ value: count() }).from(userRoleAssignments)
         .innerJoin(users, eq(users.id, userRoleAssignments.userId))
         .where(and(eq(userRoleAssignments.siteId, siteId), eq(userRoleAssignments.roleId, siteRole.id), eq(users.status, "active")));
@@ -146,7 +163,12 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       if (changingOwnScope) throw new ApiError(409, "No puedes modificar tu propio rol o alcance administrativo.");
     }
 
-    await assertLastAdminProtection(db, id, scope);
+    await assertLastAdminProtection(db, id, scope, {
+      status,
+      roleKey,
+      requestedClientId,
+      requestedSiteIds,
+    });
     const passwordHash = password ? await hashPassword(password).catch((error: unknown) => {
       throw new ApiError(400, error instanceof Error ? error.message : "Contraseña inválida.");
     }) : null;
