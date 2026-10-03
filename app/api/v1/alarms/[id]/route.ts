@@ -1,11 +1,12 @@
 import type { NextRequest } from "next/server";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { Cam5Database } from "../../../../../db/index";
 import {
   alarmEvents,
   alarmRuleStates,
   alarms,
+  escalationJobs,
   operationalConditionStates,
   assets,
   auditLogs,
@@ -117,17 +118,20 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         if (target.status === "closed") throw new ApiError(409, "La alarma está cerrada. Reábrela antes de reconocerla.");
         if (target.status === "resolved") throw new ApiError(409, "La condición ya está atendida; puedes cerrarla o reabrirla.");
         await tx.update(alarms).set({ status: "acknowledged", acknowledgedAt: new Date(), acknowledgedBy: user.id }).where(eq(alarms.id, id));
+        await tx.update(escalationJobs).set({ status: "cancelled", completedAt: new Date(), updatedAt: new Date() }).where(and(eq(escalationJobs.alarmId, id), inArray(escalationJobs.status, ["pending", "processing"])));
         eventType = "acknowledged";
       } else if (action === "resolve") {
         requirePermission("alarms.close");
         if (target.status === "closed") throw new ApiError(409, "La alarma ya está cerrada.");
         await tx.update(alarms).set({ status: "resolved", resolvedAt: new Date(), resolvedBy: user.id }).where(eq(alarms.id, id));
+        await tx.update(escalationJobs).set({ status: "cancelled", completedAt: new Date(), updatedAt: new Date() }).where(and(eq(escalationJobs.alarmId, id), inArray(escalationJobs.status, ["pending", "processing"])));
         eventType = "resolved_manually";
       } else if (action === "close") {
         requirePermission("alarms.close");
         if (note.length < 3) throw new ApiError(400, "Agrega una nota de cierre para conservar la trazabilidad.");
         if (target.status === "closed") throw new ApiError(409, "La alarma ya está cerrada.");
         await tx.update(alarms).set({ status: "closed", closedAt: new Date(), closedBy: user.id }).where(eq(alarms.id, id));
+        await tx.update(escalationJobs).set({ status: "cancelled", completedAt: new Date(), updatedAt: new Date() }).where(and(eq(escalationJobs.alarmId, id), inArray(escalationJobs.status, ["pending", "processing"])));
         await tx.update(alarmRuleStates).set({ activeAlarmId: null, breachCount: 0, recoveryCount: 0, updatedAt: new Date() }).where(eq(alarmRuleStates.activeAlarmId, id));
         await tx.update(operationalConditionStates).set({
           activeAlarmId: null,
