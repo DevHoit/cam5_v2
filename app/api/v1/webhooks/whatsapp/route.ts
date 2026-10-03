@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
-import { getDb } from "../../../../db/index";
-import { processMetaWhatsAppWebhook, verifyMetaWebhookSignature } from "../../../../db/whatsapp-webhook";
+import { getDb } from "../../../../../db/index";
+import { processMetaWhatsAppWebhook, verifyMetaWebhookSignature } from "../../../../../db/whatsapp-webhook";
 
 export const dynamic = "force-dynamic";
 
