@@ -176,6 +176,13 @@
       "when": 1790984400000,
       "tag": "0024_notification_suppressed_status",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1790985600000,
+      "tag": "0025_rs485_bus_addressing",
+      "breakpoints": true
     }
   ]
 }
