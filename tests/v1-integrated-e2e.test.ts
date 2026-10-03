@@ -235,9 +235,15 @@ test("V1 integrated site handles simultaneous PM5560, DSE8660 and cold-chain fau
     }
 
     const recoveryAt = "2026-10-03T00:02:00.000Z";
-    await ingest(db, { gateway, siteId: site.id, deviceCode: pmDevices[0].code, driver: "schneider_pm5560", sequence: sequence++, at: recoveryAt, metrics: pmValues() });
-    await ingest(db, { gateway, siteId: site.id, deviceCode: atsDevices[0].code, driver: "dse8660_mkii", sequence: sequence++, at: recoveryAt, metrics: atsValues(true) });
-    await ingest(db, { gateway, siteId: site.id, deviceCode: coldDevices[0].code, driver: "eddystone_tlm", sequence: sequence++, at: recoveryAt, metrics: { "environment.temperature": 5, "sensor.battery_voltage": 3.5 } });
+    for (const device of pmDevices) {
+      await ingest(db, { gateway, siteId: site.id, deviceCode: device.code, driver: "schneider_pm5560", sequence: sequence++, at: recoveryAt, metrics: pmValues() });
+    }
+    for (const device of atsDevices) {
+      await ingest(db, { gateway, siteId: site.id, deviceCode: device.code, driver: "dse8660_mkii", sequence: sequence++, at: recoveryAt, metrics: atsValues(true) });
+    }
+    for (const device of coldDevices) {
+      await ingest(db, { gateway, siteId: site.id, deviceCode: device.code, driver: "eddystone_tlm", sequence: sequence++, at: recoveryAt, metrics: { "environment.temperature": 5, "sensor.battery_voltage": 3.5 } });
+    }
 
     const unresolved = await db.select().from(schema.alarms).where(and(
       inArray(schema.alarms.assetId, [electrical.id, ats.id, cold.id]),
