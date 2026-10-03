@@ -4,6 +4,8 @@ import { evaluateAtsSite } from "./ats-alarm-engine";
 import { evaluateColdChainSite } from "./cold-chain-alarm-engine";
 import { evaluateElectricalSite } from "./electrical-alarm-engine";
 import type { Cam5Database } from "./index";
+import { processDueEscalationJobs } from "./escalation-engine";
+import { queueEscalationNotifications } from "./escalation-notification-engine";
 import { processNotificationQueue } from "./notification-engine";
 import { evaluateGenericRules } from "./rule-engine";
 import { sites } from "./schema";
@@ -22,10 +24,17 @@ export type OperationalCycleResult = {
   evaluations: number;
   evaluationFailures: number;
   domains: DomainResult[];
+  escalations: {
+    processed: number;
+    completed: number;
+    cancelled: number;
+    failed: number;
+  };
   notifications: {
     recovered: number;
     repeated: number;
     processed: number;
+    sent: number;
     delivered: number;
     failed: number;
     suppressed: number;
@@ -64,6 +73,12 @@ export async function runOperationalCycle(
   }));
   const evaluationFailures = domains.filter((item) => item.status === "rejected").length;
 
+  const escalations = await processDueEscalationJobs(db, {
+    now: startedAt,
+    limit: options.notificationLimit,
+    execute: (context) => queueEscalationNotifications(db, context, startedAt),
+  });
+
   const notifications = await processNotificationQueue(db, {
     now: startedAt,
     limit: options.notificationLimit,
@@ -78,7 +93,8 @@ export async function runOperationalCycle(
     evaluations: tasks.length,
     evaluationFailures,
     domains,
+    escalations,
     notifications,
-    ok: evaluationFailures === 0 && notifications.failed === 0,
+    ok: evaluationFailures === 0 && escalations.failed === 0 && notifications.failed === 0,
   };
 }
