@@ -34,6 +34,11 @@ const ROLE_RANK: Record<PortalRoleKey, number> = {
 };
 
 function roleKey(value: string): PortalRoleKey | null {
+  // Transitional compatibility: deployments can receive the new application
+  // before migration 0023 is executed against the shared database. Legacy
+  // administrator assignments were always site-scoped, so interpret them as
+  // site_admin until the migration rewrites and removes that role.
+  if (value === "administrator") return "site_admin";
   return ["platform_admin", "client_admin", "site_admin", "engineer", "operator", "viewer"].includes(value)
     ? value as PortalRoleKey
     : null;
