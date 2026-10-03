@@ -386,15 +386,33 @@ export const gatewayDeviceBindings = pgTable("gateway_device_bindings", {
   gatewayId: uuid("gateway_id").notNull().references(() => gateways.id, { onDelete: "cascade" }),
   deviceId: uuid("device_id").notNull().references(() => devices.id, { onDelete: "cascade" }),
   interfaceType: varchar("interface_type", { length: 32 }).notNull(),
+  interfaceKey: varchar("interface_key", { length: 64 }),
+  address: smallint("address"),
+  baudRate: integer("baud_rate"),
+  parity: varchar("parity", { length: 8 }),
+  dataBits: smallint("data_bits"),
+  stopBits: smallint("stop_bits"),
   enabled: boolean("enabled").default(true).notNull(),
   config: jsonb("config").$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("gateway_device_bindings_pair_uidx").on(table.gatewayId, table.deviceId),
+  uniqueIndex("gateway_device_bindings_rs485_address_uidx")
+    .on(table.gatewayId, table.interfaceKey, table.address)
+    .where(sql`${table.interfaceType} = 'rs485' AND ${table.enabled} = true`),
   index("gateway_device_bindings_device_idx").on(table.deviceId),
   index("gateway_device_bindings_gateway_enabled_idx").on(table.gatewayId, table.enabled),
+  index("gateway_device_bindings_rs485_bus_idx")
+    .on(table.gatewayId, table.interfaceKey)
+    .where(sql`${table.interfaceType} = 'rs485' AND ${table.enabled} = true`),
   check("gateway_device_bindings_interface_chk", sql`${table.interfaceType} IN ('modbus_tcp', 'rs485', 'ble', 'ethernet', 'wifi', 'virtual')`),
+  check("gateway_device_bindings_address_chk", sql`${table.address} IS NULL OR ${table.address} BETWEEN 1 AND 247`),
+  check("gateway_device_bindings_baud_chk", sql`${table.baudRate} IS NULL OR ${table.baudRate} BETWEEN 1200 AND 115200`),
+  check("gateway_device_bindings_parity_chk", sql`${table.parity} IS NULL OR ${table.parity} IN ('none', 'even', 'odd')`),
+  check("gateway_device_bindings_data_bits_chk", sql`${table.dataBits} IS NULL OR ${table.dataBits} BETWEEN 5 AND 8`),
+  check("gateway_device_bindings_stop_bits_chk", sql`${table.stopBits} IS NULL OR ${table.stopBits} BETWEEN 1 AND 2`),
+  check("gateway_device_bindings_rs485_scope_chk", sql`${table.interfaceType} <> 'rs485' OR (${table.interfaceKey} IS NOT NULL AND length(trim(${table.interfaceKey})) > 0 AND ${table.address} IS NOT NULL)`),
 ]);
 
 export const deviceCapabilities = pgTable("device_capabilities", {
