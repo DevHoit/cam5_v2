@@ -225,7 +225,10 @@ test("V1 integrated site handles simultaneous PM5560, DSE8660 and cold-chain fau
     assert.ok(deliveries.length >= 3);
     assert.ok(deliveries.every((delivery) => delivery.status === "queued"));
 
-    const readings = await db.select().from(schema.metricReadings);
+    const readings = await db.select({
+      deviceId: schema.deviceMetrics.deviceId,
+    }).from(schema.metricReadings)
+      .innerJoin(schema.deviceMetrics, eq(schema.deviceMetrics.id, schema.metricReadings.deviceMetricId));
     assert.ok(readings.length > 100);
     for (const device of [...pmDevices, ...atsDevices, ...coldDevices]) {
       assert.ok(readings.some((reading) => reading.deviceId === device.id), `Sin histórico para ${device.code}`);
