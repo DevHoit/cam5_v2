@@ -93,6 +93,7 @@ jobs:
           tests/pm5560-e2e.test.ts
           tests/ats-e2e.test.ts
           tests/access-scope.test.ts
+          tests/area-scope.test.ts
           tests/notification-engine.test.ts
           tests/maintenance-window.test.ts
           tests/escalation-engine.test.ts
