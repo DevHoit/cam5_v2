@@ -32,7 +32,7 @@ const migrations = [
   "0021_dse8660_metric_catalog.sql",
   "0022_ats_report_template.sql",
   "0023_access_scope_roles.sql",
-  "0024_notification_suppressed_status.sql", "0025_rs485_bus_addressing.sql", "0026_hoit_v1_control_plane.sql", "0027_rule_alarm_semantics.sql",
+  "0024_notification_suppressed_status.sql", "0025_rs485_bus_addressing.sql", "0026_hoit_v1_control_plane.sql", "0027_rule_alarm_semantics.sql", "0029_notification_recipients.sql",
 ];
 
 test("operational cycle evaluates every active domain and drains notifications independently of Vercel", async () => {
@@ -56,7 +56,9 @@ test("operational cycle evaluates every active domain and drains notifications i
     assert.equal(result.evaluationFailures, 0);
     assert.equal(result.domains.length, 5);
     assert.deepEqual(new Set(result.domains.map((item) => item.domain)), new Set(["legacy", "cold_chain", "electrical", "ats", "generic_rules"]));
+    assert.deepEqual(result.escalations, { processed: 0, completed: 0, cancelled: 0, failed: 0 });
     assert.equal(result.notifications.processed, 0);
+    assert.equal(result.notifications.sent, 0);
     assert.equal(result.notifications.failed, 0);
     assert.equal(result.notifications.suppressed, 0);
     assert.equal(result.ok, true);
