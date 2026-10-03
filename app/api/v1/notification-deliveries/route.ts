@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
     const kind = request.nextUrl.searchParams.get("kind") || "all";
     const from = optionalDate(request.nextUrl.searchParams.get("from"));
     const to = optionalDate(request.nextUrl.searchParams.get("to"), true);
-    if (!["all", "queued", "sending", "delivered", "failed"].includes(status)) throw new ApiError(400, "El filtro de entrega no es válido.");
+    if (!["all", "queued", "sending", "delivered", "failed", "suppressed"].includes(status)) throw new ApiError(400, "El filtro de entrega no es válido.");
     if (kind !== "all" && !NOTIFICATION_KINDS.includes(kind as (typeof NOTIFICATION_KINDS)[number])) throw new ApiError(400, "El filtro de canal no es válido.");
     if (from && to && from > to) throw new ApiError(400, "La fecha inicial debe ser anterior a la final.");
     const filters: SQL[] = [eq(notificationEndpoints.siteId, user.siteId)];
