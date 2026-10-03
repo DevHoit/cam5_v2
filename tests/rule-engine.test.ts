@@ -125,11 +125,11 @@ test("safe rule expressions support comparisons and boolean composition without 
     ],
   });
   assert.deepEqual(new Set(ruleMetricKeys(expression)), new Set(["environment.temperature", "ats.mains.available"]));
-  assert.equal(evaluateRuleExpression(expression, new Map([
+  assert.equal(evaluateRuleExpression(expression, new Map<string, number | boolean | string>([
     ["environment.temperature", -12.5],
     ["ats.mains.available", true],
   ])), true);
-  assert.equal(evaluateRuleExpression(expression, new Map([
+  assert.equal(evaluateRuleExpression(expression, new Map<string, number | boolean | string>([
     ["environment.temperature", -18],
     ["ats.mains.available", true],
   ])), false);
