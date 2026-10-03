@@ -103,7 +103,24 @@ export async function enqueueEscalationJob(
       eq(escalationJobs.levelId, input.levelId),
     ))
     .limit(1);
-  return { created: false as const, job: existing ?? null };
+  if (!existing) return { created: false as const, job: null };
+
+  if (["cancelled", "completed", "failed"].includes(existing.status)) {
+    const [requeued] = await db.update(escalationJobs).set({
+      status: "pending",
+      dueAt: input.dueAt,
+      recipientType: level.recipientType,
+      recipientRef: level.recipientRef,
+      resolvedRecipientUserId: null,
+      attemptCount: 0,
+      lastError: null,
+      completedAt: null,
+      updatedAt: new Date(),
+    }).where(eq(escalationJobs.id, existing.id)).returning();
+    return { created: false as const, job: requeued ?? existing, requeued: Boolean(requeued) };
+  }
+
+  return { created: false as const, job: existing, requeued: false as const };
 }
 
 export async function cancelEscalationJobsForAlarm(
