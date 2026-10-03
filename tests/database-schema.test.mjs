@@ -74,7 +74,7 @@ const expectedTables = [
 test("applies the CAM5 PostgreSQL migration with access profiles and telemetry constraints", async () => {
   const database = new PGlite();
   try {
-    for (const filename of ["0000_cam5_initial_schema.sql", "0001_eager_blockbuster.sql", "0002_sparkling_wallow.sql", "0003_rich_charles_xavier.sql", "0004_windy_gauntlet.sql", "0005_milky_caretaker.sql", "0006_smiling_frightful_four.sql", "0007_big_frightful_four.sql", "0008_sloppy_mister_sinister.sql", "0009_cuddly_infant_terrible.sql", "0010_robust_wallop.sql", "0011_dear_prima.sql", "0012_hoit_core_foundation.sql", "0013_hoit_generic_telemetry.sql", "0014_generic_device_transport.sql", "0015_operational_condition_states.sql", "0016_cold_chain_report_template.sql", "0017_generic_metric_aggregates.sql", "0018_pm5560_metric_catalog.sql", "0019_nullable_device_gateway_site_guard.sql", "0020_electrical_report_template.sql", "0021_dse8660_metric_catalog.sql", "0022_ats_report_template.sql", "0023_access_scope_roles.sql", "0024_notification_suppressed_status.sql", "0025_rs485_bus_addressing.sql", "0026_hoit_v1_control_plane.sql"]) {
+    for (const filename of ["0000_cam5_initial_schema.sql", "0001_eager_blockbuster.sql", "0002_sparkling_wallow.sql", "0003_rich_charles_xavier.sql", "0004_windy_gauntlet.sql", "0005_milky_caretaker.sql", "0006_smiling_frightful_four.sql", "0007_big_frightful_four.sql", "0008_sloppy_mister_sinister.sql", "0009_cuddly_infant_terrible.sql", "0010_robust_wallop.sql", "0011_dear_prima.sql", "0012_hoit_core_foundation.sql", "0013_hoit_generic_telemetry.sql", "0014_generic_device_transport.sql", "0015_operational_condition_states.sql", "0016_cold_chain_report_template.sql", "0017_generic_metric_aggregates.sql", "0018_pm5560_metric_catalog.sql", "0019_nullable_device_gateway_site_guard.sql", "0020_electrical_report_template.sql", "0021_dse8660_metric_catalog.sql", "0022_ats_report_template.sql", "0023_access_scope_roles.sql", "0024_notification_suppressed_status.sql", "0025_rs485_bus_addressing.sql", "0026_hoit_v1_control_plane.sql", "0027_rule_alarm_semantics.sql"]) {
       const migration = await readFile(new URL(`../drizzle/${filename}`, import.meta.url), "utf8");
       await database.exec(migration.replaceAll("--> statement-breakpoint", ""));
     }
@@ -102,7 +102,16 @@ test("applies the CAM5 PostgreSQL migration with access profiles and telemetry c
       where t.typname = 'alarm_status'
       order by e.enumsortorder
     `);
-    assert.deepEqual(alarmStatuses.rows.map((row) => row.enumlabel), ["open", "acknowledged", "resolved", "closed"]);
+    assert.deepEqual(alarmStatuses.rows.map((row) => row.enumlabel), ["open", "acknowledged", "resolved", "closed", "suppressed"]);
+
+    const severities = await database.query(`
+      select e.enumlabel
+      from pg_type t
+      join pg_enum e on e.enumtypid = t.oid
+      where t.typname = 'severity'
+      order by e.enumsortorder
+    `);
+    assert.deepEqual(severities.rows.map((row) => row.enumlabel), ["normal", "info", "warning", "critical"]);
 
     const alarmColumns = await database.query(`
       select column_name
