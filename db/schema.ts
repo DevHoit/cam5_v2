@@ -43,8 +43,8 @@ export const channelMetricEnum = pgEnum("channel_metric", [
 ]);
 export const registerDataTypeEnum = pgEnum("register_data_type", ["int16", "uint16"]);
 export const dataQualityEnum = pgEnum("data_quality", ["good", "stale", "bad", "disabled"]);
-export const severityEnum = pgEnum("severity", ["normal", "warning", "critical"]);
-export const alarmStatusEnum = pgEnum("alarm_status", ["open", "acknowledged", "resolved", "closed"]);
+export const severityEnum = pgEnum("severity", ["normal", "info", "warning", "critical"]);
+export const alarmStatusEnum = pgEnum("alarm_status", ["open", "acknowledged", "resolved", "closed", "suppressed"]);
 export const workOrderStatusEnum = pgEnum("work_order_status", ["pending", "in_progress", "completed", "cancelled"]);
 export const workOrderPriorityEnum = pgEnum("work_order_priority", ["normal", "high", "critical"]);
 export const commissioningStatusEnum = pgEnum("commissioning_status", ["pending", "passed", "failed", "not_applicable"]);
