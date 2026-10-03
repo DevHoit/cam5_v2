@@ -100,6 +100,7 @@ export function ElectricalView({
     code: "PM5560-01",
     name: "Schneider PM5560",
     busKey: "rs485-1",
+    port: "",
     unitId: "1",
     baudRate: "19200",
     parity: "even",
@@ -269,6 +270,7 @@ export function ElectricalView({
           code: meterForm.code,
           name: meterForm.name,
           busKey: meterForm.busKey,
+          port: meterForm.port,
           unitId: Number(meterForm.unitId),
           baudRate: Number(meterForm.baudRate),
           parity: meterForm.parity,
@@ -406,21 +408,22 @@ export function ElectricalView({
               <label><span>Nombre</span><input value={meterForm.name} onChange={(event) => setMeterForm({ ...meterForm, name: event.target.value })} /></label>
             </div>
             <div className="cold-config-columns">
-              <label><span>Bus físico RS485</span><input value={meterForm.busKey} onChange={(event) => setMeterForm({ ...meterForm, busKey: event.target.value })} placeholder="rs485-1" /></label>
+              <label><span>Bus lógico RS485</span><input value={meterForm.busKey} onChange={(event) => setMeterForm({ ...meterForm, busKey: event.target.value })} placeholder="rs485-1" /></label>
+              <label><span>Puerto Linux</span><input required value={meterForm.port} onChange={(event) => setMeterForm({ ...meterForm, port: event.target.value })} placeholder="/dev/ttyS1" /></label>
+            </div>
+            <div className="cold-config-columns">
               <label><span>Modbus slave ID</span><input type="number" min="1" max="247" value={meterForm.unitId} onChange={(event) => setMeterForm({ ...meterForm, unitId: event.target.value })} /></label>
+              <label><span>Polling (ms)</span><input type="number" min="250" value={meterForm.pollIntervalMs} onChange={(event) => setMeterForm({ ...meterForm, pollIntervalMs: event.target.value })} /></label>
             </div>
             <div className="cold-config-columns">
               <label><span>Baud rate</span><select value={meterForm.baudRate} onChange={(event) => setMeterForm({ ...meterForm, baudRate: event.target.value })}><option value="9600">9600</option><option value="19200">19200</option><option value="38400">38400</option><option value="57600">57600</option><option value="115200">115200</option></select></label>
-            </div>
-            <div className="cold-config-columns">
               <label><span>Paridad</span><select value={meterForm.parity} onChange={(event) => setMeterForm({ ...meterForm, parity: event.target.value })}><option value="even">Even</option><option value="none">None</option><option value="odd">Odd</option></select></label>
-              <label><span>Polling (ms)</span><input type="number" min="250" value={meterForm.pollIntervalMs} onChange={(event) => setMeterForm({ ...meterForm, pollIntervalMs: event.target.value })} /></label>
             </div>
-            <div className="cold-maintenance-note"><strong>Bus físico explícito</strong><p>La dirección Modbus debe ser única dentro de cada bus del gateway. Todos los equipos del mismo bus deben usar la misma configuración serial. HOIT no supone que todos los puertos RS485 del gateway sean el mismo bus.</p></div>
+            <div className="cold-maintenance-note"><strong>Puerto físico explícito</strong><p>HOIT no deduce rutas Linux. El bus lógico identifica el segmento y el puerto debe corresponder al dispositivo real del gateway, por ejemplo /dev/ttyS1. Todos los equipos del mismo bus comparten puerto y parámetros seriales, con slave IDs únicos.</p></div>
           </>}
           {error && <div className="cold-config-error">{error}</div>}
         </div>
-        <footer><button className="secondary-button" onClick={() => setDialog(null)} disabled={busy}>Cancelar</button><button className="primary-button" onClick={() => void (dialog === "point" ? createPoint() : dialog === "alarms" ? saveAlarmConfig() : createMeter())} disabled={busy}>{busy ? "Guardando…" : dialog === "point" ? "Crear punto" : dialog === "alarms" ? "Guardar alarmas" : "Crear PM5560"}</button></footer>
+        <footer><button className="secondary-button" onClick={() => setDialog(null)} disabled={busy}>Cancelar</button><button className="primary-button" onClick={() => void (dialog === "point" ? createPoint() : dialog === "alarms" ? saveAlarmConfig() : createMeter())} disabled={busy || (dialog === "meter" && !meterForm.port.trim())}>{busy ? "Guardando…" : dialog === "point" ? "Crear punto" : dialog === "alarms" ? "Guardar alarmas" : "Crear PM5560"}</button></footer>
       </section>
     </div>}
   </div>;

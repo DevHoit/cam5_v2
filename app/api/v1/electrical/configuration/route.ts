@@ -24,6 +24,13 @@ function text(value: unknown, label: string, min = 1): string {
   if (typeof value !== "string" || value.trim().length < min) throw new ApiError(400, label + " es obligatorio.");
   return value.trim();
 }
+function linuxDevicePath(value: unknown): string {
+  const path = text(value, "El puerto Linux", 5);
+  if (path.length > 255 || !/^\/dev\/[A-Za-z0-9._/-]+$/.test(path)) {
+    throw new ApiError(400, "El puerto Linux debe ser una ruta /dev/... válida.");
+  }
+  return path;
+}
 function optionalNumber(value: unknown, label: string): number | null {
   if (value === null || value === undefined || value === "") return null;
   if (typeof value !== "number" || !Number.isFinite(value)) throw new ApiError(400, label + " debe ser numérico.");
@@ -160,6 +167,7 @@ export async function POST(request: NextRequest) {
       const gatewayId = text(body.gatewayId, "El gateway");
       const code = text(body.code, "El código", 2).toUpperCase();
       const name = text(body.name, "El nombre", 2);
+      const port = linuxDevicePath(body.port);
       const unitId = integer(body.unitId, "unitId", 1, 1, 247);
       const busKey = typeof body.busKey === "string" && body.busKey.trim() ? body.busKey.trim().toLowerCase() : "rs485-1";
       if (!/^[a-z0-9._-]{1,64}$/.test(busKey)) throw new ApiError(400, "busKey sólo admite letras, números, punto, guion y guion bajo.");
@@ -202,6 +210,7 @@ export async function POST(request: NextRequest) {
         parity: gatewayDeviceBindings.parity,
         dataBits: gatewayDeviceBindings.dataBits,
         stopBits: gatewayDeviceBindings.stopBits,
+        config: gatewayDeviceBindings.config,
       }).from(gatewayDeviceBindings)
         .innerJoin(devices, eq(devices.id, gatewayDeviceBindings.deviceId))
         .where(and(
@@ -218,6 +227,12 @@ export async function POST(request: NextRequest) {
         || (busPeer.stopBits !== null && busPeer.stopBits !== 1)
       )) {
         throw new ApiError(409, `El bus ${busKey} ya usa otra configuración serial en ${busPeer.code}. Todos los equipos del mismo bus deben compartir baud rate, paridad, bits de datos y stop bits.`);
+      }
+      const peerPort = busPeer?.config && typeof busPeer.config === "object" && !Array.isArray(busPeer.config)
+        ? (busPeer.config as Record<string, unknown>).port
+        : null;
+      if (typeof peerPort === "string" && peerPort.trim() && peerPort.trim() !== port) {
+        throw new ApiError(409, `El bus ${busKey} ya está asociado al puerto Linux ${peerPort.trim()} en ${busPeer?.code}. Usa el mismo puerto para todos los equipos del bus.`);
       }
 
       const metrics = await db.select({ id: metricDefinitions.id, key: metricDefinitions.key, name: metricDefinitions.name })
@@ -264,6 +279,8 @@ export async function POST(request: NextRequest) {
           stopBits: 1,
           config: {
             protocol: "modbus_rtu",
+            port,
+            poll_profile: "pm5560_default",
             interfaceKey: busKey,
             unitId,
             baudRate,
@@ -299,7 +316,7 @@ export async function POST(request: NextRequest) {
           userAgent: meta.userAgent,
           after: {
             ...row,
-            acquisition: { gatewayId, interfaceType: "rs485", busKey, unitId, baudRate, parity, dataBits: 8, stopBits: 1, pollIntervalMs, readOnly: true },
+            acquisition: { gatewayId, interfaceType: "rs485", busKey, port, unitId, baudRate, parity, dataBits: 8, stopBits: 1, pollIntervalMs, readOnly: true },
           },
         });
         return row;

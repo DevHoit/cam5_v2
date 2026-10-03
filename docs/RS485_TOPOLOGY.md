@@ -52,6 +52,10 @@ usb-rs485-a
 panel-a
 ```
 
-El nombre no implica una ruta Linux concreta. El mapeo desde `interfaceKey` hacia `/dev/ttyUSB0`, `/dev/ttyS1` u otro dispositivo pertenece a la configuración local del gateway.
+El nombre lógico no permite deducir una ruta Linux. Para el contrato HOIT V1, el binding guarda además de `interfaceKey` el puerto Linux confirmado durante commissioning, por ejemplo `/dev/ttyS1` o `/dev/ttyUSB0`.
+
+HOIT Core **no inventa** esa ruta: debe ser ingresada explícitamente al configurar el device. Si falta, `GET /api/v1/gateway/config` rechaza la configuración HOIT como incompleta en vez de entregar un contrato ambiguo.
+
+Todos los devices de un mismo `gateway + interfaceKey` deben compartir el mismo puerto Linux y parámetros seriales. El puerto puede cambiar entre buses distintos.
 
 HOIT Core no define ni presupone mapas de registros PM5560 o DSE8660 en esta capa. Esos mapas deben incorporarse únicamente con documentación oficial validada para el equipo instalado.
