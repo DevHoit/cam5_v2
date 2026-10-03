@@ -41,6 +41,7 @@ jobs:
           db/platform-admin.ts
           db/notification-engine.ts
           db/maintenance-engine.ts
+          db/maintenance-window-service.ts
           db/operations-cycle.ts
           db/auth.ts
           db/dse8660.ts
@@ -69,6 +70,7 @@ jobs:
           app/api/v1/users/[id]/route.ts
           app/api/v1/system/operations/route.ts
           app/api/v1/notification-deliveries/route.ts
+          app/api/v1/maintenance-windows/route.ts
           app/api/v1/notifications/summary/route.ts
           app/notifications-view.tsx
           scripts/run-operations-cycle.ts
@@ -89,6 +91,7 @@ jobs:
           tests/ats-e2e.test.ts
           tests/access-scope.test.ts
           tests/notification-engine.test.ts
+          tests/maintenance-window.test.ts
           tests/operations-cycle.test.ts
           tests/rs485-topology.test.ts
           tests/v1-integrated-e2e.test.ts
