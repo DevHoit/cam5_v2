@@ -38,6 +38,7 @@ jobs:
           db/hoit-metrics.ts
           db/pm5560.ts
           db/access-scope.ts
+          db/platform-admin.ts
           db/notification-engine.ts
           db/operations-cycle.ts
           db/auth.ts
@@ -65,6 +66,7 @@ jobs:
           app/api/v1/notifications/summary/route.ts
           app/notifications-view.tsx
           scripts/run-operations-cycle.ts
+          scripts/promote-platform-admin.ts
           app/cold-chain-view.tsx
           app/cold-chain-detail.tsx
           app/electrical-view.tsx
