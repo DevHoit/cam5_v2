@@ -133,3 +133,46 @@ test("RS485 bindings require an explicit bus and Modbus address", async () => {
     await client.close();
   }
 });
+
+
+test("RS485 rejects incompatible serial settings on the same physical bus", async () => {
+  const { client, db } = await database();
+  try {
+    const [owner] = await db.insert(schema.clients).values({ code: "SERIAL", name: "Serial" }).returning();
+    const [site] = await db.insert(schema.sites).values({ clientId: owner.id, code: "SERIAL-S", name: "Serial Site" }).returning();
+    const [asset] = await db.insert(schema.assets).values({ siteId: site.id, code: "SERIAL-A", name: "Serial Asset" }).returning();
+    const [gateway] = await db.insert(schema.gateways).values({ siteId: site.id, code: "SERIAL-GW", name: "Serial Gateway" }).returning();
+
+    const [device1] = await db.insert(schema.devices).values({ assetId: asset.id, code: "SERIAL-1", name: "Serial 1", protocol: "modbus_rtu", unitId: 1 }).returning();
+    const [device2] = await db.insert(schema.devices).values({ assetId: asset.id, code: "SERIAL-2", name: "Serial 2", protocol: "modbus_rtu", unitId: 2 }).returning();
+
+    await db.insert(schema.gatewayDeviceBindings).values({
+      gatewayId: gateway.id,
+      deviceId: device1.id,
+      interfaceType: "rs485",
+      interfaceKey: "rs485-1",
+      address: 1,
+      baudRate: 19200,
+      parity: "even",
+      dataBits: 8,
+      stopBits: 1,
+    });
+
+    await assert.rejects(
+      db.insert(schema.gatewayDeviceBindings).values({
+        gatewayId: gateway.id,
+        deviceId: device2.id,
+        interfaceType: "rs485",
+        interfaceKey: "rs485-1",
+        address: 2,
+        baudRate: 9600,
+        parity: "none",
+        dataBits: 8,
+        stopBits: 1,
+      }),
+      /incompatible serial settings|constraint/i,
+    );
+  } finally {
+    await client.close();
+  }
+});
