@@ -49,7 +49,7 @@ export const workOrderStatusEnum = pgEnum("work_order_status", ["pending", "in_p
 export const workOrderPriorityEnum = pgEnum("work_order_priority", ["normal", "high", "critical"]);
 export const commissioningStatusEnum = pgEnum("commissioning_status", ["pending", "passed", "failed", "not_applicable"]);
 export const reportRunStatusEnum = pgEnum("report_run_status", ["queued", "running", "completed", "failed"]);
-export const notificationKindEnum = pgEnum("notification_kind", ["email", "teams", "webhook"]);
+export const notificationKindEnum = pgEnum("notification_kind", ["email", "teams", "webhook", "whatsapp_meta"]);
 export const integrationKindEnum = pgEnum("integration_kind", ["webhook", "rest_api", "email", "teams", "cmms"]);
 export const auditOutcomeEnum = pgEnum("audit_outcome", ["success", "denied", "failed"]);
 export const configurationKindEnum = pgEnum("configuration_kind", ["baseline", "manual", "pre_deploy", "backup", "restore"]);
@@ -143,6 +143,7 @@ export const gateways = pgTable("gateways", {
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
   email: varchar("email", { length: 320 }).notNull(),
+  phoneE164: varchar("phone_e164", { length: 20 }),
   displayName: varchar("display_name", { length: 160 }).notNull(),
   status: userStatusEnum("status").default("invited").notNull(),
   locale: varchar("locale", { length: 16 }).default("es-CL").notNull(),
@@ -152,6 +153,7 @@ export const users = pgTable("users", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("users_email_lower_uidx").on(sql`lower(${table.email})`),
+  uniqueIndex("users_phone_e164_uidx").on(table.phoneE164),
   index("users_status_idx").on(table.status),
 ]);
 
@@ -1151,6 +1153,9 @@ export const notificationDeliveries = pgTable("notification_deliveries", {
   subject: varchar("subject", { length: 240 }).default("Notificación HoitLive Core").notNull(),
   payload: jsonb("payload").$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
   recipient: varchar("recipient", { length: 320 }),
+  recipientUserId: uuid("recipient_user_id").references(() => users.id, { onDelete: "set null" }),
+  provider: varchar("provider", { length: 40 }),
+  templateName: varchar("template_name", { length: 120 }),
   status: varchar("status", { length: 32 }).default("queued").notNull(),
   attemptCount: smallint("attempt_count").default(0).notNull(),
   maxAttempts: smallint("max_attempts").default(4).notNull(),
@@ -1161,15 +1166,22 @@ export const notificationDeliveries = pgTable("notification_deliveries", {
   nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).defaultNow().notNull(),
   lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }),
   sentAt: timestamp("sent_at", { withTimezone: true }),
+  deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+  readAt: timestamp("read_at", { withTimezone: true }),
+  failedAt: timestamp("failed_at", { withTimezone: true }),
+  ackAt: timestamp("ack_at", { withTimezone: true }),
+  errorCode: varchar("error_code", { length: 120 }),
   dedupeKey: varchar("dedupe_key", { length: 220 }),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   index("notification_deliveries_status_queued_idx").on(table.status, table.queuedAt),
   index("notification_deliveries_due_idx").on(table.status, table.nextAttemptAt),
   index("notification_deliveries_alarm_idx").on(table.alarmId),
+  index("notification_deliveries_recipient_user_idx").on(table.recipientUserId, table.queuedAt),
+  index("notification_deliveries_provider_message_idx").on(table.provider, table.providerMessageId),
   uniqueIndex("notification_deliveries_dedupe_uidx").on(table.dedupeKey),
   check("notification_deliveries_attempt_chk", sql`${table.attemptCount} >= 0 AND ${table.maxAttempts} > 0 AND ${table.attemptCount} <= ${table.maxAttempts}`),
-  check("notification_deliveries_status_chk", sql`${table.status} IN ('queued', 'sending', 'delivered', 'failed', 'suppressed')`),
+  check("notification_deliveries_status_chk", sql`${table.status} IN ('queued', 'sending', 'sent', 'delivered', 'read', 'failed', 'cancelled', 'suppressed')`),
 ]);
 
 export const integrations = pgTable("integrations", {
