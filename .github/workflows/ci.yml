@@ -82,6 +82,7 @@ jobs:
           tests/notification-engine.test.ts
           tests/operations-cycle.test.ts
           tests/rs485-topology.test.ts
+          tests/v1-integrated-e2e.test.ts
           tests/cold-chain-e2e.test.ts
           tests/cold-chain.test.ts
           tests/cold-chain-history.test.ts
