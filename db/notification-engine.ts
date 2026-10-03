@@ -12,7 +12,7 @@ import {
   sites,
 } from "./schema";
 
-export type NotificationSeverity = "normal" | "warning" | "critical";
+export type NotificationSeverity = "normal" | "info" | "warning" | "critical";
 export type NotificationAlarmKind = "threshold" | "communication" | "data_quality";
 export type NotificationEventType = "opened" | "escalated" | "reopened_automatically" | "resolved_automatically" | "repeat" | "test" | string;
 
@@ -43,7 +43,7 @@ type EndpointTransport = {
 
 type TransportResult = { providerMessageId: string | null; recipient: string };
 
-const severityRank: Record<NotificationSeverity, number> = { normal: 0, warning: 1, critical: 2 };
+const severityRank: Record<NotificationSeverity, number> = { normal: 0, info: 1, warning: 2, critical: 3 };
 
 function normalizedFilters(value: Record<string, unknown>): PolicyFilters {
   return value as PolicyFilters;
@@ -87,7 +87,7 @@ export async function queueAlarmNotifications(
     occurredAt?: Date;
   },
 ) {
-  if (input.severity === "normal") return 0;
+  if (input.severity === "normal" || input.severity === "info") return 0;
   const [alarm] = await db.select({
     id: alarms.id,
     code: alarms.code,
