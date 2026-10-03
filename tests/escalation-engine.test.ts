@@ -21,7 +21,7 @@ const migrations = [
   "0015_operational_condition_states.sql", "0016_cold_chain_report_template.sql", "0017_generic_metric_aggregates.sql",
   "0018_pm5560_metric_catalog.sql", "0019_nullable_device_gateway_site_guard.sql", "0020_electrical_report_template.sql",
   "0021_dse8660_metric_catalog.sql", "0022_ats_report_template.sql", "0023_access_scope_roles.sql",
-  "0024_notification_suppressed_status.sql", "0025_rs485_bus_addressing.sql", "0026_hoit_v1_control_plane.sql",
+  "0024_notification_suppressed_status.sql", "0025_rs485_bus_addressing.sql", "0026_hoit_v1_control_plane.sql", "0027_rule_alarm_semantics.sql",
 ];
 
 async function fixture() {
@@ -174,6 +174,28 @@ test("future jobs stay pending and explicit cancellation removes active alarm wo
     assert.equal(await cancelEscalationJobsForAlarm(db, alarm.id, new Date(openedAt.getTime() + 20_000)), 1);
     const [job] = await db.select().from(schema.escalationJobs);
     assert.equal(job.status, "cancelled");
+  } finally {
+    await client.close();
+  }
+});
+
+test("a cancelled escalation level is requeued when the same alarm reopens", async () => {
+  const { client, db, alarm, policy, level, openedAt } = await fixture();
+  try {
+    const firstDue = new Date(openedAt.getTime() + 60_000);
+    await enqueueEscalationJob(db, { alarmId: alarm.id, policyId: policy.id, levelId: level.id, dueAt: firstDue });
+    assert.equal(await cancelEscalationJobsForAlarm(db, alarm.id, new Date(openedAt.getTime() + 30_000)), 1);
+
+    const secondDue = new Date(openedAt.getTime() + 600_000);
+    const replay = await enqueueEscalationJob(db, { alarmId: alarm.id, policyId: policy.id, levelId: level.id, dueAt: secondDue });
+    assert.equal(replay.created, false);
+    assert.equal(replay.requeued, true);
+
+    const [job] = await db.select().from(schema.escalationJobs);
+    assert.equal(job.status, "pending");
+    assert.equal(job.dueAt.toISOString(), secondDue.toISOString());
+    assert.equal(job.attemptCount, 0);
+    assert.equal(job.completedAt, null);
   } finally {
     await client.close();
   }
