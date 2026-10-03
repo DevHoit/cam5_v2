@@ -28,15 +28,21 @@ type EndpointConfiguration = {
   channel?: string;
   url?: string;
   destination?: string;
+  phoneNumberId?: string;
+  apiVersion?: string;
+  languageCode?: string;
+  templateName?: string;
 };
 
 type DeliveryMessage = {
   subject: string;
   payload: Record<string, unknown>;
+  recipient?: string | null;
+  templateName?: string | null;
 };
 
 type EndpointTransport = {
-  kind: "email" | "teams" | "webhook";
+  kind: "email" | "teams" | "webhook" | "whatsapp_meta";
   configuration: Record<string, unknown>;
   secretReference: string | null;
 };
@@ -63,6 +69,7 @@ function policyMatches(filters: PolicyFilters, event: { kind: NotificationAlarmK
 
 function endpointRecipient(kind: EndpointTransport["kind"], configuration: EndpointConfiguration) {
   if (kind === "email") return (configuration.recipients ?? []).join(", ").slice(0, 320) || null;
+  if (kind === "whatsapp_meta") return null;
   return (configuration.destination || configuration.channel || configuration.url || null)?.slice(0, 320) ?? null;
 }
 
@@ -415,7 +422,9 @@ export async function sendNotification(
   const text = messageText(message);
 
   if (endpoint.kind === "email") {
-    const recipients = configuration.recipients?.filter((recipient) => recipient.trim()) ?? [];
+    const recipients = message.recipient?.trim()
+      ? [message.recipient.trim().toLowerCase()]
+      : configuration.recipients?.filter((recipient) => recipient.trim()) ?? [];
     if (!recipients.length) throw new Error("El canal de correo no tiene destinatarios.");
     const apiKey = requiredEnvironmentValue("RESEND_API_KEY", environment);
     const from = requiredEnvironmentValue("NOTIFICATION_FROM_EMAIL", environment);
@@ -427,6 +436,40 @@ export async function sendNotification(
     const result = await response.json().catch(() => ({})) as { id?: string; message?: string };
     if (!response.ok) throw new Error(result.message || `El proveedor de correo respondió ${response.status}.`);
     return { providerMessageId: result.id ?? null, recipient: recipients.join(", ").slice(0, 320) };
+  }
+
+  if (endpoint.kind === "whatsapp_meta") {
+    const recipient = message.recipient?.trim();
+    if (!recipient || !/^\+[1-9][0-9]{7,14}$/.test(recipient)) {
+      throw new Error("WhatsApp requiere un destinatario phone_e164 válido.");
+    }
+    if (!endpoint.secretReference) throw new Error("WhatsApp Meta requiere una referencia segura al access token.");
+    const phoneNumberId = configuration.phoneNumberId?.trim();
+    const apiVersion = configuration.apiVersion?.trim();
+    const templateName = message.templateName?.trim() || configuration.templateName?.trim();
+    const languageCode = configuration.languageCode?.trim() || "es_CL";
+    if (!phoneNumberId || !/^[0-9]{5,32}$/.test(phoneNumberId)) throw new Error("WhatsApp Meta requiere phoneNumberId válido.");
+    if (!apiVersion || !/^v[0-9]+\.[0-9]+$/.test(apiVersion)) throw new Error("WhatsApp Meta requiere apiVersion explícita.");
+    if (!templateName) throw new Error("WhatsApp Meta requiere un template aprobado.");
+    const token = requiredEnvironmentValue(endpoint.secretReference, environment);
+    const templateComponents = Array.isArray(message.payload.templateComponents) ? message.payload.templateComponents : undefined;
+    const response = await fetchImpl(`https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        to: recipient.slice(1),
+        type: "template",
+        template: {
+          name: templateName,
+          language: { code: languageCode },
+          ...(templateComponents ? { components: templateComponents } : {}),
+        },
+      }),
+    });
+    const result = await response.json().catch(() => ({})) as { messages?: Array<{ id?: string }>; error?: { message?: string } };
+    if (!response.ok) throw new Error(result.error?.message || `Meta WhatsApp respondió ${response.status}.`);
+    return { providerMessageId: result.messages?.[0]?.id ?? null, recipient };
   }
 
   if (endpoint.kind === "teams") {
@@ -469,6 +512,8 @@ export async function processNotificationDelivery(
     alarmId: notificationDeliveries.alarmId,
     subject: notificationDeliveries.subject,
     payload: notificationDeliveries.payload,
+    recipient: notificationDeliveries.recipient,
+    templateName: notificationDeliveries.templateName,
     attemptCount: notificationDeliveries.attemptCount,
     maxAttempts: notificationDeliveries.maxAttempts,
     kind: notificationEndpoints.kind,
@@ -511,14 +556,31 @@ export async function processNotificationDelivery(
   if (!claimed) return { status: "skipped" as const, error: "La entrega ya está siendo procesada o finalizó." };
   const nextAttempt = candidate.attemptCount + 1;
   try {
-    const result = await sendNotification({ kind: candidate.kind, configuration: candidate.configuration, secretReference: candidate.secretReference }, { subject: candidate.subject, payload: candidate.payload }, options);
-    await db.update(notificationDeliveries).set({ status: "delivered", attemptCount: nextAttempt, providerMessageId: result.providerMessageId, recipient: result.recipient.slice(0, 320), errorMessage: null, sentAt: now, updatedAt: now }).where(eq(notificationDeliveries.id, candidate.id));
-    return { status: "delivered" as const, error: null };
+    const result = await sendNotification(
+      { kind: candidate.kind, configuration: candidate.configuration, secretReference: candidate.secretReference },
+      { subject: candidate.subject, payload: candidate.payload, recipient: candidate.recipient, templateName: candidate.templateName },
+      options,
+    );
+    const providerAcceptedOnly = candidate.kind === "email" || candidate.kind === "whatsapp_meta";
+    await db.update(notificationDeliveries).set({
+      status: providerAcceptedOnly ? "sent" : "delivered",
+      attemptCount: nextAttempt,
+      providerMessageId: result.providerMessageId,
+      recipient: result.recipient.slice(0, 320),
+      provider: candidate.kind === "email" ? "resend" : candidate.kind === "whatsapp_meta" ? "meta_whatsapp_cloud" : candidate.kind,
+      errorMessage: null,
+      errorCode: null,
+      sentAt: now,
+      deliveredAt: providerAcceptedOnly ? null : now,
+      failedAt: null,
+      updatedAt: now,
+    }).where(eq(notificationDeliveries.id, candidate.id));
+    return { status: providerAcceptedOnly ? "sent" as const : "delivered" as const, error: null };
   } catch (error) {
     const exhausted = nextAttempt >= candidate.maxAttempts;
     const nextAttemptAt = exhausted ? now : new Date(now.getTime() + retryDelayMinutes(nextAttempt) * 60_000);
     const message = error instanceof Error ? error.message.slice(0, 2000) : "Error de entrega desconocido.";
-    await db.update(notificationDeliveries).set({ status: "failed", attemptCount: nextAttempt, errorMessage: message, nextAttemptAt, updatedAt: now }).where(eq(notificationDeliveries.id, candidate.id));
+    await db.update(notificationDeliveries).set({ status: "failed", attemptCount: nextAttempt, errorMessage: message, failedAt: now, nextAttemptAt, updatedAt: now }).where(eq(notificationDeliveries.id, candidate.id));
     return { status: "failed" as const, error: message };
   }
 }
@@ -555,14 +617,16 @@ export async function processNotificationQueue(
     .orderBy(notificationDeliveries.nextAttemptAt)
     .limit(Math.min(100, Math.max(1, options.limit ?? 25)));
 
+  let sent = 0;
   let delivered = 0;
   let failed = 0;
   let suppressed = 0;
   for (const candidate of candidates) {
     const result = await processNotificationDelivery(db, candidate.id, { ...options, now });
+    if (result.status === "sent") sent += 1;
     if (result.status === "delivered") delivered += 1;
     if (result.status === "failed") failed += 1;
     if (result.status === "suppressed") suppressed += 1;
   }
-  return { recovered: recoveredRows.length, repeated, processed: candidates.length, delivered, failed, suppressed };
+  return { recovered: recoveredRows.length, repeated, processed: candidates.length, sent, delivered, failed, suppressed };
 }
