@@ -10,7 +10,7 @@ UPDATE "gateway_device_bindings" AS gdb
 SET
   "interface_key" = COALESCE(
     NULLIF(gdb."config"->>'interfaceKey', ''),
-    CASE WHEN gdb."interface_type" = 'rs485' THEN 'rs485-legacy' ELSE NULL END
+    CASE WHEN gdb."interface_type" = 'rs485' THEN 'rs485-1' ELSE NULL END
   ),
   "address" = COALESCE(
     NULLIF(gdb."config"->>'unitId', '')::smallint,
