@@ -938,6 +938,40 @@ export const alarms = pgTable("alarms", {
   check("alarms_observation_time_chk", sql`${table.lastObservedAt} >= ${table.openedAt}`),
 ]);
 
+export const alarmTransitions = pgTable("alarm_transitions", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  alarmId: uuid("alarm_id").notNull().references(() => alarms.id, { onDelete: "cascade" }),
+  fromStatus: varchar("from_status", { length: 24 }).notNull(),
+  toStatus: varchar("to_status", { length: 24 }).notNull(),
+  actorUserId: uuid("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+  source: varchar("source", { length: 40 }).default("system").notNull(),
+  sourceRef: varchar("source_ref", { length: 220 }),
+  note: text("note"),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("alarm_transitions_alarm_created_idx").on(table.alarmId, table.createdAt),
+  uniqueIndex("alarm_transitions_source_ref_uidx").on(table.source, table.sourceRef),
+]);
+
+export const notificationProviderEvents = pgTable("notification_provider_events", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  provider: varchar("provider", { length: 40 }).notNull(),
+  eventKey: varchar("event_key", { length: 240 }).notNull(),
+  eventType: varchar("event_type", { length: 80 }).notNull(),
+  providerMessageId: varchar("provider_message_id", { length: 180 }),
+  phoneE164: varchar("phone_e164", { length: 20 }),
+  payload: jsonb("payload").$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
+  outcome: varchar("outcome", { length: 40 }).default("received").notNull(),
+  errorMessage: text("error_message"),
+  processedAt: timestamp("processed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("notification_provider_events_provider_key_uidx").on(table.provider, table.eventKey),
+  index("notification_provider_events_message_idx").on(table.provider, table.providerMessageId),
+  index("notification_provider_events_phone_created_idx").on(table.phoneE164, table.createdAt),
+]);
+
 export const alarmEvents = pgTable("alarm_events", {
   id: bigserial("id", { mode: "number" }).primaryKey(),
   alarmId: uuid("alarm_id").notNull().references(() => alarms.id, { onDelete: "cascade" }),
