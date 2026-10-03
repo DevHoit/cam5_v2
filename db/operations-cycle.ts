@@ -5,11 +5,12 @@ import { evaluateColdChainSite } from "./cold-chain-alarm-engine";
 import { evaluateElectricalSite } from "./electrical-alarm-engine";
 import type { Cam5Database } from "./index";
 import { processNotificationQueue } from "./notification-engine";
+import { evaluateGenericRules } from "./rule-engine";
 import { sites } from "./schema";
 
 type DomainResult = {
   siteId: string;
-  domain: "legacy" | "cold_chain" | "electrical" | "ats";
+  domain: "legacy" | "cold_chain" | "electrical" | "ats" | "generic_rules";
   status: "fulfilled" | "rejected";
   error: string | null;
 };
@@ -48,6 +49,7 @@ export async function runOperationalCycle(
     { siteId: site.id, domain: "electrical" as const, run: () => evaluateElectricalSite(db, site.id, startedAt) },
     { siteId: site.id, domain: "ats" as const, run: () => evaluateAtsSite(db, site.id, startedAt) },
   ]);
+  tasks.push({ siteId: "global", domain: "generic_rules" as const, run: () => evaluateGenericRules(db, startedAt) });
 
   const settled = await Promise.allSettled(tasks.map((task) => task.run()));
   const domains: DomainResult[] = settled.map((result, index) => ({
