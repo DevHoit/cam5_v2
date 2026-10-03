@@ -326,7 +326,7 @@ export function AtsView({
           return <article className="ats-controller-card" key={controller.id}>
             <div className="pm-meter-heading">
               <div className="pm-meter-icon"><Cpu size={20} /></div>
-              <div><span>{controller.code}</span><h4>{controller.name}</h4><p>{controller.gateway ? controller.gateway.code + " · RS485 · ID " + (controller.unitId ?? "—") : "Sin gateway asociado"}</p></div>
+              <div><span>{controller.code}</span><h4>{controller.name}</h4><p>{controller.gateway ? controller.gateway.code + " · " + String(controller.acquisition.interfaceKey || "RS485") + " · ID " + (controller.unitId ?? "—") : "Sin gateway asociado"}</p></div>
               <div className="pm-meter-actions">
                 <button className="secondary-button" onClick={() => setHistoryTarget({ assetId: unit.id, controller })}>Histórico</button>
                 <div className={controller.online ? "pm-online" : "pm-offline"}>{controller.online ? "Telemetría vigente" : "Sin telemetría vigente"}<small>{age(controller.lastReadingAt)}</small></div>
