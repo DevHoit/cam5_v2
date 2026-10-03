@@ -127,6 +127,7 @@ export function AtsView({
     gatewayId: "",
     code: "DSE8660-01",
     name: "DSE8660 MKII",
+    busKey: "rs485-1",
     unitId: "1",
     baudRate: "",
     parity: "",
@@ -221,6 +222,7 @@ export function AtsView({
           gatewayId: controllerForm.gatewayId,
           code: controllerForm.code,
           name: controllerForm.name,
+          busKey: controllerForm.busKey,
           unitId: Number(controllerForm.unitId),
           baudRate: Number(controllerForm.baudRate),
           parity: controllerForm.parity,
@@ -383,9 +385,10 @@ export function AtsView({
           </> : dialog === "controller" ? <>
             <div className="cold-config-columns"><label><span>ATS</span><select value={controllerForm.assetId} onChange={(event) => setControllerForm({ ...controllerForm, assetId: event.target.value })}>{configuration?.units.map((item) => <option key={item.id} value={item.id}>{item.code} · {item.name}</option>)}</select></label><label><span>Gateway</span><select value={controllerForm.gatewayId} onChange={(event) => setControllerForm({ ...controllerForm, gatewayId: event.target.value })}>{configuration?.gateways.map((item) => <option key={item.id} value={item.id}>{item.code} · {item.name}</option>)}</select></label></div>
             <div className="cold-config-columns"><label><span>Código</span><input value={controllerForm.code} onChange={(event) => setControllerForm({ ...controllerForm, code: event.target.value })} /></label><label><span>Nombre</span><input value={controllerForm.name} onChange={(event) => setControllerForm({ ...controllerForm, name: event.target.value })} /></label></div>
-            <div className="cold-config-columns"><label><span>Modbus slave ID</span><input type="number" min="1" max="247" value={controllerForm.unitId} onChange={(event) => setControllerForm({ ...controllerForm, unitId: event.target.value })} /></label><label><span>Polling (ms)</span><input type="number" min="250" value={controllerForm.pollIntervalMs} onChange={(event) => setControllerForm({ ...controllerForm, pollIntervalMs: event.target.value })} /></label></div>
+            <div className="cold-config-columns"><label><span>Bus físico RS485</span><input value={controllerForm.busKey} onChange={(event) => setControllerForm({ ...controllerForm, busKey: event.target.value })} placeholder="rs485-1" /></label><label><span>Modbus slave ID</span><input type="number" min="1" max="247" value={controllerForm.unitId} onChange={(event) => setControllerForm({ ...controllerForm, unitId: event.target.value })} /></label></div>
+            <div className="cold-config-columns"><label><span>Polling (ms)</span><input type="number" min="250" value={controllerForm.pollIntervalMs} onChange={(event) => setControllerForm({ ...controllerForm, pollIntervalMs: event.target.value })} /></label></div>
             <div className="cold-config-columns"><label><span>Baud rate</span><select required value={controllerForm.baudRate} onChange={(event) => setControllerForm({ ...controllerForm, baudRate: event.target.value })}><option value="">Seleccionar</option><option value="9600">9600</option><option value="19200">19200</option><option value="38400">38400</option><option value="57600">57600</option><option value="115200">115200</option></select></label><label><span>Paridad</span><select required value={controllerForm.parity} onChange={(event) => setControllerForm({ ...controllerForm, parity: event.target.value })}><option value="">Seleccionar</option><option value="none">None</option><option value="even">Even</option><option value="odd">Odd</option></select></label></div>
-            <div className="cold-maintenance-note"><strong>No se asumen parámetros de fábrica</strong><p>Baud rate, paridad y slave ID deben confirmarse en los DSE8660 MKII instalados. Los dos controladores del mismo bus deben compartir parámetros seriales y usar direcciones distintas.</p></div>
+            <div className="cold-maintenance-note"><strong>No se asumen parámetros de fábrica</strong><p>Bus físico, baud rate, paridad y slave ID deben confirmarse en los DSE8660 MKII instalados. Los controladores del mismo bus comparten configuración serial y usan direcciones distintas; otro puerto RS485 puede reutilizar una dirección.</p></div>
           </> : <>
             <div className="cold-config-columns"><label><span>Nombre Fuente 1</span><input value={settingsForm.source1Label} onChange={(event) => setSettingsForm({ ...settingsForm, source1Label: event.target.value })} /></label><label><span>Nombre Fuente 2</span><input value={settingsForm.source2Label} onChange={(event) => setSettingsForm({ ...settingsForm, source2Label: event.target.value })} /></label></div>
             <div className="cold-config-columns"><label><span>Sin telemetría después de (s)</span><input type="number" min="5" value={settingsForm.staleAfterSeconds} onChange={(event) => setSettingsForm({ ...settingsForm, staleAfterSeconds: event.target.value })} /></label><label><span>Persistencia fuente no disponible (s)</span><input type="number" min="0" value={settingsForm.sourceUnavailableDelaySeconds} onChange={(event) => setSettingsForm({ ...settingsForm, sourceUnavailableDelaySeconds: event.target.value })} /></label></div>
