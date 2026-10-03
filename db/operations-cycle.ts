@@ -43,7 +43,11 @@ export async function runOperationalCycle(
 ): Promise<OperationalCycleResult> {
   const startedAt = options.now ?? new Date();
   const activeSites = await db.select({ id: sites.id }).from(sites).where(eq(sites.active, true));
-  const tasks = activeSites.flatMap((site) => [
+  const tasks: Array<{
+    siteId: string;
+    domain: DomainResult["domain"];
+    run: () => Promise<unknown>;
+  }> = activeSites.flatMap((site) => [
     { siteId: site.id, domain: "legacy" as const, run: () => evaluateStaleCommunications(db, site.id, startedAt) },
     { siteId: site.id, domain: "cold_chain" as const, run: () => evaluateColdChainSite(db, site.id, startedAt) },
     { siteId: site.id, domain: "electrical" as const, run: () => evaluateElectricalSite(db, site.id, startedAt) },
