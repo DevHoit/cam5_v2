@@ -83,6 +83,7 @@ export async function GET(request: NextRequest) {
         id: users.id,
         displayName: users.displayName,
         email: users.email,
+        phoneE164: users.phoneE164,
         status: users.status,
         lastLoginAt: users.lastLoginAt,
         createdAt: users.createdAt,
@@ -196,6 +197,7 @@ export async function POST(request: NextRequest) {
     const displayName = typeof body?.displayName === "string" ? body.displayName.trim() : "";
     const email = typeof body?.email === "string" ? normalizeEmail(body.email) : "";
     const password = typeof body?.password === "string" ? body.password : "";
+    const phoneE164 = (() => { const value = body?.phoneE164; if (value === null || value === undefined || value === "") return null; if (typeof value !== "string" || !/^\\+[1-9][0-9]{7,14}$/.test(value.trim())) throw new ApiError(400, "El teléfono debe estar en formato E.164, por ejemplo +56912345678."); return value.trim(); })();
     const roleKey = typeof body?.role === "string" ? body.role : "viewer";
     const status = typeof body?.status === "string" ? body.status : "active";
     const scope = actorScope(actor);
@@ -229,6 +231,7 @@ export async function POST(request: NextRequest) {
 
       const [newUser] = await tx.insert(users).values({
         email,
+        phoneE164,
         displayName,
         status: status as typeof VALID_STATUSES[number],
       }).returning();
@@ -264,6 +267,7 @@ export async function POST(request: NextRequest) {
         userAgent: metadata.userAgent,
         after: {
           email,
+          phoneE164,
           displayName,
           status,
           role: roleKey,
@@ -279,6 +283,7 @@ export async function POST(request: NextRequest) {
       id: created.id,
       displayName: created.displayName,
       email: created.email,
+      phoneE164: created.phoneE164,
       status: created.status,
       lastLoginAt: created.lastLoginAt?.toISOString() ?? null,
       createdAt: created.createdAt.toISOString(),
