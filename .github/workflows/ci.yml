@@ -42,6 +42,7 @@ jobs:
           db/notification-engine.ts
           db/maintenance-engine.ts
           db/maintenance-window-service.ts
+          db/escalation-engine.ts
           db/operations-cycle.ts
           db/auth.ts
           db/dse8660.ts
@@ -92,6 +93,7 @@ jobs:
           tests/access-scope.test.ts
           tests/notification-engine.test.ts
           tests/maintenance-window.test.ts
+          tests/escalation-engine.test.ts
           tests/operations-cycle.test.ts
           tests/rs485-topology.test.ts
           tests/v1-integrated-e2e.test.ts
