@@ -8,7 +8,7 @@ import {
   sites,
 } from "./schema";
 
-const FINAL_ALARM_STATUSES = ["resolved", "closed"] as const;
+const FINAL_ALARM_STATUSES = ["resolved", "closed", "suppressed"] as const;
 
 export type EscalationExecutionContext = {
   job: {
@@ -24,8 +24,8 @@ export type EscalationExecutionContext = {
   alarm: {
     id: string;
     siteId: string;
-    status: "open" | "acknowledged" | "resolved" | "closed";
-    severity: "normal" | "warning" | "critical";
+    status: "open" | "acknowledged" | "resolved" | "closed" | "suppressed";
+    severity: "normal" | "info" | "warning" | "critical";
     code: string;
     title: string;
   };
