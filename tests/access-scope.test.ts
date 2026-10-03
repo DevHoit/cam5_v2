@@ -33,6 +33,8 @@ const beforeScopeMigration = [
   "0020_electrical_report_template.sql",
   "0021_dse8660_metric_catalog.sql",
   "0022_ats_report_template.sql",
+  "0029_notification_recipients.sql",
+  "0030_fix_phone_e164_check.sql",
 ];
 
 async function apply(client: PGlite, filename: string) {
