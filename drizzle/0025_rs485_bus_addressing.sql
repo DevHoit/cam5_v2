@@ -184,3 +184,40 @@ CREATE UNIQUE INDEX IF NOT EXISTS "gateway_device_bindings_rs485_address_uidx"
 CREATE INDEX IF NOT EXISTS "gateway_device_bindings_rs485_bus_idx"
   ON "gateway_device_bindings" ("gateway_id", "interface_key")
   WHERE "interface_type" = 'rs485' AND "enabled" = true;
+
+
+CREATE OR REPLACE FUNCTION "enforce_rs485_bus_serial_consistency"()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF NEW."interface_type" = 'rs485' AND NEW."enabled" = true THEN
+    IF EXISTS (
+      SELECT 1
+      FROM "gateway_device_bindings" AS peer
+      WHERE peer."gateway_id" = NEW."gateway_id"
+        AND peer."interface_type" = 'rs485'
+        AND peer."enabled" = true
+        AND peer."interface_key" = NEW."interface_key"
+        AND peer."id" <> NEW."id"
+        AND (
+          (peer."baud_rate" IS NOT NULL AND NEW."baud_rate" IS NOT NULL AND peer."baud_rate" <> NEW."baud_rate")
+          OR (peer."parity" IS NOT NULL AND NEW."parity" IS NOT NULL AND peer."parity" <> NEW."parity")
+          OR (peer."data_bits" IS NOT NULL AND NEW."data_bits" IS NOT NULL AND peer."data_bits" <> NEW."data_bits")
+          OR (peer."stop_bits" IS NOT NULL AND NEW."stop_bits" IS NOT NULL AND peer."stop_bits" <> NEW."stop_bits")
+        )
+    ) THEN
+      RAISE EXCEPTION 'RS485 bus % has incompatible serial settings', NEW."interface_key"
+        USING ERRCODE = '23514';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS "gateway_device_bindings_rs485_serial_guard" ON "gateway_device_bindings";
+CREATE TRIGGER "gateway_device_bindings_rs485_serial_guard"
+BEFORE INSERT OR UPDATE OF "gateway_id", "interface_type", "interface_key", "enabled", "baud_rate", "parity", "data_bits", "stop_bits"
+ON "gateway_device_bindings"
+FOR EACH ROW
+EXECUTE FUNCTION "enforce_rs485_bus_serial_consistency"();
