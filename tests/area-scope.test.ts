@@ -19,6 +19,19 @@ const migrations = [
   "0027_rule_alarm_semantics.sql", "0028_area_scope_guards.sql",
 ];
 
+function errorChainContains(error: unknown, pattern: RegExp): boolean {
+  let current: unknown = error;
+  for (let depth = 0; depth < 8 && current; depth += 1) {
+    if (current instanceof Error) {
+      if (pattern.test(current.message)) return true;
+      current = (current as Error & { cause?: unknown }).cause;
+      continue;
+    }
+    return pattern.test(String(current));
+  }
+  return false;
+}
+
 async function setup() {
   const client = new PGlite();
   for (const filename of migrations) {
@@ -42,7 +55,7 @@ test("areas cannot cross tenant boundaries through their site or parent", async 
 
     await assert.rejects(
       db.insert(schema.areas).values({ clientId: a.id, siteId: siteB.id, code: "BAD", name: "Bad Area" }),
-      /Area client_id must match/,
+      (error: unknown) => errorChainContains(error, /Area client_id must match/),
     );
 
     const [areaA] = await db.insert(schema.areas).values({ clientId: a.id, siteId: siteA.id, code: "A-ROOT", name: "Root A" }).returning();
@@ -54,7 +67,7 @@ test("areas cannot cross tenant boundaries through their site or parent", async 
         code: "B-CHILD",
         name: "Invalid child",
       }),
-      /Parent area must belong/,
+      (error: unknown) => errorChainContains(error, /Parent area must belong/),
     );
   } finally {
     await client.close();
@@ -79,7 +92,7 @@ test("assets cannot reference an area from another site", async () => {
         name: "Cross-site asset",
         assetType: "generic",
       }),
-      /Asset area_id must belong to the same site/,
+      (error: unknown) => errorChainContains(error, /Asset area_id must belong to the same site/),
     );
   } finally {
     await client.close();
