@@ -32,7 +32,7 @@ const migrations = [
   "0021_dse8660_metric_catalog.sql",
   "0022_ats_report_template.sql",
   "0023_access_scope_roles.sql",
-  "0024_notification_suppressed_status.sql", "0025_rs485_bus_addressing.sql", "0026_hoit_v1_control_plane.sql", "0027_rule_alarm_semantics.sql", "0029_notification_recipients.sql",
+  "0024_notification_suppressed_status.sql", "0025_rs485_bus_addressing.sql", "0026_hoit_v1_control_plane.sql", "0027_rule_alarm_semantics.sql", "0029_notification_recipients.sql", "0030_fix_phone_e164_check.sql",
 ];
 
 test("operational cycle evaluates every active domain and drains notifications independently of Vercel", async () => {
