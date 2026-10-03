@@ -33,8 +33,15 @@ async function fixture() {
   const [customer] = await db.insert(schema.clients).values({ code: "WA", name: "WhatsApp" }).returning();
   const [site] = await db.insert(schema.sites).values({ clientId: customer.id, code: "WA-S", name: "WhatsApp Site" }).returning();
   const [asset] = await db.insert(schema.assets).values({ siteId: site.id, code: "WA-A", name: "WhatsApp Asset" }).returning();
-  const [operatorRole] = await db.select().from(schema.roles).where(eq(schema.roles.key, "operator")).limit(1);
-  assert.ok(operatorRole);
+  const [operatorRole] = await db.insert(schema.roles).values({
+    key: "operator",
+    name: "Operador",
+    description: "Operación y reconocimiento de alarmas.",
+    isSystem: true,
+  }).onConflictDoUpdate({
+    target: schema.roles.key,
+    set: { name: "Operador" },
+  }).returning();
   const [user] = await db.insert(schema.users).values({
     email: "wa.operator@example.test",
     phoneE164: "+56912345678",
