@@ -61,7 +61,7 @@ test("on-call resolution uses active assignment windows and explicit priority", 
   try {
     await db.insert(schema.shiftSchedules).values({
       shiftId: shift.id,
-      dayOfWeek: 5,
+      dayOfWeek: 6,
       startTime: "18:00:00",
       endTime: "23:59:00",
     });
@@ -128,7 +128,7 @@ test("inactive schedule and inactive users never resolve as on-call", async () =
     const [user] = await db.insert(schema.users).values({
       email: "inactive@example.test",
       displayName: "Inactive",
-      status: "disabled",
+      status: "suspended",
     }).returning();
     await db.insert(schema.onCallAssignments).values({
       shiftId: shift.id,
