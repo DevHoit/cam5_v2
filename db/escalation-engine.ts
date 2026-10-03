@@ -8,7 +8,7 @@ import {
   sites,
 } from "./schema";
 
-const FINAL_ALARM_STATUSES = ["resolved", "closed", "suppressed"] as const;
+const FINAL_ALARM_STATUSES = ["acknowledged", "resolved", "closed", "suppressed"] as const;
 
 export type EscalationExecutionContext = {
   job: {
