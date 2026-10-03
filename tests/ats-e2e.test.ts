@@ -30,7 +30,7 @@ const migrations = [
   "0018_pm5560_metric_catalog.sql",
   "0019_nullable_device_gateway_site_guard.sql",
   "0020_electrical_report_template.sql",
-  "0021_dse8660_metric_catalog.sql", "0022_ats_report_template.sql", "0023_access_scope_roles.sql", "0024_notification_suppressed_status.sql",
+  "0021_dse8660_metric_catalog.sql", "0022_ats_report_template.sql", "0023_access_scope_roles.sql", "0024_notification_suppressed_status.sql", "0025_rs485_bus_addressing.sql",
 ];
 
 async function database() {
@@ -84,7 +84,13 @@ test("DSE8660 normalized telemetry drives ATS source alarms and recovery", async
       gatewayId: gateway.id,
       deviceId: device.id,
       interfaceType: "rs485",
-      config: { unitId: 10, baudRate: 19200, parity: "even", pollIntervalMs: 1000, readOnly: true },
+      interfaceKey: "rs485-1",
+      address: 10,
+      baudRate: 19200,
+      parity: "even",
+      dataBits: 8,
+      stopBits: 1,
+      config: { interfaceKey: "rs485-1", unitId: 10, baudRate: 19200, parity: "even", dataBits: 8, stopBits: 1, pollIntervalMs: 1000, readOnly: true },
     });
 
     const definitions = await db.select().from(schema.metricDefinitions);
