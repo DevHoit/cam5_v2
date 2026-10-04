@@ -39,7 +39,7 @@ function typeLabel(type: string) {
   if (type === "ats") return "Transferencia automática";
   if (type === "cold_room") return "Cadena de frío";
   if (type === "switchgear_cabinet") return "Monitoreo de condición";
-  return type.replaceAll("_", " ").replace(/w/g, (letter) => letter.toUpperCase());
+  return type.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 export function EngineeringHubView({
