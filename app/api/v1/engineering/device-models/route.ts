@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
   try {
     const { db } = await requireApiSession(request, "settings.read");
     const [models, metrics] = await Promise.all([
-      db.select().from(deviceModels).orderBy(asc(deviceModels.manufacturer), asc(deviceModels.name)),
+      db.select({ id: deviceModels.id, code: deviceModels.code, manufacturer: deviceModels.manufacturer, name: deviceModels.name, definitionVersion: deviceModels.registerMapVersion, capabilities: deviceModels.capabilities }).from(deviceModels).orderBy(asc(deviceModels.manufacturer), asc(deviceModels.name)),
       db.select({ id: metricDefinitions.id, key: metricDefinitions.key, name: metricDefinitions.name, category: metricDefinitions.category, unit: metricDefinitions.unit, dataType: metricDefinitions.dataType }).from(metricDefinitions).orderBy(asc(metricDefinitions.category), asc(metricDefinitions.name)),
     ]);
     return Response.json({ models, metrics }, { headers: { "Cache-Control": "no-store" } });
