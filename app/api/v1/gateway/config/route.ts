@@ -13,12 +13,12 @@ export async function GET(request: NextRequest) {
     if (await hasSpecGatewayConfig(db, credential.gatewayId)) {
       return handleSpecGatewayConfig(db, credential);
     }
-    const deviceRows = await db.select({ device: devices }).from(devices)
+    // Compatibility path for CAM-5 only. Generic V1 devices must use config-spec-v1 and keep acquisition semantics in the Gateway Agent.\n    const deviceRows = await db.select({ device: devices }).from(devices)
       .innerJoin(assets, eq(assets.id, devices.assetId))
       .where(and(eq(devices.gatewayId, credential.gatewayId), eq(devices.active, true), eq(assets.active, true)))
       .orderBy(devices.unitId)
       .then((rows) => rows.map((row) => row.device));
-    const payloadDevices = await Promise.all(deviceRows.map(async (device) => {
+    const nonLegacyDevices = deviceRows.filter((device) => device.driver !== "cam5");\n    if (nonLegacyDevices.length) {\n      throw new ApiError(409, `Los dispositivos ${nonLegacyDevices.map((device) => device.code).join(", ")} requieren el contrato normalizado de configuración del Gateway Agent.`);\n    }\n    const payloadDevices = await Promise.all(deviceRows.map(async (device) => {
       if (!device.modelId) {
         throw new ApiError(409, `El dispositivo ${device.code} no tiene un modelo de registros configurado para el contrato legacy de gateway.`);
       }
