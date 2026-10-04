@@ -1580,10 +1580,11 @@ export default function Home() {
   const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null);
   const [visibilityOpen, setVisibilityOpen] = useState(false);
   const noticeTimer = useRef<number | null>(null);
+  const noticeSequence = useRef(1);
 
   const notify = (message: string, tone: NoticeTone = "success") => {
     if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
-    setNotice({ id: Date.now(), message, tone });
+    setNotice({ id: noticeSequence.current++, message, tone });
     noticeTimer.current = window.setTimeout(() => setNotice(null), 3200);
   };
 
@@ -1739,7 +1740,7 @@ export default function Home() {
   const openChannelTrend = (id: string) => { setTrendWindow(null); setPeriod("24 h"); setTrendSensorId(id); navigate("trends", { channel: id }); };
   const openTrendRange = (id: string, from: string, to: string) => {
     const fromTime = new Date(from).getTime();
-    const toTime = Math.min(Date.now(), new Date(to).getTime());
+    const toTime = Math.min(new Date().getTime(), new Date(to).getTime());
     const range = { from: new Date(Math.min(fromTime, toTime - 60_000)).toISOString(), to: new Date(toTime).toISOString() };
     setTrendSensorId(id);
     setTrendWindow(range);
@@ -1748,7 +1749,7 @@ export default function Home() {
   };
   const openAlarmTrend = (id: string, openedAt: string) => {
     const eventTime = new Date(openedAt).getTime();
-    openTrendRange(id, new Date(eventTime - 12 * 3600_000).toISOString(), new Date(Math.min(Date.now(), eventTime + 12 * 3600_000)).toISOString());
+    openTrendRange(id, new Date(eventTime - 12 * 3600_000).toISOString(), new Date(Math.min(new Date().getTime(), eventTime + 12 * 3600_000)).toISOString());
   };
   const selectTrendChannel = (id: string) => {
     setTrendSensorId(id);
