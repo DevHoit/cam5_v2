@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { and, desc, eq, inArray } from "drizzle-orm";
+import { resolveOnCallUser } from "../../../../db/on-call-engine";
 import {
   alarms,
   assets,
@@ -20,7 +21,7 @@ export async function GET(request: NextRequest) {
       .filter((site) => site.clientId === user.clientId)
       .map((site) => site.id);
 
-    const [siteRows, assetRows, gatewayRows, deviceRows, alarmRows, maintenanceRows] = await Promise.all([
+    const [siteRows, assetRows, gatewayRows, deviceRows, alarmRows, maintenanceRows, shiftRows] = await Promise.all([
       clientSiteIds.length
         ? db.select({
             id: sites.id,
@@ -95,6 +96,10 @@ export async function GET(request: NextRequest) {
         cancelledAt: maintenanceWindows.cancelledAt,
       }).from(maintenanceWindows)
         .where(eq(maintenanceWindows.clientId, user.clientId)),
+      db.select({ id: shifts.id, name: shifts.name })
+        .from(shifts)
+        .where(and(eq(shifts.clientId, user.clientId), eq(shifts.active, true)))
+        .orderBy(shifts.name),
     ]);
 
     const activeMaintenance = maintenanceRows.filter((item) =>
@@ -103,6 +108,9 @@ export async function GET(request: NextRequest) {
     const scheduledMaintenance = maintenanceRows.filter((item) =>
       !item.cancelledAt && item.startsAt > now
     ).length;
+    const onCallResolutions = await Promise.all(shiftRows.map((shift) => resolveOnCallUser(db, shift.id, now)));
+    const onCallCovered = onCallResolutions.filter((item) => item.status === "resolved").length;
+    const onCallIssues = onCallResolutions.filter((item) => item.status === "unassigned" || item.status === "ambiguous").length;
 
     const critical = alarmRows.filter((item) => item.severity === "critical").length;
     const warning = alarmRows.filter((item) => item.severity === "warning").length;
