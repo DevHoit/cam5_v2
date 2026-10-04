@@ -181,5 +181,5 @@ export function roleCanManageSites(roleKey: PortalRoleKey) {
 }
 
 export function roleCanManageClients(roleKey: PortalRoleKey) {
-  return roleKey === "platform_admin" || roleKey === "client_admin";
+  return roleKey === "platform_admin";
 }
