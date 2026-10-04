@@ -1111,9 +1111,6 @@ function OperationalHierarchyView({
       voltage: item.nominalVoltageKv === null || item.nominalVoltageKv === undefined ? "" : String(item.nominalVoltageKv),
       ipAddress: field("ipAddress"),
       serialNumber: field("serialNumber"),
-      host: field("host"),
-      port: item.port === undefined ? "502" : String(item.port),
-      unitId: item.unitId === undefined ? "1" : String(item.unitId),
     });
   };
   const createResource = async (event: React.FormEvent) => {
