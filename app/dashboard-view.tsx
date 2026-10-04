@@ -29,6 +29,9 @@ type DashboardResponse = {
     unhealthyDevices: number;
     activeMaintenance: number;
     scheduledMaintenance: number;
+    onCallTotal: number;
+    onCallCovered: number;
+    onCallIssues: number;
   };
   sites: Array<{
     id: string;
