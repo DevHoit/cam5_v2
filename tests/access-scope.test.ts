@@ -4,7 +4,7 @@ import test from "node:test";
 import { PGlite } from "@electric-sql/pglite";
 import { and, eq, isNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
-import { resolveUserAccessScopes } from "../db/access-scope";
+import { resolveUserAccessScopes, roleCanManageClients, roleCanManageSites } from "../db/access-scope";
 import { ensurePlatformAdmin } from "../db/platform-admin";
 import type { Cam5Database } from "../db/index";
 import * as schema from "../db/schema";
@@ -280,4 +280,16 @@ test("explicit platform admin recovery grants global scope idempotently", async 
   } finally {
     await client.close();
   }
+});
+
+
+test("management capability helpers match the formal administrative permission model", () => {
+  assert.equal(roleCanManageClients("platform_admin"), true);
+  assert.equal(roleCanManageClients("client_admin"), false);
+  assert.equal(roleCanManageClients("site_admin"), false);
+
+  assert.equal(roleCanManageSites("platform_admin"), true);
+  assert.equal(roleCanManageSites("client_admin"), true);
+  assert.equal(roleCanManageSites("site_admin"), true);
+  assert.equal(roleCanManageSites("engineer"), false);
 });
