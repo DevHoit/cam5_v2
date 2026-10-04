@@ -19,7 +19,6 @@ function validPayload() {
     },
     device: {
       code: "dse-01",
-      driver: "dse8660",
     },
     metrics: {
       "electrical.voltage.l1_n": 231.4,
@@ -66,4 +65,16 @@ test("rejects stale backfill beyond seven days", () => {
     () => parseGenericIngestPayload(payload, now),
     (error: unknown) => error instanceof ApiError && error.status === 400 && /7 días/.test(error.message),
   );
+});
+
+
+test("rejects acquisition details that belong to the gateway", () => {
+  for (const [key, value] of [["driver", "dse8660"], ["protocol", "modbus_tcp"], ["register", 418], ["unitId", 1], ["host", "192.168.1.20"]] as const) {
+    const payload = validPayload() as ReturnType<typeof validPayload> & { device: Record<string, unknown> };
+    payload.device[key] = value;
+    assert.throws(
+      () => parseGenericIngestPayload(payload, now),
+      (error: unknown) => error instanceof ApiError && error.status === 400 && /detalles de adquisición no permitidos/.test(error.message),
+    );
+  }
 });
