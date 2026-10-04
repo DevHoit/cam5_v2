@@ -99,6 +99,7 @@ async function ingest(db: Cam5Database, input: {
   gateway: { id: string; code: string };
   siteId: string;
   deviceCode: string;
+  driver: string;
   sequence: number;
   at: string;
   metrics: Record<string, number | boolean | string>;
@@ -161,7 +162,7 @@ test("V1 integrated site handles simultaneous PM5560, DSE8660 and cold-chain fau
     for (let i = 1; i <= 2; i++) {
       const code = `PM5560-0${i}`;
       const [device] = await db.insert(schema.devices).values({
-        assetId: electrical.id, code, name: code, deviceType: "power_meter",
+        assetId: electrical.id, code, name: code, deviceType: "power_meter", driver: "schneider_pm5560",
         protocol: "modbus_rtu", unitId: i, state: "commissioning",
       }).returning();
       await db.insert(schema.gatewayDeviceBindings).values({
@@ -176,7 +177,7 @@ test("V1 integrated site handles simultaneous PM5560, DSE8660 and cold-chain fau
     for (let i = 1; i <= 2; i++) {
       const code = `DSE8660-0${i}`;
       const [device] = await db.insert(schema.devices).values({
-        assetId: ats.id, code, name: code, deviceType: "ats_controller",
+        assetId: ats.id, code, name: code, deviceType: "ats_controller", driver: "dse8660_mkii",
         protocol: "modbus_rtu", unitId: 10 + i, state: "commissioning",
       }).returning();
       await db.insert(schema.gatewayDeviceBindings).values({
@@ -191,7 +192,7 @@ test("V1 integrated site handles simultaneous PM5560, DSE8660 and cold-chain fau
     for (let i = 1; i <= 2; i++) {
       const code = `TEMP-0${i}`;
       const [device] = await db.insert(schema.devices).values({
-        assetId: cold.id, code, name: code, deviceType: "temperature_sensor",
+        assetId: cold.id, code, name: code, deviceType: "temperature_sensor", driver: "eddystone_tlm",
         protocol: "ble", state: "commissioning",
       }).returning();
       await db.insert(schema.gatewayDeviceBindings).values({ gatewayId: gateway.id, deviceId: device.id, interfaceType: "ble" });
@@ -202,15 +203,15 @@ test("V1 integrated site handles simultaneous PM5560, DSE8660 and cold-chain fau
 
     let sequence = 1;
     const normalAt = "2026-10-03T00:00:00.000Z";
-    for (const device of pmDevices) await ingest(db, { gateway, siteId: site.id, deviceCode: device.code, sequence: sequence++, at: normalAt, metrics: pmValues() });
-    for (const device of atsDevices) await ingest(db, { gateway, siteId: site.id, deviceCode: device.code, sequence: sequence++, at: normalAt, metrics: atsValues(true) });
-    for (const device of coldDevices) await ingest(db, { gateway, siteId: site.id, deviceCode: device.code, sequence: sequence++, at: normalAt, metrics: { "environment.temperature": 5, "sensor.battery_voltage": 3.5 } });
+    for (const device of pmDevices) await ingest(db, { gateway, siteId: site.id, deviceCode: device.code, driver: "schneider_pm5560", sequence: sequence++, at: normalAt, metrics: pmValues() });
+    for (const device of atsDevices) await ingest(db, { gateway, siteId: site.id, deviceCode: device.code, driver: "dse8660_mkii", sequence: sequence++, at: normalAt, metrics: atsValues(true) });
+    for (const device of coldDevices) await ingest(db, { gateway, siteId: site.id, deviceCode: device.code, driver: "eddystone_tlm", sequence: sequence++, at: normalAt, metrics: { "environment.temperature": 5, "sensor.battery_voltage": 3.5 } });
 
     const faultAt = "2026-10-03T00:01:00.000Z";
-    await ingest(db, { gateway, siteId: site.id, deviceCode: pmDevices[0].code, sequence: sequence++, at: faultAt, metrics: pmValues({ "electrical.current.l1": 110 }) });
-    await ingest(db, { gateway, siteId: site.id, deviceCode: atsDevices[0].code, sequence: sequence++, at: faultAt, metrics: atsValues(false) });
-    await ingest(db, { gateway, siteId: site.id, deviceCode: coldDevices[0].code, sequence: sequence++, at: faultAt, metrics: { "environment.temperature": 10, "sensor.battery_voltage": 3.5 } });
-    await ingest(db, { gateway, siteId: site.id, deviceCode: coldDevices[0].code, sequence: sequence++, at: "2026-10-03T00:01:02.000Z", metrics: { "environment.temperature": 10, "sensor.battery_voltage": 3.5 } });
+    await ingest(db, { gateway, siteId: site.id, deviceCode: pmDevices[0].code, driver: "schneider_pm5560", sequence: sequence++, at: faultAt, metrics: pmValues({ "electrical.current.l1": 110 }) });
+    await ingest(db, { gateway, siteId: site.id, deviceCode: atsDevices[0].code, driver: "dse8660_mkii", sequence: sequence++, at: faultAt, metrics: atsValues(false) });
+    await ingest(db, { gateway, siteId: site.id, deviceCode: coldDevices[0].code, driver: "eddystone_tlm", sequence: sequence++, at: faultAt, metrics: { "environment.temperature": 10, "sensor.battery_voltage": 3.5 } });
+    await ingest(db, { gateway, siteId: site.id, deviceCode: coldDevices[0].code, driver: "eddystone_tlm", sequence: sequence++, at: "2026-10-03T00:01:02.000Z", metrics: { "environment.temperature": 10, "sensor.battery_voltage": 3.5 } });
 
     const open = await db.select().from(schema.alarms).where(and(
       inArray(schema.alarms.assetId, [electrical.id, ats.id, cold.id]),
@@ -235,13 +236,13 @@ test("V1 integrated site handles simultaneous PM5560, DSE8660 and cold-chain fau
 
     const recoveryAt = "2026-10-03T00:02:00.000Z";
     for (const device of pmDevices) {
-      await ingest(db, { gateway, siteId: site.id, deviceCode: device.code, sequence: sequence++, at: recoveryAt, metrics: pmValues() });
+      await ingest(db, { gateway, siteId: site.id, deviceCode: device.code, driver: "schneider_pm5560", sequence: sequence++, at: recoveryAt, metrics: pmValues() });
     }
     for (const device of atsDevices) {
-      await ingest(db, { gateway, siteId: site.id, deviceCode: device.code, sequence: sequence++, at: recoveryAt, metrics: atsValues(true) });
+      await ingest(db, { gateway, siteId: site.id, deviceCode: device.code, driver: "dse8660_mkii", sequence: sequence++, at: recoveryAt, metrics: atsValues(true) });
     }
     for (const device of coldDevices) {
-      await ingest(db, { gateway, siteId: site.id, deviceCode: device.code, sequence: sequence++, at: recoveryAt, metrics: { "environment.temperature": 5, "sensor.battery_voltage": 3.5 } });
+      await ingest(db, { gateway, siteId: site.id, deviceCode: device.code, driver: "eddystone_tlm", sequence: sequence++, at: recoveryAt, metrics: { "environment.temperature": 5, "sensor.battery_voltage": 3.5 } });
     }
 
     const unresolved = await db.select().from(schema.alarms).where(and(
