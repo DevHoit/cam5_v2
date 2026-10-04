@@ -248,3 +248,27 @@ Una vez verde el HEAD, ejecutar validación visual/autenticada en Preview para:
 4. Operador/Viewer: comprobar que no aparecen ni abren módulos administrativos/técnicos sin permiso.
 5. Desktop/tablet/móvil y estados loading/vacío/error/sin permisos.
 
+
+
+## Resultado CI del hardening transversal
+
+El hardening encontró dos problemas de calidad durante CI y ambos fueron corregidos antes de considerarlo cerrado:
+
+- React purity lint por uso de tiempo impuro dentro de acciones del componente;
+- narrowing TypeScript de `sessionUser` en validación de permisos para rutas/navegación.
+
+Correcciones:
+- `27654c72` — fix(frontend): satisfy React purity lint in portal actions
+- `1ebd8d19` — fix(frontend): narrow authenticated session before permission checks
+
+Validación final del commit `1ebd8d19`:
+- lint: PASS
+- simuladores Python: PASS
+- Gateway Agent: PASS
+- tests DB/integración: PASS (92/92)
+- Next.js production build + TypeScript: PASS
+- Vercel Preview: READY y alias de branch actualizado al commit `1ebd8d19`
+
+### Gate E2E autenticado
+
+El código y el Preview están listos para el recorrido por roles. El recorrido autenticado completo no debe marcarse como PASS hasta ejecutarlo con sesiones válidas de Administrador HOIT / cliente / sitio / operador-viewer. No se crean ni inventan credenciales desde la automatización de validación.
