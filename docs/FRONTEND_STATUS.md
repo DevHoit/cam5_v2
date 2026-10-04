@@ -94,16 +94,30 @@ Commit administrativo inmediatamente anterior:
 - No bloquear V1 esperando el modelo definitivo de capabilities.
 - No priorizar todavía Gateway físico sobre el cierre del Front.
 
-## Pendientes prioritarios del Front
+## Bloque cerrado en esta sesión: Centro de alertas genérico
 
-### P1 — Centro de alertas
+El Centro de alertas dejó de depender visualmente del canal CAM-5 como único origen.
 
-Revisión funcional/visual final:
+Cambios:
 
-- Activo como entidad principal.
-- Eliminar supuestos CAM-5 restantes.
-- Revisar navegación Alarma → Activo → Tendencia/capability.
-- Confirmar alarmas de métricas normalizadas y legacy.
+- la API de alarmas expone ahora `deviceId`, dispositivo y `context` además del canal legacy;
+- la búsqueda incluye activo, dispositivo y canal/origen;
+- cuando una alarma normalizada contiene `context.metricKey`, la UI la usa como origen principal;
+- la fila de alarma muestra `Activo → Dispositivo → Métrica` cuando esos datos existen;
+- se mantiene `channelCode` como fallback para CAM-5;
+- el detalle incorpora acceso directo **Ver activo**;
+- **Ver tendencia de origen** usa `metricKey` para alarmas normalizadas y canal para legacy;
+- la pestaña Alarmas del Histórico aplica la misma resolución de origen;
+- el CSV de histórico de alarmas diferencia dispositivo y origen.
+
+No fue necesaria una migración de base de datos: los motores normalizados ya almacenaban `deviceId` y/o `metricKey` en el contexto de la alarma.
+
+Commits del bloque:
+
+- `880a97ac` — feat(alarms): expose normalized device and metric context
+- `3a4c641f` — feat(alarms): make asset and normalized metric primary in alert center
+- `96135470` — feat(history): expose normalized alarm origin
+- `b6bbb6a0` — feat(frontend): open normalized alarm metrics from history
 
 ### P1 — Reportes
 
@@ -155,7 +169,8 @@ No bloquear el cierre V1 por esta evolución.
 - Arquitectura UX: 90–95%
 - Dashboard global: ~90%
 - Resumen universal de activo: 85–90%
-- Operación/NOC: 85–90%
+- Operación/NOC: ~90%
+- Centro de alertas: ~90%; arquitectura genérica cerrada, pendiente validación visual/E2E con datos reales
 - Administración: ~90%
 - Ingeniería: 75–80%
 - Tendencias/Histórico genérico: ~85–90% a nivel arquitectura/implementación; falta validación visual E2E con datos reales.
@@ -163,7 +178,7 @@ No bloquear el cierre V1 por esta evolución.
 
 ## Próximo paso recomendado
 
-**Centro de alertas genérico + navegación desde alarmas**, seguido por **Reportes**, y después una pasada **Preview/E2E visual completa**.
+**Reportes genéricos (Activo + período + tipo)** y después una pasada **Preview/E2E visual completa**. Centro de alertas queda en validación E2E, no como rediseño pendiente.
 
 El CI del HEAD funcional `9f9abdca` quedó disparado tras corregir el lint detectado en un commit intermedio. Confirmar su resultado verde y probar en Preview con al menos un activo eléctrico/PM, ATS, cold-chain y CAM-5.
 
