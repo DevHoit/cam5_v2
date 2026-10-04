@@ -75,6 +75,7 @@ test("DSE8660 normalized telemetry drives ATS source alarms and recovery", async
       code: "DSE8660-01",
       name: "DSE8660 MKII",
       deviceType: "ats_controller",
+      driver: "dse8660_mkii",
       protocol: "modbus_rtu",
       unitId: 10,
       state: "commissioning",
