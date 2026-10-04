@@ -185,10 +185,7 @@ export function GenericTrendsView({
   const selectionKey = selectedOptions.map((option) => option.optionId).join(",");
 
   useEffect(() => {
-    if (!selectedOptions.length) {
-      setSeries([]);
-      return;
-    }
+    if (!selectedOptions.length) return;
     let alive = true;
     const timeout = window.setTimeout(() => {
       setLoading(true);
