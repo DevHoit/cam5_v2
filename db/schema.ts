@@ -477,8 +477,6 @@ export const deviceModels = pgTable("device_models", {
     relayOutputs?: number;
     capabilityKeys?: string[];
     metricKeys?: string[];
-    driver?: string;
-    protocol?: string;
   }>().default(sql`'{}'::jsonb`).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [uniqueIndex("device_models_code_uidx").on(table.code)]);
