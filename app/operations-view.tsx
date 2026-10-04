@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import { ShiftsView } from "./shifts-view";
 import {
   IconAlertTriangle,
   IconBan,
@@ -10,6 +11,9 @@ import {
   IconRefresh,
   IconTool,
 } from "@tabler/icons-react";
+
+const INITIAL_MAINTENANCE_START = new Date(Date.now() + 30 * 60_000);
+const INITIAL_MAINTENANCE_END = new Date(Date.now() + 2 * 60 * 60_000);
 
 type NoticeTone = "success" | "info" | "warning";
 type ConfirmRequest = { title: string; detail: string; confirmLabel: string; tone?: "default" | "danger"; onConfirm: () => void };
@@ -80,8 +84,6 @@ export function OperationsView({
   confirm: (request: ConfirmRequest) => void;
 }) {
   const [tab, setTab] = useState<"maintenance" | "shifts">("maintenance");
-  const defaultStart = useMemo(() => new Date(Date.now() + 30 * 60_000), []);
-  const defaultEnd = useMemo(() => new Date(Date.now() + 2 * 60 * 60_000), []);
   const [data, setData] = useState<MaintenanceResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -90,27 +92,19 @@ export function OperationsView({
   const [form, setForm] = useState({
     scopeType: "site" as "tenant" | "site" | "asset",
     scopeId: activeAssetId,
-    startsAt: localDateTimeValue(defaultStart),
-    endsAt: localDateTimeValue(defaultEnd),
+    startsAt: localDateTimeValue(INITIAL_MAINTENANCE_START),
+    endsAt: localDateTimeValue(INITIAL_MAINTENANCE_END),
     reason: "",
   });
 
   useEffect(() => {
     let alive = true;
-    setLoading(true);
-    setError("");
     void requestJson<MaintenanceResponse>("/api/v1/maintenance-windows")
       .then((result) => { if (alive) setData(result); })
       .catch((cause) => { if (alive) setError(cause instanceof Error ? cause.message : "No fue posible consultar mantenimiento."); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, [reload]);
-
-  useEffect(() => {
-    if (form.scopeType === "asset" && activeAssetId && !form.scopeId) {
-      setForm((current) => ({ ...current, scopeId: activeAssetId }));
-    }
-  }, [activeAssetId, form.scopeId, form.scopeType]);
 
   const createWindow = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -119,7 +113,7 @@ export function OperationsView({
     try {
       const payload = {
         scopeType: form.scopeType,
-        ...(form.scopeType === "asset" ? { scopeId: form.scopeId } : {}),
+        ...(form.scopeType === "asset" ? { scopeId: form.scopeId || activeAssetId } : {}),
         startsAt: new Date(form.startsAt).toISOString(),
         endsAt: new Date(form.endsAt).toISOString(),
         reason: form.reason,
@@ -193,7 +187,7 @@ export function OperationsView({
           <h2>Ventanas de mantenimiento</h2>
           <p>La telemetría continúa; las notificaciones se suprimen únicamente dentro del alcance y período definidos.</p>
         </div>
-        <button className="secondary-button" onClick={() => setReload((value) => value + 1)} disabled={loading}><IconRefresh className={loading ? "spin" : ""} size={16} /> Actualizar</button>
+        <button className="secondary-button" onClick={() => { setLoading(true); setError(""); setReload((value) => value + 1); }} disabled={loading}><IconRefresh className={loading ? "spin" : ""} size={16} /> Actualizar</button>
       </div>
 
       {canWrite && <form className="hierarchy-create-form" onSubmit={createWindow}>
@@ -210,7 +204,7 @@ export function OperationsView({
         <label><span>Inicio</span><input type="datetime-local" required value={form.startsAt} onChange={(event) => setForm({ ...form, startsAt: event.target.value })} /></label>
         <label><span>Término</span><input type="datetime-local" required value={form.endsAt} onChange={(event) => setForm({ ...form, endsAt: event.target.value })} /></label>
         <label><span>Motivo</span><input required minLength={3} maxLength={1000} value={form.reason} onChange={(event) => setForm({ ...form, reason: event.target.value })} placeholder="Trabajo programado, inspección, pruebas…" /></label>
-        <button className="primary-button" type="submit" disabled={saving || !form.reason.trim() || (form.scopeType === "asset" && !form.scopeId)}>{saving ? "Guardando…" : "Programar"}</button>
+        <button className="primary-button" type="submit" disabled={saving || !form.reason.trim() || (form.scopeType === "asset" && !(form.scopeId || activeAssetId))}>{saving ? "Guardando…" : "Programar"}</button>
       </form>}
 
       {error && <div className="data-error"><IconAlertTriangle size={18} /><div><strong>No se pudo consultar mantenimiento</strong><p>{error}</p></div></div>}
