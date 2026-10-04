@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
-import { and, desc, eq } from "drizzle-orm";
-import { alarmRules, assets, channels, configurationSnapshots, devices, readingProfileRanges, readingProfiles, registerDefinitions } from "../../../../../db/schema";
+import { and, eq } from "drizzle-orm";
+import { assets, devices } from "../../../../../db/schema";
 import { apiErrorResponse, ApiError } from "../../_lib/auth";
 import { requireGatewayCredential } from "../_lib/auth";
 import { handleSpecGatewayConfig, hasSpecGatewayConfig } from "../_lib/config-spec-v1";
@@ -13,108 +13,17 @@ export async function GET(request: NextRequest) {
     if (await hasSpecGatewayConfig(db, credential.gatewayId)) {
       return handleSpecGatewayConfig(db, credential);
     }
-    // Compatibility path for CAM-5 only. Generic V1 devices must use config-spec-v1 and keep acquisition semantics in the Gateway Agent.
-    const deviceRows = await db.select({ device: devices }).from(devices)
+
+    const [device] = await db.select({ code: devices.code }).from(devices)
       .innerJoin(assets, eq(assets.id, devices.assetId))
       .where(and(eq(devices.gatewayId, credential.gatewayId), eq(devices.active, true), eq(assets.active, true)))
-      .orderBy(devices.unitId)
-      .then((rows) => rows.map((row) => row.device));
-    const nonLegacyDevices = deviceRows.filter((device) => device.driver !== "cam5");
-    if (nonLegacyDevices.length) {
-      throw new ApiError(409, `Los dispositivos ${nonLegacyDevices.map((device) => device.code).join(", ")} requieren el contrato normalizado de configuración del Gateway Agent.`);
+      .limit(1);
+
+    if (device) {
+      throw new ApiError(409, `El gateway tiene dispositivos asociados, pero no posee bindings de adquisición. Configura sus interfaces en el Gateway Agent/control plane antes de operar ${device.code}.`);
     }
-    const payloadDevices = await Promise.all(deviceRows.map(async (device) => {
-      if (!device.modelId) {
-        throw new ApiError(409, `El dispositivo ${device.code} no tiene un modelo de registros configurado para el contrato legacy de gateway.`);
-      }
-      const [ranges, registers, channelPolicies, revisions] = await Promise.all([
-        device.readingProfileId ? db.select({
-          name: readingProfileRanges.name,
-          startRegister: readingProfileRanges.startRegister,
-          endRegister: readingProfileRanges.endRegister,
-          functionCode: readingProfileRanges.functionCode,
-          intervalMs: readingProfileRanges.intervalMs,
-          priority: readingProfileRanges.priority,
-          enabled: readingProfileRanges.enabled,
-        }).from(readingProfileRanges).where(eq(readingProfileRanges.profileId, device.readingProfileId)).orderBy(readingProfileRanges.priority) : [],
-        db.select({
-          register: registerDefinitions.nativeRegister,
-          reference: registerDefinitions.humanReference,
-          name: registerDefinitions.name,
-          dataType: registerDefinitions.dataType,
-          scaleFactor: registerDefinitions.scaleFactor,
-          unit: registerDefinitions.unit,
-          errorRawValue: registerDefinitions.errorRawValue,
-          minimumValue: registerDefinitions.minimumValue,
-          maximumValue: registerDefinitions.maximumValue,
-        }).from(registerDefinitions).where(eq(registerDefinitions.modelId, device.modelId)).orderBy(registerDefinitions.nativeRegister),
-        db.select({
-          code: channels.code,
-          name: channels.name,
-          register: registerDefinitions.nativeRegister,
-          metric: channels.metric,
-          unit: channels.unit,
-          enabled: channels.enabled,
-          warningThreshold: alarmRules.warningThreshold,
-          criticalThreshold: alarmRules.criticalThreshold,
-          hysteresis: alarmRules.hysteresis,
-          activationSamples: alarmRules.activationSamples,
-          recoverySamples: alarmRules.recoverySamples,
-          staleAfterSeconds: alarmRules.staleAfterSeconds,
-        }).from(channels)
-          .innerJoin(registerDefinitions, eq(registerDefinitions.id, channels.registerDefinitionId))
-          .leftJoin(alarmRules, eq(alarmRules.channelId, channels.id))
-          .where(eq(channels.deviceId, device.id))
-          .orderBy(channels.displayOrder),
-        db.select({ version: configurationSnapshots.version, checksumSha256: configurationSnapshots.checksumSha256, createdAt: configurationSnapshots.createdAt })
-          .from(configurationSnapshots)
-          .where(eq(configurationSnapshots.deviceId, device.id))
-          .orderBy(desc(configurationSnapshots.version))
-          .limit(1),
-      ]);
-      const [profile] = device.readingProfileId ? await db.select({
-        key: readingProfiles.key,
-        staleAfterSeconds: readingProfiles.staleAfterSeconds,
-        storageIntervalSeconds: readingProfiles.storageIntervalSeconds,
-        heartbeatIntervalSeconds: readingProfiles.heartbeatIntervalSeconds,
-        diagnosticIntervalSeconds: readingProfiles.diagnosticIntervalSeconds,
-      }).from(readingProfiles).where(eq(readingProfiles.id, device.readingProfileId)).limit(1) : [];
-      return {
-        code: device.code,
-        unitId: device.unitId,
-        protocol: device.protocol,
-        host: device.host,
-        port: device.port,
-        timeoutMs: device.timeoutMs,
-        retries: device.retries,
-        registerConvention: device.registerConvention,
-        configuration: revisions[0] ? { version: revisions[0].version, checksumSha256: revisions[0].checksumSha256, createdAt: revisions[0].createdAt.toISOString() } : null,
-        profile: profile ?? null,
-        uploadPolicy: profile ? {
-          normalIntervalMs: profile.storageIntervalSeconds * 1_000,
-          heartbeatIntervalMs: profile.heartbeatIntervalSeconds * 1_000,
-          diagnosticIntervalMs: profile.diagnosticIntervalSeconds * 1_000,
-          immediateOnAlarm: true,
-          immediateOnRecovery: true,
-        } : null,
-        ranges,
-        registers,
-        channels: channelPolicies.map((channel) => ({
-          ...channel,
-          warningThreshold: channel.warningThreshold === null ? null : Number(channel.warningThreshold),
-          criticalThreshold: channel.criticalThreshold === null ? null : Number(channel.criticalThreshold),
-          hysteresis: channel.hysteresis === null ? 0 : Number(channel.hysteresis),
-        })),
-      };
-    }));
-    return Response.json({
-      schemaVersion: "1.2",
-      serverTime: new Date().toISOString(),
-      ingestionUrl: "/api/v1/gateway/ingest",
-      heartbeatUrl: "/api/v1/gateway/heartbeat",
-      gateway: { code: credential.gatewayCode, name: credential.gatewayName },
-      devices: payloadDevices,
-    }, { headers: { "Cache-Control": "no-store" } });
+
+    throw new ApiError(404, "El gateway no tiene dispositivos configurados.");
   } catch (error) {
     return apiErrorResponse(error);
   }
