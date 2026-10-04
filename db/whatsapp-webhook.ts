@@ -193,7 +193,8 @@ async function processStatus(
 function quickReplyValue(message: NonNullable<MetaWebhookValue["messages"]>[number]) {
   if (message.type === "button") return message.button?.payload || message.button?.text || "";
   if (message.type === "interactive" && message.interactive?.type === "button_reply") {
-    return message.interactive.button_reply.id || message.interactive.button_reply.title || "";
+    const reply = message.interactive.button_reply;
+    return reply?.id || reply?.title || "";
   }
   return "";
 }
