@@ -306,3 +306,43 @@ Validación:
 ### Límite V1 identificado
 
 El catálogo de modelos debe existir antes de provisionar un dispositivo. Esto es correcto como separación de responsabilidades, pero el siguiente bloque de Ingeniería debe permitir administrar/registrar modelos y su mapping de métricas sin depender de seeds para incorporar hardware nuevo.
+
+
+## Bloque cerrado: catálogo técnico de modelos en Ingeniería
+
+Se eliminó la dependencia funcional de seeds para incorporar un modelo nuevo al flujo de provisionamiento.
+
+### Implementado
+
+- API de Ingeniería para listar, crear, editar y eliminar modelos de dispositivo.
+- Validación de código único, fabricante, versión de mapa, driver y protocolo.
+- Selección de métricas desde el catálogo normalizado existente.
+- Plantilla de capacidades por modelo.
+- Protección de borrado cuando el modelo ya está asociado a dispositivos.
+- Auditoría de altas, cambios y eliminaciones.
+- Workspace visual dentro de Ingeniería para mantener modelos y plantillas.
+- Al crear un dispositivo desde Organización y activos:
+  - se toma el driver/protocolo definidos en su modelo;
+  - se materializan las capacidades en `device_capabilities`;
+  - se materializan las métricas seleccionadas en `device_metrics`;
+  - CAM-5 mantiene su perfil especializado sin convertirlo en modelo universal.
+
+Commits principales:
+- `bb89bf66` — refactor(models): support generic capability and metric templates
+- `e62a58f9` — feat(engineering): add managed device model catalog API
+- `3f349f72` — feat(provisioning): materialize model metric templates on device creation
+- `972a1b1b` — feat(engineering): add model and metric template workspace
+- `747e9919` — feat(engineering): surface managed model catalog in engineering hub
+- `f0e571bf` — feat(engineering): connect model catalog feedback to portal
+
+Validación de `f0e571bf`:
+- lint: PASS
+- simuladores Python: PASS
+- Gateway Agent: PASS
+- tests DB/integración: PASS
+- build Next.js + TypeScript: PASS
+- Vercel Preview: READY
+
+### Siguiente límite técnico
+
+La plantilla ya define qué métricas existen para un modelo, pero todavía no configura desde UI el mapa físico de adquisición por métrica (registro Modbus, función, tipo de dato, escala/endian). Ese mapping debe ser el siguiente bloque de Ingeniería para que un modelo Modbus completamente nuevo pueda configurarse sin tocar código.
