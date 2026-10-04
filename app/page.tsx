@@ -1424,12 +1424,12 @@ function NotificationsView({ canWrite }: { canWrite: boolean }) {
 function AuthFrame({ children }: { children: React.ReactNode }) {
   return <main className="login-shell">
     <section className="login-brand-panel" aria-label="HoitLive Core">
-      <header className="login-brand-identity"><span><strong>HoitLive Core</strong><b>Industrial IoT Platform</b></span></header>
-      <div className="login-brand-message"><span className="login-product-label"><i /> Industrial IoT Platform</span><h1>Visibilidad operacional para activos críticos.</h1><p>Supervisa activos, telemetría y eventos desde una plataforma industrial diseñada para operar con información confiable.</p></div>
+      <header className="login-brand-identity"><span className="login-brand-mark"><Zap size={25} strokeWidth={2.3} /></span><span className="login-brand-copy"><span><strong>HoitLive</strong><em>Core</em></span><b>Industrial IoT Platform</b></span></header>
+      <div className="login-brand-message"><span className="login-product-label"><i /> Operación conectada</span><h1>Visibilidad operacional para activos críticos.</h1><p>Supervisa activos, telemetría y eventos con información confiable para diagnosticar y actuar oportunamente.</p></div>
       <footer className="login-brand-footer"><span>HoitLive Core</span><small>Industrial IoT Platform</small></footer>
     </section>
     <section className="login-form-panel"><div className="login-card">
-      <div className="login-mobile-brand"><span><strong>HoitLive Core</strong><b>Industrial IoT Platform</b></span></div>
+      <div className="login-mobile-brand"><span className="login-brand-mark"><Zap size={21} strokeWidth={2.3} /></span><span className="login-brand-copy"><span><strong>HoitLive</strong><em>Core</em></span><b>Industrial IoT Platform</b></span></div>
       {children}
       <div className="login-assurance"><ShieldCheck size={16} /><span>Conexión cifrada y sesión protegida</span></div>
       <small className="login-product-meta">HoitLive Core · Industrial IoT Platform</small>
