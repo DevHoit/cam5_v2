@@ -1,8 +1,8 @@
 # HOIT Critical Infrastructure Platform
 ## Especificación funcional y técnica — Documento vivo
 
-**Versión:** 0.9  
-**Fecha:** 2026-10-03  
+**Versión:** 0.10  
+**Fecha:** 2026-10-04  
 **Estado:** Backend + Frontend V1 en cierre; integración Gateway postergada a fase final  
 **Origen:** Evolución de la plataforma HOIT/CAM5
 
@@ -25,7 +25,7 @@ Convenciones:
 
 ---
 
-## 0.1 Estado de implementación — 2026-10-03
+## 0.1 Estado de implementación — 2026-10-04
 
 Esta versión incorpora el estado real del repositorio `DevHoit/cam5_v2`, rama `feature/hoit-core-v1`. El documento continúa siendo la fuente de verdad funcional/técnica; las notas `IMPLEMENTED` y `PARTIAL` indican el grado de materialización del diseño sin reemplazar las decisiones funcionales originales.
 
@@ -47,6 +47,11 @@ Esta versión incorpora el estado real del repositorio `DevHoit/cam5_v2`, rama `
 - administración de asignaciones on-call por usuario, vigencia y prioridad, con prevención de solapamientos ambiguos y audit trail;
 - NOC por sitio con alarmas activas, salud de gateways/dispositivos, mantenimiento y cobertura on-call en una sola vista;
 - administración de políticas de escalamiento Core multinivel: demora, destinatario `user`/`role`/`on_call_group`, canales Email/WhatsApp, habilitación y audit trail.
+- Frontend UX 2.0 orientado a operación y multi-dispositivo: Dashboard consolidado por cliente, navegación por tareas, contexto `Cliente -> Sitio -> Activo`, resumen de activo y herramientas técnicas desacopladas de la navegación principal;
+- Dashboard de cartera con condición de activos, alertas, salud de adquisición, mantenimiento, cobertura on-call, resumen por sitio, activos prioritarios y eventos relevantes;
+- workspace de Ingeniería sensible al tipo/capabilities del activo; PM5560, DSE8660, CAM5 y BLE dejan de ser destinos principales de navegación y pasan a ser implementaciones/capacidades contextuales;
+- terminología operacional normalizada a Activo / Dispositivo / Métrica; detalles de protocolo, registros y decodificación quedan restringidos al workspace técnico;
+- separación UX explícita entre reglas de entrega de notificaciones y políticas de escalamiento operativo multinivel.
 
 `PARTIAL`:
 
@@ -740,40 +745,131 @@ created_by
 
 ---
 
-# 19. Módulos de UI
+# 19. Arquitectura de información del Frontend
+
+`DECISION` La navegación de HOIT se organiza por **tarea operacional y alcance**, no por fabricante, protocolo ni modelo de dispositivo.
+
+Jerarquía visible:
+
+```text
+Cliente
+└── Sitio
+    └── Activo
+        └── Dispositivo
+            └── Capacidad
+                └── Métrica
+```
+
+## 19.1 Navegación principal
 
 ```text
 Inicio
-Monitoreo
-├── Eléctrico
-├── Respaldo / ATS
-└── Cadena de frío
+└── Dashboard
 
-Alarmas
-├── Activas
-├── Historial
-└── Reglas
-
-Históricos
-Reportes
+Supervisión
+├── Resumen del activo
+└── Tendencias
 
 Operación
-├── Turnos
-├── Mantenimiento
-└── NOC
-
-IoT
-├── Gateways
-├── Devices
-└── Diagnóstico
+├── NOC y continuidad
+├── Centro de alertas
+├── Histórico
+└── Reportes
 
 Administración
-├── Tenants
-├── Sites
-├── Users
-├── Roles
-└── Audit Trail
+├── Organización y activos
+├── Notificaciones
+├── Usuarios y roles
+└── Ingeniería
 ```
+
+`DECISION` PM5560, DSE8660, CAM5, BLE y futuros modelos **no** son módulos principales del menú.
+
+## 19.2 Dashboard
+
+El Dashboard principal opera a alcance **Cliente** y debe responder “¿cómo está toda mi operación?”.
+
+Debe consolidar como mínimo:
+
+- sitios y activos;
+- condición de activos;
+- alertas críticas y warning;
+- gateways/dispositivos con problemas de adquisición;
+- mantenimiento activo/próximo;
+- cobertura on-call;
+- activos que requieren atención;
+- eventos relevantes por sitio.
+
+En Dashboard, el encabezado muestra sólo el contexto Cliente. Sitio y Activo aparecen al entrar a supervisión u operación contextual.
+
+## 19.3 Resumen del activo
+
+El Dashboard anterior centrado en un punto pasa a ser **Resumen del activo**.
+
+Debe mostrar:
+
+- condición global;
+- métricas normalizadas;
+- frescura/calidad;
+- alarmas activas;
+- tendencias;
+- salud de adquisición;
+- accesos a capacidades disponibles para ese activo.
+
+`DECISION` El frontend presenta capacidades contextuales. La navegación base no cambia cuando se agrega un nuevo fabricante.
+
+Ejemplos:
+
+```text
+Activo eléctrico
+└── capacidad: electrical
+
+ATS
+└── capacidad: automatic_transfer
+
+Cámara de frío
+└── capacidad: cold_chain
+
+Transformador instrumentado
+├── capability: temperature
+├── capability: humidity
+└── capability: partial_discharge
+```
+
+## 19.4 Ingeniería
+
+Las funciones de bajo nivel se agrupan en un workspace **Ingeniería** visible sólo para perfiles autorizados.
+
+Incluye, según el activo:
+
+- configuración avanzada;
+- diagnóstico;
+- puesta en marcha;
+- gateways/credenciales;
+- inventario de dispositivos;
+- decodificación técnica cuando corresponda.
+
+`DECISION` Modbus, registros, function codes, RS-485, baud rate, endian, raw values y demás detalles físicos **no deben aparecer en la experiencia operacional normal**. Pueden existir en Ingeniería mientras el Gateway/driver correspondiente requiera administración técnica.
+
+## 19.5 Notificaciones y escalamiento
+
+`DECISION` Se distinguen dos conceptos:
+
+- **Reglas de entrega**: qué alarma/evento se envía por qué canal, filtros, demora y reintento de entrega;
+- **Políticas de escalamiento**: secuencia multinivel de destinatarios/on-call ante ausencia de ACK.
+
+No deben presentarse al usuario como dos módulos llamados “Escalamiento”.
+
+## 19.6 Principios UX
+
+- estados siempre distinguen `offline`, `stale`, `unknown/error`, `warning`, `critical` y `normal`;
+- no declarar un dispositivo offline cuando sólo falló la consulta del portal;
+- ocultar funciones sin permiso cuando no aporten valor de lectura;
+- minimizar información de implementación en pantallas operacionales;
+- mantener color + texto/icono para no depender sólo del color;
+- conservar trazabilidad y acciones críticas explícitas;
+- soportar desktop operativo y responsive móvil/tablet;
+- evitar crecimiento del sidebar al agregar nuevas familias de dispositivos.
 
 ---
 
@@ -2367,6 +2463,25 @@ Después de M1 pueden avanzar en paralelo gateway, backend y frontend con menor 
 | Drivers físicos | `PENDING` | requieren documentación/hardware validado |
 | Store & Forward | `PARTIAL` | persistencia/retry/restart/overflow implementados y testeados; falta soak test en hardware para declarar productivo |
 | Meta productivo | `PENDING` externo | número, WABA, credenciales y templates aprobados |
+
+---
+
+# 62.2 Frontend UX 2.0 — Estado 2026-10-04
+
+| Componente | Estado | Nota |
+|---|---|---|
+| Dashboard cliente multi-sitio | `IMPLEMENTED` base | condición, alertas, adquisición, mantenimiento y on-call |
+| Resumen del activo | `IMPLEMENTED` | reutiliza el overview operacional existente |
+| Navegación task-oriented | `IMPLEMENTED` | modelos de hardware fuera del menú principal |
+| Contexto Cliente/Sitio/Activo | `IMPLEMENTED` | Dashboard usa alcance Cliente; vistas contextuales usan Sitio + Activo |
+| Capability navigation | `IMPLEMENTED` base | renderer/contexto según `assetType`; evolucionará a catálogo de capabilities |
+| Engineering Hub | `IMPLEMENTED` base | enruta a configuración específica según tipo de activo |
+| Terminología Activo/Dispositivo/Métrica | `IMPLEMENTED` base | quedan detalles legacy sólo en Ingeniería |
+| Reglas de entrega vs escalamiento | `IMPLEMENTED` nomenclatura | conceptos diferenciados en UI |
+| Commissioning genérico por capability | `PARTIAL` | CAM5 existente aislado; falta motor de checklist por capability |
+| Diagnóstico genérico por capability | `PARTIAL` | vista legacy aislada dentro de Ingeniería |
+
+`DECISION` Ningún nuevo modelo de dispositivo debe agregar por defecto un ítem al sidebar principal. Debe declarar capabilities y aportar su renderer/configuración contextual.
 
 ---
 
