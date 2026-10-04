@@ -1,9 +1,9 @@
 # HOIT Critical Infrastructure Platform
 ## Especificación funcional y técnica — Documento vivo
 
-**Versión:** 0.6  
+**Versión:** 0.7  
 **Fecha:** 2026-10-03  
-**Estado:** Base de diseño y desarrollo — Core V1 estable y Gateway Agent V1 en implementación  
+**Estado:** Backend + Frontend V1 en cierre; integración Gateway postergada a fase final  
 **Origen:** Evolución de la plataforma HOIT/CAM5
 
 ---
@@ -41,7 +41,9 @@ Esta versión incorpora el estado real del repositorio `DevHoit/cam5_v2`, rama `
 - Notification Service con email y adapter Meta WhatsApp Cloud API;
 - persistencia separada de `sent`, `delivered`, `read` y `ack`;
 - webhook de WhatsApp con verificación de firma, idempotencia, correlación por mensaje, validación de teléfono autorizado, ACK, `AlarmTransition` y audit trail;
-- reportes, históricos, módulos eléctricos/ATS/cadena de frío y ciclo operacional independiente de Vercel.
+- reportes, históricos, módulos eléctricos/ATS/cadena de frío y ciclo operacional independiente de Vercel;
+- contrato HOIT V1 de ingest estrictamente normalizado: Cloud rechaza campos de protocolo/registro fuera del envelope y `metrics`;
+- UI de Operación con ventanas de mantenimiento conectada al backend, incluyendo programación, estado y cancelación auditable.
 
 `PARTIAL`:
 
@@ -227,6 +229,8 @@ hoit-agent
 `PARTIAL`: conectividad Ethernet/Wi-Fi/4G se refleja de forma básica; selección de interfaz, RSSI real, watchdog de hardware y recuperación avanzada quedan pendientes de hardware objetivo.
 
 `PENDING`: drivers físicos PM5560, DSE8660 MKII y BLE Eddystone TLM. No se incorporan mapas de registros no verificados.
+
+`DECISION` El desarrollo del Gateway queda **congelado temporalmente**. Se completarán primero Backend y Frontend; la integración física del Gateway se retomará como fase final.
 
 ---
 
@@ -984,13 +988,14 @@ Estado del orden original:
 Prioridad inmediata actualizada:
 
 1. estabilizar CI y mantener migraciones automáticas verdes;
-2. congelar contrato faltante de histéresis, calendario de reglas y repetición de escalamiento;
-3. implementar driver físico PM5560 contra la lista oficial Schneider y probarlo en RS-485 real;
-4. completar conectividad/watchdog y prueba de Store & Forward prolongada en hardware gateway;
-5. implementar DSE8660 MKII cuando el mapa oficial definitivo esté disponible y BLE Eddystone TLM;
+2. cerrar administración de plataforma: cliente, sitio, usuarios, roles y alcances;
+3. completar UI Operación: Mantenimiento, Turnos y NOC;
+4. completar administración de reglas, políticas y escalamiento en Frontend;
+5. congelar contrato faltante de histéresis, calendario de reglas y repetición de escalamiento;
 6. habilitar Meta Business real y templates;
-7. completar UI Operación: Turnos, Mantenimiento, NOC y administración de políticas/reglas;
-8. ejecutar piloto end-to-end con hardware real.
+7. cerrar pruebas E2E de Backend + Frontend y dejar portal listo para piloto;
+8. **recién entonces** retomar integración Gateway: PM5560, DSE8660, BLE, conectividad/watchdog y soak test;
+9. ejecutar piloto end-to-end con hardware real.
 
 ---
 
@@ -1007,6 +1012,8 @@ Prioridad inmediata actualizada:
 - **ADR-010:** Store & Forward medible, no promesa absoluta de cero pérdida.
 - **ADR-011:** sensor BLE V1 mediante Eddystone TLM.
 - **ADR-012:** WhatsApp desacoplado mediante Notification Service.
+- **ADR-013:** el Gateway encapsula todos los protocolos físicos; Backend recibe sólo JSON normalizado y protocol-agnostic.
+- **ADR-014:** Backend + Frontend se completan antes de retomar la integración física del Gateway.
 
 
 ---
@@ -1764,6 +1771,12 @@ report.exported
 
 ## 44.1 Principios
 
+`DECISION` **El Backend recibe exclusivamente datos normalizados y limpios en JSON.** Los protocolos físicos, mapas de registros, offsets, function codes, endianness, escalas crudas y decodificación específica de fabricante pertenecen al Gateway y no forman parte del contrato de telemetría Cloud.
+
+El contrato HOIT V1 utiliza allowlist estricta. Un payload que intente incorporar campos de protocolo como `protocol`, `register`, `raw_value`, `function_code`, `byte_order` u otros equivalentes fuera de `metrics` debe rechazarse como payload inválido.
+
+Esto aplica a **todos los dispositivos presentes y futuros**, no sólo PM5560/DSE8660/BLE.
+
 - versionado;
 - idempotencia;
 - lotes;
@@ -1841,6 +1854,8 @@ Respuesta:
 ```
 
 `DECISION` Repetir el mismo `message_id` no debe duplicar datos.
+
+`DECISION` `samples[]` sólo admite `device_id`, `sampled_at`, `quality` y `metrics`. `metrics` contiene únicamente claves normalizadas del catálogo HOIT con valores escalares. El Backend no interpreta registros Modbus, GenComm, BLE crudo ni protocolos propietarios.
 
 ---
 
@@ -2372,4 +2387,4 @@ Después de M1 pueden avanzar en paralelo gateway, backend y frontend con menor 
 | Watchdog hardware | `PARTIAL` | restart por systemd listo; falta watchdog del hardware objetivo |
 | Soak test Store & Forward | `PENDING` | medir duración/capacidad real bajo corte prolongado |
 
-`DECISION` El siguiente driver prioritario es **PM5560**, porque existe documentación oficial Schneider vigente para su mapa Modbus y el transporte RTU común ya está implementado. El driver no se considerará terminado hasta cumplir la Definition of Done de §57 y probarse contra hardware real.
+`DECISION` El Track A queda congelado mientras se completa Backend + Frontend. Cuando se retome la integración física, el primer driver será **PM5560**; el protocolo y su mapa permanecerán dentro del Gateway y sólo saldrán métricas HOIT normalizadas en JSON.
