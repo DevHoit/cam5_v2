@@ -22,7 +22,6 @@ type BindingRow = {
   updatedAt: Date;
   deviceCode: string;
   driver: string;
-  protocol: string;
   enabled: boolean;
 };
 
@@ -126,7 +125,6 @@ async function bindingRows(db: Cam5Database, gatewayId: string): Promise<Binding
     updatedAt: gatewayDeviceBindings.updatedAt,
     deviceCode: devices.code,
     driver: devices.driver,
-    protocol: devices.protocol,
     enabled: devices.active,
   }).from(gatewayDeviceBindings)
     .innerJoin(devices, eq(devices.id, gatewayDeviceBindings.deviceId))
@@ -157,7 +155,7 @@ export async function hasSpecGatewayConfig(db: Cam5Database, gatewayId: string) 
 
 export async function buildSpecGatewayConfig(db: Cam5Database, credential: GatewayCredential) {
   const rows = await bindingRows(db, credential.gatewayId);
-  if (!rows.length) throw new ApiError(404, "El gateway no tiene devices HOIT configurados.");
+  if (!rows.length) throw new ApiError(404, "El gateway no tiene dispositivos de adquisición configurados.");
 
   const configVersion = Math.max(...rows.map((row) => row.updatedAt.getTime()));
   return {
