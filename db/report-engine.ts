@@ -353,20 +353,26 @@ export async function createReportRun(db: Cam5Database, input: {
     .innerJoin(clients, eq(clients.id, sites.clientId))
     .where(and(eq(assets.id, input.assetId), eq(assets.active, true), eq(sites.active, true)))
     .limit(1);
-  if (!context) throw new Error("El punto de medición no existe o está inactivo.");
+  if (!context) throw new Error("El activo no existe o está inactivo.");
 
   const [template] = await db.select().from(reportTemplates)
     .where(and(eq(reportTemplates.id, input.templateId), eq(reportTemplates.active, true)))
     .limit(1);
   if (!template || (template.siteId && template.siteId !== context.siteId)) throw new Error("La plantilla no está disponible para este sitio.");
-  if (context.assetType === "cold_room" && template.key !== "cold-chain-summary") throw new Error("Selecciona la plantilla de cadena de frío para esta cámara.");
-  if (context.assetType !== "cold_room" && template.key === "cold-chain-summary") throw new Error("La plantilla de cadena de frío sólo se puede usar con cámaras de refrigeración.");
-  if (context.assetType === "electrical_point" && template.key !== "electrical-summary") throw new Error("Selecciona la plantilla de monitoreo eléctrico para este punto.");
-  if (context.assetType !== "electrical_point" && template.key === "electrical-summary") throw new Error("La plantilla eléctrica sólo se puede usar con puntos eléctricos.");
-  if (context.assetType === "ats" && template.key !== "ats-summary") throw new Error("Selecciona la plantilla ATS para este activo.");
-  if (context.assetType !== "ats" && template.key === "ats-summary") throw new Error("La plantilla ATS sólo se puede usar con activos ATS.");
 
-  if (context.assetType === "cold_room") {
+  const capabilityRows = await db.select({ key: metricDefinitions.key }).from(deviceMetrics)
+    .innerJoin(devices, eq(devices.id, deviceMetrics.deviceId))
+    .innerJoin(metricDefinitions, eq(metricDefinitions.id, deviceMetrics.metricDefinitionId))
+    .where(and(eq(devices.assetId, input.assetId), eq(devices.active, true), eq(deviceMetrics.enabled, true)));
+  const capabilityKeys = new Set(capabilityRows.map((metric) => metric.key));
+  const hasColdChain = [...capabilityKeys].some((key) => key === "environment.temperature");
+  const hasElectrical = [...capabilityKeys].some((key) => key.startsWith("electrical."));
+  const hasAts = [...capabilityKeys].some((key) => key.startsWith("ats.") || key.startsWith("dse."));
+  if (template.key === "cold-chain-summary" && !hasColdChain) throw new Error("Este activo no expone métricas compatibles con el reporte de cadena de frío.");
+  if (template.key === "electrical-summary" && !hasElectrical) throw new Error("Este activo no expone métricas compatibles con el reporte eléctrico.");
+  if (template.key === "ats-summary" && !hasAts) throw new Error("Este activo no expone métricas compatibles con el reporte de transferencia automática.");
+
+  if (template.key === "cold-chain-summary" && hasColdChain) {
     const config = parseColdChainConfig(context.assetMetadata);
     const sensors = await db.select({
       id: devices.id,
@@ -635,7 +641,7 @@ export async function createReportRun(db: Cam5Database, input: {
     return { run, snapshot };
   }
 
-  if (context.assetType === "electrical_point") {
+  if (template.key === "electrical-summary" && hasElectrical) {
     const config = parseElectricalAlarmConfig(context.assetMetadata);
     const metricRows = (await db.select({
       deviceId: devices.id,
@@ -829,7 +835,7 @@ export async function createReportRun(db: Cam5Database, input: {
     return { run, snapshot };
   }
 
-  if (context.assetType === "ats") {
+  if (template.key === "ats-summary" && hasAts) {
     const config = parseAtsConfig(context.assetMetadata);
     const metricRows = await db.select({
       deviceId: devices.id,
