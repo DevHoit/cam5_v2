@@ -165,6 +165,37 @@ class GatewayAgentCoreTests(unittest.TestCase):
             finally:
                 runtime.close()
 
+    def test_full_buffer_fails_explicitly_without_dropping_existing_messages(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db_path = Path(directory) / "agent.db"
+            settings = RuntimeSettings(
+                api_base="https://core.example.test",
+                token="cam5gw_test",
+                gateway_id="GW-TEST",
+                state_db=str(db_path),
+                buffer_max_bytes=1_048_576,
+            )
+            runtime = GatewayRuntime(settings)
+            try:
+                runtime.config = GatewayConfig.from_dict(CONFIG)
+                runtime.store.db.execute(
+                    """
+                    INSERT INTO outbound_messages
+                      (message_id, boot_id, sequence, created_at, payload_json)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    ("existing", "boot", 1, "2026-10-04T01:00:00.000Z", "x" * 1_048_500),
+                )
+                runtime.store.db.commit()
+                with self.assertRaisesRegex(RuntimeError, "Store & Forward lleno"):
+                    runtime.enqueue_samples([
+                        Sample("PM-01", "2026-10-04T01:00:00.000Z", "GOOD", {"electrical.frequency": 50.0})
+                    ])
+                count = runtime.store.db.execute("SELECT COUNT(*) AS n FROM outbound_messages").fetchone()["n"]
+                self.assertEqual(count, 1)
+            finally:
+                runtime.close()
+
     def test_heartbeat_matches_v1_numeric_contract(self):
         with tempfile.TemporaryDirectory() as directory:
             runtime = GatewayRuntime(self.settings(Path(directory) / "agent.db"))
