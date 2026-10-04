@@ -85,6 +85,7 @@ class GatewayRuntime:
             raise RuntimeError("La configuración cacheada pertenece a otro gateway.")
         self.config = candidate
         self.device_manager.configure(candidate)
+        self.store.prune_terminal()
         return candidate
 
     def enqueue_samples(self, samples: list[Sample]) -> dict[str, Any]:
