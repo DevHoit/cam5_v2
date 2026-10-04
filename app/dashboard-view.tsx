@@ -83,8 +83,8 @@ async function requestJson<T>(path: string): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-function relativeTime(value: string) {
-  const seconds = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 1000));
+function relativeTime(value: string, reference: string) {
+  const seconds = Math.max(0, Math.round((new Date(reference).getTime() - new Date(value).getTime()) / 1000));
   if (seconds < 60) return `Hace ${seconds} s`;
   if (seconds < 3600) return `Hace ${Math.round(seconds / 60)} min`;
   if (seconds < 86400) return `Hace ${Math.round(seconds / 3600)} h`;
@@ -94,7 +94,7 @@ function relativeTime(value: string) {
 function assetTypeLabel(value: string) {
   return value
     .replaceAll("_", " ")
-    .replace(/w/g, (letter) => letter.toUpperCase());
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 export function DashboardView({
