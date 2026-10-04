@@ -119,7 +119,7 @@ function payload(input: { at: string; sequence: number; temperature: number; dev
     timeQuality: "synced",
     quality: "good",
     gateway: { code: "GW-TEMP-01", bootId: "boot-e2e", sequence: input.sequence },
-    device: { code: input.deviceCode ?? "TEMP-01", driver: "eddystone_tlm" },
+    device: { code: input.deviceCode ?? "TEMP-01" },
     metrics: {
       "environment.temperature": input.temperature,
       "sensor.battery_voltage": 3.55,
