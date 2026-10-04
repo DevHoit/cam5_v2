@@ -131,6 +131,20 @@ class LocalStore:
                 (current + max(1, delay_seconds), error[:1000], message_id),
             )
 
+    def prune_terminal(self, older_than_seconds: int = 7 * 24 * 60 * 60, now: float | None = None) -> int:
+        current = time.time() if now is None else now
+        cutoff = current - max(3600, older_than_seconds)
+        with self.db:
+            cursor = self.db.execute(
+                """
+                DELETE FROM outbound_messages
+                WHERE (state='sent' AND sent_at IS NOT NULL AND sent_at < ?)
+                   OR (state='dead_letter' AND dead_letter_at IS NOT NULL AND dead_letter_at < ?)
+                """,
+                (cutoff, cutoff),
+            )
+        return cursor.rowcount
+
     def stats(self) -> dict[str, int | float]:
         counts = {
             row["state"]: int(row["count"])
