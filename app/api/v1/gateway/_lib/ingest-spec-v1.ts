@@ -42,6 +42,13 @@ function object(value: unknown, label: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+function strictKeys(value: Record<string, unknown>, allowed: readonly string[], label: string) {
+  const unexpected = Object.keys(value).filter((key) => !allowed.includes(key));
+  if (unexpected.length) {
+    throw new ApiError(400, `${label} contiene campos no permitidos: ${unexpected.join(", ")}.`);
+  }
+}
+
 function requiredString(value: unknown, label: string, maximum = 160) {
   if (typeof value !== "string" || !value.trim() || value.length > maximum) {
     throw new ApiError(400, `${label} no es válido.`);
@@ -86,6 +93,7 @@ function scalarMetric(value: unknown, key: string): number | boolean | string {
 
 export function parseSpecIngestPayload(value: unknown, now: Date): SpecIngestPayload {
   const body = object(value, "El cuerpo");
+  strictKeys(body, ["schema_version", "gateway_id", "boot_id", "message_id", "sequence", "created_at", "time_quality", "samples"], "El envelope");
   if (body.schema_version !== "1.0") throw new ApiError(400, "schema_version debe ser 1.0.");
 
   const timeQuality = body.time_quality;
@@ -103,6 +111,7 @@ export function parseSpecIngestPayload(value: unknown, now: Date): SpecIngestPay
   const seenSamples = new Set<string>();
   const samples = body.samples.map((entry, index) => {
     const sample = object(entry, `samples[${index}]`);
+    strictKeys(sample, ["device_id", "sampled_at", "quality", "metrics"], `samples[${index}]`);
     const quality = sample.quality;
     if (!QUALITY_VALUES.includes(quality as SpecQuality)) {
       throw new ApiError(400, `samples[${index}].quality no es válida.`);
