@@ -99,6 +99,12 @@ class GatewayRuntime:
             "time_quality": time_quality(),
             "samples": [sample.as_dict() for sample in samples],
         }
+        encoded_bytes = len(str(payload).encode("utf-8"))
+        pending_bytes = int(self.store.stats()["pending_bytes"])
+        if pending_bytes + encoded_bytes > self.settings.buffer_max_bytes:
+            raise RuntimeError(
+                f"Store & Forward lleno: {pending_bytes + encoded_bytes} bytes exceden HOIT_BUFFER_MAX_BYTES={self.settings.buffer_max_bytes}."
+            )
         self.store.queue(payload)
         return payload
 
