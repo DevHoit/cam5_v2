@@ -383,3 +383,27 @@ Pendiente del siguiente saneamiento:
 - reescribir el módulo visual/API de Diagnóstico que aún consume `ingestion_batches` legacy;
 - retirar o archivar `configuration` y el fallback legacy de `gateway/config` cuando el Gateway Agent tenga cubierto el plano de configuración genérico;
 - migración posterior de tablas legacy, sin borrado destructivo anticipado.
+
+
+## Saneamiento de frontera Gateway/Core (2026-10-04)
+
+Bloque cerrado sobre la rama feature/hoit-core-v1.
+
+- Diagnóstico del Core usa telemetría normalizada y métricas semánticas.
+- Configuración del Core ya no edita direccionamiento ni parámetros del protocolo físico.
+- Se eliminó del endpoint gateway/config el fallback de configuración basado en registros.
+- Se eliminó del endpoint gateway/ingest la ingesta legacy de registros crudos.
+- Core acepta únicamente los contratos de telemetría semántica normalizada soportados.
+- La adquisición física, drivers, buses, direcciones, registros, escalado y decodificación permanecen en Gateway Agent.
+- CAM5 no constituye una excepción arquitectónica: es un dispositivo gestionado por el Gateway igual que cualquier otro modelo.
+
+Estado de validación del último cambio funcional:
+- Lint HOIT Core: PASS.
+- Simuladores Python: PASS.
+- HOIT Gateway Agent: PASS.
+- Tests DB/integración: PASS.
+- Build Next.js/TypeScript: PASS.
+
+Deuda técnica restante:
+- El esquema conserva tablas y columnas legacy para migración/compatibilidad histórica. No forman parte del contrato funcional nuevo.
+- Antes de borrarlas físicamente se debe confirmar que seeds, migraciones históricas y procesos de transición no las requieran.
