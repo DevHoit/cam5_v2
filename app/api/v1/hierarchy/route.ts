@@ -83,7 +83,7 @@ export async function GET(request: NextRequest) {
       const scope = user.sites.find((item) => item.id === site.id);
       return { ...site, roleKey: scope?.roleKey ?? "viewer", roleName: scope?.roleName ?? "Solo lectura" };
     });
-    const [pointCounts, gatewayCounts, controllerCounts, pointRows, gatewayRows, controllerRows] = await Promise.all([
+    const [pointCounts, gatewayCounts, controllerCounts, pointRows, gatewayRows, controllerRows, modelRows] = await Promise.all([
       db.select({ siteId: assets.siteId, value: count() }).from(assets).where(inArray(assets.siteId, siteIds)).groupBy(assets.siteId),
       db.select({ siteId: gateways.siteId, value: count() }).from(gateways).where(inArray(gateways.siteId, siteIds)).groupBy(gateways.siteId),
       db.select({ siteId: assets.siteId, value: count() }).from(devices).innerJoin(assets, eq(assets.id, devices.assetId)).where(inArray(assets.siteId, siteIds)).groupBy(assets.siteId),
@@ -130,6 +130,12 @@ export async function GET(request: NextRequest) {
         .innerJoin(deviceModels, eq(deviceModels.id, devices.modelId))
         .where(eq(assets.siteId, user.siteId))
         .orderBy(devices.code),
+      db.select({
+        id: deviceModels.id,
+        code: deviceModels.code,
+        manufacturer: deviceModels.manufacturer,
+        name: deviceModels.name,
+      }).from(deviceModels).orderBy(deviceModels.manufacturer, deviceModels.name),
     ]);
 
     const countFor = (rows: Array<{ siteId: string; value: number | bigint }>, siteId: string) => Number(rows.find((row) => row.siteId === siteId)?.value ?? 0);
@@ -152,6 +158,7 @@ export async function GET(request: NextRequest) {
       points: pointRows.map((point) => ({ ...point, nominalVoltageKv: point.nominalVoltageKv ? Number(point.nominalVoltageKv) : null })),
       gateways: gatewayRows.map((gateway) => ({ ...gateway, lastSeenAt: gateway.lastSeenAt?.toISOString() ?? null })),
       controllers: controllerRows.map((controller) => ({ ...controller, lastReadAt: controller.lastReadAt?.toISOString() ?? null })),
+      deviceModels: modelRows,
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return apiErrorResponse(error);
@@ -226,23 +233,28 @@ export async function POST(request: NextRequest) {
         record = row;
       } else {
         requirePermission(user.permissions, "settings.write");
-        const pointId = textField(body, "pointId", "El punto de medición");
+        const pointId = textField(body, "pointId", "El activo");
         const gatewayId = textField(body, "gatewayId", "El gateway");
-        const [[point], [gateway], [model], [profile]] = await Promise.all([
+        const modelId = textField(body, "modelId", "El modelo de dispositivo");
+        const [[point], [gateway], [model]] = await Promise.all([
           tx.select({ id: assets.id, siteId: assets.siteId }).from(assets).where(and(eq(assets.id, pointId), eq(assets.active, true))).limit(1),
           tx.select({ id: gateways.id, siteId: gateways.siteId }).from(gateways).where(and(eq(gateways.id, gatewayId), eq(gateways.active, true))).limit(1),
-          tx.select({ id: deviceModels.id }).from(deviceModels).where(eq(deviceModels.code, "CAM5-TPH-XDCW")).limit(1),
-          tx.select({ id: readingProfiles.id }).from(readingProfiles).where(eq(readingProfiles.key, "cam5-balanced-v1")).limit(1),
+          tx.select({ id: deviceModels.id, code: deviceModels.code }).from(deviceModels).where(eq(deviceModels.id, modelId)).limit(1),
         ]);
-        if (!point || !gateway || point.siteId !== gateway.siteId) throw new ApiError(400, "El punto y el gateway deben pertenecer al mismo sitio.");
+        if (!point || !gateway || point.siteId !== gateway.siteId) throw new ApiError(400, "El activo y el gateway deben pertenecer al mismo sitio.");
         assertSiteAccess(siteIds, point.siteId);
-        if (!model) throw new ApiError(409, "El modelo CAM5 no está configurado.");
-        const host = textField(body, "host", "La dirección del controlador");
+        if (!model) throw new ApiError(400, "El modelo de dispositivo seleccionado no existe.");
+        const isCam5 = model.code === "CAM5-TPH-XDCW";
+        const [profile] = isCam5
+          ? await tx.select({ id: readingProfiles.id }).from(readingProfiles).where(eq(readingProfiles.key, "cam5-balanced-v1")).limit(1)
+          : [];
+        const host = textField(body, "host", "La dirección del dispositivo");
         const [row] = await tx.insert(devices).values({
           assetId: point.id,
           gatewayId: gateway.id,
           modelId: model.id,
           readingProfileId: profile?.id ?? null,
+          driver: isCam5 ? "cam5" : "generic_modbus",
           code,
           name,
           host,
@@ -312,7 +324,7 @@ export async function PATCH(request: NextRequest) {
       } else if (resource === "point") {
         requirePermission(user.permissions, "assets.write");
         const [current] = await tx.select({ siteId: assets.siteId }).from(assets).where(eq(assets.id, id)).limit(1);
-        if (!current) throw new ApiError(404, "El punto de medición no existe.");
+        if (!current) throw new ApiError(404, "El activo no existe.");
         assertSiteAccess(siteIds, current.siteId);
         [record] = await tx.update(assets).set({
           ...(typeof body.name === "string" ? { name: textField(body, "name", "El nombre") } : {}),
@@ -336,11 +348,11 @@ export async function PATCH(request: NextRequest) {
       } else {
         requirePermission(user.permissions, "settings.write");
         const [current] = await tx.select({ siteId: assets.siteId }).from(devices).innerJoin(assets, eq(assets.id, devices.assetId)).where(eq(devices.id, id)).limit(1);
-        if (!current) throw new ApiError(404, "El controlador no existe.");
+        if (!current) throw new ApiError(404, "El dispositivo no existe.");
         assertSiteAccess(siteIds, current.siteId);
         [record] = await tx.update(devices).set({
           ...(typeof body.name === "string" ? { name: textField(body, "name", "El nombre") } : {}),
-          ...(typeof body.host === "string" ? { host: textField(body, "host", "La dirección del controlador") } : {}),
+          ...(typeof body.host === "string" ? { host: textField(body, "host", "La dirección del dispositivo") } : {}),
           ...(typeof body.port === "number" ? { port: body.port } : {}),
           ...(typeof body.unitId === "number" ? { unitId: body.unitId } : {}),
           ...(typeof body.active === "boolean" ? { active: body.active, state: body.active ? "commissioning" : "decommissioned" } : {}),
@@ -406,7 +418,7 @@ export async function DELETE(request: NextRequest) {
           tx.select({ value: count() }).from(alarms).where(eq(alarms.assetId, id)),
           tx.select({ value: count() }).from(workOrders).where(eq(workOrders.assetId, id)),
         ]);
-        if (Number(deviceCount.value) || Number(alarmCount.value) || Number(orderCount.value)) throw new ApiError(409, "El punto conserva controladores, alarmas u órdenes. Desactívalo para preservar su trazabilidad.");
+        if (Number(deviceCount.value) || Number(alarmCount.value) || Number(orderCount.value)) throw new ApiError(409, "El activo conserva dispositivos, alarmas u órdenes. Desactívalo para preservar su trazabilidad.");
         [record] = await tx.delete(assets).where(eq(assets.id, id)).returning();
       } else if (resource === "gateway") {
         requirePermission(user.permissions, "settings.write");
@@ -417,7 +429,7 @@ export async function DELETE(request: NextRequest) {
           tx.select({ value: count() }).from(devices).where(eq(devices.gatewayId, id)),
           tx.select({ value: count() }).from(gatewayApiCredentials).where(eq(gatewayApiCredentials.gatewayId, id)),
         ]);
-        if (Number(deviceCount.value) || Number(credentialCount.value)) throw new ApiError(409, "El gateway conserva controladores o credenciales. Desactívalo para preservar la comunicación y auditoría.");
+        if (Number(deviceCount.value) || Number(credentialCount.value)) throw new ApiError(409, "El gateway conserva dispositivos o credenciales. Desactívalo para preservar la comunicación y auditoría.");
         [record] = await tx.delete(gateways).where(eq(gateways.id, id)).returning();
       } else {
         requirePermission(user.permissions, "settings.write");
@@ -425,7 +437,7 @@ export async function DELETE(request: NextRequest) {
         if (!current) throw new ApiError(404, "El controlador no existe.");
         assertSiteAccess(siteIds, current.siteId);
         const [historyCount] = await tx.select({ value: count() }).from(ingestionBatches).where(eq(ingestionBatches.deviceId, id));
-        if (Number(historyCount.value)) throw new ApiError(409, "El controlador conserva telemetría. Desactívalo para mantener el histórico.");
+        if (Number(historyCount.value)) throw new ApiError(409, "El dispositivo conserva telemetría. Desactívalo para mantener el histórico.");
         [record] = await tx.delete(devices).where(eq(devices.id, id)).returning();
       }
       if (!record) throw new ApiError(404, "El elemento no existe.");
