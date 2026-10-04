@@ -173,7 +173,7 @@ test("platform admin automatically sees clients and sites created after the glob
     assert.equal(before.clients.some((scope) => scope.clientId === bootstrapClient.id), true);
 
     const [newClient] = await db.insert(schema.clients).values({ code: "NEW-C", name: "Nuevo Cliente" }).returning();
-    let afterClient = await resolveUserAccessScopes(db, platformUser.id);
+    const afterClient = await resolveUserAccessScopes(db, platformUser.id);
     const inheritedClient = afterClient.clients.find((scope) => scope.clientId === newClient.id);
     assert.ok(inheritedClient);
     assert.equal(inheritedClient.roleKey, "platform_admin");
