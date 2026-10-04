@@ -197,6 +197,7 @@ export async function GET(request: NextRequest) {
       dataVersion: devices.dataVersion,
       state: devices.state,
       active: devices.active,
+      driver: devices.driver,
       protocol: devices.protocol,
       host: devices.host,
       port: devices.port,
@@ -234,7 +235,7 @@ export async function GET(request: NextRequest) {
       .orderBy(devices.createdAt)
       .limit(1);
 
-    const siteGateways = await db.select({
+    if (controller && controller.driver !== "cam5") {\n      throw new ApiError(409, "La configuración de adquisición de dispositivos normalizados pertenece al Gateway Agent. Este módulo especializado solo admite CAM-5 legacy.");\n    }\n\n        const siteGateways = await db.select({
       id: gateways.id,
       code: gateways.code,
       name: gateways.name,
