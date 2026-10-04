@@ -10,6 +10,7 @@ import { DiagnosticsView as DatabaseDiagnosticsView } from "./diagnostics-view";
 import { GatewayProvisioningView } from "./gateway-provisioning-view";
 import { Pagination, useClientPagination } from "./pagination";
 import { NotificationsView as DatabaseNotificationsView } from "./notifications-view";
+import { OperationsView } from "./operations-view";
 import { ReportsView as DatabaseReportsView } from "./reports-view";
 import { SettingsView as DatabaseSettingsView } from "./settings-view";
 import { TrendsView } from "./trends-view";
@@ -62,7 +63,7 @@ import {
   IconX as X,
 } from "@tabler/icons-react";
 
-type View = "overview" | "cabinet" | "electrical" | "ats" | "cold-chain" | "diagnostics" | "commissioning" | "trends" | "alarms" | "history" | "assets" | "reports" | "settings" | "provisioning" | "users" | "notifications" | "account";
+type View = "overview" | "cabinet" | "electrical" | "ats" | "cold-chain" | "diagnostics" | "commissioning" | "trends" | "alarms" | "history" | "assets" | "operations" | "reports" | "settings" | "provisioning" | "users" | "notifications" | "account";
 type Severity = "critical" | "warning" | "info";
 type SensorState = "normal" | "warning" | "critical";
 type HistoryTab = "measurements" | "alarms" | "audit";
@@ -365,6 +366,7 @@ const navGroups = [
     label: "Gestión",
     items: [
       { id: "assets" as View, label: "Estructura operacional", description: "Clientes, sitios y medición", icon: Factory },
+      { id: "operations" as View, label: "Operación", description: "Mantenimiento, turnos y NOC", icon: Clock3 },
       { id: "reports" as View, label: "Reportes", description: "Informes y programación", icon: FileReport },
     ],
   },
@@ -393,6 +395,7 @@ const viewTitles: Record<View, { title: string; description: string }> = {
   alarms: { title: "Centro de alertas", description: "Triage operativo, reconocimiento y trazabilidad de eventos." },
   history: { title: "Histórico", description: "Mediciones, alarmas y cambios administrativos en una sola trazabilidad." },
   assets: { title: "Estructura operacional", description: "Clientes, sitios, puntos de medición, gateways y controladores asociados." },
+  operations: { title: "Operación", description: "Ventanas de mantenimiento, turnos y continuidad operacional." },
   reports: { title: "Reportes", description: "Informes de condición, eventos y cumplimiento para operación y confiabilidad." },
   settings: { title: "Configuración", description: "Parámetros del activo, canales de adquisición y comunicaciones." },
   provisioning: { title: "Provisionamiento del gateway", description: "Credenciales seguras, configuración inicial y verificación de conexión." },
@@ -1815,6 +1818,14 @@ export default function Home() {
             {view === "alarms" && <AlarmsView assetId={activePoint?.id ?? ""} permissions={sessionUser.permissions} onSummaryChange={setAlarmSummary} onOpenTrend={openAlarmTrend} />}
             {view === "history" && <HistoryView assetId={activePoint?.id ?? ""} canExport={sessionUser.permissions.includes("history.export")} onOpenTrend={openTrendRange} />}
             {view === "assets" && <OperationalHierarchyView hierarchy={hierarchy} loading={hierarchyLoading} permissions={sessionUser.permissions} onReload={loadHierarchy} onSwitchSite={switchSite} />}
+            {view === "operations" && <OperationsView
+              assets={(hierarchy?.points ?? []).map((point) => ({ id: point.id, code: point.code, name: point.name }))}
+              activeAssetId={activePoint?.id ?? ""}
+              canWrite={sessionUser.permissions.includes("notifications.write")}
+              canManageClient={sessionUser.roleKey === "platform_admin" || sessionUser.roleKey === "client_admin"}
+              notify={notify}
+              confirm={(request) => setConfirmRequest(request)}
+            />}
             {view === "reports" && <DatabaseReportsView assetId={activePoint?.id ?? ""} assetLabel={activePoint ? `${activePoint.code} · ${activePoint.name}` : "Sin punto seleccionado"} timezone={hierarchy?.sites.find((site) => site.id === sessionUser.siteId)?.timezone ?? "America/Santiago"} canGenerate={sessionUser.permissions.includes("reports.generate")} canSchedule={sessionUser.permissions.includes("reports.schedule")} notify={notify} confirm={(request) => setConfirmRequest(request)} />}
             {view === "settings" && <DatabaseSettingsView assetId={activePoint?.id ?? ""} canWrite={sessionUser.permissions.includes("settings.write")} notify={notify} confirm={(request) => setConfirmRequest(request)} onReloadHierarchy={loadHierarchy} />}
             {view === "provisioning" && <GatewayProvisioningView canWrite={sessionUser.permissions.includes("settings.write")} notify={notify} confirm={(request) => setConfirmRequest(request)} />}
