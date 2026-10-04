@@ -463,9 +463,14 @@ function ChannelVisibilityDialog({ open, assetId, sensors, onClose, onSaved }: {
 
   useEffect(() => {
     if (!open) return;
-    setSelected(new Set(monitored.filter((sensor) => sensor.visible).map((sensor) => sensor.channelId)));
-    setQuery("");
-    setGroup("all");
+    let active = true;
+    window.queueMicrotask(() => {
+      if (!active) return;
+      setSelected(new Set(monitored.filter((sensor) => sensor.visible).map((sensor) => sensor.channelId)));
+      setQuery("");
+      setGroup("all");
+    });
+    return () => { active = false; };
   // La selección se toma al abrir; las recargas de telemetría no deben sobrescribir cambios pendientes.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assetId, open]);
