@@ -10,6 +10,7 @@ from typing import Any
 
 from .clock import time_quality, utc_now
 from .cloud import CloudClient, CloudResponse
+from .device_manager import DeviceManager
 from .health import cpu_percent, memory_percent, network_status
 from .models import GatewayConfig, Sample
 from .store import LocalStore
@@ -52,10 +53,11 @@ class RuntimeSettings:
 
 
 class GatewayRuntime:
-    def __init__(self, settings: RuntimeSettings, cloud: CloudClient | None = None, store: LocalStore | None = None):
+    def __init__(self, settings: RuntimeSettings, cloud: CloudClient | None = None, store: LocalStore | None = None, device_manager: DeviceManager | None = None):
         self.settings = settings
         self.cloud = cloud or CloudClient(settings.api_base, settings.token)
         self.store = store or LocalStore(settings.state_db)
+        self.device_manager = device_manager or DeviceManager()
         self.boot_id = str(uuid.uuid4())
         self.started_monotonic = time.monotonic()
         self.sequence = 0
@@ -72,6 +74,7 @@ class GatewayRuntime:
                 raise RuntimeError("gateway_id de configuración no coincide con la identidad local.")
             self.store.save_config(response.body)
             self.config = candidate
+            self.device_manager.configure(candidate)
             return candidate
 
         cached = self.store.load_config()
@@ -81,6 +84,7 @@ class GatewayRuntime:
         if candidate.gateway_id.upper() != self.settings.gateway_id:
             raise RuntimeError("La configuración cacheada pertenece a otro gateway.")
         self.config = candidate
+        self.device_manager.configure(candidate)
         return candidate
 
     def enqueue_samples(self, samples: list[Sample]) -> dict[str, Any]:
@@ -163,7 +167,7 @@ class GatewayRuntime:
                 "disk_percent": disk_percent,
             },
             "interfaces": {},
-            "devices": [],
+            "devices": self.device_manager.heartbeat_devices(),
         }
 
     def heartbeat_once(self) -> CloudResponse:
@@ -186,6 +190,7 @@ class GatewayRuntime:
         next_config = now + self.settings.config_refresh_seconds
         next_sync = now
         next_heartbeat = now
+        next_poll = now
 
         while not stop_requested():
             now = time.monotonic()
@@ -197,6 +202,15 @@ class GatewayRuntime:
                     # Keep the last validated configuration; retry on the next refresh window.
                     pass
                 next_config = now + self.settings.config_refresh_seconds
+
+            if now >= next_poll:
+                samples = self.device_manager.poll_all()
+                if samples:
+                    maximum = self.config.max_batch_samples if self.config else 100
+                    for index in range(0, len(samples), maximum):
+                        self.enqueue_samples(samples[index:index + maximum])
+                interval = self.config.upload_interval_seconds if self.config else 5
+                next_poll = now + interval
 
             if now >= next_sync:
                 self.sync_once()
