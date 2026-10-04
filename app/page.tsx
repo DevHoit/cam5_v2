@@ -389,12 +389,12 @@ const viewTitles: Record<View, { title: string; description: string }> = {
   dashboard: { title: "Dashboard", description: "Visión consolidada de sitios, activos, alertas y continuidad operacional." },
   overview: { title: "Resumen del activo", description: "Condición, métricas y eventos del activo seleccionado." },
   cabinet: { title: "Vista del activo", description: "Distribución y estado de las métricas instrumentadas del activo." },
-  electrical: { title: "Monitoreo eléctrico", description: "Supervisión trifásica normalizada de medidores Schneider PowerLogic PM5560." },
-  ats: { title: "ATS", description: "Supervisión normalizada de controladores Deep Sea Electronics DSE8660 MKII y transferencia entre fuentes." },
+  electrical: { title: "Análisis eléctrico", description: "Variables eléctricas normalizadas del activo y sus medidores asociados." },
+  ats: { title: "Transferencia automática", description: "Supervisión normalizada de fuentes, posición de transferencia, carga y alarmas." },
   "cold-chain": { title: "Cadena de frío", description: "Supervisión de una o más cámaras de refrigeración y sus sensores asociados." },
   diagnostics: { title: "Diagnóstico avanzado", description: "Estado técnico de la cadena de adquisición del activo." },
   commissioning: { title: "Puesta en marcha", description: "Validaciones y evidencias previas a incorporar un dispositivo a operación." },
-  trends: { title: "Tendencias", description: "Evolución térmica, descarga parcial y humedad ambiental." },
+  trends: { title: "Tendencias", description: "Evolución temporal de las métricas disponibles para el activo seleccionado." },
   alarms: { title: "Centro de alertas", description: "Triage operativo, reconocimiento y trazabilidad de eventos." },
   history: { title: "Histórico", description: "Mediciones, alarmas y cambios administrativos en una sola trazabilidad." },
   assets: { title: "Organización y activos", description: "Clientes, sitios, activos, gateways y dispositivos asociados." },
@@ -1829,6 +1829,7 @@ export default function Home() {
             {(["engineering", "settings", "diagnostics", "commissioning", "provisioning"] as View[]).includes(view) && <nav className="engineering-context-nav" aria-label="Herramientas de ingeniería">
               <div><span className="eyebrow">Área técnica</span><strong>Ingeniería del activo</strong></div>
               <div>
+                <button className={view === "engineering" ? "active" : ""} onClick={() => navigate("engineering")}>Inicio</button>
                 <button className={view === "settings" ? "active" : ""} onClick={() => navigate("settings")}>Configuración</button>
                 <button className={view === "diagnostics" ? "active" : ""} onClick={() => navigate("diagnostics")}>Diagnóstico</button>
                 <button className={view === "commissioning" ? "active" : ""} onClick={() => navigate("commissioning")}>Puesta en marcha</button>
@@ -1837,7 +1838,8 @@ export default function Home() {
             </nav>}
             <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> Gestión de activos críticos</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{(view === "overview" || view === "cabinet") && <button className="secondary-button" onClick={() => setVisibilityOpen(true)} disabled={!activePoint || !sensors.some((sensor) => sensor.enabled)}><AdjustmentsHorizontal size={16} /><span>Personalizar canales</span></button>}{view !== "dashboard" && view !== "assets" && view !== "engineering" && view !== "settings" && view !== "provisioning" && view !== "users" && view !== "notifications" && view !== "account" && view !== "reports" && view !== "diagnostics" && view !== "commissioning" && view !== "trends" && view !== "history" && <button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button>}{view !== "dashboard" && <button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{alarmSummary.critical + alarmSummary.warning} alertas activas</button>}</div></section>
             {view === "dashboard" && <DashboardView onSwitchSite={(siteId) => void switchSite(siteId)} onSelectAsset={(siteId, assetId) => void openDashboardAsset(siteId, assetId)} onOpenAlerts={() => navigate("alarms")} onOpenOperations={() => navigate("operations")} />}
-            {view === "engineering" && <EngineeringHubView asset={activePoint} devices={hierarchy?.controllers ?? []} canWrite={sessionUser.permissions.includes("settings.write")} onNavigate={(target) => navigate(target)} />}\n            {view === "overview" && <Overview onNavigate={navigate} onOpenTrend={openChannelTrend} onAcknowledge={acknowledge} activeAlarms={alarmPreview} alarmSummary={alarmSummary} point={activePoint} />}
+            {view === "engineering" && <EngineeringHubView asset={activePoint} devices={hierarchy?.controllers ?? []} canWrite={sessionUser.permissions.includes("settings.write")} onNavigate={(target) => navigate(target)} />}
+            {view === "overview" && <Overview onNavigate={navigate} onOpenTrend={openChannelTrend} onAcknowledge={acknowledge} activeAlarms={alarmPreview} alarmSummary={alarmSummary} point={activePoint} />}
             {view === "cabinet" && <CabinetView onOpenTrend={openChannelTrend} />}
             {view === "electrical" && <ElectricalView
               canWriteAssets={sessionUser.permissions.includes("assets.write")}
