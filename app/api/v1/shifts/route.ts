@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { auditLogs, shiftSchedules, shifts } from "../../../../db/schema";
 import { apiErrorResponse, ApiError, requestMetadata, requireApiSession } from "../_lib/auth";
 
@@ -77,7 +77,9 @@ function canManageClient(user: Awaited<ReturnType<typeof requireApiSession>>["us
 async function listForClient(db: Awaited<ReturnType<typeof requireApiSession>>["db"], clientId: string) {
   const shiftRows = await db.select().from(shifts).where(eq(shifts.clientId, clientId)).orderBy(asc(shifts.name));
   const scheduleRows = shiftRows.length
-    ? await db.select().from(shiftSchedules).orderBy(asc(shiftSchedules.dayOfWeek), asc(shiftSchedules.startTime))
+    ? await db.select().from(shiftSchedules)
+        .where(inArray(shiftSchedules.shiftId, shiftRows.map((shift) => shift.id)))
+        .orderBy(asc(shiftSchedules.dayOfWeek), asc(shiftSchedules.startTime))
     : [];
   return shiftRows.map((shift) => ({
     ...shift,
