@@ -48,6 +48,7 @@ Esta versión incorpora el estado real del repositorio `DevHoit/cam5_v2`, rama `
 - NOC por sitio con alarmas activas, salud de gateways/dispositivos, mantenimiento y cobertura on-call en una sola vista;
 - administración de políticas de escalamiento Core multinivel: demora, destinatario `user`/`role`/`on_call_group`, canales Email/WhatsApp, habilitación y audit trail.
 - Frontend UX 2.0 orientado a operación y multi-dispositivo: Dashboard consolidado por cliente, navegación por tareas, contexto `Cliente -> Sitio -> Activo`, resumen de activo y herramientas técnicas desacopladas de la navegación principal;
+- ficha universal de activo para PM/ATS/cadena de frío construida sobre `/api/v1/telemetry/metrics/latest`, con dispositivos, calidad/frescura y métricas normalizadas; CAM5 mantiene su visualización especializada;
 - Dashboard de cartera con condición de activos, alertas, salud de adquisición, mantenimiento, cobertura on-call, resumen por sitio, activos prioritarios y eventos relevantes;
 - workspace de Ingeniería sensible al tipo/capabilities del activo; PM5560, DSE8660, CAM5 y BLE dejan de ser destinos principales de navegación y pasan a ser implementaciones/capacidades contextuales;
 - terminología operacional normalizada a Activo / Dispositivo / Métrica; detalles de protocolo, registros y decodificación quedan restringidos al workspace técnico;
@@ -2471,10 +2472,10 @@ Después de M1 pueden avanzar en paralelo gateway, backend y frontend con menor 
 | Componente | Estado | Nota |
 |---|---|---|
 | Dashboard cliente multi-sitio | `IMPLEMENTED` base | condición, alertas, adquisición, mantenimiento y on-call |
-| Resumen del activo | `IMPLEMENTED` | reutiliza el overview operacional existente |
+| Resumen del activo | `IMPLEMENTED` | vista universal sobre `device -> metric` para activos normalizados; CAM5 conserva renderer especializado |
 | Navegación task-oriented | `IMPLEMENTED` | modelos de hardware fuera del menú principal |
 | Contexto Cliente/Sitio/Activo | `IMPLEMENTED` | Dashboard usa alcance Cliente; vistas contextuales usan Sitio + Activo |
-| Capability navigation | `IMPLEMENTED` base | renderer/contexto según `assetType`; evolucionará a catálogo de capabilities |
+| Capability navigation | `IMPLEMENTED` base | renderer/contexto según `assetType`; la telemetría universal ya usa métricas normalizadas y evolucionará a catálogo explícito de capabilities |
 | Engineering Hub | `IMPLEMENTED` base | enruta a configuración específica según tipo de activo |
 | Terminología Activo/Dispositivo/Métrica | `IMPLEMENTED` base | quedan detalles legacy sólo en Ingeniería |
 | Reglas de entrega vs escalamiento | `IMPLEMENTED` nomenclatura | conceptos diferenciados en UI |
