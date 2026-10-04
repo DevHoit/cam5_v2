@@ -1,9 +1,9 @@
 # HOIT Critical Infrastructure Platform
 ## Especificación funcional y técnica — Documento vivo
 
-**Versión:** 0.5  
+**Versión:** 0.6  
 **Fecha:** 2026-10-03  
-**Estado:** Base de diseño y desarrollo — implementación Core V1 en curso  
+**Estado:** Base de diseño y desarrollo — Core V1 estable y Gateway Agent V1 en implementación  
 **Origen:** Evolución de la plataforma HOIT/CAM5
 
 ---
@@ -48,7 +48,7 @@ Esta versión incorpora el estado real del repositorio `DevHoit/cam5_v2`, rama `
 - histéresis y calendario del Rule Engine: los campos existen, pero su contrato JSON/semántica aún no está congelado; el motor falla cerrado cuando aparecen;
 - `repeat_count > 1` en escalamiento: falta definir intervalo/semántica de repetición;
 - Meta Business, número real, credenciales y templates aprobados: integración implementada, habilitación productiva externa pendiente;
-- HOIT Gateway Agent Linux productivo con Store & Forward y drivers físicos: pendiente; los simuladores y contratos cloud ya existen.
+- HOIT Gateway Agent Linux: núcleo de control y Store & Forward `IMPLEMENTED`; adquisición física PM5560/DSE/Eddystone y validación prolongada en hardware siguen `PENDING`.
 
 ---
 
@@ -203,6 +203,31 @@ hoit-agent
 - recuperar conectividad;
 - mantener logging local.
 
+## 6.3 Estado de implementación — 2026-10-03
+
+`IMPLEMENTED` en `feature/hoit-core-v1` para el núcleo del agente:
+
+- daemon Linux administrable por `systemd`;
+- `cloud_client` para config, ingest y heartbeat V1;
+- cache local de la última configuración válida y arranque offline con esa configuración;
+- `local_store` SQLite con WAL y `synchronous=FULL`;
+- Store & Forward durable antes del primer intento de upload;
+- preservación exacta de `message_id`, `boot_id`, `sequence`, timestamps y payload durante reintentos/restarts;
+- retry con backoff para red, `429` y `5xx`;
+- dead-letter explícito para errores contractuales `4xx`;
+- capacidad de buffer medible y rechazo explícito cuando se alcanza el límite configurado, evitando pérdida silenciosa;
+- retención acotada de registros terminales ya enviados/dead-letter;
+- detección conservadora de `time_quality` usando sincronización NTP del sistema;
+- health de CPU, memoria, disco, buffer y estado por device;
+- `device_manager` con estados `ONLINE`, `DEGRADED`, `OFFLINE`, `UNKNOWN`;
+- superficie plug-in para drivers;
+- transporte Modbus RTU V1 read-only con FC03/FC04, CRC16, excepciones y validación de frames;
+- tests automatizados de cache offline, persistencia tras restart, retry idempotente, overflow, health y Modbus RTU.
+
+`PARTIAL`: conectividad Ethernet/Wi-Fi/4G se refleja de forma básica; selección de interfaz, RSSI real, watchdog de hardware y recuperación avanzada quedan pendientes de hardware objetivo.
+
+`PENDING`: drivers físicos PM5560, DSE8660 MKII y BLE Eddystone TLM. No se incorporan mapas de registros no verificados.
+
 ---
 
 # 7. Tiempo y almacenamiento offline
@@ -248,6 +273,10 @@ pending_upload = false
 `DECISION` Los reintentos deben ser idempotentes.
 
 `NOTE` No se utiliza la expresión contractual "cero pérdida de datos"; se especificará capacidad medible de buffer y recuperación.
+
+`IMPLEMENTED` El agente persiste cada envelope V1 en SQLite antes de transmitirlo. Los reintentos conservan el payload original incluso después de reiniciar el proceso. Errores transitorios permanecen en cola; errores contractuales se mueven a dead-letter para diagnóstico. El buffer tiene un límite configurable y, al agotarse, el agente falla de forma explícita en lugar de descartar telemetría silenciosamente.
+
+`NOTE` La validación actual es automatizada. La capacidad efectiva en horas y el comportamiento ante cortes prolongados deben medirse en el hardware gateway real antes de declarar Store & Forward productivo de campo.
 
 ---
 
@@ -468,8 +497,7 @@ sensor.last_seen
 | V / A / kW | 1 s gateway |
 | Hz / PF / kVA / kVAr | 1-2 s |
 | DSE states | 1 s |
-| BLE scan | continuo; advertisement ~1 s |
-| Upload cloud | 5 s nominal |
+| BLE scan | continuo; advertisement ~1 s || Upload cloud | 5 s nominal |
 | Energía / demanda | 30-60 s |
 | THD | 10-30 s |
 | Armónicos | bajo demanda o 1-5 min |
@@ -930,8 +958,8 @@ V2:
 | Contrato de histéresis del Rule Engine | evaluación de reglas | `PENDING` |
 | Semántica/calendario de `schedule_id` | evaluación de reglas | `PENDING` |
 | Intervalo para `repeat_count > 1` | escalamiento repetido | `PENDING` |
-| HOIT Gateway Agent Linux productivo | adquisición / Store & Forward | `PENDING` |
-| Drivers físicos PM5560/DSE/Eddystone en Gateway Agent | integración de campo | `PENDING` |
+| HOIT Gateway Agent Linux | adquisición / Store & Forward | núcleo `IMPLEMENTED`; hardware/soak `PARTIAL` |
+| Drivers físicos PM5560/DSE/Eddystone en Gateway Agent | integración de campo | `PENDING`; Modbus RTU base `IMPLEMENTED` |
 | Auditoría/refactor final de código CAM5 remanente | deuda técnica | `PARTIAL` |
 
 ---
@@ -944,7 +972,7 @@ Estado del orden original:
 2. crear matriz `reuse / refactor / replace / new` — `PARTIAL`;
 3. congelar modelo de datos Core V1 — `IMPLEMENTED` para jerarquía, métricas, reglas, alarmas, mantenimiento, turnos, escalamiento y notificaciones; quedan contratos puntuales indicados en §27;
 4. congelar contrato Gateway ↔ Cloud — `IMPLEMENTED` para config/heartbeat/ingest V1 con compatibilidad CAM5;
-5. implementar/generalizar HOIT Gateway Agent — `PENDING`, siguiente frente principal;
+5. implementar/generalizar HOIT Gateway Agent — núcleo/control plane/Store & Forward `IMPLEMENTED`; conectividad/hardware `PARTIAL`;
 6. implementar drivers PM/DSE/Eddystone productivos — `PENDING`;
 7. implementar pipeline cloud de ingesta — `IMPLEMENTED`;
 8. implementar Alarm/Rule Engine — `PARTIAL`: comparación, booleanos, duración, scopes y lifecycle implementados; histéresis/calendario pendientes;
@@ -957,9 +985,9 @@ Prioridad inmediata actualizada:
 
 1. estabilizar CI y mantener migraciones automáticas verdes;
 2. congelar contrato faltante de histéresis, calendario de reglas y repetición de escalamiento;
-3. implementar HOIT Gateway Agent Linux;
-4. implementar drivers físicos PM5560, DSE8660 MKII y BLE Eddystone TLM;
-5. Store & Forward + health/watchdog/conectividad;
+3. implementar driver físico PM5560 contra la lista oficial Schneider y probarlo en RS-485 real;
+4. completar conectividad/watchdog y prueba de Store & Forward prolongada en hardware gateway;
+5. implementar DSE8660 MKII cuando el mapa oficial definitivo esté disponible y BLE Eddystone TLM;
 6. habilitar Meta Business real y templates;
 7. completar UI Operación: Turnos, Mantenimiento, NOC y administración de políticas/reglas;
 8. ejecutar piloto end-to-end con hardware real.
@@ -968,8 +996,7 @@ Prioridad inmediata actualizada:
 
 # 29. ADR — Decisiones registradas
 
-- **ADR-001:** HOIT es el producto; CAM5 es un driver/familia.
-- **ADR-002:** modelo común + capabilities.
+- **ADR-001:** HOIT es el producto; CAM5 es un driver/familia.- **ADR-002:** modelo común + capabilities.
 - **ADR-003:** multi-tenant desde V1.
 - **ADR-004:** PM/DSE read-only en V1.
 - **ADR-005:** reglas con duración e histéresis.
@@ -998,3 +1025,1351 @@ El modelo debe permitir:
 - telemetría histórica;
 - estados y eventos;
 - reglas de alarma;
+- alarmas con ciclo de vida;
+- notificaciones y escalamiento;
+- mantenimiento;
+- turnos;
+- auditoría;
+- crecimiento futuro sin rediseñar el esquema base.
+
+`DECISION` La base de datos operacional debe modelar explícitamente **configuración**, **telemetría**, **eventos** y **auditoría** como dominios separados.
+
+---
+
+## 30.2 Diagrama lógico simplificado
+
+```text
+Tenant
+ ├── Site
+ │    └── Area
+ │         └── Asset
+ │              └── Device
+ │                   ├── DeviceCapability
+ │                   └── Measurement
+ │
+ ├── Gateway
+ │    └── GatewayDeviceBinding
+ │
+ ├── Rule
+ │    └── Alarm
+ │         ├── AlarmTransition
+ │         └── Notification
+ │
+ ├── MaintenanceWindow
+ ├── Shift
+ │    └── OnCallAssignment
+ │
+ ├── User
+ │    └── UserRole
+ │
+ └── AuditEntry
+```
+
+---
+
+# 31. Entidades principales
+
+## 31.1 tenant
+
+Representa un cliente lógico de HOIT.
+
+```text
+id                  UUID PK
+code                VARCHAR UNIQUE
+name                VARCHAR
+status              ENUM(active, suspended, archived)
+timezone            VARCHAR
+created_at          TIMESTAMPTZ
+updated_at          TIMESTAMPTZ
+```
+
+Notas:
+
+- `timezone` se utiliza para presentación y calendarios.
+- Todos los timestamps persistidos deben mantenerse en UTC.
+- Ningún usuario de un tenant debe acceder a datos de otro tenant.
+
+## 31.2 site
+
+```text
+id                  UUID PK
+tenant_id           UUID FK -> tenant
+code                VARCHAR
+name                VARCHAR
+timezone            VARCHAR NULL
+status              ENUM(active, inactive)
+metadata            JSONB
+created_at
+updated_at
+```
+
+Índice:
+
+```text
+UNIQUE (tenant_id, code)
+```
+
+## 31.3 area
+
+```text
+id                  UUID PK
+tenant_id           UUID FK
+site_id             UUID FK
+parent_area_id      UUID NULL FK -> area
+code
+name
+type                VARCHAR
+metadata            JSONB
+created_at
+updated_at
+```
+
+## 31.4 asset
+
+```text
+id                  UUID PK
+tenant_id           UUID FK
+site_id             UUID FK
+area_id             UUID FK
+code
+name
+asset_type          VARCHAR
+status              ENUM(active, maintenance, inactive)
+metadata            JSONB
+created_at
+updated_at
+```
+
+`DECISION` Las alarmas de negocio deben poder apuntar a `asset_id`, aunque la medición provenga de uno o más devices.
+
+## 31.5 gateway
+
+```text
+id                  UUID PK
+tenant_id           UUID FK
+site_id             UUID FK
+code                VARCHAR
+serial_number       VARCHAR NULL
+hardware_model      VARCHAR
+software_version    VARCHAR
+status              ENUM(online, degraded, offline, unknown)
+last_heartbeat_at   TIMESTAMPTZ NULL
+last_ip             INET NULL
+config_version      INTEGER
+metadata            JSONB
+created_at
+updated_at
+```
+
+`DECISION` El gateway debe tener identidad propia, independiente de cualquier usuario.
+
+## 31.6 device
+
+```text
+id                  UUID PK
+tenant_id           UUID FK
+site_id             UUID FK
+area_id             UUID FK NULL
+asset_id            UUID FK NULL
+code                VARCHAR
+manufacturer        VARCHAR
+model               VARCHAR
+device_type         VARCHAR
+driver              VARCHAR
+protocol            VARCHAR
+status              ENUM(online, degraded, offline, unknown)
+enabled             BOOLEAN
+metadata            JSONB
+created_at
+updated_at
+```
+
+Ejemplos:
+
+```text
+device_type = power_meter
+driver      = pm5560
+protocol    = modbus_rtu
+
+device_type = ats_controller
+driver      = dse8660
+protocol    = modbus_rtu
+
+device_type = temperature_sensor
+driver      = ble_eddystone_tlm
+protocol    = ble
+```
+
+## 31.7 gateway_device_binding
+
+```text
+id                  UUID PK
+tenant_id           UUID FK
+gateway_id          UUID FK
+device_id           UUID FK
+interface_type      ENUM(rs485, ble, ethernet, wifi, virtual)
+enabled             BOOLEAN
+config              JSONB
+created_at
+updated_at
+```
+
+Ejemplo PM5560:
+
+```json
+{
+  "port": "/dev/ttyS1",
+  "baud": 19200,
+  "parity": "E",
+  "stop_bits": 1,
+  "slave_id": 1,
+  "poll_profile": "pm5560_default"
+}
+```
+
+Ejemplo DSE:
+
+```json
+{
+  "port": "/dev/ttyS1",
+  "baud": 19200,
+  "parity": "N",
+  "stop_bits": 1,
+  "slave_id": 2,
+  "poll_profile": "dse8660_default"
+}
+```
+
+Ejemplo BLE:
+
+```json
+{
+  "identity": {
+    "namespace_id": "6B6B6D636E2E636FD01",
+    "instance_id": "000000000001"
+  },
+  "protocol": "eddystone_tlm"
+}
+```
+
+---
+
+# 32. Métricas y capabilities
+
+## 32.1 metric_definition
+
+```text
+id                  UUID PK
+key                 VARCHAR UNIQUE
+name                VARCHAR
+category            VARCHAR
+unit                VARCHAR
+data_type           ENUM(float, integer, boolean, string, enum)
+aggregation         ENUM(last, avg, min, max, sum, counter)
+description         TEXT
+```
+
+Ejemplos:
+
+```text
+electrical.voltage.l1_n        V
+electrical.current.l1          A
+electrical.power.active.total  kW
+environment.temperature        °C
+sensor.rssi                    dBm
+ats.mains.available            boolean
+```
+
+`DECISION` Las unidades se normalizan antes de almacenar/enviar al frontend.
+
+## 32.2 device_capability
+
+```text
+id                    UUID PK
+device_id             UUID FK
+capability_key        VARCHAR
+metric_definition_id  UUID NULL FK
+enabled               BOOLEAN
+metadata              JSONB
+```
+
+`DECISION` El frontend usa capabilities para construir vistas; no lógica rígida por fabricante.
+
+---
+
+# 33. Telemetría
+
+## 33.1 measurement
+
+```text
+id                  BIGINT / UUID
+tenant_id           UUID
+site_id             UUID
+asset_id            UUID NULL
+device_id           UUID
+gateway_id          UUID
+metric_key          VARCHAR
+ts                  TIMESTAMPTZ
+value_double        DOUBLE PRECISION NULL
+value_bool          BOOLEAN NULL
+value_text          TEXT NULL
+quality             ENUM(good, stale, invalid, unknown)
+time_quality        ENUM(synced, estimated, unsynced)
+message_id          UUID
+sequence_number     BIGINT
+ingested_at         TIMESTAMPTZ
+```
+
+Índices mínimos:
+
+```text
+(device_id, metric_key, ts DESC)
+(asset_id, metric_key, ts DESC)
+(tenant_id, ts DESC)
+UNIQUE(message_id, device_id, metric_key, ts)
+```
+
+`RECOMMENDATION` Si el volumen crece, usar particionado por tiempo o una capa time-series compatible con PostgreSQL.
+
+## 33.2 Retención inicial propuesta
+
+```text
+0 - 7 días      -> alta resolución
+8 - 90 días     -> agregados 1 minuto
+> 90 días       -> agregados 5 o 15 minutos
+```
+
+`PENDING` Definir retención contractual.
+
+---
+
+# 34. Eventos
+
+## 34.1 event
+
+```text
+id                  UUID PK
+tenant_id
+site_id
+asset_id            UUID NULL
+device_id           UUID NULL
+gateway_id          UUID NULL
+event_type          VARCHAR
+severity            ENUM(info, warning, critical)
+ts                  TIMESTAMPTZ
+payload             JSONB
+source              VARCHAR
+created_at
+```
+
+Ejemplos:
+
+```text
+device.online
+device.offline
+gateway.reconnected
+ats.breaker.closed
+ats.breaker.opened
+temperature.excursion.started
+temperature.excursion.ended
+```
+
+`DECISION` Un evento no es necesariamente una alarma.
+
+---
+
+# 35. Reglas
+
+## 35.1 rule
+
+```text
+id                    UUID PK
+tenant_id
+site_id               UUID NULL
+name
+description
+enabled               BOOLEAN
+scope_type            ENUM(tenant, site, area, asset, device)
+scope_id              UUID
+severity              ENUM(info, warning, critical)
+expression            JSONB
+duration_seconds      INTEGER
+hysteresis            JSONB NULL
+schedule_id           UUID NULL
+escalation_policy_id  UUID NULL
+created_by
+created_at
+updated_at
+```
+
+Ejemplo simple:
+
+```json
+{
+  "op": "gt",
+  "metric": "environment.temperature",
+  "value": -15.0
+}
+```
+
+Ejemplo compuesto:
+
+```json
+{
+  "op": "and",
+  "conditions": [
+    {
+      "op": "lt",
+      "metric": "electrical.voltage.l1_n",
+      "value": 50
+    },
+    {
+      "op": "eq",
+      "metric": "ats.mains.available",
+      "value": false
+    }
+  ]
+}
+```
+
+`DECISION` No se guardará código ejecutable arbitrario proporcionado por usuarios.
+
+`IMPLEMENTED` El Rule Engine V1 acepta comparaciones `gt/gte/lt/lte/eq/neq` y composición `and/or/not`, opera sobre métricas normalizadas y aplica `duration_seconds`. Los scopes `tenant/site/area/asset/device` se resuelven contra la jerarquía real. Una condición persistente reutiliza la alarma activa y una recuperación la resuelve. `hysteresis` y `schedule_id` permanecen `PENDING`; si están presentes, el motor no los ignora silenciosamente y falla cerrado como no soportado.
+
+---
+
+# 36. Alarmas
+
+## 36.1 alarm
+
+```text
+id                  UUID PK
+tenant_id
+rule_id              UUID FK
+site_id
+asset_id            UUID NULL
+device_id           UUID NULL
+severity
+status               ENUM(active, acknowledged, resolved, closed, suppressed)
+opened_at            TIMESTAMPTZ
+acknowledged_at      TIMESTAMPTZ NULL
+acknowledged_by      UUID NULL
+resolved_at          TIMESTAMPTZ NULL
+closed_at            TIMESTAMPTZ NULL
+closed_by            UUID NULL
+current_value        JSONB NULL
+context              JSONB
+created_at
+updated_at
+```
+
+`DECISION` Una condición persistente no crea una alarma nueva en cada evaluación.
+
+`IMPLEMENTED` El backend reutiliza la alarma vigente, permite ACK independiente de RESOLVED, resuelve automáticamente al recuperarse la condición y cancela los jobs de escalamiento pendientes al ACK/RESOLVE/CLOSE. El enum físico conserva `open` por compatibilidad interna donde el diseño conceptual utiliza `active`.
+
+## 36.2 alarm_transition
+
+```text
+id                  UUID PK
+alarm_id             UUID FK
+from_status          VARCHAR NULL
+to_status            VARCHAR
+reason               VARCHAR NULL
+actor_type           ENUM(user, system, provider)
+actor_id             UUID NULL
+ts                   TIMESTAMPTZ
+metadata             JSONB
+```
+
+---
+
+# 37. Escalamiento
+
+## 37.1 escalation_policy
+
+```text
+id                  UUID PK
+tenant_id
+name
+enabled
+created_at
+updated_at
+```
+## 37.2 escalation_level
+
+```text
+id                  UUID PK
+policy_id
+level_number
+delay_seconds
+recipient_type       ENUM(user, role, on_call_group)
+recipient_ref
+channels             JSONB
+repeat_count         INTEGER
+```
+
+`DECISION` Los jobs de escalamiento deben persistirse; no depender de timers en memoria.
+
+`IMPLEMENTED` Los jobs se persisten con `due_at`, se reclaman de forma idempotente en el ciclo operacional y resuelven el destinatario en tiempo de ejecución para `user`, `role` y `on_call_group`. ACK detiene niveles posteriores. Si una alarma se recupera y luego reabre, los niveles cancelados pueden reprogramarse.
+
+`PARTIAL` `repeat_count = 1` está soportado. Para `repeat_count > 1` falta congelar un intervalo de repetición; el backend rechaza ese caso en lugar de inventar una cadencia.
+
+---
+
+# 38. Notificaciones
+
+## 38.1 notification
+
+```text
+id                  UUID PK
+tenant_id
+alarm_id            UUID NULL
+channel             ENUM(whatsapp, email)
+recipient_user_id   UUID NULL
+recipient_address   VARCHAR
+provider            VARCHAR
+provider_message_id VARCHAR NULL
+template_name       VARCHAR NULL
+status              ENUM(queued, sent, delivered, read, failed, cancelled)
+attempt             INTEGER
+queued_at
+sent_at
+delivered_at
+read_at
+failed_at
+ack_at
+error_code          VARCHAR NULL
+error_message       TEXT NULL
+metadata            JSONB
+```
+
+`DECISION`
+
+```text
+sent != delivered != read != acknowledged
+```
+
+`IMPLEMENTED` `notification_deliveries` persiste destinatario explícito, `recipient_user_id`, proveedor, template, `provider_message_id`, timestamps separados de envío/entrega/lectura/falla/ACK y error del proveedor. La aceptación de Resend o Meta se registra como `sent`; `delivered` y `read` sólo avanzan mediante evidencia posterior del proveedor.
+
+---
+
+# 39. WhatsApp — diseño V1
+
+## 39.1 Adapter
+
+```text
+notification_provider
+├── whatsapp_meta
+└── email
+```
+
+Funciones conceptuales:
+
+```text
+send_alarm()
+send_escalation()
+send_resolution()
+parse_webhook()
+```
+
+## 39.2 Flujo
+
+```text
+Rule Engine
+   |
+Alarm ACTIVE
+   |
+Escalation Engine
+   |
+Notification Service
+   |
+Meta WhatsApp Cloud API
+   |
+Usuario
+   |
+Quick Reply: ACK
+   |
+Webhook HOIT
+   |
+Alarm Service
+   |
+ACKNOWLEDGED
+```
+
+## 39.3 Reglas del ACK
+
+Para aceptar un ACK:
+
+1. webhook válido;
+2. correlación con alarma vigente;
+3. teléfono asociado a usuario autorizado;
+4. procesamiento idempotente;
+5. crear `AlarmTransition`;
+6. crear `AuditEntry`.
+
+`DECISION` Un número no reconocido no puede cambiar el estado de la alarma.
+
+`IMPLEMENTED` Existe `POST /api/v1/webhooks/whatsapp` con verificación HMAC de Meta, persistencia idempotente de eventos, correlación por `provider_message_id`, validación de `phone_e164` contra usuario activo/autorizado, Quick Reply `ACK`, creación de transición de alarma y audit trail. Los callbacks `sent`, `delivered`, `read` y `failed` actualizan la notificación sin regresión de estado.
+
+## 39.4 Templates sugeridos
+
+```text
+hoit_alarm_warning_es
+hoit_alarm_critical_es
+hoit_alarm_escalated_es
+hoit_alarm_resolved_es
+```
+
+---
+
+# 40. Turnos
+
+## 40.1 shift
+
+```text
+id                  UUID PK
+tenant_id
+name
+timezone
+active
+```
+
+## 40.2 shift_schedule
+
+```text
+id
+shift_id
+day_of_week
+start_time
+end_time
+valid_from
+valid_to
+```
+
+## 40.3 on_call_assignment
+
+```text
+id
+shift_id
+user_id
+starts_at
+ends_at
+priority
+```
+
+`DECISION` El destinatario se resuelve al ejecutar cada nivel de escalamiento.
+
+`IMPLEMENTED` La resolución on-call evalúa calendario semanal en el timezone del turno, ventanas que cruzan medianoche, vigencia temporal, usuarios activos y prioridad. Prioridad numérica menor significa mayor prioridad. Un empate en la prioridad superior se considera ambiguo y no selecciona un usuario arbitrariamente.
+
+---
+
+# 41. Maintenance Window
+
+```text
+id                  UUID PK
+tenant_id
+scope_type
+scope_id
+starts_at
+ends_at
+reason
+created_by
+cancelled_at
+cancelled_by
+created_at
+```
+
+---
+
+# 42. Usuarios y autorización
+
+## 42.1 user
+
+```text
+id                  UUID PK
+tenant_id           UUID NULL
+email
+phone_e164
+name
+status
+created_at
+updated_at
+```
+
+## 42.2 role
+
+```text
+id
+code
+name
+scope
+```
+
+## 42.3 user_role
+
+```text
+user_id
+role_id
+tenant_id
+site_id NULL
+```
+
+`DECISION` La autorización se valida siempre en backend.
+
+`IMPLEMENTED` `phone_e164` está incorporado al usuario con validación E.164 y unicidad cuando está presente. La API de usuarios permite administrarlo respetando el alcance RBAC y lo registra en audit trail.
+
+---
+
+# 43. Audit Trail
+
+## 43.1 audit_entry
+
+```text
+id                  UUID PK
+tenant_id
+user_id             UUID NULL
+actor_type          ENUM(user, gateway, system)
+action              VARCHAR
+entity_type         VARCHAR
+entity_id           UUID NULL
+before_data         JSONB NULL
+after_data          JSONB NULL
+ip_address          INET NULL
+user_agent          TEXT NULL
+ts                  TIMESTAMPTZ
+metadata            JSONB
+```
+
+Acciones mínimas:
+
+```text
+auth.login
+alarm.ack
+alarm.resolve
+alarm.close
+rule.create
+rule.update
+maintenance.create
+maintenance.cancel
+user.create
+user.role_changed
+gateway.config_changed
+report.generated
+report.exported
+```
+
+---
+
+# 44. Contrato Gateway -> Cloud
+
+## 44.1 Principios
+
+- versionado;
+- idempotencia;
+- lotes;
+- UTC;
+- unidades normalizadas;
+- calidad del dato;
+- identidad inequívoca;
+- tolerancia a retransmisión.
+
+## 44.2 Envelope común
+
+```json
+{
+  "schema_version": "1.0",
+  "gateway_id": "GW-DSE-01",
+  "boot_id": "550e8400-e29b-41d4-a716-446655440000",
+  "message_id": "d1025c19-cfa7-4b90-93d7-725ad310d431",
+  "sequence": 18452,
+  "created_at": "2026-10-02T16:30:05.210Z",
+  "time_quality": "SYNCED"
+}
+```
+
+`sequence` es monotónico dentro de `boot_id`.
+
+---
+
+# 45. Telemetry ingest
+
+Endpoint:
+
+```text
+POST /api/v1/gateway/ingest
+```
+
+Payload:
+
+```json
+{
+  "schema_version": "1.0",
+  "gateway_id": "GW-DSE-01",
+  "boot_id": "550e8400-e29b-41d4-a716-446655440000",
+  "message_id": "d1025c19-cfa7-4b90-93d7-725ad310d431",
+  "sequence": 18452,
+  "created_at": "2026-10-02T16:30:05.210Z",
+  "time_quality": "SYNCED",
+  "samples": [
+    {
+      "device_id": "DSE-01",
+      "sampled_at": "2026-10-02T16:30:04.900Z",
+      "quality": "GOOD",
+      "metrics": {
+        "electrical.voltage.l1_n": 231.4,
+        "electrical.voltage.l2_n": 230.8,
+        "electrical.voltage.l3_n": 232.1,
+        "electrical.current.l1": 85.3,
+        "electrical.power.active.total": 56.8,
+        "electrical.frequency": 50.02,
+        "electrical.power_factor": 0.96,
+        "ats.mains.available": true
+      }
+    }
+  ]
+}
+```
+
+Respuesta:
+
+```json
+{
+  "accepted": true,
+  "message_id": "d1025c19-cfa7-4b90-93d7-725ad310d431",
+  "server_time": "2026-10-02T16:30:05.430Z"
+}
+```
+
+`DECISION` Repetir el mismo `message_id` no debe duplicar datos.
+
+---
+
+# 46. BLE ingest
+
+Ejemplo normalizado:
+
+```json
+{
+  "device_id": "TEMP-01",
+  "sampled_at": "2026-10-02T16:31:00.000Z",
+  "quality": "GOOD",
+  "metrics": {
+    "environment.temperature": -18.3,
+    "sensor.battery_voltage": 3.52,
+    "sensor.rssi": -67,
+    "sensor.adv_count": 138225
+  }
+}
+```
+
+`DECISION` Eddystone TLM se decodifica en el gateway; el cloud no conoce offsets BLE.
+
+---
+
+# 47. Gateway heartbeat
+
+```text
+POST /api/v1/gateway/heartbeat
+```
+
+Ejemplo:
+
+```json
+{
+  "schema_version": "1.0",
+  "gateway_id": "GW-PM-01",
+  "boot_id": "uuid",
+  "software_version": "1.2.0",
+  "uptime_seconds": 84521,
+  "buffer": {
+    "pending_messages": 0,
+    "bytes": 0,
+    "usage_percent": 3.1
+  },
+  "network": {
+    "active_interface": "4g",
+    "rssi_dbm": -72,
+    "ip_available": true
+  },
+  "system": {
+    "cpu_percent": 11.4,
+    "memory_percent": 33.2,
+    "disk_percent": 18.9
+  },
+  "interfaces": {
+    "rs485": "OK",
+    "ble": "OK"
+  },
+  "devices": [
+    {
+      "device_id": "PM-01",
+      "status": "ONLINE",
+      "latency_ms": 24,
+      "last_success_at": "2026-10-02T16:30:59Z",
+      "consecutive_errors": 0
+    }
+  ]
+}
+```
+
+---
+
+# 48. Configuración Cloud -> Gateway
+
+```text
+GET /api/v1/gateway/config
+```
+
+Ejemplo:
+
+```json
+{
+  "schema_version": "1.0",
+  "config_version": 17,
+  "gateway_id": "GW-DSE-01",
+  "upload": {
+    "interval_seconds": 5,
+    "max_batch_samples": 100
+  },
+  "devices": [
+    {
+      "device_id": "DSE-01",
+      "driver": "dse8660",
+      "enabled": true,
+      "transport": {
+        "type": "modbus_rtu",
+        "port": "/dev/ttyS1",
+        "baud": 19200,
+        "parity": "N",
+        "stop_bits": 1,
+        "slave_id": 1
+      },
+      "poll_profile": "dse8660_default"
+    },
+    {
+      "device_id": "DSE-02",
+      "driver": "dse8660",
+      "enabled": true,
+      "transport": {
+        "type": "modbus_rtu",
+        "port": "/dev/ttyS1",
+        "baud": 19200,
+        "parity": "N",
+        "stop_bits": 1,
+        "slave_id": 2
+      },
+      "poll_profile": "dse8660_default"
+    }
+  ]
+}
+```
+
+## 48.1 Aplicación segura
+
+```text
+download
+  ↓
+validate schema
+  ↓
+validate local constraints
+  ↓
+write candidate config
+  ↓
+apply
+  ↓
+health check
+  ├── OK   -> commit
+  └── FAIL -> rollback
+```
+
+---
+
+# 49. Errores de API
+
+```json
+{
+  "error": {
+    "code": "DEVICE_NOT_FOUND",
+    "message": "Device does not belong to this gateway",
+    "request_id": "req_xxx"
+  }
+}
+```
+```text
+200/201 éxito
+202 aceptado asíncronamente
+400 payload inválido
+401 autenticación
+403 autorización
+404 recurso
+409 conflicto / versión
+422 semántica inválida
+429 rate limit
+500 error interno
+503 dependencia temporalmente no disponible
+```
+
+---
+
+# 50. Versionado
+
+Versiones independientes:
+
+```text
+API version           /api/v1
+payload schema        schema_version
+gateway software      software_version
+```
+
+---
+
+# 51. Diseño del Rule Engine
+
+## 51.1 Estado reciente
+
+El Rule Engine trabajará sobre el estado reciente por:
+
+```text
+tenant + asset/device + metric
+```
+
+No consultará todo el histórico para evaluar cada muestra.
+
+## 51.2 Estado temporal
+
+Para `temperature > -15 FOR 300 seconds`:
+
+```text
+rule_id
+scope_id
+condition_started_at
+last_true_at
+last_false_at
+current_state
+```
+
+Estados internos:
+
+```text
+FALSE
+PENDING
+FIRING
+RECOVERING
+```
+
+---
+
+# 52. Histéresis
+
+Ejemplo:
+
+```text
+Trigger:
+temperature > -15.0 °C
+
+Recovery:
+temperature < -16.0 °C
+```
+
+`DECISION` La histéresis se aplica a recuperación, evitando rebote de estados.
+
+---
+
+# 53. Missing data
+
+Reglas propias:
+
+```text
+device.last_seen > X seconds
+sensor.last_seen > X seconds
+metric.age > X seconds
+gateway.heartbeat.age > X seconds
+```
+
+`DECISION` La ausencia de telemetría nunca se interpreta como un valor normal.
+
+---
+
+# 54. Estado agregado de Asset
+
+Estados:
+
+```text
+NORMAL
+WARNING
+CRITICAL
+UNKNOWN
+MAINTENANCE
+```
+
+Regla conceptual:
+
+```text
+if maintenance active:
+    MAINTENANCE
+else if critical alarm:
+    CRITICAL
+else if warning alarm:
+    WARNING
+else if no valid source:
+    UNKNOWN
+else:
+    NORMAL
+```
+
+---
+
+# 55. Dashboard API
+
+El frontend no debe reconstruir el estado desde toda la tabla histórica.
+
+Endpoints optimizados:
+
+```text
+GET /api/v1/overview
+GET /api/v1/assets/{id}/summary
+GET /api/v1/devices/{id}/latest
+GET /api/v1/history
+GET /api/v1/alarms
+```
+
+---
+
+# 56. Desarrollo paralelo
+
+## Track A — Gateway
+
+- HOIT Agent;
+- store & forward;
+- PM5560;
+- DSE8660;
+- Eddystone TLM;
+- heartbeat;
+- config.
+
+## Track B — Backend
+
+- multi-tenant;
+- ingest;
+- measurements;
+- latest state;
+- rules;
+- alarms;
+- notifications;
+- reports;
+- audit.
+
+## Track C — Frontend
+
+- overview;
+- eléctricos;
+- DSE;
+- cold chain;
+- alarm center;
+- IoT health;
+- admin.
+
+`DECISION` Los tres tracks desarrollan contra contratos versionados comunes.
+
+---
+
+# 57. Definition of Done de un driver
+
+Un driver no se considera terminado solo porque lee valores.
+
+Debe tener:
+
+1. lectura estable;
+2. normalización;
+3. unidades correctas;
+4. quality;
+5. last_seen;
+6. timeouts/retries;
+7. offline detection;
+8. ingest;
+9. histórico;
+10. latest state;
+11. reglas;
+12. alarmas;
+13. diagnóstico;
+14. tests.
+
+---
+
+# 58. Backlog técnico inmediato
+
+## EPIC-01 — Generalizar CAM5 a HOIT Core
+
+- inventario del código;
+- matriz `reuse/refactor/replace/new`;
+- desacoplar nombres CAM5;
+- contratos comunes.
+
+## EPIC-02 — Data Model
+
+- Tenant/Site/Area/Asset;
+- Gateway/Device;
+- Metrics;
+- Measurements;
+- Events;
+- Rules;
+- Alarms;
+- Notifications;
+- Audit.
+
+## EPIC-03 — Gateway Contract
+
+- config;
+- heartbeat;
+- ingest;
+- idempotencia;
+- auth;
+- versionado.
+
+## EPIC-04 — Electrical Drivers
+
+- Modbus abstraction;
+- PM5560;
+- DSE8660.
+
+## EPIC-05 — Cold Chain
+
+- BLE scanner;
+- Eddystone TLM;
+- Camera Asset;
+- discrepancy;
+- missing data.
+
+## EPIC-06 — Alarm Platform
+
+- rules;
+- duration;
+- hysteresis;
+- lifecycle;
+- escalation;
+- maintenance.
+
+## EPIC-07 — Notifications
+
+- Notification Service;
+- Meta WhatsApp adapter;
+- webhook;
+- email;
+- ACK.
+
+## EPIC-08 — Portal
+
+- overview;
+- eléctricos;
+- DSE;
+- cold chain;
+- alarms;
+- IoT health;
+- admin.
+
+---
+
+# 59. Matriz para revisar CAM5
+
+| Clasificación | Significado |
+|---|---|
+| REUSE | conservar sin cambios relevantes |
+| REFACTOR | generalizar manteniendo lógica útil |
+| REPLACE | sustituir diseño actual |
+| NEW | no existe actualmente |
+
+Plantilla:
+
+```text
+Componente:
+Ruta:
+Responsabilidad actual:
+Dependencias CAM5:
+Clasificación:
+Cambios requeridos:
+Riesgo:
+Prioridad:
+```
+
+---
+
+# 60. Milestone M1 — Core Contract Frozen
+
+M1 se considera cumplido cuando se validen:
+
+- entidades y relaciones;
+- catálogo inicial de métricas;
+- estados de alarmas;
+- ingest payload;
+- heartbeat;
+- gateway config;
+- idempotencia;
+- errores;
+- versionado.
+
+## 60.1 Estado 2026-10-03
+
+`IMPLEMENTED` y cubierto por pruebas automatizadas:
+
+- entidades/relaciones Core y aislamiento de jerarquía;
+- catálogo inicial PM5560/DSE8660/Eddystone;
+- estados operacionales de alarmas;
+- ingest Gateway -> Cloud V1, incluyendo lotes `samples[]` e idempotencia;
+- heartbeat V1;
+- config Cloud -> Gateway V1;
+- versionado y compatibilidad con contratos CAM5 existentes;
+- contrato RS-485 con bus lógico y puerto Linux explícitos.
+
+`DECISION` M1 puede considerarse **funcionalmente congelado para el contrato Core/Gateway**, siempre que cambios futuros en histéresis, calendario de reglas o escalamiento repetido no alteren el envelope de telemetría/config/heartbeat. Esos pendientes pertenecen al control plane y se mantienen explícitos en §27.
+
+Después de M1 pueden avanzar en paralelo gateway, backend y frontend con menor riesgo de retrabajo.
+
+---
+
+# 61. Matriz de implementación Core V1 — 2026-10-03
+
+| Componente | Estado | Evidencia/nota |
+|---|---|---|
+| Multi-tenant/RBAC | `IMPLEMENTED` | scopes plataforma/cliente/sitio y guards de BD |
+| Area | `IMPLEMENTED` | entidad real; parent/asset no pueden cruzar tenant/site |
+| Métricas/telemetría | `IMPLEMENTED` | catálogo normalizado + latest/history |
+| Gateway config/heartbeat/ingest | `IMPLEMENTED` | contrato V1 + compatibilidad previa |
+| Rule Engine | `PARTIAL` | booleanos, comparación, duración y scope listos; histéresis/schedule pendientes |
+| Alarm lifecycle | `IMPLEMENTED` | open/ACK/resolved/closed/suppressed, reapertura y trazabilidad |
+| Maintenance Window | `IMPLEMENTED` | no detiene telemetría; suprime entregas por scope/periodo |
+| Escalation jobs | `IMPLEMENTED` | persistentes, due_at, cancelación por ACK y requeue al reopen |
+| Turnos/on-call | `IMPLEMENTED` | timezone, overnight, vigencia, prioridad, ambigüedad explícita |
+| Email personal | `IMPLEMENTED` | Resend con recipient explícito |
+| WhatsApp Meta adapter | `IMPLEMENTED` | envío template por Cloud API; secretos fuera de BD |
+| WhatsApp webhook/ACK | `IMPLEMENTED` | firma, idempotencia, correlación, autorización, transition/audit |
+| Lifecycle notificación | `IMPLEMENTED` | queued/sending/sent/delivered/read/failed/cancelled/suppressed + ack_at |
+| Reports | `IMPLEMENTED` | templates y exportes existentes |
+| UI Operación | `PARTIAL` | faltan pantallas completas para reglas/turnos/escalamiento/NOC |
+| Gateway Agent Linux | `PARTIAL` | daemon, config cache, Store & Forward, sync, heartbeat, device manager y Modbus RTU base implementados; falta hardware real/drivers |
+| Drivers físicos | `PENDING` | requieren documentación/hardware validado |
+| Store & Forward | `PARTIAL` | persistencia/retry/restart/overflow implementados y testeados; falta soak test en hardware para declarar productivo |
+| Meta productivo | `PENDING` externo | número, WABA, credenciales y templates aprobados |
+
+---
+
+# 62. Track A — Gateway Agent V1 — Estado 2026-10-03
+
+| Componente | Estado | Nota |
+|---|---|---|
+| Daemon Linux/systemd | `IMPLEMENTED` | proceso continuo con restart administrado |
+| Cloud client | `IMPLEMENTED` | config, ingest y heartbeat V1 |
+| Config cache offline | `IMPLEMENTED` | conserva última configuración válida |
+| Store & Forward SQLite | `IMPLEMENTED` core | WAL, persistencia antes de upload, retry idempotente, restart |
+| Buffer medible/overflow | `IMPLEMENTED` | límite configurable; no descarta silenciosamente |
+| Time quality | `IMPLEMENTED` | `SYNCED` solo con NTP confirmado |
+| Device Manager | `IMPLEMENTED` | plug-ins + ONLINE/DEGRADED/OFFLINE/UNKNOWN |
+| Health monitor | `IMPLEMENTED` base | CPU, memoria, disco, buffer y devices |
+| Modbus RTU | `IMPLEMENTED` base | V1 read-only FC03/FC04, CRC y excepciones |
+| PM5560 físico | `PENDING` | usar únicamente lista oficial Schneider versionada y validar con equipo |
+| DSE8660 MKII físico | `PENDING` | bloqueado por mapa oficial definitivo |
+| BLE Eddystone TLM físico | `PENDING` | scanner/decoder + prueba RF |
+| Connectivity manager | `PARTIAL` | retry Cloud listo; falta selección Ethernet/Wi-Fi/4G y RSSI |
+| Watchdog hardware | `PARTIAL` | restart por systemd listo; falta watchdog del hardware objetivo |
+| Soak test Store & Forward | `PENDING` | medir duración/capacidad real bajo corte prolongado |
+
+`DECISION` El siguiente driver prioritario es **PM5560**, porque existe documentación oficial Schneider vigente para su mapa Modbus y el transporte RTU común ya está implementado. El driver no se considerará terminado hasta cumplir la Definition of Done de §57 y probarse contra hardware real.
