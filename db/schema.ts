@@ -471,11 +471,15 @@ export const deviceModels = pgTable("device_models", {
   name: varchar("name", { length: 160 }).notNull(),
   registerMapVersion: varchar("register_map_version", { length: 40 }).notNull(),
   capabilities: jsonb("capabilities").$type<{
-    temperatureInputs: number;
-    uhfInputs: number;
-    humidityInputs: number;
-    relayOutputs: number;
-  }>().notNull(),
+    temperatureInputs?: number;
+    uhfInputs?: number;
+    humidityInputs?: number;
+    relayOutputs?: number;
+    capabilityKeys?: string[];
+    metricKeys?: string[];
+    driver?: string;
+    protocol?: string;
+  }>().default(sql`'{}'::jsonb`).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [uniqueIndex("device_models_code_uidx").on(table.code)]);
 
