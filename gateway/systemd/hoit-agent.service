@@ -4,12 +4,14 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=oneshot
+Type=simple
 User=hoit
 Group=hoit
 WorkingDirectory=/opt/hoit
 EnvironmentFile=/etc/hoit-agent/agent.env
 ExecStart=/usr/bin/python3 -m gateway.hoit_agent
+Restart=on-failure
+RestartSec=5
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
