@@ -14,7 +14,6 @@ import {
   gatewayApiCredentials,
   gateways,
   ingestionBatches,
-  readingProfiles,
   metricDefinitions,
   sites,
   workOrders,
@@ -248,24 +247,19 @@ export async function POST(request: NextRequest) {
         if (!point || !gateway || point.siteId !== gateway.siteId) throw new ApiError(400, "El activo y el gateway deben pertenecer al mismo sitio.");
         assertSiteAccess(siteIds, point.siteId);
         if (!model) throw new ApiError(400, "El modelo de dispositivo seleccionado no existe.");
-        const isCam5 = model.code === "CAM5-TPH-XDCW";
         const [fullModel] = await tx.select({ capabilities: deviceModels.capabilities }).from(deviceModels).where(eq(deviceModels.id, model.id)).limit(1);
         const template = fullModel?.capabilities ?? {};
-        const [profile] = isCam5
-          ? await tx.select({ id: readingProfiles.id }).from(readingProfiles).where(eq(readingProfiles.key, "cam5-balanced-v1")).limit(1)
-          : [];
-        const host = textField(body, "host", "La dirección del dispositivo");
         const [row] = await tx.insert(devices).values({
           assetId: point.id,
           gatewayId: gateway.id,
           modelId: model.id,
-          readingProfileId: profile?.id ?? null,
-          driver: isCam5 ? "cam5" : "normalized_json",
+          readingProfileId: null,
+          driver: "normalized_json",
           code,
           name,
-          host,
-          port: typeof body.port === "number" ? body.port : 502,
-          unitId: typeof body.unitId === "number" ? body.unitId : 1,
+          host: "gateway-managed",
+          port: 1,
+          unitId: 1,
           state: "commissioning",
         }).returning();
         await tx.insert(commissioningItems).values(COMMISSIONING_CHECKLIST.map(([itemKey, label]) => ({ deviceId: row.id, itemKey, label, status: "pending" as const })));
