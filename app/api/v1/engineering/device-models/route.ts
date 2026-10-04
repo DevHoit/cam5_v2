@@ -5,8 +5,6 @@ import { apiErrorResponse, ApiError, requestMetadata, requireApiSession } from "
 
 export const dynamic = "force-dynamic";
 
-const allowedDrivers = new Set(["generic_modbus", "cam5", "pm5560", "dse8660"]);
-const allowedProtocols = new Set(["modbus_tcp", "modbus_rtu", "virtual"]);
 
 function text(body: Record<string, unknown>, key: string, label: string) {
   const value = typeof body[key] === "string" ? body[key].trim() : "";
@@ -39,10 +37,6 @@ export async function POST(request: NextRequest) {
     const manufacturer = text(body, "manufacturer", "El fabricante");
     const name = text(body, "name", "El nombre");
     const registerMapVersion = text(body, "registerMapVersion", "La versión del mapa");
-    const driver = typeof body.driver === "string" ? body.driver.trim() : "generic_modbus";
-    const protocol = typeof body.protocol === "string" ? body.protocol.trim() : "modbus_tcp";
-    if (!allowedDrivers.has(driver)) throw new ApiError(400, "El driver seleccionado no es válido.");
-    if (!allowedProtocols.has(protocol)) throw new ApiError(400, "El protocolo seleccionado no es válido.");
     const metricKeys = keys(body, "metricKeys");
     const capabilityKeys = keys(body, "capabilityKeys");
     if (metricKeys.length) {
@@ -52,7 +46,7 @@ export async function POST(request: NextRequest) {
     const [existing] = await db.select({ id: deviceModels.id }).from(deviceModels).where(eq(deviceModels.code, code)).limit(1);
     if (existing) throw new ApiError(409, "Ya existe un modelo con ese código.");
     const metadata = requestMetadata(request);
-    const [created] = await db.insert(deviceModels).values({ code, manufacturer, name, registerMapVersion, capabilities: { capabilityKeys, metricKeys, driver, protocol } }).returning();
+    const [created] = await db.insert(deviceModels).values({ code, manufacturer, name, registerMapVersion, capabilities: { capabilityKeys, metricKeys } }).returning();
     await db.insert(auditLogs).values({ siteId: user.siteId, actorUserId: user.id, action: "device_model.create", resourceType: "device_model", resourceId: created.id, ipAddress: metadata.ipAddress, userAgent: metadata.userAgent, after: created });
     return Response.json({ item: created }, { status: 201, headers: { "Cache-Control": "no-store" } });
   } catch (error) { return apiErrorResponse(error); }
@@ -72,14 +66,11 @@ export async function PATCH(request: NextRequest) {
       const found = await db.select({ key: metricDefinitions.key }).from(metricDefinitions).where(inArray(metricDefinitions.key, metricKeys));
       if (found.length !== metricKeys.length) throw new ApiError(400, "Una o más métricas seleccionadas no existen en el catálogo.");
     }
-    const driver = typeof body.driver === "string" ? body.driver.trim() : current.capabilities.driver ?? "generic_modbus";
-    const protocol = typeof body.protocol === "string" ? body.protocol.trim() : current.capabilities.protocol ?? "modbus_tcp";
-    if (!allowedDrivers.has(driver) || !allowedProtocols.has(protocol)) throw new ApiError(400, "Driver o protocolo no válido.");
     const [updated] = await db.update(deviceModels).set({
       ...(typeof body.manufacturer === "string" ? { manufacturer: text(body, "manufacturer", "El fabricante") } : {}),
       ...(typeof body.name === "string" ? { name: text(body, "name", "El nombre") } : {}),
       ...(typeof body.registerMapVersion === "string" ? { registerMapVersion: text(body, "registerMapVersion", "La versión del mapa") } : {}),
-      capabilities: { ...current.capabilities, capabilityKeys, metricKeys, driver, protocol },
+      capabilities: { capabilityKeys, metricKeys },
     }).where(eq(deviceModels.id, id)).returning();
     const metadata = requestMetadata(request);
     await db.insert(auditLogs).values({ siteId: user.siteId, actorUserId: user.id, action: "device_model.update", resourceType: "device_model", resourceId: id, ipAddress: metadata.ipAddress, userAgent: metadata.userAgent, before: current, after: updated });
