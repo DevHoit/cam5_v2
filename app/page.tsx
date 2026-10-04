@@ -1034,7 +1034,7 @@ function OperationalHierarchyView({
   const [saving, setSaving] = useState(false);
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [editorSaving, setEditorSaving] = useState(false);
-  const [form, setForm] = useState({ code: "", name: "", clientId: "", area: "", voltage: "", ipAddress: "", pointId: "", gatewayId: "", host: "", port: "502", unitId: "1" });
+  const [form, setForm] = useState({ code: "", name: "", clientId: "", legalName: "", taxId: "", contactEmail: "", description: "", timezone: "America/Santiago", area: "", voltage: "", ipAddress: "", pointId: "", gatewayId: "", host: "", port: "502", unitId: "1" });
 
   const canManageClients = permissions.includes("clients.manage");
   const canManageSites = permissions.includes("sites.manage");
@@ -1054,7 +1054,7 @@ function OperationalHierarchyView({
   const gatewayPage = useClientPagination(filteredGateways, 6);
   const controllerPage = useClientPagination(filteredControllers, 8);
 
-  const resetForm = () => setForm({ code: "", name: "", clientId: hierarchy?.active.clientId ?? "", area: "", voltage: "", ipAddress: "", pointId: "", gatewayId: "", host: "", port: "502", unitId: "1" });
+  const resetForm = () => setForm({ code: "", name: "", clientId: hierarchy?.active.clientId ?? "", legalName: "", taxId: "", contactEmail: "", description: "", timezone: "America/Santiago", area: "", voltage: "", ipAddress: "", pointId: "", gatewayId: "", host: "", port: "502", unitId: "1" });
   const changeResource = (value: Resource) => { setResource(value); resetForm(); };
   const openEditor = (nextResource: Resource, value: EditableResource) => {
     const item = value as unknown as Record<string, unknown>;
@@ -1085,7 +1085,8 @@ function OperationalHierarchyView({
     setSaving(true);
     try {
       const payload: Record<string, unknown> = { resource, code: form.code, name: form.name };
-      if (resource === "site") Object.assign(payload, { clientId: form.clientId || hierarchy.active.clientId, timezone: "America/Santiago" });
+      if (resource === "client") Object.assign(payload, { legalName: form.legalName, taxId: form.taxId, contactEmail: form.contactEmail });
+      if (resource === "site") Object.assign(payload, { clientId: form.clientId || hierarchy.active.clientId, description: form.description, timezone: form.timezone || "America/Santiago" });
       if (resource === "point") Object.assign(payload, { siteId: hierarchy.active.siteId, area: form.area, nominalVoltageKv: form.voltage ? Number(form.voltage) : undefined });
       if (resource === "gateway") Object.assign(payload, { siteId: hierarchy.active.siteId, ipAddress: form.ipAddress });
       if (resource === "controller") Object.assign(payload, { pointId: form.pointId, gatewayId: form.gatewayId, host: form.host, port: Number(form.port), unitId: Number(form.unitId) });
@@ -1177,7 +1178,8 @@ function OperationalHierarchyView({
         <label><span>Tipo de elemento</span><select value={resource} onChange={(event) => changeResource(event.target.value as Resource)}>{availableResources.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
         <label><span>Código único</span><input required value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value })} placeholder={resource === "client" ? "CLIENTE-01" : resource === "site" ? "SITIO-01" : resource === "point" ? "MCC-01" : resource === "gateway" ? "GW-01" : "CAM5-01"} /></label>
         <label><span>Nombre</span><input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Nombre operacional" /></label>
-        {resource === "site" && <label><span>Cliente</span><select required value={form.clientId || hierarchy.active.clientId} onChange={(event) => setForm({ ...form, clientId: event.target.value })}>{hierarchy.clients.filter((client) => client.active).map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select></label>}
+        {resource === "client" && <><label><span>Razón social</span><input value={form.legalName} onChange={(event) => setForm({ ...form, legalName: event.target.value })} placeholder="Razón social (opcional)" /></label><label><span>RUT / identificador fiscal</span><input value={form.taxId} onChange={(event) => setForm({ ...form, taxId: event.target.value })} placeholder="Opcional" /></label><label><span>Correo de contacto</span><input type="email" value={form.contactEmail} onChange={(event) => setForm({ ...form, contactEmail: event.target.value })} placeholder="contacto@cliente.cl" /></label></>}
+        {resource === "site" && <><label><span>Cliente</span><select required value={form.clientId || hierarchy.active.clientId} onChange={(event) => setForm({ ...form, clientId: event.target.value })}>{hierarchy.clients.filter((client) => client.active).map((client) => <option key={client.id} value={client.id}>{client.name} · {client.code}</option>)}</select></label><label className="field-wide"><span>Descripción</span><input value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="Descripción operacional (opcional)" /></label><label><span>Zona horaria</span><input required value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })} placeholder="America/Santiago" /></label></>}
         {resource === "point" && <><label><span>Área</span><input value={form.area} onChange={(event) => setForm({ ...form, area: event.target.value })} placeholder="Sala o área eléctrica" /></label><label><span>Tensión nominal (kV)</span><input type="number" min="0" step="0.1" value={form.voltage} onChange={(event) => setForm({ ...form, voltage: event.target.value })} /></label></>}
         {resource === "gateway" && <label><span>Dirección IP</span><input value={form.ipAddress} onChange={(event) => setForm({ ...form, ipAddress: event.target.value })} placeholder="10.0.0.20" /></label>}
         {resource === "controller" && <><label><span>Activo</span><select required value={form.pointId} onChange={(event) => setForm({ ...form, pointId: event.target.value })}><option value="">Seleccionar…</option>{hierarchy.points.filter((point) => point.active).map((point) => <option key={point.id} value={point.id}>{point.code} · {point.name}</option>)}</select></label><label><span>Gateway</span><select required value={form.gatewayId} onChange={(event) => setForm({ ...form, gatewayId: event.target.value })}><option value="">Seleccionar…</option>{hierarchy.gateways.filter((gateway) => gateway.active).map((gateway) => <option key={gateway.id} value={gateway.id}>{gateway.code} · {gateway.name}</option>)}</select></label><label><span>Dirección técnica del dispositivo</span><input required value={form.host} onChange={(event) => setForm({ ...form, host: event.target.value })} placeholder="192.168.10.42" /></label><label><span>Puerto</span><input type="number" min="1" max="65535" required value={form.port} onChange={(event) => setForm({ ...form, port: event.target.value })} /></label><label><span>Unit ID</span><input type="number" min="1" max="247" required value={form.unitId} onChange={(event) => setForm({ ...form, unitId: event.target.value })} /></label></>}
