@@ -7,12 +7,15 @@ import {
   auditLogs,
   clients,
   commissioningItems,
+  deviceCapabilities,
+  deviceMetrics,
   deviceModels,
   devices,
   gatewayApiCredentials,
   gateways,
   ingestionBatches,
   readingProfiles,
+  metricDefinitions,
   sites,
   workOrders,
 } from "../../../../db/schema";
@@ -135,6 +138,7 @@ export async function GET(request: NextRequest) {
         code: deviceModels.code,
         manufacturer: deviceModels.manufacturer,
         name: deviceModels.name,
+        capabilities: deviceModels.capabilities,
       }).from(deviceModels).orderBy(deviceModels.manufacturer, deviceModels.name),
     ]);
 
@@ -245,6 +249,8 @@ export async function POST(request: NextRequest) {
         assertSiteAccess(siteIds, point.siteId);
         if (!model) throw new ApiError(400, "El modelo de dispositivo seleccionado no existe.");
         const isCam5 = model.code === "CAM5-TPH-XDCW";
+        const [fullModel] = await tx.select({ capabilities: deviceModels.capabilities }).from(deviceModels).where(eq(deviceModels.id, model.id)).limit(1);
+        const template = fullModel?.capabilities ?? {};
         const [profile] = isCam5
           ? await tx.select({ id: readingProfiles.id }).from(readingProfiles).where(eq(readingProfiles.key, "cam5-balanced-v1")).limit(1)
           : [];
@@ -254,7 +260,8 @@ export async function POST(request: NextRequest) {
           gatewayId: gateway.id,
           modelId: model.id,
           readingProfileId: profile?.id ?? null,
-          driver: isCam5 ? "cam5" : "generic_modbus",
+          driver: template.driver ?? (isCam5 ? "cam5" : "generic_modbus"),
+          protocol: template.protocol ?? "modbus_tcp",
           code,
           name,
           host,
@@ -263,6 +270,14 @@ export async function POST(request: NextRequest) {
           state: "commissioning",
         }).returning();
         await tx.insert(commissioningItems).values(COMMISSIONING_CHECKLIST.map(([itemKey, label]) => ({ deviceId: row.id, itemKey, label, status: "pending" as const })));
+        const capabilityKeys = template.capabilityKeys ?? [];
+        if (capabilityKeys.length) await tx.insert(deviceCapabilities).values(capabilityKeys.map((capabilityKey) => ({ deviceId: row.id, capabilityKey })));
+        const metricKeys = template.metricKeys ?? [];
+        if (metricKeys.length) {
+          const definitions = await tx.select({ id: metricDefinitions.id, key: metricDefinitions.key, name: metricDefinitions.name }).from(metricDefinitions).where(inArray(metricDefinitions.key, metricKeys));
+          if (definitions.length !== metricKeys.length) throw new ApiError(409, "El modelo referencia métricas que ya no existen en el catálogo.");
+          await tx.insert(deviceMetrics).values(definitions.map((definition, index) => ({ deviceId: row.id, metricDefinitionId: definition.id, code: definition.key, name: definition.name, displayOrder: index })));
+        }
         record = row;
       }
 
