@@ -153,6 +153,7 @@ export async function GET(request: NextRequest) {
             zone: `${item.deviceCode} · ${item.category}`,
             deviceId: item.deviceId,
             metricKey: item.metricKey,
+            dataType: item.dataType,
             unit: item.unit,
             value,
             rawValue: null,
