@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import {
   IconAlertTriangle,
   IconArrowRight,
-  IconBuildingFactory2,
+  IconBuildingFactory2 as BuildingFactory2,
   IconCircleCheck,
   IconClock,
   IconRefresh,
