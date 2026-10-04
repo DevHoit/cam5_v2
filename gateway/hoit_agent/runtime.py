@@ -25,6 +25,9 @@ class RuntimeSettings:
     state_db: str
     software_version: str = "0.1.0"
     buffer_max_bytes: int = 256 * 1024 * 1024
+    config_refresh_seconds: int = 900
+    heartbeat_seconds: int = 30
+    sync_seconds: int = 2
 
     @classmethod
     def from_environment(cls) -> "RuntimeSettings":
@@ -35,7 +38,16 @@ class RuntimeSettings:
         if not api_base or not token or not gateway_id:
             raise RuntimeError("HOIT_API_BASE, HOIT_GATEWAY_TOKEN y HOIT_GATEWAY_ID son obligatorios.")
         buffer_max_bytes = max(1_048_576, int(os.environ.get("HOIT_BUFFER_MAX_BYTES", str(256 * 1024 * 1024))))
-        return cls(api_base=api_base, token=token, gateway_id=gateway_id, state_db=state_db, buffer_max_bytes=buffer_max_bytes)
+        return cls(
+            api_base=api_base,
+            token=token,
+            gateway_id=gateway_id,
+            state_db=state_db,
+            buffer_max_bytes=buffer_max_bytes,
+            config_refresh_seconds=max(60, int(os.environ.get("HOIT_CONFIG_REFRESH_SECONDS", "900"))),
+            heartbeat_seconds=max(5, int(os.environ.get("HOIT_HEARTBEAT_SECONDS", "30"))),
+            sync_seconds=max(1, int(os.environ.get("HOIT_SYNC_SECONDS", "2"))),
+        )
 
 
 class GatewayRuntime:
@@ -160,3 +172,36 @@ class GatewayRuntime:
             "sync": sync,
             "heartbeat_status": heartbeat.status,
         }
+
+    def run_forever(self, stop_requested=lambda: False) -> None:
+        self.load_configuration()
+        now = time.monotonic()
+        next_config = now + self.settings.config_refresh_seconds
+        next_sync = now
+        next_heartbeat = now
+
+        while not stop_requested():
+            now = time.monotonic()
+
+            if now >= next_config:
+                try:
+                    self.load_configuration()
+                except RuntimeError:
+                    # Keep the last validated configuration; retry on the next refresh window.
+                    pass
+                next_config = now + self.settings.config_refresh_seconds
+
+            if now >= next_sync:
+                self.sync_once()
+                next_sync = now + self.settings.sync_seconds
+
+            if now >= next_heartbeat:
+                response = self.heartbeat_once()
+                interval = self.settings.heartbeat_seconds
+                if isinstance(response.body, dict):
+                    candidate = response.body.get("next_heartbeat_seconds")
+                    if isinstance(candidate, int) and candidate >= 5:
+                        interval = candidate
+                next_heartbeat = now + interval
+
+            time.sleep(0.2)
