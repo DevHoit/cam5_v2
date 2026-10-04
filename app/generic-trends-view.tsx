@@ -120,10 +120,12 @@ function downloadCsv(series: Series[]) {
 
 export function GenericTrendsView({
   assetId,
+  initialMetricKey,
   canExport,
   notify,
 }: {
   assetId: string;
+  initialMetricKey?: string;
   canExport: boolean;
   notify: (message: string, tone?: NoticeTone) => void;
 }) {
@@ -148,12 +150,16 @@ export function GenericTrendsView({
         const first = asset?.devices.flatMap((device) => device.metrics
           .filter((metric) => metric.dataType === "float" || metric.dataType === "integer")
           .map((metric) => `${device.id}::${metric.key}`))[0] ?? "";
-        setSelectedId((current) => current || first);
+        const preferred = initialMetricKey
+          ? asset?.devices.flatMap((device) => device.metrics.map((metric) => ({ device, metric })))
+              .find(({ metric }) => metric.key === initialMetricKey || metric.code === initialMetricKey)
+          : null;
+        setSelectedId((current) => current || (preferred ? `${preferred.device.id}::${preferred.metric.key}` : first));
       })
       .catch((cause) => { if (alive) setError(cause instanceof Error ? cause.message : "No fue posible consultar las métricas."); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [assetId, refreshKey]);
+  }, [assetId, initialMetricKey, refreshKey]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 30_000);
