@@ -83,8 +83,6 @@ export function ShiftsView({
 
   useEffect(() => {
     let alive = true;
-    setLoading(true);
-    setError("");
     void requestJson<ShiftResponse>("/api/v1/shifts")
       .then((result) => { if (alive) setData(result); })
       .catch((cause) => { if (alive) setError(cause instanceof Error ? cause.message : "No fue posible consultar los turnos."); })
@@ -152,7 +150,7 @@ export function ShiftsView({
     <article className="panel module-panel">
       <div className="module-toolbar">
         <div><span className="eyebrow">Operación</span><h2>Turnos on-call</h2><p>Los turnos definen cuándo puede resolverse un grupo on-call. La asignación de personas se administra como el siguiente bloque.</p></div>
-        <button className="secondary-button" onClick={() => setReload((value) => value + 1)} disabled={loading}><IconRefresh className={loading ? "spin" : ""} size={16} /> Actualizar</button>
+        <button className="secondary-button" onClick={() => { setLoading(true); setError(""); setReload((value) => value + 1); }} disabled={loading}><IconRefresh className={loading ? "spin" : ""} size={16} /> Actualizar</button>
       </div>
 
       {canManage && <form className="hierarchy-create-form" onSubmit={createShift}>
