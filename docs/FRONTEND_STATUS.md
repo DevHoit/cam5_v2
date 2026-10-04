@@ -193,7 +193,8 @@ No bloquear el cierre V1 por esta evolución.
 - Ingeniería: 75–80%
 - Tendencias/Histórico genérico: ~85–90% a nivel arquitectura/implementación; falta validación visual E2E con datos reales.
 - Reportes: ~90%; contrato genérico cerrado, pendiente validación E2E con datos reales
-- Pulido visual/E2E completo: 70–75%
+- Hardening transversal de permisos/navegación: ~90%; pendiente E2E autenticado
+- Pulido visual/E2E completo: ~80%; pendiente recorrido autenticado y responsive sobre Preview
 
 ## Próximo paso recomendado
 
@@ -204,3 +205,46 @@ El CI del HEAD funcional `9f9abdca` quedó disparado tras corregir el lint detec
 ## Nota para un nuevo chat
 
 Si esta conversación se pierde, comenzar leyendo este archivo y `docs/HOIT_SPEC.md`. Trabajar sobre `feature/hoit-core-v1`. El objetivo sigue siendo **cerrar Front + Backend funcional antes de abordar Gateway físico**.
+
+
+## Iteración actual — Cierre Frontend V1 / hardening transversal
+
+Esta iteración agrupa revisión transversal en vez de cambios aislados.
+
+### Cambios aplicados
+
+- endurecimiento de navegación por permisos:
+  - módulos sensibles se filtran en menú;
+  - los deep links `?view=...` ya no permiten abrir una vista no autorizada;
+  - la navegación interna también valida permisos;
+  - acciones cruzadas como el acceso global a Alertas respetan permisos;
+- Histórico, Reportes y Centro de alertas quedan condicionados por sus permisos funcionales;
+- Ingeniería, Configuración, Diagnóstico, Commissioning y Provisionamiento quedan bajo permisos técnicos;
+- lenguaje operacional restante corregido:
+  - “Sin punto seleccionado” → “Sin activo seleccionado”;
+  - exportación general usa “métrica” y archivo `hoit-telemetria.csv`;
+- corregido el formateo de tipos de activo desconocidos en Ingeniería;
+- Vercel Preview de la base anterior `76ab853c` confirmado en estado READY antes de iniciar este hardening.
+
+Commits funcionales de esta iteración:
+
+- `bdd2db3a` — feat(frontend): harden V1 permissions navigation and operational language
+- `a37893ac` — fix(frontend): polish engineering asset type labels
+- `1f05c717` — fix(frontend): enforce role access on deep links and cross module actions
+
+### Validación pendiente de esta misma iteración
+
+- CI de los commits de hardening;
+- despliegue Preview del HEAD;
+- recorrido autenticado por roles en Preview. Esta parte requiere una sesión/credenciales válidas; no se debe marcar como E2E cerrado sólo por compilar.
+
+### Próximo bloque de trabajo
+
+Una vez verde el HEAD, ejecutar validación visual/autenticada en Preview para:
+
+1. Administrador HOIT: crear cliente → sitio → usuario Administrador de cliente.
+2. Administrador de cliente: herencia de sitios y creación/administración dentro de su cliente.
+3. Administrador de sitio: alcance limitado al sitio.
+4. Operador/Viewer: comprobar que no aparecen ni abren módulos administrativos/técnicos sin permiso.
+5. Desktop/tablet/móvil y estados loading/vacío/error/sin permisos.
+
