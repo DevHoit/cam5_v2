@@ -152,6 +152,43 @@ test("platform client and site administrators inherit only their intended sites"
 });
 
 
+test("platform admin automatically sees clients and sites created after the global grant", async () => {
+  const client = new PGlite();
+  try {
+    for (const filename of [...beforeScopeMigration, "0023_access_scope_roles.sql"]) await apply(client, filename);
+    const db = drizzle(client, { schema }) as unknown as Cam5Database;
+
+    const [bootstrapClient] = await db.insert(schema.clients).values({ code: "BOOT", name: "Bootstrap" }).returning();
+    await db.insert(schema.sites).values({ clientId: bootstrapClient.id, code: "BOOT-S", name: "Bootstrap Site" });
+    const [platformRole] = await db.select().from(schema.roles).where(eq(schema.roles.key, "platform_admin")).limit(1);
+    assert.ok(platformRole);
+    const [platformUser] = await db.insert(schema.users).values({
+      email: "platform.dynamic@example.test",
+      displayName: "Platform Dynamic",
+      status: "active",
+    }).returning();
+    await db.insert(schema.userRoleAssignments).values({ userId: platformUser.id, roleId: platformRole.id, siteId: null });
+
+    const before = await resolveUserAccessScopes(db, platformUser.id);
+    assert.equal(before.clients.some((scope) => scope.clientId === bootstrapClient.id), true);
+
+    const [newClient] = await db.insert(schema.clients).values({ code: "NEW-C", name: "Nuevo Cliente" }).returning();
+    let afterClient = await resolveUserAccessScopes(db, platformUser.id);
+    const inheritedClient = afterClient.clients.find((scope) => scope.clientId === newClient.id);
+    assert.ok(inheritedClient);
+    assert.equal(inheritedClient.roleKey, "platform_admin");
+
+    const [newSite] = await db.insert(schema.sites).values({ clientId: newClient.id, code: "NEW-S", name: "Nuevo Sitio" }).returning();
+    const afterSite = await resolveUserAccessScopes(db, platformUser.id);
+    const inheritedSite = afterSite.sites.find((scope) => scope.siteId === newSite.id);
+    assert.ok(inheritedSite);
+    assert.equal(inheritedSite.clientId, newClient.id);
+    assert.equal(inheritedSite.roleKey, "platform_admin");
+  } finally {
+    await client.close();
+  }
+});
+
 test("administrative roles expose only the intended management permissions", async () => {
   const client = new PGlite();
   try {
