@@ -161,7 +161,7 @@ test("V1 integrated site handles simultaneous PM5560, DSE8660 and cold-chain fau
     for (let i = 1; i <= 2; i++) {
       const code = `PM5560-0${i}`;
       const [device] = await db.insert(schema.devices).values({
-        assetId: electrical.id, code, name: code, deviceType: "power_meter", driver: "schneider_pm5560",
+        assetId: electrical.id, code, name: code, deviceType: "power_meter",
         protocol: "modbus_rtu", unitId: i, state: "commissioning",
       }).returning();
       await db.insert(schema.gatewayDeviceBindings).values({
@@ -176,7 +176,7 @@ test("V1 integrated site handles simultaneous PM5560, DSE8660 and cold-chain fau
     for (let i = 1; i <= 2; i++) {
       const code = `DSE8660-0${i}`;
       const [device] = await db.insert(schema.devices).values({
-        assetId: ats.id, code, name: code, deviceType: "ats_controller", driver: "dse8660_mkii",
+        assetId: ats.id, code, name: code, deviceType: "ats_controller",
         protocol: "modbus_rtu", unitId: 10 + i, state: "commissioning",
       }).returning();
       await db.insert(schema.gatewayDeviceBindings).values({
@@ -202,13 +202,13 @@ test("V1 integrated site handles simultaneous PM5560, DSE8660 and cold-chain fau
 
     let sequence = 1;
     const normalAt = "2026-10-03T00:00:00.000Z";
-    for (const device of pmDevices) await ingest(db, { gateway, siteId: site.id, deviceCode: device.code, driver: "schneider_pm5560", sequence: sequence++, at: normalAt, metrics: pmValues() });
-    for (const device of atsDevices) await ingest(db, { gateway, siteId: site.id, deviceCode: device.code, driver: "dse8660_mkii", sequence: sequence++, at: normalAt, metrics: atsValues(true) });
+    for (const device of pmDevices) await ingest(db, { gateway, siteId: site.id, deviceCode: device.code, sequence: sequence++, at: normalAt, metrics: pmValues() });
+    for (const device of atsDevices) await ingest(db, { gateway, siteId: site.id, deviceCode: device.code, sequence: sequence++, at: normalAt, metrics: atsValues(true) });
     for (const device of coldDevices) await ingest(db, { gateway, siteId: site.id, deviceCode: device.code, sequence: sequence++, at: normalAt, metrics: { "environment.temperature": 5, "sensor.battery_voltage": 3.5 } });
 
     const faultAt = "2026-10-03T00:01:00.000Z";
-    await ingest(db, { gateway, siteId: site.id, deviceCode: pmDevices[0].code, driver: "schneider_pm5560", sequence: sequence++, at: faultAt, metrics: pmValues({ "electrical.current.l1": 110 }) });
-    await ingest(db, { gateway, siteId: site.id, deviceCode: atsDevices[0].code, driver: "dse8660_mkii", sequence: sequence++, at: faultAt, metrics: atsValues(false) });
+    await ingest(db, { gateway, siteId: site.id, deviceCode: pmDevices[0].code, sequence: sequence++, at: faultAt, metrics: pmValues({ "electrical.current.l1": 110 }) });
+    await ingest(db, { gateway, siteId: site.id, deviceCode: atsDevices[0].code, sequence: sequence++, at: faultAt, metrics: atsValues(false) });
     await ingest(db, { gateway, siteId: site.id, deviceCode: coldDevices[0].code, sequence: sequence++, at: faultAt, metrics: { "environment.temperature": 10, "sensor.battery_voltage": 3.5 } });
     await ingest(db, { gateway, siteId: site.id, deviceCode: coldDevices[0].code, sequence: sequence++, at: "2026-10-03T00:01:02.000Z", metrics: { "environment.temperature": 10, "sensor.battery_voltage": 3.5 } });
 
@@ -235,10 +235,10 @@ test("V1 integrated site handles simultaneous PM5560, DSE8660 and cold-chain fau
 
     const recoveryAt = "2026-10-03T00:02:00.000Z";
     for (const device of pmDevices) {
-      await ingest(db, { gateway, siteId: site.id, deviceCode: device.code, driver: "schneider_pm5560", sequence: sequence++, at: recoveryAt, metrics: pmValues() });
+      await ingest(db, { gateway, siteId: site.id, deviceCode: device.code, sequence: sequence++, at: recoveryAt, metrics: pmValues() });
     }
     for (const device of atsDevices) {
-      await ingest(db, { gateway, siteId: site.id, deviceCode: device.code, driver: "dse8660_mkii", sequence: sequence++, at: recoveryAt, metrics: atsValues(true) });
+      await ingest(db, { gateway, siteId: site.id, deviceCode: device.code, sequence: sequence++, at: recoveryAt, metrics: atsValues(true) });
     }
     for (const device of coldDevices) {
       await ingest(db, { gateway, siteId: site.id, deviceCode: device.code, sequence: sequence++, at: recoveryAt, metrics: { "environment.temperature": 5, "sensor.battery_voltage": 3.5 } });
