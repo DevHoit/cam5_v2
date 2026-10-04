@@ -932,8 +932,6 @@ function HistoryView({ assetId, canExport, onOpenTrend }: { assetId: string; can
 
   useEffect(() => {
     let active = true;
-    setMetricOptions([]);
-    setNormalizedHistory(false);
     if (!assetId) return () => { active = false; };
     void portalRequest<{ assets: Array<{ id: string; devices: Array<{ id: string; code: string; metrics: Array<{ key: string; code: string; name: string; dataType: string }> }> }> }>(`/api/v1/telemetry/metrics/latest?assetId=${encodeURIComponent(assetId)}`)
       .then((data) => {
