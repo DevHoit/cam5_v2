@@ -379,7 +379,7 @@ const navGroups = [
       { id: "assets" as View, label: "Organización y activos", description: "Clientes, sitios y activos", icon: Factory },
       { id: "notifications" as View, label: "Notificaciones", description: "Canales y entregas", icon: Mail },
       { id: "users" as View, label: "Usuarios y roles", description: "Acceso y permisos", icon: Users },
-      { id: "settings" as View, label: "Configuración técnica", description: "Configuración avanzada", icon: Settings },
+      { id: "settings" as View, label: "Ingeniería", description: "Adquisición y puesta en marcha", icon: Settings },
     ],
   },
 ];
@@ -399,7 +399,7 @@ const viewTitles: Record<View, { title: string; description: string }> = {
   assets: { title: "Organización y activos", description: "Clientes, sitios, activos, gateways y dispositivos asociados." },
   operations: { title: "Operación", description: "Ventanas de mantenimiento, turnos y continuidad operacional." },
   reports: { title: "Reportes", description: "Informes de condición, eventos y cumplimiento para operación y confiabilidad." },
-  settings: { title: "Configuración técnica", description: "Parámetros avanzados del activo y su adquisición. Visible sólo para perfiles técnicos." },
+  settings: { title: "Ingeniería", description: "Configuración avanzada del activo, adquisición, diagnóstico y puesta en marcha." },
   provisioning: { title: "Provisionamiento del gateway", description: "Credenciales seguras, configuración inicial y verificación de conexión." },
   users: { title: "Usuarios y roles", description: "Control de acceso y permisos para la operación técnica." },
   notifications: { title: "Notificaciones", description: "Canales de entrega, reglas de escalamiento y trazabilidad." },
@@ -1819,6 +1819,15 @@ export default function Home() {
         <div className="content-scroll">
           <div className="page-content">
             {view !== "dashboard" && view !== "cold-chain" && view !== "electrical" && systemMode !== "normal" && <section className={`operational-banner banner-${systemMode}`} role={systemMode === "offline" || systemMode === "error" ? "alert" : "status"} aria-live="polite"><span>{systemMode === "offline" ? <PlugConnected size={19} /> : systemMode === "loading" ? <Refresh className="spin" size={19} /> : systemMode === "error" ? <AlertTriangle size={19} /> : <Clock3 size={19} />}</span><div><strong>{systemMessage.title}</strong><p>{systemMessage.detail}</p></div>{systemMode !== "loading" && <button onClick={() => { setTelemetryState({ status: "loading", data: null }); setSystemMode("loading"); setTelemetryRefreshKey((current) => current + 1); notify("Consultando nuevamente la telemetría.", "info"); }}><Refresh size={15} /> Reintentar</button>}</section>}
+            {(["settings", "diagnostics", "commissioning", "provisioning"] as View[]).includes(view) && <nav className="engineering-context-nav" aria-label="Herramientas de ingeniería">
+              <div><span className="eyebrow">Área técnica</span><strong>Ingeniería del activo</strong></div>
+              <div>
+                <button className={view === "settings" ? "active" : ""} onClick={() => navigate("settings")}>Configuración</button>
+                <button className={view === "diagnostics" ? "active" : ""} onClick={() => navigate("diagnostics")}>Diagnóstico</button>
+                <button className={view === "commissioning" ? "active" : ""} onClick={() => navigate("commissioning")}>Puesta en marcha</button>
+                <button className={view === "provisioning" ? "active" : ""} onClick={() => navigate("provisioning")}>Gateways</button>
+              </div>
+            </nav>}
             <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> Gestión de activos críticos</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{(view === "overview" || view === "cabinet") && <button className="secondary-button" onClick={() => setVisibilityOpen(true)} disabled={!activePoint || !sensors.some((sensor) => sensor.enabled)}><AdjustmentsHorizontal size={16} /><span>Personalizar canales</span></button>}{view !== "dashboard" && view !== "assets" && view !== "settings" && view !== "provisioning" && view !== "users" && view !== "notifications" && view !== "account" && view !== "reports" && view !== "diagnostics" && view !== "commissioning" && view !== "trends" && view !== "history" && <button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button>}{view !== "dashboard" && <button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{alarmSummary.critical + alarmSummary.warning} alertas activas</button>}</div></section>
             {view === "dashboard" && <DashboardView onSwitchSite={(siteId) => void switchSite(siteId)} onSelectAsset={(siteId, assetId) => void openDashboardAsset(siteId, assetId)} onOpenAlerts={() => navigate("alarms")} onOpenOperations={() => navigate("operations")} />}
             {view === "overview" && <Overview onNavigate={navigate} onOpenTrend={openChannelTrend} onAcknowledge={acknowledge} activeAlarms={alarmPreview} alarmSummary={alarmSummary} point={activePoint} />}
