@@ -1424,15 +1424,15 @@ function NotificationsView({ canWrite }: { canWrite: boolean }) {
 function AuthFrame({ children }: { children: React.ReactNode }) {
   return <main className="login-shell">
     <section className="login-brand-panel" aria-label="HoitLive Core">
-      <header className="login-brand-identity"><span className="login-brand-mark"><Zap size={25} strokeWidth={2.3} /></span><span><strong>HoitLive</strong><b>Core</b></span></header>
-      <div className="login-brand-message"><span className="login-product-label"><i /> Plataforma de monitoreo de condición</span><h1>Visibilidad operacional para activos críticos.</h1><p>Información confiable para supervisar, diagnosticar y actuar con oportunidad.</p></div>
-      <footer className="login-brand-footer"><span>HoitLive Core</span><small>Industrial condition intelligence</small></footer>
+      <header className="login-brand-identity"><span><strong>HoitLive Core</strong><b>Industrial IoT Platform</b></span></header>
+      <div className="login-brand-message"><span className="login-product-label"><i /> Industrial IoT Platform</span><h1>Visibilidad operacional para activos críticos.</h1><p>Supervisa activos, telemetría y eventos desde una plataforma industrial diseñada para operar con información confiable.</p></div>
+      <footer className="login-brand-footer"><span>HoitLive Core</span><small>Industrial IoT Platform</small></footer>
     </section>
     <section className="login-form-panel"><div className="login-card">
-      <div className="login-mobile-brand"><span className="login-brand-mark"><Zap size={21} strokeWidth={2.3} /></span><span><strong>HoitLive</strong><b>Core</b></span></div>
+      <div className="login-mobile-brand"><span><strong>HoitLive Core</strong><b>Industrial IoT Platform</b></span></div>
       {children}
       <div className="login-assurance"><ShieldCheck size={16} /><span>Conexión cifrada y sesión protegida</span></div>
-      <small className="login-product-meta">HoitLive Core · Monitoreo de condición eléctrica</small>
+      <small className="login-product-meta">HoitLive Core · Industrial IoT Platform</small>
     </div></section>
   </main>;
 }
@@ -1475,7 +1475,7 @@ function LoginScreen({ checking, notice, onAuthenticated }: { checking: boolean;
   };
 
   return <AuthFrame>
-        <header className="login-card-header"><span className="login-security-icon">{recovery ? <Key size={21} /> : <ShieldCheck size={21} />}</span><span className="eyebrow">{recovery ? "Recuperación de acceso" : "Acceso a la plataforma"}</span><h2>{checking ? "Validando tu sesión" : recovery ? "Recuperar contraseña" : "Bienvenido"}</h2><p>{checking ? "Estamos comprobando tus credenciales de acceso." : recovery ? "Te enviaremos un enlace seguro para crear una nueva contraseña." : "Ingresa con las credenciales asignadas por tu organización."}</p></header>
+        <header className="login-card-header">{recovery && <span className="login-security-icon"><Key size={21} /></span>}<span className="eyebrow">{recovery ? "Recuperación de acceso" : "Acceso a la plataforma"}</span><h2>{checking ? "Validando tu sesión" : recovery ? "Recuperar contraseña" : "Bienvenido"}</h2><p>{checking ? "Estamos comprobando tus credenciales de acceso." : recovery ? "Te enviaremos un enlace seguro para crear una nueva contraseña." : "Ingresa con las credenciales asignadas por tu organización."}</p></header>
         {notice && !checking && !recovery && <div className={`password-reset-success login-auth-notice ${notice.tone === "warning" ? "login-session-notice" : ""}`} role="status">{notice.tone === "warning" ? <AlertTriangle size={22} /> : <CheckCircle2 size={22} />}<span><strong>{notice.title}</strong><small>{notice.message}</small></span></div>}
         {checking ? <div className="login-checking"><Refresh className="spin" size={19} /><span><strong>Verificando acceso</strong><small>Esto tomará solo un momento.</small></span></div> : recoveryMessage ? <div className="password-reset-success"><CheckCircle2 size={22} /><span><strong>Revisa tu correo</strong><small>{recoveryMessage}</small></span><button type="button" className="login-link-button" onClick={() => { setRecovery(false); setRecoveryMessage(""); }}>Volver a iniciar sesión</button></div> : recovery ? <form onSubmit={requestRecovery}>
           <label htmlFor="recovery-email"><span>Correo electrónico</span><div className="login-input-wrap"><Mail size={18} /><input id="recovery-email" type="email" inputMode="email" autoCapitalize="none" autoComplete="email" required autoFocus value={email} onChange={(event) => setEmail(event.target.value)} placeholder="nombre@empresa.cl" /></div></label>
