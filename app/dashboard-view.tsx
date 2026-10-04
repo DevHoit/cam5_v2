@@ -167,9 +167,9 @@ export function DashboardView({
         <span><IconServer size={20} /></span>
         <div><small>Adquisición</small><strong>{acquisitionIssues ? acquisitionIssues : "OK"}</strong><p>{data.summary.unhealthyGateways} gateways · {data.summary.unhealthyDevices} dispositivos con atención</p></div>
       </article>
-      <button className={`dashboard-kpi ${data.summary.activeMaintenance ? "info" : "healthy"}`} onClick={onOpenOperations}>
+      <button className={`dashboard-kpi ${data.summary.onCallIssues || data.summary.activeMaintenance ? "info" : "healthy"}`} onClick={onOpenOperations}>
         <span><IconTool size={20} /></span>
-        <div><small>Mantenimiento</small><strong>{data.summary.activeMaintenance}</strong><p>{data.summary.scheduledMaintenance} próximos</p></div>
+        <div><small>Continuidad operacional</small><strong>{data.summary.onCallCovered}/{data.summary.onCallTotal}</strong><p>{data.summary.onCallIssues ? `${data.summary.onCallIssues} guardias requieren revisión` : "Guardias cubiertas"} · {data.summary.activeMaintenance} mantenimientos activos</p></div>
         <IconArrowRight size={16} />
       </button>
     </section>
