@@ -6,6 +6,7 @@ import {
   alarms,
   assets,
   channels,
+  devices,
   userAssetScopes,
   userRoleAssignments,
   users,
@@ -51,6 +52,8 @@ export async function GET(request: NextRequest) {
       ilike(alarms.detail, `%${q}%`),
       ilike(assets.code, `%${q}%`),
       ilike(assets.name, `%${q}%`),
+      ilike(devices.code, `%${q}%`),
+      ilike(devices.name, `%${q}%`),
       ilike(channels.code, `%${q}%`),
     )!);
     const where = and(...filters);
@@ -78,12 +81,17 @@ export async function GET(request: NextRequest) {
         assetId: assets.id,
         assetCode: assets.code,
         assetName: assets.name,
+        deviceId: alarms.deviceId,
+        deviceCode: devices.code,
+        deviceName: devices.name,
+        context: alarms.context,
         channelId: channels.id,
         channelCode: channels.code,
         channelName: channels.name,
         unit: channels.unit,
       }).from(alarms)
         .innerJoin(assets, eq(assets.id, alarms.assetId))
+        .leftJoin(devices, eq(devices.id, alarms.deviceId))
         .leftJoin(channels, eq(channels.id, alarms.channelId))
         .leftJoin(assignedUser, eq(assignedUser.id, alarms.assignedTo))
         .where(where)
