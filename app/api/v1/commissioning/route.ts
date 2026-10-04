@@ -40,6 +40,7 @@ async function requireCommissioningContext(db: Cam5Database, user: Awaited<Retur
       deviceName: devices.name,
       deviceState: devices.state,
       serialNumber: devices.serialNumber,
+      driver: devices.driver,
       firmwareVersion: devices.firmwareVersion,
       dataVersion: devices.dataVersion,
       protocol: devices.protocol,
@@ -71,7 +72,7 @@ async function requireCommissioningContext(db: Cam5Database, user: Awaited<Retur
 }
 
 async function loadMetrics(db: Cam5Database, context: Awaited<ReturnType<typeof requireCommissioningContext>>) {
-  const [inputRows, registerRows, channelRows, relayRows, snapshotRows, readingRows] = await Promise.all([
+  if (context.driver !== "cam5") {\n    throw new ApiError(409, "El commissioning basado en mapa de registros corresponde al flujo CAM-5 legacy. Los dispositivos normalizados deben validarse mediante capacidades y métricas.");\n  }\n\n    const [inputRows, registerRows, channelRows, relayRows, snapshotRows, readingRows] = await Promise.all([
     db.select({ total: count(), enabled: sql<number>`count(*) filter (where ${physicalInputs.enabled} = true)` }).from(physicalInputs).where(eq(physicalInputs.deviceId, context.deviceId)),
     db.select({ total: count(), minimum: min(registerDefinitions.nativeRegister), maximum: max(registerDefinitions.nativeRegister) }).from(registerDefinitions).where(eq(registerDefinitions.modelId, context.modelId)),
     db.select({ enabled: sql<number>`count(*) filter (where ${channels.enabled} = true)`, configuredRules: sql<number>`count(${alarmRules.id}) filter (where ${channels.enabled} = true and ${alarmRules.enabled} = true and ${alarmRules.warningThreshold} is not null and ${alarmRules.criticalThreshold} is not null)` }).from(channels).leftJoin(alarmRules, eq(alarmRules.channelId, channels.id)).where(eq(channels.deviceId, context.deviceId)),
