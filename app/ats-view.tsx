@@ -284,20 +284,20 @@ export function AtsView({
   return <div className="ats-view">
     <section className="electrical-toolbar">
       <div>
-        <span className="eyebrow"><Transfer size={13} /> Deep Sea Electronics DSE8660 MKII</span>
-        <h2>ATS</h2>
-        <p>Supervisión de fuentes, transferencia, carga y alarmas. V1 es estrictamente sólo lectura.</p>
+        <span className="eyebrow"><Transfer size={13} /> Capacidad · transferencia automática</span>
+        <h2>Transferencia automática</h2>
+        <p>Supervisión normalizada de fuentes, transferencia, carga y alarmas del activo.</p>
       </div>
       <div className="electrical-actions">
         <button className="secondary-button" onClick={() => void refresh()}><Refresh size={15} /> Actualizar</button>
         {canWriteAssets && <button className="secondary-button" onClick={() => { setError(""); setDialog("unit"); }}><Plus size={15} /> ATS</button>}
-        {canWriteSettings && <button className="primary-button" onClick={() => { setError(""); setDialog("controller"); }} disabled={!configuration?.units.length || !configuration?.gateways.length}><Plus size={15} /> DSE8660</button>}
+        {canWriteSettings && <button className="primary-button" onClick={() => { setError(""); setDialog("controller"); }} disabled={!configuration?.units.length || !configuration?.gateways.length}><Plus size={15} /> Agregar controlador</button>}
       </div>
     </section>
 
     <section className="electrical-summary">
       <article><span>ATS configurados</span><strong>{overview?.units.length ?? 0}</strong></article>
-      <article><span>Controladores DSE8660</span><strong>{controllers.length}</strong></article>
+      <article><span>Controladores</span><strong>{controllers.length}</strong></article>
       <article><span>Con lectura vigente</span><strong>{onlineControllers}/{controllers.length}</strong></article>
       <article><span>Actualización</span><strong>{overview ? new Intl.DateTimeFormat("es-CL", { timeStyle: "medium" }).format(new Date(overview.serverTime)) : "—"}</strong></article>
     </section>
@@ -316,7 +316,7 @@ export function AtsView({
           </div>
         </header>
 
-        {!unit.controllers.length && <div className="electrical-empty compact">Sin DSE8660 asociado.</div>}
+        {!unit.controllers.length && <div className="electrical-empty compact">Sin controlador asociado.</div>}
         {unit.controllers.map((controller) => {
           const source1Available = boolMetric(controller, "ats.source1.available");
           const source2Available = boolMetric(controller, "ats.source2.available");
@@ -378,7 +378,7 @@ export function AtsView({
 
     {dialog && <div className="cold-config-backdrop" role="presentation">
       <section className="cold-config-dialog electrical-dialog" role="dialog" aria-modal="true">
-        <header><div><span><Settings size={16} /></span><div><strong>{dialog === "unit" ? "Nuevo ATS" : dialog === "controller" ? "Configurar DSE8660 MKII" : "Configuración ATS"}</strong><small>{dialog === "controller" ? "Parámetros de adquisición RS485. Deben confirmarse contra el equipo real." : "Semántica operacional y alarmas del activo."}</small></div></div><button onClick={() => setDialog(null)} aria-label="Cerrar"><X size={18} /></button></header>
+        <header><div><span><Settings size={16} /></span><div><strong>{dialog === "unit" ? "Nuevo ATS" : dialog === "controller" ? "Configurar controlador" : "Configuración ATS"}</strong><small>{dialog === "controller" ? "Parámetros de adquisición RS485. Deben confirmarse contra el equipo real." : "Semántica operacional y alarmas del activo."}</small></div></div><button onClick={() => setDialog(null)} aria-label="Cerrar"><X size={18} /></button></header>
         <div className="cold-config-form">
           {dialog === "unit" ? <>
             <div className="cold-config-columns"><label><span>Código</span><input value={unitForm.code} onChange={(event) => setUnitForm({ ...unitForm, code: event.target.value })} placeholder="ATS-01" /></label><label><span>Nombre</span><input value={unitForm.name} onChange={(event) => setUnitForm({ ...unitForm, name: event.target.value })} placeholder="ATS principal" /></label></div>
@@ -401,7 +401,7 @@ export function AtsView({
           </>}
           {error && <div className="cold-config-error">{error}</div>}
         </div>
-        <footer><button className="secondary-button" onClick={() => setDialog(null)} disabled={busy}>Cancelar</button><button className="primary-button" onClick={() => void (dialog === "unit" ? createUnit() : dialog === "controller" ? createController() : saveSettings())} disabled={busy || (dialog === "controller" && (!controllerForm.port.trim() || !controllerForm.baudRate || !controllerForm.parity))}>{busy ? "Guardando…" : dialog === "unit" ? "Crear ATS" : dialog === "controller" ? "Crear DSE8660" : "Guardar configuración"}</button></footer>
+        <footer><button className="secondary-button" onClick={() => setDialog(null)} disabled={busy}>Cancelar</button><button className="primary-button" onClick={() => void (dialog === "unit" ? createUnit() : dialog === "controller" ? createController() : saveSettings())} disabled={busy || (dialog === "controller" && (!controllerForm.port.trim() || !controllerForm.baudRate || !controllerForm.parity))}>{busy ? "Guardando…" : dialog === "unit" ? "Crear ATS" : dialog === "controller" ? "Crear controlador" : "Guardar configuración"}</button></footer>
       </section>
     </div>}
   </div>;
