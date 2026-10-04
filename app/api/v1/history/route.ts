@@ -255,10 +255,13 @@ export async function GET(request: NextRequest) {
           title: alarms.title,
           detail: alarms.detail,
           triggerValue: alarms.triggerValue,
+          deviceCode: devices.code,
+          context: alarms.context,
           channelCode: channels.code,
           unit: channels.unit,
         }).from(alarms)
           .innerJoin(assets, eq(assets.id, alarms.assetId))
+          .leftJoin(devices, eq(devices.id, alarms.deviceId))
           .leftJoin(channels, eq(channels.id, alarms.channelId))
           .where(where)
           .orderBy(desc(alarms.openedAt))
@@ -268,8 +271,8 @@ export async function GET(request: NextRequest) {
       ]);
       const total = Number(totals[0]?.total ?? 0);
       if (exporting) return csvResponse("hoitlive-historico-alarmas.csv", [
-        ["fecha_apertura_utc", "codigo", "severidad", "estado", "canal", "titulo", "detalle", "valor", "unidad"],
-        ...items.map((item) => [item.openedAt.toISOString(), item.code, item.severity, item.status, item.channelCode, item.title, item.detail, item.triggerValue, item.unit]),
+        ["fecha_apertura_utc", "codigo", "severidad", "estado", "dispositivo", "origen", "titulo", "detalle", "valor", "unidad"],
+        ...items.map((item) => [item.openedAt.toISOString(), item.code, item.severity, item.status, item.deviceCode, typeof item.context?.metricKey === "string" ? item.context.metricKey : item.channelCode, item.title, item.detail, item.triggerValue, item.unit]),
       ]);
       return Response.json({
         items: items.map((item) => ({ ...item, openedAt: item.openedAt.toISOString() })),
