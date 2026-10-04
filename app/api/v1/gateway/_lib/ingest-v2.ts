@@ -40,7 +40,6 @@ type GenericPayload = {
   };
   device: {
     code: string;
-    driver?: string;
   };
   metrics: Record<string, number | boolean | string>;
 };
@@ -87,6 +86,8 @@ export function parseGenericIngestPayload(value: unknown, now: Date): GenericPay
   if (body.schemaVersion !== "2.0") throw new ApiError(400, "schemaVersion debe ser 2.0.");
   const gateway = object(body.gateway, "gateway");
   const device = object(body.device, "device");
+  const forbiddenDeviceFields = ["driver", "protocol", "register", "unitId", "host"].filter((key) => key in device);
+  if (forbiddenDeviceFields.length) throw new ApiError(400, `device contiene detalles de adquisición no permitidos: ${forbiddenDeviceFields.join(", ")}.`);
   const metricObject = object(body.metrics, "metrics");
   const metricEntries = Object.entries(metricObject);
   if (!metricEntries.length) throw new ApiError(400, "metrics debe contener al menos una métrica.");
@@ -123,7 +124,6 @@ export function parseGenericIngestPayload(value: unknown, now: Date): GenericPay
     },
     device: {
       code: requiredString(device.code, "device.code", 60).toUpperCase(),
-      driver: device.driver === undefined ? undefined : requiredString(device.driver, "device.driver", 80),
     },
     metrics,
   };
@@ -163,7 +163,6 @@ export async function handleGenericIngest(input: {
     id: devices.id,
     assetId: devices.assetId,
     code: devices.code,
-    driver: devices.driver,
     assetType: assets.assetType,
   }).from(devices)
     .innerJoin(assets, eq(assets.id, devices.assetId))
@@ -181,7 +180,6 @@ export async function handleGenericIngest(input: {
     .limit(1);
 
   if (!device) throw new ApiError(404, "El dispositivo no está habilitado para este gateway.");
-  if (payload.device.driver && payload.device.driver !== device.driver) throw new ApiError(422, "El driver informado no coincide con el dispositivo configurado.");
 
   const [existing] = await db.select({
     id: telemetryBatches.id,
