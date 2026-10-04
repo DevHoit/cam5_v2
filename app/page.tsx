@@ -220,8 +220,6 @@ const FeedbackContext = createContext<(message: string, tone?: NoticeTone) => vo
 const useFeedback = () => useContext(FeedbackContext);
 const ConfirmContext = createContext<(request: ConfirmRequest) => void>(() => undefined);
 const useConfirm = () => useContext(ConfirmContext);
-const RoleContext = createContext<UserRole>("Solo lectura");
-const useActiveRole = () => useContext(RoleContext);
 function canSeeNavItem(view: View, user: PortalSessionUser) {
   if (view === "users") return user.permissions.includes("users.manage");
   if (view === "engineering" || view === "settings") return user.permissions.includes("settings.read") || user.permissions.includes("settings.write");
@@ -1767,7 +1765,6 @@ export default function Home() {
     onSessionExpired={(message) => { setHierarchy(null); setSessionUser(null); setLoginNotice({ title: "Sesión finalizada", message, tone: "warning" }); setAuthState("anonymous"); }}
     onLogout={() => void logout()}
   />;
-  const activeRole = sessionUser.roleName;
   const activePoint = hierarchy?.points.find((point) => point.id === activePointId && point.active) ?? hierarchy?.points.find((point) => point.active);
   const activeGateway = hierarchy?.gateways.find((gateway) => gateway.active);
   const gatewayState = telemetryState.data?.gateway?.state;
@@ -1789,7 +1786,6 @@ export default function Home() {
   return (
     <FeedbackContext.Provider value={notify}>
     <ConfirmContext.Provider value={setConfirmRequest}>
-    <RoleContext.Provider value={activeRole}>
     <TelemetryContext.Provider value={telemetryState}>
     <div className="app-shell">
       {menuOpen && <button className="mobile-scrim" aria-label="Cerrar navegación" onClick={() => setMenuOpen(false)} />}
@@ -1891,7 +1887,6 @@ export default function Home() {
       {confirmRequest && <div className="confirm-backdrop" role="presentation" onMouseDown={() => setConfirmRequest(null)}><section className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-title" onMouseDown={(event) => event.stopPropagation()}><span className={`confirm-icon ${confirmRequest.tone === "danger" ? "danger" : ""}`}>{confirmRequest.tone === "danger" ? <AlertTriangle size={22} /> : <ShieldCheck size={22} />}</span><div><span className="eyebrow">Confirmación requerida</span><h2 id="confirm-title">{confirmRequest.title}</h2><p>{confirmRequest.detail}</p></div><div className="confirm-actions"><button className="secondary-button" onClick={() => setConfirmRequest(null)}>Cancelar</button><button className={confirmRequest.tone === "danger" ? "danger-button" : "primary-button"} onClick={() => { const action = confirmRequest.onConfirm; setConfirmRequest(null); action(); }}>{confirmRequest.confirmLabel}</button></div></section></div>}
     </div>
     </TelemetryContext.Provider>
-    </RoleContext.Provider>
     </ConfirmContext.Provider>
     </FeedbackContext.Provider>
   );
