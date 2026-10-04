@@ -360,3 +360,26 @@ Revisión realizada antes de modificar el modelo persistente:
 - El commissioning basado en mapa FC03 418–522 quedó limitado explícitamente a CAM-5 legacy.
 - No se eliminan todavía `readingProfiles`, `readingProfileRanges`, `registerDefinitions`, `deviceRegisterSamples` ni campos técnicos de `devices`: siguen teniendo dependencias reales de compatibilidad y configuración. Su retiro requiere una migración separada del plano de control al Gateway Agent.
 - Regla V1: nuevos dispositivos normalizados no deben depender de esas estructuras para ingestión, histórico, alarmas, tendencias ni reportes.
+
+
+## Corrección arquitectónica: CAM5 es un dispositivo más (2026-10-04)
+
+Se elimina la excepción conceptual CAM5 del flujo V1.
+
+- El alta de dispositivos en Core ya no selecciona perfiles CAM5 ni recibe host/puerto/Unit ID.
+- Todos los dispositivos nuevos se provisionan bajo el contrato `normalized_json`.
+- Organización y activos ya no muestra ni edita direccionamiento de transporte del dispositivo.
+- Ingeniería expone Diagnóstico y Puesta en marcha para cualquier dispositivo, sin clasificación `cam5Like`.
+- El commissioning automático se reescribió sobre evidencia genérica:
+  - identidad del dispositivo;
+  - salud del gateway;
+  - métricas normalizadas configuradas y recibidas;
+  - calidad de telemetría;
+  - evidencia física de terreno.
+- Las pruebas del motor de commissioning ya no contienen mapa 418–522, FC03, relés CAM5 ni estabilidad específica del equipo.
+- Las estructuras históricas de registros permanecen temporalmente en el esquema para permitir una migración de datos segura, pero dejan de ser requisito para provisionar o comisionar dispositivos V1.
+
+Pendiente del siguiente saneamiento:
+- reescribir el módulo visual/API de Diagnóstico que aún consume `ingestion_batches` legacy;
+- retirar o archivar `configuration` y el fallback legacy de `gateway/config` cuando el Gateway Agent tenga cubierto el plano de configuración genérico;
+- migración posterior de tablas legacy, sin borrado destructivo anticipado.
