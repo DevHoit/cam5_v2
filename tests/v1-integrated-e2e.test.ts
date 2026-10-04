@@ -99,7 +99,6 @@ async function ingest(db: Cam5Database, input: {
   gateway: { id: string; code: string };
   siteId: string;
   deviceCode: string;
-  driver: string;
   sequence: number;
   at: string;
   metrics: Record<string, number | boolean | string>;
@@ -116,7 +115,7 @@ async function ingest(db: Cam5Database, input: {
       quality: "good",
       qualityFlags: [],
       gateway: { code: input.gateway.code, bootId: "boot-v1", sequence: input.sequence },
-      device: { code: input.deviceCode, driver: input.driver },
+      device: { code: input.deviceCode },
       metrics: input.metrics,
     },
     receivedAt: new Date(input.at),
