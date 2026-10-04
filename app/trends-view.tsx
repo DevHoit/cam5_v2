@@ -245,7 +245,7 @@ export function TrendsView({
     setDragCurrent(null);
   };
 
-  if (!assetId || !primaryOption) return <article className="panel trend-empty"><ChartLine size={25} /><h2>Selecciona un punto con canales activos</h2><p>La tendencia necesita un canal configurado dentro del contexto operacional.</p></article>;
+  if (!assetId || !primaryOption) return <article className="panel trend-empty"><ChartLine size={25} /><h2>Selecciona un activo con métricas disponibles</h2><p>La tendencia necesita un canal configurado dentro del contexto operacional.</p></article>;
   return <>
     <section className="trend-control-panel">
       <div className="trend-primary-controls"><label className="channel-select"><Activity size={17} /><span><small>Canal principal</small><select value={primaryOption.id} onChange={(event) => { setComparisons([]); onSelectChannel(event.target.value); }} aria-label="Canal principal">{activeChannels.map((channel) => <option key={channel.id} value={channel.id}>{channel.id} · {channel.label}</option>)}</select></span><ChevronDown size={14} /></label><div className="trend-range-tabs" aria-label="Rango temporal">{PERIODS.map((item) => <button key={item} className={period === item ? "active" : ""} onClick={() => changePeriod(item)}>{item}</button>)}</div></div>
@@ -263,7 +263,7 @@ export function TrendsView({
     </section>
 
     <article className="panel trend-chart-panel">
-      <header><div><span className="eyebrow">{result?.asset.code ?? "Punto activo"} · {result?.resolution.label ?? "Resolución automática"}</span><h2>{primary?.name ?? primaryOption.label}</h2><p>{primary?.zone ?? primaryOption.zone} · {new Intl.DateTimeFormat("es-CL", { dateStyle: "medium", timeStyle: "short" }).format(new Date(activeRange.from))} → {new Intl.DateTimeFormat("es-CL", { dateStyle: "medium", timeStyle: "short" }).format(new Date(activeRange.to))}</p></div><span className="trend-source-pill">{loading ? <><Refresh className="spin" size={14} /> Consultando</> : <><ShieldCheck size={14} /> PostgreSQL</>}</span></header>
+      <header><div><span className="eyebrow">{result?.asset.code ?? "Punto activo"} · {result?.resolution.label ?? "Resolución automática"}</span><h2>{primary?.name ?? primaryOption.label}</h2><p>{primary?.zone ?? primaryOption.zone} · {new Intl.DateTimeFormat("es-CL", { dateStyle: "medium", timeStyle: "short" }).format(new Date(activeRange.from))} → {new Intl.DateTimeFormat("es-CL", { dateStyle: "medium", timeStyle: "short" }).format(new Date(activeRange.to))}</p></div><span className="trend-source-pill">{loading ? <><Refresh className="spin" size={14} /> Consultando</> : <><ShieldCheck size={14} /> Histórico verificado</>}</span></header>
       <div className="trend-chart-body">
         <div className="trend-y-axis">{yTicks.map((tick) => <span key={tick.ratio} style={{ top: `${tick.ratio * 100}%` }}>{tick.value.toFixed(1)}</span>)}</div>
         <div className={`trend-svg-wrap ${dragStart !== null ? "selecting" : ""}`} onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); const x = pointerX(event); setDragStart(x); setDragCurrent(x); }} onPointerMove={(event) => { const x = pointerX(event); setHoverX(x); if (dragStart !== null) setDragCurrent(x); }} onPointerUp={finishZoom} onPointerCancel={finishZoom} onPointerLeave={() => { if (dragStart === null) setHoverX(null); }}>
