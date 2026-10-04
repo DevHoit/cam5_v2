@@ -122,10 +122,6 @@ export async function GET(request: NextRequest) {
         serialNumber: devices.serialNumber,
         state: devices.state,
         active: devices.active,
-        protocol: devices.protocol,
-        host: devices.host,
-        port: devices.port,
-        unitId: devices.unitId,
         lastReadAt: devices.lastReadAt,
       }).from(devices)
         .innerJoin(assets, eq(assets.id, devices.assetId))
@@ -257,9 +253,6 @@ export async function POST(request: NextRequest) {
           driver: "normalized_json",
           code,
           name,
-          host: "gateway-managed",
-          port: 1,
-          unitId: 1,
           state: "commissioning",
         }).returning();
         await tx.insert(commissioningItems).values(COMMISSIONING_CHECKLIST.map(([itemKey, label]) => ({ deviceId: row.id, itemKey, label, status: "pending" as const })));
@@ -360,9 +353,6 @@ export async function PATCH(request: NextRequest) {
         assertSiteAccess(siteIds, current.siteId);
         [record] = await tx.update(devices).set({
           ...(typeof body.name === "string" ? { name: textField(body, "name", "El nombre") } : {}),
-          ...(typeof body.host === "string" ? { host: textField(body, "host", "La dirección del dispositivo") } : {}),
-          ...(typeof body.port === "number" ? { port: body.port } : {}),
-          ...(typeof body.unitId === "number" ? { unitId: body.unitId } : {}),
           ...(typeof body.active === "boolean" ? { active: body.active, state: body.active ? "commissioning" : "decommissioned" } : {}),
           updatedAt: new Date(),
         }).where(eq(devices.id, id)).returning();
