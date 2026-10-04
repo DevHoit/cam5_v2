@@ -925,8 +925,36 @@ function HistoryView({ assetId, canExport, onOpenTrend }: { assetId: string; can
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const activeSensors = sensors.filter((sensor) => sensor.enabled);
+  const [metricOptions, setMetricOptions] = useState<Array<{ id: string; label: string }>>([]);
+  const [normalizedHistory, setNormalizedHistory] = useState(false);
   const fromIso = new Date(`${from}T00:00:00`).toISOString();
   const toIso = new Date(`${to}T23:59:59.999`).toISOString();
+
+  useEffect(() => {
+    let active = true;
+    setMetricOptions([]);
+    setNormalizedHistory(false);
+    if (!assetId) return () => { active = false; };
+    void portalRequest<{ assets: Array<{ id: string; devices: Array<{ id: string; code: string; metrics: Array<{ key: string; code: string; name: string; dataType: string }> }> }> }>(`/api/v1/telemetry/metrics/latest?assetId=${encodeURIComponent(assetId)}`)
+      .then((data) => {
+        if (!active) return;
+        const asset = data.assets.find((item) => item.id === assetId);
+        const options = asset?.devices.flatMap((device) => device.metrics.map((metric) => ({
+          id: metric.key,
+          label: `${device.code} · ${metric.name}`,
+        }))) ?? [];
+        setMetricOptions(options);
+        setNormalizedHistory(options.length > 0);
+        setChannel((current) => current === "all" || options.some((option) => option.id === current) ? current : "all");
+      })
+      .catch(() => {
+        if (active) {
+          setMetricOptions([]);
+          setNormalizedHistory(false);
+        }
+      });
+    return () => { active = false; };
+  }, [assetId]);
 
   useEffect(() => {
     let active = true;
@@ -982,8 +1010,8 @@ function HistoryView({ assetId, canExport, onOpenTrend }: { assetId: string; can
           {canExport && <button className="primary-button history-export-button" onClick={() => void exportHistory()} disabled={loading}><Download size={16} /> Exportar CSV</button>}
         </div>
         <div className="history-search-bar">
-          <label className="search-field"><Search size={17} /><input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder={tab === "audit" ? "Buscar acción o recurso…" : "Buscar canal, código o evento…"} /></label>
-          {tab === "measurements" && <label><span>Canal</span><select value={channel} onChange={(event) => { setChannel(event.target.value); setPage(1); }}><option value="all">Todos los canales</option>{activeSensors.map((sensor) => <option key={sensor.id} value={sensor.id}>{sensor.id} · {sensor.label}</option>)}</select><ChevronDown size={13} /></label>}
+          <label className="search-field"><Search size={17} /><input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder={tab === "audit" ? "Buscar acción o recurso…" : normalizedHistory ? "Buscar dispositivo, métrica o evento…" : "Buscar canal, código o evento…"} /></label>
+          {tab === "measurements" && <label><span>{normalizedHistory ? "Métrica" : "Canal"}</span><select value={channel} onChange={(event) => { setChannel(event.target.value); setPage(1); }}><option value="all">{normalizedHistory ? "Todas las métricas" : "Todos los canales"}</option>{normalizedHistory ? metricOptions.map((metric) => <option key={metric.id} value={metric.id}>{metric.label}</option>) : activeSensors.map((sensor) => <option key={sensor.id} value={sensor.id}>{sensor.id} · {sensor.label}</option>)}</select><ChevronDown size={13} /></label>}
           <label><span>Desde</span><input type="date" value={from} max={to} onChange={(event) => { setFrom(event.target.value); setPage(1); }} /></label>
           <label><span>Hasta</span><input type="date" value={to} min={from} max={today} onChange={(event) => { setTo(event.target.value); setPage(1); }} /></label>
         </div>
@@ -991,7 +1019,7 @@ function HistoryView({ assetId, canExport, onOpenTrend }: { assetId: string; can
         {error && <div className="data-error"><AlertTriangle size={18} /><div><strong>No se pudo cargar el histórico</strong><p>{error}</p></div></div>}
         {loading && <div className="data-loading"><Refresh className="spin" size={18} /> Consultando histórico…</div>}
 
-        {!loading && !error && tab === "measurements" && <div className="module-table-wrap"><div className="history-table measurement-history"><div className="module-table-head"><span>Fecha y hora</span><span>Canal</span><span>Lectura</span><span>Calidad</span><span>Recepción</span><span>Secuencia</span><span>Acción</span></div>{result?.items.map((raw) => {
+        {!loading && !error && tab === "measurements" && <div className="module-table-wrap"><div className="history-table measurement-history"><div className="module-table-head"><span>Fecha y hora</span><span>{normalizedHistory ? "Dispositivo / métrica" : "Canal"}</span><span>Lectura</span><span>Calidad</span><span>Recepción</span><span>Secuencia</span><span>Acción</span></div>{result?.items.map((raw) => {
           const item = raw as { id: number; recordedAt: string; receivedAt: string; code: string; name: string; zone?: string; unit: string; value?: string | null; rawValue?: number | null; quality: "good" | "stale" | "bad" | "disabled"; qualityFlags: string[]; sequence?: number | null };
           const qualityLabel = item.quality === "good" ? "Válida" : item.quality === "stale" ? "Atrasada" : item.quality === "bad" ? "Inválida" : "Deshabilitada";
           const lagMs = Math.max(0, new Date(item.receivedAt).getTime() - new Date(item.recordedAt).getTime());
