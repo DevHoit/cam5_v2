@@ -432,3 +432,18 @@ Siguiente foco recomendado:
 - sanear el control plane para que la configuración física se origine/gestione explícitamente del lado Gateway sin reintroducirla como configuración de producto en Core;
 - revisar nombres legacy CAM5 restantes y clasificarlos entre compatibilidad histórica y dependencias activas;
 - después realizar E2E autenticado de roles y onboarding completo.
+
+
+## Punto de corte antes de revisión visual (2026-10-04)
+
+Se cerró el saneamiento inmediato del control plane antes de continuar con cambios visuales de frontend.
+
+- Las capacidades de `device_models` quedan tipadas únicamente como capacidades/métricas semánticas; driver y protocolo ya no forman parte de la plantilla de producto.
+- El generador de configuración del Gateway dejó de leer `devices.protocol`; el protocolo físico se resuelve desde el binding de adquisición.
+- El archivo de entorno descargable usa exclusivamente variables `HOIT_*` e incluye explícitamente `HOIT_GATEWAY_ID`, consistente con el runtime actual del Gateway Agent.
+- El Gateway Agent sigue siendo el único componente que interpreta driver, transporte y polling para producir telemetría normalizada.
+- Las columnas legacy de `devices` y la persistencia de bindings se conservan por ahora como deuda de migración/control plane; no se exponen como configuración del producto Core.
+
+CI del punto de corte: PASS completo.
+
+Decisión de trabajo: detener aquí nuevas expansiones visuales/funcionales y realizar una revisión visual del Preview pantalla por pantalla antes de seguir modificando el frontend.
