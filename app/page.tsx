@@ -608,7 +608,18 @@ function Overview({ onNavigate, onOpenTrend, onAcknowledge, activeAlarms, alarmS
   const highestRiskSensor = [...readableSensors].sort((left, right) => riskRatio(right) - riskRatio(left))[0] ?? null;
   const highestRiskPercent = highestRiskSensor && riskRatio(highestRiskSensor) >= 0 ? Math.round(riskRatio(highestRiskSensor) * 100) : null;
 
+  const capabilityActions = [
+    { id: "cabinet" as View, label: "Vista del activo", detail: "Distribución de métricas", show: true },
+    { id: "electrical" as View, label: "Análisis eléctrico", detail: "Variables eléctricas", show: pointRecord?.type === "electrical_point" },
+    { id: "ats" as View, label: "Transferencia automática", detail: "Fuentes y posición ATS", show: pointRecord?.type === "ats" },
+    { id: "cold-chain" as View, label: "Cadena de frío", detail: "Temperatura y sensores", show: pointRecord?.type === "cold_room" },
+  ].filter((item) => item.show);
+
   return <div className="operational-overview">
+    <nav className="asset-capability-nav" aria-label="Capacidades del activo">
+      <div><span className="eyebrow">Activo seleccionado</span><strong>{pointRecord?.code ?? "Sin activo"} · {pointRecord?.name ?? "Selecciona un activo"}</strong></div>
+      <div className="asset-capability-actions">{capabilityActions.map((item) => <button key={item.id} onClick={() => onNavigate(item.id)}><span>{item.label}</span><small>{item.detail}</small><ChevronRight size={15} /></button>)}</div>
+    </nav>
     <section className={`panel overview-statusbar overview-command-${overallState}`} title={statusDetail}>
       <span className="overview-statusbar-icon">{overallState === "normal" ? <CheckCircle2 size={22} /> : overallState === "waiting" || overallState === "stale" ? <Clock3 size={22} /> : <AlertTriangle size={22} />}</span>
       <div className="overview-statusbar-asset"><span className="eyebrow">{pointRecord ? `${pointRecord.code} · ${pointRecord.name}` : "Punto sin seleccionar"}</span><strong>{statusTitle}</strong><small>{pointRecord?.nominalVoltageKv ? `${pointRecord.nominalVoltageKv} kV · ` : ""}{telemetry?.point.area || "Ubicación no informada"}</small></div>
