@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import time
@@ -99,7 +100,7 @@ class GatewayRuntime:
             "time_quality": time_quality(),
             "samples": [sample.as_dict() for sample in samples],
         }
-        encoded_bytes = len(str(payload).encode("utf-8"))
+        encoded_bytes = len(json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8"))
         pending_bytes = int(self.store.stats()["pending_bytes"])
         if pending_bytes + encoded_bytes > self.settings.buffer_max_bytes:
             raise RuntimeError(
