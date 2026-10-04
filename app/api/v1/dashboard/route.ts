@@ -8,6 +8,7 @@ import {
   gateways,
   maintenanceWindows,
   sites,
+  shifts,
 } from "../../../../db/schema";
 import { apiErrorResponse, requireApiSession } from "../_lib/auth";
 
