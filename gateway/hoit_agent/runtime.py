@@ -9,6 +9,7 @@ from typing import Any
 
 from .clock import time_quality, utc_now
 from .cloud import CloudClient, CloudResponse
+from .health import cpu_percent, memory_percent, network_status
 from .models import GatewayConfig, Sample
 from .store import LocalStore
 
@@ -23,6 +24,7 @@ class RuntimeSettings:
     gateway_id: str
     state_db: str
     software_version: str = "0.1.0"
+    buffer_max_bytes: int = 256 * 1024 * 1024
 
     @classmethod
     def from_environment(cls) -> "RuntimeSettings":
@@ -32,7 +34,8 @@ class RuntimeSettings:
         state_db = os.environ.get("HOIT_STATE_DB", "/var/lib/hoit-agent/agent.db")
         if not api_base or not token or not gateway_id:
             raise RuntimeError("HOIT_API_BASE, HOIT_GATEWAY_TOKEN y HOIT_GATEWAY_ID son obligatorios.")
-        return cls(api_base=api_base, token=token, gateway_id=gateway_id, state_db=state_db)
+        buffer_max_bytes = max(1_048_576, int(os.environ.get("HOIT_BUFFER_MAX_BYTES", str(256 * 1024 * 1024))))
+        return cls(api_base=api_base, token=token, gateway_id=gateway_id, state_db=state_db, buffer_max_bytes=buffer_max_bytes)
 
 
 class GatewayRuntime:
@@ -116,7 +119,9 @@ class GatewayRuntime:
     def heartbeat_payload(self) -> dict[str, Any]:
         stats = self.store.stats()
         disk = shutil.disk_usage(os.path.dirname(self.settings.state_db) or ".")
-        usage_percent = round((disk.used / disk.total) * 100, 2) if disk.total else 0.0
+        disk_percent = round((disk.used / disk.total) * 100, 2) if disk.total else 0.0
+        buffer_percent = round(min(100.0, (int(stats["pending_bytes"]) / self.settings.buffer_max_bytes) * 100.0), 2)
+        active_interface, ip_available = network_status()
         return {
             "schema_version": "1.0",
             "gateway_id": self.settings.gateway_id,
@@ -126,17 +131,17 @@ class GatewayRuntime:
             "buffer": {
                 "pending_messages": stats["pending_messages"],
                 "bytes": stats["pending_bytes"],
-                "usage_percent": usage_percent,
+                "usage_percent": buffer_percent,
             },
             "network": {
-                "active_interface": "unknown",
+                "active_interface": active_interface,
                 "rssi_dbm": None,
-                "ip_available": True,
+                "ip_available": ip_available,
             },
             "system": {
-                "cpu_percent": None,
-                "memory_percent": None,
-                "disk_percent": usage_percent,
+                "cpu_percent": cpu_percent(),
+                "memory_percent": memory_percent(),
+                "disk_percent": disk_percent,
             },
             "interfaces": {},
             "devices": [],
