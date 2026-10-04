@@ -289,20 +289,20 @@ export function ElectricalView({
   return <div className="electrical-view">
     <section className="electrical-toolbar">
       <div>
-        <span className="eyebrow"><Bolt size={13} /> PowerLogic PM5560</span>
-        <h2>Monitoreo eléctrico</h2>
-        <p>Telemetría normalizada de medidores trifásicos. La adquisición física RS485 permanece desacoplada del portal.</p>
+        <span className="eyebrow"><Bolt size={13} /> Capacidad · energía eléctrica</span>
+        <h2>Análisis eléctrico</h2>
+        <p>Variables eléctricas normalizadas del activo. El modelo físico del medidor se mantiene desacoplado de la experiencia operacional.</p>
       </div>
       <div className="electrical-actions">
         <button className="secondary-button" onClick={() => void refresh()}><Refresh size={15} /> Actualizar</button>
         {canWriteAssets && <button className="secondary-button" onClick={() => { setError(""); setDialog("point"); }}><Plus size={15} /> Punto eléctrico</button>}
-        {canWriteSettings && <button className="primary-button" onClick={() => { setError(""); setDialog("meter"); }} disabled={!configuration?.points.length || !configuration?.gateways.length}><Plus size={15} /> PM5560</button>}
+        {canWriteSettings && <button className="primary-button" onClick={() => { setError(""); setDialog("meter"); }} disabled={!configuration?.points.length || !configuration?.gateways.length}><Plus size={15} /> Agregar medidor</button>}
       </div>
     </section>
 
     <section className="electrical-summary">
       <article><span>Puntos eléctricos</span><strong>{overview?.points.length ?? 0}</strong></article>
-      <article><span>Medidores PM5560</span><strong>{meters.length}</strong></article>
+      <article><span>Medidores</span><strong>{meters.length}</strong></article>
       <article><span>Con lectura vigente</span><strong>{onlineMeters}/{meters.length}</strong></article>
       <article><span>Actualización</span><strong>{overview ? new Intl.DateTimeFormat("es-CL", { timeStyle: "medium" }).format(new Date(overview.serverTime)) : "—"}</strong></article>
     </section>
@@ -321,7 +321,7 @@ export function ElectricalView({
           </div>
         </header>
 
-        {!point.meters.length && <div className="electrical-empty compact">Sin PM5560 asociado.</div>}
+        {!point.meters.length && <div className="electrical-empty compact">Sin medidor asociado.</div>}
         {point.meters.map((meter) => <article className="pm-meter-card" key={meter.id}>
           <div className="pm-meter-heading">
             <div className="pm-meter-icon"><Cpu size={20} /></div>
@@ -361,7 +361,7 @@ export function ElectricalView({
 
     {dialog && <div className="cold-config-backdrop" role="presentation">
       <section className="cold-config-dialog electrical-dialog" role="dialog" aria-modal="true">
-        <header><div><span><Settings size={16} /></span><div><strong>{dialog === "point" ? "Nuevo punto eléctrico" : dialog === "meter" ? "Configurar PM5560" : "Alarmas eléctricas"}</strong><small>{dialog === "point" ? "Objeto operacional que será monitoreado." : dialog === "meter" ? "Adquisición RS485 en modo sólo lectura." : "Umbrales operacionales del punto eléctrico; los límites quedan sin configurar cuando se dejan vacíos."}</small></div></div><button onClick={() => setDialog(null)} aria-label="Cerrar"><X size={18} /></button></header>
+        <header><div><span><Settings size={16} /></span><div><strong>{dialog === "point" ? "Nuevo punto eléctrico" : dialog === "meter" ? "Configurar medidor" : "Alarmas eléctricas"}</strong><small>{dialog === "point" ? "Objeto operacional que será monitoreado." : dialog === "meter" ? "Adquisición RS485 en modo sólo lectura." : "Umbrales operacionales del punto eléctrico; los límites quedan sin configurar cuando se dejan vacíos."}</small></div></div><button onClick={() => setDialog(null)} aria-label="Cerrar"><X size={18} /></button></header>
         <div className="cold-config-form">
           {dialog === "point" ? <>
             <div className="cold-config-columns">
@@ -423,7 +423,7 @@ export function ElectricalView({
           </>}
           {error && <div className="cold-config-error">{error}</div>}
         </div>
-        <footer><button className="secondary-button" onClick={() => setDialog(null)} disabled={busy}>Cancelar</button><button className="primary-button" onClick={() => void (dialog === "point" ? createPoint() : dialog === "alarms" ? saveAlarmConfig() : createMeter())} disabled={busy || (dialog === "meter" && !meterForm.port.trim())}>{busy ? "Guardando…" : dialog === "point" ? "Crear punto" : dialog === "alarms" ? "Guardar alarmas" : "Crear PM5560"}</button></footer>
+        <footer><button className="secondary-button" onClick={() => setDialog(null)} disabled={busy}>Cancelar</button><button className="primary-button" onClick={() => void (dialog === "point" ? createPoint() : dialog === "alarms" ? saveAlarmConfig() : createMeter())} disabled={busy || (dialog === "meter" && !meterForm.port.trim())}>{busy ? "Guardando…" : dialog === "point" ? "Crear punto" : dialog === "alarms" ? "Guardar alarmas" : "Crear medidor"}</button></footer>
       </section>
     </div>}
   </div>;
