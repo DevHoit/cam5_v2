@@ -346,3 +346,17 @@ Validación de `f0e571bf`:
 ### Siguiente límite técnico
 
 La plantilla ya define qué métricas existen para un modelo, pero todavía no configura desde UI el mapa físico de adquisición por métrica (registro Modbus, función, tipo de dato, escala/endian). Ese mapping debe ser el siguiente bloque de Ingeniería para que un modelo Modbus completamente nuevo pueda configurarse sin tocar código.
+
+
+## Frontera Core / Gateway Agent — saneamiento arquitectónico (2026-10-04)
+
+Revisión realizada antes de modificar el modelo persistente:
+
+- El Gateway Agent es responsable de protocolos, buses, registros, drivers, escalas y decodificación física.
+- El contrato de telemetría V1 hacia Core acepta identidad + métricas semánticas normalizadas y rechaza detalles de adquisición.
+- `driver`, `protocol`, mapas de registros, perfiles de lectura y topología física pueden permanecer temporalmente en Core como **plano de control/configuración** para el Gateway y como compatibilidad CAM-5; no forman parte del modelo operativo genérico.
+- El fallback de configuración por registros de `/api/v1/gateway/config` quedó limitado explícitamente a dispositivos CAM-5 legacy.
+- El workspace `/api/v1/configuration` basado en host/puerto/Unit ID/rangos/registros quedó limitado explícitamente a CAM-5 legacy.
+- El commissioning basado en mapa FC03 418–522 quedó limitado explícitamente a CAM-5 legacy.
+- No se eliminan todavía `readingProfiles`, `readingProfileRanges`, `registerDefinitions`, `deviceRegisterSamples` ni campos técnicos de `devices`: siguen teniendo dependencias reales de compatibilidad y configuración. Su retiro requiere una migración separada del plano de control al Gateway Agent.
+- Regla V1: nuevos dispositivos normalizados no deben depender de esas estructuras para ingestión, histórico, alarmas, tendencias ni reportes.
