@@ -73,7 +73,6 @@ export function EngineeringHubView({
         ? { icon: IconTemperature, title: "Cadena de frío", detail: "Cámara, sensores, rangos térmicos y excursiones.", view: "cold-chain" as const }
         : { icon: IconCircuitCell, title: "Monitoreo de condición", detail: "Métricas, canales y configuración técnica del dispositivo.", view: "settings" as const };
   const CapabilityIcon = capability.icon;
-  const cam5Like = !["electrical_point", "ats", "cold_room"].includes(asset.type);
 
   return <div className="engineering-hub">
     <section className="panel engineering-asset-card">
@@ -95,13 +94,13 @@ export function EngineeringHubView({
         <IconChevronRight size={18} />
       </button>
 
-      {cam5Like && <button className="panel engineering-tool-card" onClick={() => onNavigate("diagnostics")}>
+      {<button className="panel engineering-tool-card" onClick={() => onNavigate("diagnostics")}>
         <span><IconActivity size={21} /></span>
         <div><small>Validación técnica</small><strong>Diagnóstico de adquisición</strong><p>Calidad, latencia y continuidad de la cadena del dispositivo.</p></div>
         <IconChevronRight size={18} />
       </button>}
 
-      {cam5Like && <button className="panel engineering-tool-card" onClick={() => onNavigate("commissioning")}>
+      {<button className="panel engineering-tool-card" onClick={() => onNavigate("commissioning")}>
         <span><IconSettings size={21} /></span>
         <div><small>Habilitación</small><strong>Puesta en marcha</strong><p>Controles, evidencias y habilitación del dispositivo para operación.</p></div>
         <IconChevronRight size={18} />
@@ -110,7 +109,7 @@ export function EngineeringHubView({
 
     <section className="panel engineering-tool-card" style={{ marginBottom: "1rem" }}>
       <span><IconListDetails size={21} /></span>
-      <div><small>Catálogo técnico</small><strong>Modelos de dispositivo</strong><p>Plantillas reutilizables de driver, protocolo, capacidades y métricas para nuevas altas.</p></div>
+      <div><small>Catálogo técnico</small><strong>Modelos de dispositivo</strong><p>Plantillas reutilizables de capacidades y métricas para nuevas altas.</p></div>
     </section>
     <DeviceModelCatalog canWrite={canWrite} notify={notify} />
 
