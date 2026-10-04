@@ -1,7 +1,7 @@
 # HOIT Critical Infrastructure Platform
 ## Especificación funcional y técnica — Documento vivo
 
-**Versión:** 0.8  
+**Versión:** 0.9  
 **Fecha:** 2026-10-03  
 **Estado:** Backend + Frontend V1 en cierre; integración Gateway postergada a fase final  
 **Origen:** Evolución de la plataforma HOIT/CAM5
@@ -45,7 +45,8 @@ Esta versión incorpora el estado real del repositorio `DevHoit/cam5_v2`, rama `
 - contrato HOIT V1 de ingest estrictamente normalizado: Cloud rechaza campos de protocolo/registro fuera del envelope y `metrics`;
 - UI de Operación con NOC consolidado, ventanas de mantenimiento y turnos/on-call conectados al backend;
 - administración de asignaciones on-call por usuario, vigencia y prioridad, con prevención de solapamientos ambiguos y audit trail;
-- NOC por sitio con alarmas activas, salud de gateways/dispositivos, mantenimiento y cobertura on-call en una sola vista.
+- NOC por sitio con alarmas activas, salud de gateways/dispositivos, mantenimiento y cobertura on-call en una sola vista;
+- administración de políticas de escalamiento Core multinivel: demora, destinatario `user`/`role`/`on_call_group`, canales Email/WhatsApp, habilitación y audit trail.
 
 `PARTIAL`:
 
@@ -992,7 +993,7 @@ Prioridad inmediata actualizada:
 1. estabilizar CI y mantener migraciones automáticas verdes;
 2. cerrar administración de plataforma: cliente, sitio, usuarios, roles y alcances;
 3. UI Operación: Mantenimiento, Turnos y NOC — `IMPLEMENTED` base; falta refinamiento E2E de asignaciones y políticas;
-4. completar administración avanzada de políticas/escalamiento y resolver semántica de repetición;
+4. administración de políticas/escalamiento multinivel — `IMPLEMENTED` base; resolver semántica de repetición `repeat_count > 1` y vinculación visual avanzada con reglas genéricas;
 5. congelar contrato faltante de histéresis, calendario de reglas y repetición de escalamiento;
 6. habilitar Meta Business real y templates;
 7. cerrar pruebas E2E de Backend + Frontend y dejar portal listo para piloto;
@@ -2381,7 +2382,7 @@ Después de M1 pueden avanzar en paralelo gateway, backend y frontend con menor 
 | Asignaciones on-call | `IMPLEMENTED` base | usuario, vigencia, prioridad y control de ambigüedad |
 | Reglas/umbrales | `IMPLEMENTED` base | Centro de alertas permite editar reglas persistentes |
 | Canales/notificaciones | `IMPLEMENTED` base | canales, políticas y entregas |
-| Escalamiento avanzado | `PARTIAL` | falta semántica final de `repeat_count > 1` y refinamiento UI |
+| Escalamiento avanzado | `PARTIAL` | administración multinivel Backend + Frontend implementada; `repeat_count > 1` sigue pendiente por semántica |
 | Integración Gateway física | `PENDING` deliberado | se retoma al terminar Backend + Frontend |
 
 `DECISION` El NOC no reemplaza los módulos especializados; consolida señales operacionales que requieren atención inmediata y enlaza con las vistas de gestión.
