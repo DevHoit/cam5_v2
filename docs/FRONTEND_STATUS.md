@@ -80,6 +80,7 @@ Para CAM-5 legacy se conserva el histórico por canales como fallback compatible
 - `ddf03650` — fix(history): expose normalized metric data type
 - `804b492f` — feat(trends): open normalized metric from portal context
 - `5b632e4a` — feat(frontend): connect normalized history to generic trends
+- `9f9abdca` — fix(frontend): avoid synchronous state reset in history effect
 
 Commit administrativo inmediatamente anterior:
 
@@ -164,7 +165,7 @@ No bloquear el cierre V1 por esta evolución.
 
 **Centro de alertas genérico + navegación desde alarmas**, seguido por **Reportes**, y después una pasada **Preview/E2E visual completa**.
 
-Antes de declarar cerrado el bloque Tendencias/Histórico, confirmar CI verde del HEAD y probar en Preview con al menos un activo eléctrico/PM, ATS, cold-chain y CAM-5.
+El CI del HEAD funcional `9f9abdca` quedó disparado tras corregir el lint detectado en un commit intermedio. Confirmar su resultado verde y probar en Preview con al menos un activo eléctrico/PM, ATS, cold-chain y CAM-5.
 
 ## Nota para un nuevo chat
 
