@@ -228,8 +228,11 @@ const ConfirmContext = createContext<(request: ConfirmRequest) => void>(() => un
 const useConfirm = () => useContext(ConfirmContext);
 function canSeeNavItem(view: View, user: PortalSessionUser) {
   if (view === "users") return user.permissions.includes("users.manage");
-  if (view === "engineering" || view === "settings") return user.permissions.includes("settings.read") || user.permissions.includes("settings.write");
+  if (view === "engineering" || view === "settings" || view === "diagnostics" || view === "commissioning" || view === "provisioning") return user.permissions.includes("settings.read") || user.permissions.includes("settings.write");
   if (view === "notifications") return user.permissions.includes("notifications.read") || user.permissions.includes("notifications.write");
+  if (view === "reports") return user.permissions.includes("reports.read") || user.permissions.includes("reports.generate");
+  if (view === "history") return user.permissions.includes("history.read") || user.permissions.includes("history.export");
+  if (view === "alarms") return user.permissions.includes("alarms.read") || user.permissions.includes("alarms.acknowledge") || user.permissions.includes("alarms.manage");
   return true;
 }
 
@@ -1756,9 +1759,9 @@ export default function Home() {
       .catch((requestError) => notify(requestError instanceof Error ? requestError.message : "No fue posible reconocer la alarma.", "warning"));
   };
   const exportCsv = () => {
-    const rows = ["canal,tipo,ubicacion,valor,unidad,estado", ...sensors.filter((sensor) => sensor.enabled).map((sensor) => [sensor.id, sensor.type, sensor.zone, sensor.value, sensor.unit, sensor.state].join(","))];
+    const rows = ["metrica,tipo,ubicacion,valor,unidad,estado", ...sensors.filter((sensor) => sensor.enabled).map((sensor) => [sensor.id, sensor.type, sensor.zone, sensor.value, sensor.unit, sensor.state].join(","))];
     const url = URL.createObjectURL(new Blob([rows.join("\n")], { type: "text/csv;charset=utf-8" }));
-    const anchor = document.createElement("a"); anchor.href = url; anchor.download = "cam5-telemetria.csv"; anchor.click(); URL.revokeObjectURL(url);
+    const anchor = document.createElement("a"); anchor.href = url; anchor.download = "hoit-telemetria.csv"; anchor.click(); URL.revokeObjectURL(url);
     notify("Telemetría exportada correctamente.", "info");
   };
   const logout = async () => {
@@ -1916,7 +1919,7 @@ export default function Home() {
               notify={notify}
               confirm={(request) => setConfirmRequest(request)}
             />}
-            {view === "reports" && <DatabaseReportsView assetId={activePoint?.id ?? ""} assetLabel={activePoint ? `${activePoint.code} · ${activePoint.name}` : "Sin punto seleccionado"} timezone={hierarchy?.sites.find((site) => site.id === sessionUser.siteId)?.timezone ?? "America/Santiago"} canGenerate={sessionUser.permissions.includes("reports.generate")} canSchedule={sessionUser.permissions.includes("reports.schedule")} notify={notify} confirm={(request) => setConfirmRequest(request)} />}
+            {view === "reports" && <DatabaseReportsView assetId={activePoint?.id ?? ""} assetLabel={activePoint ? `${activePoint.code} · ${activePoint.name}` : "Sin activo seleccionado"} timezone={hierarchy?.sites.find((site) => site.id === sessionUser.siteId)?.timezone ?? "America/Santiago"} canGenerate={sessionUser.permissions.includes("reports.generate")} canSchedule={sessionUser.permissions.includes("reports.schedule")} notify={notify} confirm={(request) => setConfirmRequest(request)} />}
             {view === "settings" && <DatabaseSettingsView assetId={activePoint?.id ?? ""} canWrite={sessionUser.permissions.includes("settings.write")} notify={notify} confirm={(request) => setConfirmRequest(request)} onReloadHierarchy={loadHierarchy} />}
             {view === "provisioning" && <GatewayProvisioningView canWrite={sessionUser.permissions.includes("settings.write")} notify={notify} confirm={(request) => setConfirmRequest(request)} />}
             {view === "users" && <UsersView currentUserId={sessionUser.id} currentRoleKey={sessionUser.roleKey} clientScopes={sessionUser.clientScopes} sites={sessionUser.sites} activeSiteId={sessionUser.siteId} activeClientId={sessionUser.clientId} canManageUsers={sessionUser.permissions.includes("users.manage")} />}
