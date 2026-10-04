@@ -75,10 +75,10 @@ jobs:
           app/api/v1/users/[id]/route.ts
           app/api/v1/system/operations/route.ts
           app/api/v1/notification-deliveries/route.ts
-          app/api/v1/maintenance-windows/route.ts
+          app/api/v1/maintenance-windows/route.ts app/api/v1/shifts/route.ts
           app/api/v1/webhooks/whatsapp/route.ts
           app/api/v1/notifications/summary/route.ts
-          app/notifications-view.tsx
+          app/notifications-view.tsx app/operations-view.tsx app/shifts-view.tsx
           scripts/run-operations-cycle.ts
           scripts/promote-platform-admin.ts
           app/cold-chain-view.tsx
