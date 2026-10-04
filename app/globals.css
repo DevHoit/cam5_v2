@@ -2468,3 +2468,12 @@ button.dashboard-kpi:hover { transform: translateY(-1px); border-color: #bae6fd;
   .dashboard-site-row { grid-template-columns: 34px 1fr 16px; }
   .dashboard-health { display: none; }
 }
+
+.engineering-context-nav { margin-bottom: 14px; padding: 10px 12px; display: flex; align-items: center; justify-content: space-between; gap: 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; }
+.engineering-context-nav > div:first-child { display: flex; flex-direction: column; gap: 2px; }
+.engineering-context-nav > div:first-child strong { color: #334155; font-size: var(--text-sm); }
+.engineering-context-nav > div:last-child { padding: 3px; display: flex; gap: 3px; overflow-x: auto; background: #eef2f7; border-radius: 9px; }
+.engineering-context-nav button { min-height: 34px; padding: 0 10px; color: #64748b; background: transparent; border: 0; border-radius: 7px; font-size: var(--text-xs); font-weight: 700; white-space: nowrap; }
+.engineering-context-nav button.active { color: #0f172a; background: white; box-shadow: 0 1px 4px rgba(15,23,42,.08); }
+.engineering-context-nav button:hover { color: #0369a1; }
+@media (max-width: 720px) { .engineering-context-nav { align-items: flex-start; flex-direction: column; } .engineering-context-nav > div:last-child { width: 100%; } }
