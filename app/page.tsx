@@ -1687,6 +1687,7 @@ export default function Home() {
   };
 
   useEffect(() => {
+    if (!sessionUser) return;
     const activeSensorIds = new Set(activeSensorRouteKey.split(","));
     const applyRoute = () => {
       const params = new URLSearchParams(window.location.search);
@@ -1722,7 +1723,7 @@ export default function Home() {
   }, [activeSensorRouteKey, sessionUser]);
 
   const navigate = (next: View, parameters?: Record<string, string>) => {
-    if (!canSeeNavItem(next, sessionUser)) {
+    if (!sessionUser || !canSeeNavItem(next, sessionUser)) {
       notify("Tu perfil no tiene permisos para abrir este módulo.", "warning");
       return;
     }
