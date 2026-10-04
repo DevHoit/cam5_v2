@@ -146,7 +146,7 @@ export function DashboardView({
         <p>Condición consolidada de la operación, independiente del fabricante o protocolo de cada dispositivo.</p>
       </div>
       <div className="dashboard-hero-actions">
-        <span><IconClock size={14} /> Actualizado {relativeTime(data.generatedAt).toLowerCase()}</span>
+        <span><IconClock size={14} /> Actualizado {new Intl.DateTimeFormat("es-CL", { timeStyle: "short" }).format(new Date(data.generatedAt))}</span>
         <button className="secondary-button" onClick={refresh} disabled={loading}><IconRefresh className={loading ? "spin" : ""} size={15} /> Actualizar</button>
       </div>
     </section>
@@ -215,7 +215,7 @@ export function DashboardView({
           <div className="dashboard-alarm-list">
             {data.priorityAlarms.slice(0, 5).map((alarm) => <button key={alarm.id} onClick={() => onSelectAsset(alarm.siteId, alarm.assetId)}>
               <i className={`priority-state ${alarm.severity === "critical" ? "critical" : "warning"}`} />
-              <span><strong>{alarm.title}</strong><small>{alarm.assetCode} · {relativeTime(alarm.openedAt)}</small></span>
+              <span><strong>{alarm.title}</strong><small>{alarm.assetCode} · {relativeTime(alarm.openedAt, data.generatedAt)}</small></span>
               <IconArrowRight size={15} />
             </button>)}
             {!data.priorityAlarms.length && <div className="dashboard-all-clear"><IconCircleCheck size={22} /><div><strong>Sin eventos activos</strong><p>La operación no registra alertas abiertas o reconocidas.</p></div></div>}
