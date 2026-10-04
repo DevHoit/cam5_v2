@@ -407,3 +407,28 @@ Estado de validación del último cambio funcional:
 Deuda técnica restante:
 - El esquema conserva tablas y columnas legacy para migración/compatibilidad histórica. No forman parte del contrato funcional nuevo.
 - Antes de borrarlas físicamente se debe confirmar que seeds, migraciones históricas y procesos de transición no las requieran.
+
+
+## Bloque cerrado: provisionamiento Core protocol-agnostic (2026-10-04)
+
+Se completó el saneamiento del flujo Cliente → Sitio → Activo → Gateway → Dispositivo.
+
+- Jerarquía ya no expone host, puerto, protocolo ni Unit ID del dispositivo.
+- La edición de dispositivos desde Core ya no permite modificar direccionamiento físico.
+- Al crear un dispositivo, Core ya no genera valores ficticios de host/puerto/Unit ID.
+- El vínculo operativo almacenado por Core es lógico: activo, gateway, modelo, capacidades y métricas.
+- El catálogo de modelos presenta una “versión de definición” semántica en lugar de una “versión de mapa” físico. La columna histórica se conserva internamente hasta una migración de esquema posterior.
+- Las plantillas de credenciales del Gateway usan variables HOIT_* en lugar de CAM5_*.
+- CAM5 permanece como un modelo/dispositivo compatible, sin tratamiento especial en el flujo genérico nuevo.
+
+Validación del bloque:
+- Lint HOIT Core: PASS.
+- Simuladores Python: PASS.
+- HOIT Gateway Agent: PASS.
+- Tests DB/integración: PASS.
+- Build Next.js/TypeScript: PASS.
+
+Siguiente foco recomendado:
+- sanear el control plane para que la configuración física se origine/gestione explícitamente del lado Gateway sin reintroducirla como configuración de producto en Core;
+- revisar nombres legacy CAM5 restantes y clasificarlos entre compatibilidad histórica y dependencias activas;
+- después realizar E2E autenticado de roles y onboarding completo.
