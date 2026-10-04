@@ -231,6 +231,7 @@ export function GatewayProvisioningView({
       "# Guarda este archivo con permisos de lectura limitados al servicio.",
       `HOIT_API_BASE=${base}`,
       `HOIT_GATEWAY_TOKEN=${value.token}`,
+      `HOIT_GATEWAY_ID=${value.credential.gateway.code}`,
       "HOIT_RUN_ONCE=0",
       "",
     ].join("\n");
@@ -241,6 +242,7 @@ export function GatewayProvisioningView({
     "# HoitLive Core · plantilla de configuración",
     `HOIT_API_BASE=${window.location.origin}/api/v1`,
     "HOIT_GATEWAY_TOKEN=PEGAR_TOKEN_GENERADO_EN_EL_PORTAL",
+    `HOIT_GATEWAY_ID=${gateway.code}`,
     "HOIT_RUN_ONCE=1",
     "",
   ].join("\n"));
