@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { ShiftsView } from "./shifts-view";
 import { NocView } from "./noc-view";
+import { EscalationPoliciesView } from "./escalation-policies-view";
 import {
   IconAlertTriangle,
   IconBan,
@@ -84,7 +85,7 @@ export function OperationsView({
   notify: (message: string, tone?: NoticeTone) => void;
   confirm: (request: ConfirmRequest) => void;
 }) {
-  const [tab, setTab] = useState<"noc" | "maintenance" | "shifts">("noc");
+  const [tab, setTab] = useState<"noc" | "maintenance" | "shifts" | "escalation">("noc");
   const [data, setData] = useState<MaintenanceResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -158,12 +159,14 @@ export function OperationsView({
         <button className={tab === "noc" ? "active" : ""} onClick={() => setTab("noc")}>NOC</button>
         <button className={tab === "maintenance" ? "active" : ""} onClick={() => setTab("maintenance")}>Mantenimiento</button>
         <button className={tab === "shifts" ? "active" : ""} onClick={() => setTab("shifts")}>Turnos</button>
+        <button className={tab === "escalation" ? "active" : ""} onClick={() => setTab("escalation")}>Escalamiento</button>
       </div>
     </div>
   </article>;
 
   if (tab === "noc") return <>{tabs}<NocView /></>;
   if (tab === "shifts") return <>{tabs}<ShiftsView canManageClient={canManageClient} notify={notify} /></>;
+  if (tab === "escalation") return <>{tabs}<EscalationPoliciesView canWrite={canWrite} notify={notify} /></>;
 
   return <>
     {tabs}
