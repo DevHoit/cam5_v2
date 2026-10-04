@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { AccountView } from "./account-view";
+import { DashboardView } from "./dashboard-view";
 import { AtsView } from "./ats-view";
 import { Cam5CommissioningView } from "./cam5-engineering";
 import { ColdChainView } from "./cold-chain-view";
@@ -63,7 +64,7 @@ import {
   IconX as X,
 } from "@tabler/icons-react";
 
-type View = "overview" | "cabinet" | "electrical" | "ats" | "cold-chain" | "diagnostics" | "commissioning" | "trends" | "alarms" | "history" | "assets" | "operations" | "reports" | "settings" | "provisioning" | "users" | "notifications" | "account";
+type View = "dashboard" | "overview" | "cabinet" | "electrical" | "ats" | "cold-chain" | "diagnostics" | "commissioning" | "trends" | "alarms" | "history" | "assets" | "operations" | "reports" | "settings" | "provisioning" | "users" | "notifications" | "account";
 type Severity = "critical" | "warning" | "info";
 type SensorState = "normal" | "warning" | "critical";
 type HistoryTab = "measurements" | "alarms" | "audit";
@@ -341,63 +342,57 @@ function useSensorData(override?: PortalTelemetryState) {
 const navGroups = [
   {
     index: "01",
-    label: "Supervisión",
+    label: "Inicio",
     items: [
-      { id: "overview" as View, label: "Resumen operativo", description: "Condición general", icon: LayoutDashboard },
-      { id: "cabinet" as View, label: "Mapa de condición", description: "Sensores y cabina", icon: CircuitBoard },
-      { id: "electrical" as View, label: "Monitoreo eléctrico", description: "PM5560 y variables eléctricas", icon: Zap },
-      { id: "ats" as View, label: "ATS", description: "DSE8660 y transferencia", icon: Transfer },
-      { id: "cold-chain" as View, label: "Cadena de frío", description: "Cámaras de refrigeración", icon: Thermometer },
+      { id: "dashboard" as View, label: "Dashboard", description: "Visión global de la operación", icon: LayoutDashboard },
     ],
   },
   {
     index: "02",
-    label: "Diagnóstico",
+    label: "Supervisión",
     items: [
-      { id: "diagnostics" as View, label: "Diagnóstico de comunicación", description: "Controlador, Modbus y gateway", icon: Radio },
-      { id: "commissioning" as View, label: "Puesta en marcha", description: "Conectar y validar CAM-5", icon: ClipboardCheck },
-      { id: "trends" as View, label: "Tendencias", description: "Evolución por canal", icon: History },
-      { id: "alarms" as View, label: "Centro de alertas", description: "Triage y seguimiento", icon: BellRing },
-      { id: "history" as View, label: "Histórico", description: "Mediciones y trazabilidad", icon: Database },
+      { id: "overview" as View, label: "Resumen del activo", description: "Condición y variables", icon: CircuitBoard },
+      { id: "trends" as View, label: "Tendencias", description: "Evolución de métricas", icon: TrendingUp },
     ],
   },
   {
     index: "03",
-    label: "Gestión",
+    label: "Operación",
     items: [
-      { id: "assets" as View, label: "Estructura operacional", description: "Clientes, sitios y medición", icon: Factory },
-      { id: "operations" as View, label: "Operación", description: "Mantenimiento, turnos y NOC", icon: Clock3 },
-      { id: "reports" as View, label: "Reportes", description: "Informes y programación", icon: FileReport },
+      { id: "operations" as View, label: "NOC y continuidad", description: "Operación y guardias", icon: Clock3 },
+      { id: "alarms" as View, label: "Centro de alertas", description: "Triage y seguimiento", icon: BellRing },
+      { id: "history" as View, label: "Histórico", description: "Datos y trazabilidad", icon: Database },
+      { id: "reports" as View, label: "Reportes", description: "Análisis e informes", icon: FileReport },
     ],
   },
   {
     index: "04",
     label: "Administración",
     items: [
-      { id: "settings" as View, label: "Configuración", description: "Activo, Modbus y gateway", icon: Settings },
-      { id: "provisioning" as View, label: "Provisionamiento", description: "Credenciales y conexión", icon: Key },
+      { id: "assets" as View, label: "Organización y activos", description: "Clientes, sitios y activos", icon: Factory },
+      { id: "notifications" as View, label: "Notificaciones", description: "Canales y entregas", icon: Mail },
       { id: "users" as View, label: "Usuarios y roles", description: "Acceso y permisos", icon: Users },
-      { id: "notifications" as View, label: "Notificaciones", description: "Canales y escalamiento", icon: Mail },
-      { id: "account" as View, label: "Mi cuenta", description: "Perfil, contraseña y sesiones", icon: ShieldCheck },
+      { id: "settings" as View, label: "Configuración técnica", description: "Configuración avanzada", icon: Settings },
     ],
   },
 ];
 
 const viewTitles: Record<View, { title: string; description: string }> = {
-  overview: { title: "Resumen de condición", description: "Estado predictivo de activos críticos en tiempo real." },
-  cabinet: { title: "Mapa de condición", description: "Ubicación, lectura y estado de cada canal instrumentado." },
+  dashboard: { title: "Dashboard", description: "Visión consolidada de sitios, activos, alertas y continuidad operacional." },
+  overview: { title: "Resumen del activo", description: "Condición, métricas y eventos del activo seleccionado." },
+  cabinet: { title: "Vista del activo", description: "Distribución y estado de las métricas instrumentadas del activo." },
   electrical: { title: "Monitoreo eléctrico", description: "Supervisión trifásica normalizada de medidores Schneider PowerLogic PM5560." },
   ats: { title: "ATS", description: "Supervisión normalizada de controladores Deep Sea Electronics DSE8660 MKII y transferencia entre fuentes." },
   "cold-chain": { title: "Cadena de frío", description: "Supervisión de una o más cámaras de refrigeración y sus sensores asociados." },
-  diagnostics: { title: "Diagnóstico de comunicación", description: "Comprobación de la cadena Controlador → Gateway → HoitLive Core." },
-  commissioning: { title: "Puesta en marcha CAM-5", description: "Identidad, entradas, registros, alarmas y controles previos a la conexión productiva." },
+  diagnostics: { title: "Diagnóstico avanzado", description: "Estado técnico de la cadena de adquisición del activo." },
+  commissioning: { title: "Puesta en marcha", description: "Validaciones y evidencias previas a incorporar un dispositivo a operación." },
   trends: { title: "Tendencias", description: "Evolución térmica, descarga parcial y humedad ambiental." },
   alarms: { title: "Centro de alertas", description: "Triage operativo, reconocimiento y trazabilidad de eventos." },
   history: { title: "Histórico", description: "Mediciones, alarmas y cambios administrativos en una sola trazabilidad." },
-  assets: { title: "Estructura operacional", description: "Clientes, sitios, puntos de medición, gateways y controladores asociados." },
+  assets: { title: "Organización y activos", description: "Clientes, sitios, activos, gateways y dispositivos asociados." },
   operations: { title: "Operación", description: "Ventanas de mantenimiento, turnos y continuidad operacional." },
   reports: { title: "Reportes", description: "Informes de condición, eventos y cumplimiento para operación y confiabilidad." },
-  settings: { title: "Configuración", description: "Parámetros del activo, canales de adquisición y comunicaciones." },
+  settings: { title: "Configuración técnica", description: "Parámetros avanzados del activo y su adquisición. Visible sólo para perfiles técnicos." },
   provisioning: { title: "Provisionamiento del gateway", description: "Credenciales seguras, configuración inicial y verificación de conexión." },
   users: { title: "Usuarios y roles", description: "Control de acceso y permisos para la operación técnica." },
   notifications: { title: "Notificaciones", description: "Canales de entrega, reglas de escalamiento y trazabilidad." },
@@ -1151,7 +1146,7 @@ function OperationalHierarchyView({
         {resource === "site" && <label><span>Cliente</span><select required value={form.clientId || hierarchy.active.clientId} onChange={(event) => setForm({ ...form, clientId: event.target.value })}>{hierarchy.clients.filter((client) => client.active).map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select></label>}
         {resource === "point" && <><label><span>Área</span><input value={form.area} onChange={(event) => setForm({ ...form, area: event.target.value })} placeholder="Sala o área eléctrica" /></label><label><span>Tensión nominal (kV)</span><input type="number" min="0" step="0.1" value={form.voltage} onChange={(event) => setForm({ ...form, voltage: event.target.value })} /></label></>}
         {resource === "gateway" && <label><span>Dirección IP</span><input value={form.ipAddress} onChange={(event) => setForm({ ...form, ipAddress: event.target.value })} placeholder="10.0.0.20" /></label>}
-        {resource === "controller" && <><label><span>Punto de medición</span><select required value={form.pointId} onChange={(event) => setForm({ ...form, pointId: event.target.value })}><option value="">Seleccionar…</option>{hierarchy.points.filter((point) => point.active).map((point) => <option key={point.id} value={point.id}>{point.code} · {point.name}</option>)}</select></label><label><span>Gateway</span><select required value={form.gatewayId} onChange={(event) => setForm({ ...form, gatewayId: event.target.value })}><option value="">Seleccionar…</option>{hierarchy.gateways.filter((gateway) => gateway.active).map((gateway) => <option key={gateway.id} value={gateway.id}>{gateway.code} · {gateway.name}</option>)}</select></label><label><span>IP del CAM5</span><input required value={form.host} onChange={(event) => setForm({ ...form, host: event.target.value })} placeholder="192.168.10.42" /></label><label><span>Puerto</span><input type="number" min="1" max="65535" required value={form.port} onChange={(event) => setForm({ ...form, port: event.target.value })} /></label><label><span>Unit ID</span><input type="number" min="1" max="247" required value={form.unitId} onChange={(event) => setForm({ ...form, unitId: event.target.value })} /></label></>}
+        {resource === "controller" && <><label><span>Activo</span><select required value={form.pointId} onChange={(event) => setForm({ ...form, pointId: event.target.value })}><option value="">Seleccionar…</option>{hierarchy.points.filter((point) => point.active).map((point) => <option key={point.id} value={point.id}>{point.code} · {point.name}</option>)}</select></label><label><span>Gateway</span><select required value={form.gatewayId} onChange={(event) => setForm({ ...form, gatewayId: event.target.value })}><option value="">Seleccionar…</option>{hierarchy.gateways.filter((gateway) => gateway.active).map((gateway) => <option key={gateway.id} value={gateway.id}>{gateway.code} · {gateway.name}</option>)}</select></label><label><span>IP del CAM5</span><input required value={form.host} onChange={(event) => setForm({ ...form, host: event.target.value })} placeholder="192.168.10.42" /></label><label><span>Puerto</span><input type="number" min="1" max="65535" required value={form.port} onChange={(event) => setForm({ ...form, port: event.target.value })} /></label><label><span>Unit ID</span><input type="number" min="1" max="247" required value={form.unitId} onChange={(event) => setForm({ ...form, unitId: event.target.value })} /></label></>}
         <button className="primary-button" type="submit" disabled={saving || (resource === "controller" && (!hierarchy.points.length || !hierarchy.gateways.length))}>{saving ? "Guardando…" : "Registrar"}</button>
       </form>}
 
@@ -1493,7 +1488,7 @@ export default function Home() {
   const [telemetryState, setTelemetryState] = useState<PortalTelemetryState>({ status: "loading", data: null });
   const sensors = useSensorData(telemetryState);
   const activeSensorRouteKey = sensors.filter((sensor) => sensor.enabled).map((sensor) => sensor.id).join(",");
-  const [view, setView] = useState<View>("overview");
+  const [view, setView] = useState<View>("dashboard");
   const [menuOpen, setMenuOpen] = useState(false);
   const [period, setPeriod] = useState("24 h");
   const [trendSensorId, setTrendSensorId] = useState("");
@@ -1640,7 +1635,7 @@ export default function Home() {
     };
     if (!new URLSearchParams(window.location.search).has("view")) {
       const url = new URL(window.location.href);
-      url.searchParams.set("view", "overview");
+      url.searchParams.set("view", "dashboard");
       window.history.replaceState({}, "", url);
     }
     applyRoute();
@@ -1700,8 +1695,11 @@ export default function Home() {
     finally { setSessionUser(null); setHierarchy(null); setAuthState("anonymous"); }
   };
 
-  const switchSite = async (siteId: string) => {
-    if (siteId === sessionUser?.siteId) return;
+  const switchSite = async (siteId: string, preferredAssetId?: string) => {
+    if (siteId === sessionUser?.siteId) {
+      if (preferredAssetId) setActivePointId(preferredAssetId);
+      return;
+    }
     try {
       const response = await portalRequest<{ user: PortalSessionUser }>("/api/v1/auth/context", { method: "PATCH", body: JSON.stringify({ siteId }) });
       setSessionUser(response.user);
@@ -1709,10 +1707,17 @@ export default function Home() {
       setSystemMode("loading");
       setActivePointId("");
       await loadHierarchy();
+      if (preferredAssetId) setActivePointId(preferredAssetId);
       notify(`Contexto cambiado a ${response.user.siteName}.`, "info");
     } catch (requestError) {
       notify(requestError instanceof Error ? requestError.message : "No fue posible cambiar de sitio.", "warning");
     }
+  };
+
+  const openDashboardAsset = async (siteId: string, assetId: string) => {
+    await switchSite(siteId, assetId);
+    setActivePointId(assetId);
+    navigate("overview");
   };
 
   if (passwordResetToken) return <PasswordResetScreen token={passwordResetToken} onComplete={() => {
@@ -1757,7 +1762,7 @@ export default function Home() {
       <aside className={`sidebar ${menuOpen ? "open" : ""}`}>
         <div className="brand-block">
           <span className="brand-mark"><Zap size={22} strokeWidth={2.3} /></span>
-          <div className="brand-copy"><span className="brand-name"><strong>HoitLive</strong><b>Core</b></span><small>Monitoreo de condición eléctrica</small></div>
+          <div className="brand-copy"><span className="brand-name"><strong>HoitLive</strong><b>Core</b></span><small>Monitoreo industrial inteligente</small></div>
           <button className="sidebar-close" aria-label="Cerrar menú" onClick={() => setMenuOpen(false)}><X size={20} /></button>
         </div>
 
@@ -1789,14 +1794,15 @@ export default function Home() {
 
       <main className="main-shell">
         <header className="topbar">
-          <div className="topbar-left"><button className="menu-button" aria-label="Abrir navegación" onClick={() => setMenuOpen(true)}><Menu size={22} /></button><span className="mobile-brand"><Zap size={18} fill="currentColor" /></span><div className="operational-context"><Building2 size={17} /><label><span>Cliente</span><select value={sessionUser.clientId} onChange={(event) => { const firstSite = hierarchy?.sites.find((site) => site.active && site.clientId === event.target.value); if (firstSite) void switchSite(firstSite.id); }} aria-label="Cliente activo">{hierarchy?.clients.filter((client) => client.active).map((client) => <option key={client.id} value={client.id}>{client.name}</option>) ?? <option value={sessionUser.clientId}>{sessionUser.clientName}</option>}</select></label><ChevronRight size={14} /><label><span>Sitio</span><select value={sessionUser.siteId} onChange={(event) => void switchSite(event.target.value)} aria-label="Sitio activo">{(hierarchy?.sites ?? sessionUser.sites).filter((site) => site.clientId === sessionUser.clientId && (!("active" in site) || site.active)).map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}</select></label><ChevronRight size={14} /><label><span>Punto de medición</span><select value={activePoint?.id ?? ""} onChange={(event) => { setTelemetryState({ status: "loading", data: null }); setSystemMode("loading"); setActivePointId(event.target.value); }} aria-label="Punto de medición activo"><option value="">Sin punto seleccionado</option>{hierarchy?.points.filter((point) => point.active).map((point) => <option key={point.id} value={point.id}>{point.code} · {point.name}</option>)}</select></label></div></div>
+          <div className="topbar-left"><button className="menu-button" aria-label="Abrir navegación" onClick={() => setMenuOpen(true)}><Menu size={22} /></button><span className="mobile-brand"><Zap size={18} fill="currentColor" /></span><div className="operational-context"><Building2 size={17} /><label><span>Cliente</span><select value={sessionUser.clientId} onChange={(event) => { const firstSite = hierarchy?.sites.find((site) => site.active && site.clientId === event.target.value); if (firstSite) void switchSite(firstSite.id); }} aria-label="Cliente activo">{hierarchy?.clients.filter((client) => client.active).map((client) => <option key={client.id} value={client.id}>{client.name}</option>) ?? <option value={sessionUser.clientId}>{sessionUser.clientName}</option>}</select></label><ChevronRight size={14} /><label><span>Sitio</span><select value={sessionUser.siteId} onChange={(event) => void switchSite(event.target.value)} aria-label="Sitio activo">{(hierarchy?.sites ?? sessionUser.sites).filter((site) => site.clientId === sessionUser.clientId && (!("active" in site) || site.active)).map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}</select></label><ChevronRight size={14} /><label><span>Punto de medición</span><select value={activePoint?.id ?? ""} onChange={(event) => { setTelemetryState({ status: "loading", data: null }); setSystemMode("loading"); setActivePointId(event.target.value); }} aria-label="Activo seleccionado"><option value="">Sin activo seleccionado</option>{hierarchy?.points.filter((point) => point.active).map((point) => <option key={point.id} value={point.id}>{point.code} · {point.name}</option>)}</select></label></div></div>
           <div className="topbar-right"><span className="authenticated-role"><ShieldCheck size={15} /><span><small>Sesión activa</small><strong>{sessionUser.roleName}</strong></span></span><div className={`live-state live-${acquisitionMode}`} aria-live="polite"><span /><div><strong>{acquisitionTitle}</strong><small>{acquisitionDetail}</small></div></div><button className="topbar-logout" onClick={logout} aria-label="Cerrar sesión"><LogOut size={18} /></button></div>
         </header>
 
         <div className="content-scroll">
           <div className="page-content">
-            {view !== "cold-chain" && view !== "electrical" && systemMode !== "normal" && <section className={`operational-banner banner-${systemMode}`} role={systemMode === "offline" || systemMode === "error" ? "alert" : "status"} aria-live="polite"><span>{systemMode === "offline" ? <PlugConnected size={19} /> : systemMode === "loading" ? <Refresh className="spin" size={19} /> : systemMode === "error" ? <AlertTriangle size={19} /> : <Clock3 size={19} />}</span><div><strong>{systemMessage.title}</strong><p>{systemMessage.detail}</p></div>{systemMode !== "loading" && <button onClick={() => { setTelemetryState({ status: "loading", data: null }); setSystemMode("loading"); setTelemetryRefreshKey((current) => current + 1); notify("Consultando nuevamente la telemetría.", "info"); }}><Refresh size={15} /> Reintentar</button>}</section>}
-            <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> Gestión de activos críticos</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{(view === "overview" || view === "cabinet") && <button className="secondary-button" onClick={() => setVisibilityOpen(true)} disabled={!activePoint || !sensors.some((sensor) => sensor.enabled)}><AdjustmentsHorizontal size={16} /><span>Personalizar canales</span></button>}{view !== "assets" && view !== "settings" && view !== "provisioning" && view !== "users" && view !== "notifications" && view !== "account" && view !== "reports" && view !== "diagnostics" && view !== "commissioning" && view !== "trends" && view !== "history" && <button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button>}<button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{alarmSummary.critical + alarmSummary.warning} alertas activas</button></div></section>
+            {view !== "dashboard" && view !== "cold-chain" && view !== "electrical" && systemMode !== "normal" && <section className={`operational-banner banner-${systemMode}`} role={systemMode === "offline" || systemMode === "error" ? "alert" : "status"} aria-live="polite"><span>{systemMode === "offline" ? <PlugConnected size={19} /> : systemMode === "loading" ? <Refresh className="spin" size={19} /> : systemMode === "error" ? <AlertTriangle size={19} /> : <Clock3 size={19} />}</span><div><strong>{systemMessage.title}</strong><p>{systemMessage.detail}</p></div>{systemMode !== "loading" && <button onClick={() => { setTelemetryState({ status: "loading", data: null }); setSystemMode("loading"); setTelemetryRefreshKey((current) => current + 1); notify("Consultando nuevamente la telemetría.", "info"); }}><Refresh size={15} /> Reintentar</button>}</section>}
+            <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> Gestión de activos críticos</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{(view === "overview" || view === "cabinet") && <button className="secondary-button" onClick={() => setVisibilityOpen(true)} disabled={!activePoint || !sensors.some((sensor) => sensor.enabled)}><AdjustmentsHorizontal size={16} /><span>Personalizar canales</span></button>}{view !== "dashboard" && view !== "assets" && view !== "settings" && view !== "provisioning" && view !== "users" && view !== "notifications" && view !== "account" && view !== "reports" && view !== "diagnostics" && view !== "commissioning" && view !== "trends" && view !== "history" && <button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button>}{view !== "dashboard" && <button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{alarmSummary.critical + alarmSummary.warning} alertas activas</button>}</div></section>
+            {view === "dashboard" && <DashboardView onSwitchSite={(siteId) => void switchSite(siteId)} onSelectAsset={(siteId, assetId) => void openDashboardAsset(siteId, assetId)} onOpenAlerts={() => navigate("alarms")} onOpenOperations={() => navigate("operations")} />}
             {view === "overview" && <Overview onNavigate={navigate} onOpenTrend={openChannelTrend} onAcknowledge={acknowledge} activeAlarms={alarmPreview} alarmSummary={alarmSummary} point={activePoint} />}
             {view === "cabinet" && <CabinetView onOpenTrend={openChannelTrend} />}
             {view === "electrical" && <ElectricalView
