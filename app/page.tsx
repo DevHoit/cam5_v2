@@ -617,9 +617,9 @@ function Overview({ onNavigate, onOpenTrend, onAcknowledge, activeAlarms, alarmS
 
   const capabilityActions = [
     { id: "cabinet" as View, label: "Vista del activo", detail: "Distribución de métricas", show: true },
-    { id: "electrical" as View, label: "Análisis eléctrico", detail: "Variables eléctricas", show: pointRecord?.type === "electrical_point" },
-    { id: "ats" as View, label: "Transferencia automática", detail: "Fuentes y posición ATS", show: pointRecord?.type === "ats" },
-    { id: "cold-chain" as View, label: "Cadena de frío", detail: "Temperatura y sensores", show: pointRecord?.type === "cold_room" },
+    { id: "electrical" as View, label: "Análisis eléctrico", detail: "Variables eléctricas", show: point?.type === "electrical_point" },
+    { id: "ats" as View, label: "Transferencia automática", detail: "Fuentes y posición ATS", show: point?.type === "ats" },
+    { id: "cold-chain" as View, label: "Cadena de frío", detail: "Temperatura y sensores", show: point?.type === "cold_room" },
   ].filter((item) => item.show);
 
   return <div className="operational-overview">
