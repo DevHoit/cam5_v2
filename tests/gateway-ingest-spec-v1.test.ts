@@ -94,6 +94,28 @@ test("rejects malformed message ids and duplicate sample identities", () => {
   );
 });
 
+test("rejects protocol details in the HOIT V1 cloud envelope", () => {
+  const withProtocolDetails = payload() as ReturnType<typeof payload> & {
+    protocol?: string;
+    samples: Array<ReturnType<typeof payload>["samples"][number] & { register?: number; raw_value?: number }>;
+  };
+  withProtocolDetails.protocol = "modbus_rtu";
+  assert.throws(
+    () => parseSpecIngestPayload(withProtocolDetails, now),
+    (error: unknown) => error instanceof ApiError && error.status === 400 && /campos no permitidos/.test(error.message),
+  );
+
+  const withRawRegister = payload() as ReturnType<typeof payload> & {
+    samples: Array<ReturnType<typeof payload>["samples"][number] & { register?: number; raw_value?: number }>;
+  };
+  withRawRegister.samples[0].register = 3027;
+  withRawRegister.samples[0].raw_value = 17234;
+  assert.throws(
+    () => parseSpecIngestPayload(withRawRegister, now),
+    (error: unknown) => error instanceof ApiError && error.status === 400 && /campos no permitidos/.test(error.message),
+  );
+});
+
 test("accepts a multi-device SPEC message idempotently", async () => {
   const client = new PGlite();
   try {
