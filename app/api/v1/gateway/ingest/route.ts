@@ -170,6 +170,7 @@ export async function POST(request: NextRequest) {
     if (parsedBody && typeof parsedBody === "object" && !Array.isArray(parsedBody) && (parsedBody as Record<string, unknown>).schemaVersion === "2.0") {
       return handleGenericIngest({ db, credential, rawPayload: parsedBody, receivedAt });
     }
+    if (process.env.HOIT_ENABLE_LEGACY_REGISTER_INGEST !== "true") throw new ApiError(400, "Formato de ingestión no soportado. El Core acepta telemetría normalizada; la interpretación de protocolos y registros corresponde al Gateway Agent.");
     const payload = parsePayload(parsedBody, receivedAt);
     if (payload.gateway.code !== credential.gatewayCode) throw new ApiError(403, "El código del gateway no corresponde a la credencial utilizada.");
 
