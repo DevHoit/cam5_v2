@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
     const code = text(body, "code", "El código").toUpperCase();
     const manufacturer = text(body, "manufacturer", "El fabricante");
     const name = text(body, "name", "El nombre");
-    const registerMapVersion = text(body, "registerMapVersion", "La versión del mapa");
+    const definitionVersion = typeof body.definitionVersion === "string" && body.definitionVersion.trim() ? body.definitionVersion.trim() : "1.0";
     const metricKeys = keys(body, "metricKeys");
     const capabilityKeys = keys(body, "capabilityKeys");
     if (metricKeys.length) {
@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
     const [existing] = await db.select({ id: deviceModels.id }).from(deviceModels).where(eq(deviceModels.code, code)).limit(1);
     if (existing) throw new ApiError(409, "Ya existe un modelo con ese código.");
     const metadata = requestMetadata(request);
-    const [created] = await db.insert(deviceModels).values({ code, manufacturer, name, registerMapVersion, capabilities: { capabilityKeys, metricKeys } }).returning();
+    const [created] = await db.insert(deviceModels).values({ code, manufacturer, name, registerMapVersion: definitionVersion, capabilities: { capabilityKeys, metricKeys } }).returning();
     await db.insert(auditLogs).values({ siteId: user.siteId, actorUserId: user.id, action: "device_model.create", resourceType: "device_model", resourceId: created.id, ipAddress: metadata.ipAddress, userAgent: metadata.userAgent, after: created });
     return Response.json({ item: created }, { status: 201, headers: { "Cache-Control": "no-store" } });
   } catch (error) { return apiErrorResponse(error); }
@@ -69,7 +69,7 @@ export async function PATCH(request: NextRequest) {
     const [updated] = await db.update(deviceModels).set({
       ...(typeof body.manufacturer === "string" ? { manufacturer: text(body, "manufacturer", "El fabricante") } : {}),
       ...(typeof body.name === "string" ? { name: text(body, "name", "El nombre") } : {}),
-      ...(typeof body.registerMapVersion === "string" ? { registerMapVersion: text(body, "registerMapVersion", "La versión del mapa") } : {}),
+      ...(typeof body.definitionVersion === "string" ? { registerMapVersion: text(body, "definitionVersion", "La versión de definición") } : {}),
       capabilities: { capabilityKeys, metricKeys },
     }).where(eq(deviceModels.id, id)).returning();
     const metadata = requestMetadata(request);
