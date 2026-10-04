@@ -117,8 +117,8 @@ async function responsePayload(db: Cam5Database, context: Awaited<ReturnType<typ
     site: { id: context.siteId, name: context.siteName, timezone: context.timezone },
     device: { id: context.deviceId, code: context.deviceCode, name: context.deviceName, state: context.deviceState, serialNumber: context.serialNumber, firmwareVersion: context.firmwareVersion, dataVersion: context.dataVersion, lastReadAt: context.lastReadAt?.toISOString() ?? null, modelCode: context.modelCode, modelName: context.modelName },
     gateway: { id: context.gatewayId, code: context.gatewayCode, name: context.gatewayName, state: context.gatewayState, lastSeenAt: context.gatewayLastSeenAt?.toISOString() ?? null },
-    metrics: { ...metrics, snapshots: { ...metrics.snapshots, latestAt: metrics.snapshots.latestAt?.toISOString() ?? null }, readings: { ...metrics.readings, firstAt: metrics.readings.firstAt?.toISOString() ?? null, lastAt: metrics.readings.lastAt?.toISOString() ?? null } },
-    items: itemRows.map((item) => ({ ...item, checkedAt: item.checkedAt?.toISOString() ?? null, checkedByName: item.checkedByName ?? null, automatic: !["inputs", "clock"].includes(item.itemKey) })),
+    metrics: { metrics: { ...metrics.metrics, latestAt: metrics.metrics.latestAt?.toISOString() ?? null }, capabilities: metrics.capabilities, gatewayOnline: metrics.gatewayOnline },
+    items: itemRows.map((item) => ({ ...item, checkedAt: item.checkedAt?.toISOString() ?? null, checkedByName: item.checkedByName ?? null, automatic: item.itemKey !== "field" })),
     summary: { total: itemRows.length, applicable, passed, failed, pending, percentage: applicable ? Math.round(passed / applicable * 100) : 0, ready: applicable > 0 && passed === applicable },
   };
 }
