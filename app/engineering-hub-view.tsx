@@ -11,7 +11,9 @@ import {
   IconSettings,
   IconTemperature,
   IconTool,
+  IconListDetails,
 } from "@tabler/icons-react";
+import { DeviceModelCatalog } from "./device-model-catalog";
 
 type EngineeringAsset = {
   id: string;
@@ -47,11 +49,13 @@ export function EngineeringHubView({
   devices,
   canWrite,
   onNavigate,
+  notify,
 }: {
   asset?: EngineeringAsset;
   devices: EngineeringDevice[];
   canWrite: boolean;
   onNavigate: (view: View) => void;
+  notify: (message: string, tone?: "success" | "info" | "warning") => void;
 }) {
   if (!asset) {
     return <article className="panel engineering-hub-empty">
@@ -103,6 +107,12 @@ export function EngineeringHubView({
         <IconChevronRight size={18} />
       </button>}
     </section>
+
+    <section className="panel engineering-tool-card" style={{ marginBottom: "1rem" }}>
+      <span><IconListDetails size={21} /></span>
+      <div><small>Catálogo técnico</small><strong>Modelos de dispositivo</strong><p>Plantillas reutilizables de driver, protocolo, capacidades y métricas para nuevas altas.</p></div>
+    </section>
+    <DeviceModelCatalog canWrite={canWrite} notify={notify} />
 
     <section className="panel engineering-device-inventory">
       <header><div><span className="eyebrow">Inventario asociado</span><h2>Dispositivos del activo</h2></div><span>{assetDevices.length} asociados</span></header>
