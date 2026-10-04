@@ -117,6 +117,11 @@ jobs:
       - name: Validate Python simulators
         run: python3 -m py_compile examples/cold_chain_simulator.py examples/pm5560_simulator.py examples/dse8660_simulator.py
 
+      - name: Validate HOIT Gateway Agent
+        run: |
+          python3 -m compileall -q gateway/hoit_agent
+          python3 -m unittest discover -s gateway/tests -p 'test_*.py'
+
       - name: Database tests
         run: npm run test:db
 
