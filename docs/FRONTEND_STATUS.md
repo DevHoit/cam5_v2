@@ -119,13 +119,31 @@ Commits del bloque:
 - `96135470` — feat(history): expose normalized alarm origin
 - `b6bbb6a0` — feat(frontend): open normalized alarm metrics from history
 
-### P1 — Reportes
+## Bloque cerrado en esta sesión: Reportes por activo y capability
 
-Validar experiencia:
+El constructor de reportes queda alineado con:
 
 `Activo + período + tipo de reporte`
 
-Eliminar cualquier supuesto restante de “punto de medición” o canal CAM-5 como entidad principal.
+Cambios:
+
+- el selector se presenta como **Tipo de reporte**, no como una plantilla técnica;
+- la API de plantillas inspecciona las métricas habilitadas del activo;
+- los reportes especializados se ofrecen por capacidades observables:
+  - `environment.temperature` → cadena de frío;
+  - `electrical.*` → reporte eléctrico;
+  - `ats.* / dse.*` → transferencia automática;
+- el motor vuelve a validar esas capacidades al generar el reporte, evitando depender sólo de `assetType`;
+- un activo puede exponer más de un reporte especializado si posee varias capabilities;
+- CAM-5 y activos legacy sin métricas normalizadas conservan sus reportes generales;
+- lenguaje visible actualizado de “punto” a “activo” y de “variables” a “métricas” donde corresponde;
+- los reportes especializados existentes y sus snapshots inmutables se conservan.
+
+Commits del bloque:
+
+- `42aab084` — feat(reports): select templates from normalized asset capabilities
+- `b4fc51c9` — refactor(reports): generate specialized reports by capability metrics
+- `5dfc4225` — feat(reports): align builder language with asset metric model
 
 ### P1 — Preview / E2E visual completo
 
@@ -174,11 +192,12 @@ No bloquear el cierre V1 por esta evolución.
 - Administración: ~90%
 - Ingeniería: 75–80%
 - Tendencias/Histórico genérico: ~85–90% a nivel arquitectura/implementación; falta validación visual E2E con datos reales.
+- Reportes: ~90%; contrato genérico cerrado, pendiente validación E2E con datos reales
 - Pulido visual/E2E completo: 70–75%
 
 ## Próximo paso recomendado
 
-**Reportes genéricos (Activo + período + tipo)** y después una pasada **Preview/E2E visual completa**. Centro de alertas queda en validación E2E, no como rediseño pendiente.
+**Preview/E2E visual completo** sobre Dashboard → Sitio → Activo y los módulos Tendencias, Histórico, Alertas, Reportes, Administración e Ingeniería. Los bloques genéricos principales ya no requieren otro rediseño antes de esta validación.
 
 El CI del HEAD funcional `9f9abdca` quedó disparado tras corregir el lint detectado en un commit intermedio. Confirmar su resultado verde y probar en Preview con al menos un activo eléctrico/PM, ATS, cold-chain y CAM-5.
 
