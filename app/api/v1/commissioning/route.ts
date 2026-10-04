@@ -1,21 +1,17 @@
 import type { NextRequest } from "next/server";
-import { and, count, eq, max, min, sql } from "drizzle-orm";
+import { and, count, eq, max, sql } from "drizzle-orm";
 import { evaluateCommissioning, type CommissioningValidationInput } from "../../../../db/commissioning-engine";
 import type { Cam5Database } from "../../../../db/index";
 import {
-  alarmRules,
   assets,
   auditLogs,
-  channels,
   commissioningItems,
-  configurationSnapshots,
+  deviceCapabilities,
+  deviceMetrics,
   deviceModels,
   devices,
   gateways,
-  physicalInputs,
-  readings,
-  registerDefinitions,
-  relayConfigurations,
+  latestMetricReadings,
   sites,
   userAssetScopes,
   users,
@@ -72,50 +68,28 @@ async function requireCommissioningContext(db: Cam5Database, user: Awaited<Retur
 }
 
 async function loadMetrics(db: Cam5Database, context: Awaited<ReturnType<typeof requireCommissioningContext>>) {
-  if (context.driver !== "cam5") {
-    throw new ApiError(409, "El commissioning basado en mapa de registros corresponde al flujo CAM-5 legacy. Los dispositivos normalizados deben validarse mediante capacidades y métricas.");
-  }
-
-    const [inputRows, registerRows, channelRows, relayRows, snapshotRows, readingRows] = await Promise.all([
-    db.select({ total: count(), enabled: sql<number>`count(*) filter (where ${physicalInputs.enabled} = true)` }).from(physicalInputs).where(eq(physicalInputs.deviceId, context.deviceId)),
-    db.select({ total: count(), minimum: min(registerDefinitions.nativeRegister), maximum: max(registerDefinitions.nativeRegister) }).from(registerDefinitions).where(eq(registerDefinitions.modelId, context.modelId)),
-    db.select({ enabled: sql<number>`count(*) filter (where ${channels.enabled} = true)`, configuredRules: sql<number>`count(${alarmRules.id}) filter (where ${channels.enabled} = true and ${alarmRules.enabled} = true and ${alarmRules.warningThreshold} is not null and ${alarmRules.criticalThreshold} is not null)` }).from(channels).leftJoin(alarmRules, eq(alarmRules.channelId, channels.id)).where(eq(channels.deviceId, context.deviceId)),
-    db.select({ total: count(), enabled: sql<number>`count(*) filter (where ${relayConfigurations.enabled} = true)` }).from(relayConfigurations).where(eq(relayConfigurations.deviceId, context.deviceId)),
-    db.select({ total: count(), latestAt: max(configurationSnapshots.createdAt) }).from(configurationSnapshots).where(eq(configurationSnapshots.deviceId, context.deviceId)),
-    db.select({ total: count(), valid: sql<number>`count(${readings.id}) filter (where ${readings.quality} = 'good')`, firstAt: min(readings.recordedAt), lastAt: max(readings.recordedAt) }).from(readings).innerJoin(channels, eq(channels.id, readings.channelId)).where(eq(channels.deviceId, context.deviceId)),
+  const freshnessBoundary = new Date(Date.now() - 10 * 60 * 1000);
+  const [metricRows, capabilityRows, latestRows] = await Promise.all([
+    db.select({ total: count() }).from(deviceMetrics).where(and(eq(deviceMetrics.deviceId, context.deviceId), eq(deviceMetrics.enabled, true))),
+    db.select({ total: count() }).from(deviceCapabilities).where(and(eq(deviceCapabilities.deviceId, context.deviceId), eq(deviceCapabilities.enabled, true))),
+    db.select({ total: count(), good: sql<number>`count(*) filter (where ${latestMetricReadings.quality} = 'good')`, latestAt: max(latestMetricReadings.recordedAt) }).from(latestMetricReadings).innerJoin(deviceMetrics, eq(deviceMetrics.id, latestMetricReadings.deviceMetricId)).where(and(eq(deviceMetrics.deviceId, context.deviceId), eq(deviceMetrics.enabled, true), sql`${latestMetricReadings.recordedAt} >= ${freshnessBoundary}`)),
   ]);
-  const totalReadings = Number(readingRows[0]?.total ?? 0);
-  const validReadings = Number(readingRows[0]?.valid ?? 0);
-  const firstReadingAt = readingRows[0]?.firstAt ?? null;
-  const lastReadingAt = readingRows[0]?.lastAt ?? null;
-  const stabilityHours = firstReadingAt && lastReadingAt ? Math.max(0, (lastReadingAt.getTime() - firstReadingAt.getTime()) / 3_600_000) : 0;
   return {
-    inputs: { total: Number(inputRows[0]?.total ?? 0), enabled: Number(inputRows[0]?.enabled ?? 0) },
-    registers: { total: Number(registerRows[0]?.total ?? 0), minimum: registerRows[0]?.minimum ?? null, maximum: registerRows[0]?.maximum ?? null },
-    alarms: { enabledChannels: Number(channelRows[0]?.enabled ?? 0), configuredRules: Number(channelRows[0]?.configuredRules ?? 0) },
-    relays: { total: Number(relayRows[0]?.total ?? 0), enabled: Number(relayRows[0]?.enabled ?? 0) },
-    snapshots: { total: Number(snapshotRows[0]?.total ?? 0), latestAt: snapshotRows[0]?.latestAt ?? null },
-    readings: { total: totalReadings, valid: validReadings, qualityPercent: totalReadings ? Math.round(validReadings / totalReadings * 10_000) / 100 : null, firstAt: firstReadingAt, lastAt: lastReadingAt, stabilityHours: Math.round(stabilityHours * 10) / 10 },
+    metrics: { configured: Number(metricRows[0]?.total ?? 0), recent: Number(latestRows[0]?.total ?? 0), good: Number(latestRows[0]?.good ?? 0), latestAt: latestRows[0]?.latestAt ?? null },
+    capabilities: { total: Number(capabilityRows[0]?.total ?? 0) },
+    gatewayOnline: context.gatewayState === "online" || context.gatewayState === "degraded",
   };
 }
 
 function validationInput(context: Awaited<ReturnType<typeof requireCommissioningContext>>, metrics: Awaited<ReturnType<typeof loadMetrics>>): CommissioningValidationInput {
   return {
-    serialNumber: context.serialNumber,
-    firmwareVersion: context.firmwareVersion,
-    dataVersion: context.dataVersion,
-    registerCount: metrics.registers.total,
-    minimumRegister: metrics.registers.minimum,
-    maximumRegister: metrics.registers.maximum,
-    lastReadAt: context.lastReadAt,
-    enabledChannelCount: metrics.alarms.enabledChannels,
-    configuredRuleCount: metrics.alarms.configuredRules,
-    relayCount: metrics.relays.total,
-    snapshotCount: metrics.snapshots.total,
-    readingCount: metrics.readings.total,
-    validReadingCount: metrics.readings.valid,
-    firstReadingAt: metrics.readings.firstAt,
-    lastReadingAt: metrics.readings.lastAt,
+    deviceCode: context.deviceCode,
+    gatewayOnline: metrics.gatewayOnline,
+    configuredMetricCount: metrics.metrics.configured,
+    recentMetricCount: metrics.metrics.recent,
+    goodMetricCount: metrics.metrics.good,
+    latestMetricAt: metrics.metrics.latestAt,
+    capabilityCount: metrics.capabilities.total,
   };
 }
 
@@ -141,7 +115,7 @@ async function responsePayload(db: Cam5Database, context: Awaited<ReturnType<typ
   return {
     asset: { id: context.assetId, code: context.assetCode, name: context.assetName, state: context.assetState },
     site: { id: context.siteId, name: context.siteName, timezone: context.timezone },
-    device: { id: context.deviceId, code: context.deviceCode, name: context.deviceName, state: context.deviceState, serialNumber: context.serialNumber, firmwareVersion: context.firmwareVersion, dataVersion: context.dataVersion, protocol: context.protocol, host: context.host, port: context.port, unitId: context.unitId, lastReadAt: context.lastReadAt?.toISOString() ?? null, modelCode: context.modelCode, modelName: context.modelName, registerMapVersion: context.registerMapVersion },
+    device: { id: context.deviceId, code: context.deviceCode, name: context.deviceName, state: context.deviceState, serialNumber: context.serialNumber, firmwareVersion: context.firmwareVersion, dataVersion: context.dataVersion, lastReadAt: context.lastReadAt?.toISOString() ?? null, modelCode: context.modelCode, modelName: context.modelName },
     gateway: { id: context.gatewayId, code: context.gatewayCode, name: context.gatewayName, state: context.gatewayState, lastSeenAt: context.gatewayLastSeenAt?.toISOString() ?? null },
     metrics: { ...metrics, snapshots: { ...metrics.snapshots, latestAt: metrics.snapshots.latestAt?.toISOString() ?? null }, readings: { ...metrics.readings, firstAt: metrics.readings.firstAt?.toISOString() ?? null, lastAt: metrics.readings.lastAt?.toISOString() ?? null } },
     items: itemRows.map((item) => ({ ...item, checkedAt: item.checkedAt?.toISOString() ?? null, checkedByName: item.checkedByName ?? null, automatic: !["inputs", "clock"].includes(item.itemKey) })),
