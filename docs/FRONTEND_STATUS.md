@@ -272,3 +272,37 @@ Validación final del commit `1ebd8d19`:
 ### Gate E2E autenticado
 
 El código y el Preview están listos para el recorrido por roles. El recorrido autenticado completo no debe marcarse como PASS hasta ejecutarlo con sesiones válidas de Administrador HOIT / cliente / sitio / operador-viewer. No se crean ni inventan credenciales desde la automatización de validación.
+
+
+## Bloque cerrado: alta operacional Cliente → Sitio → Activo → Gateway → Dispositivo
+
+Se auditó el flujo completo de provisionamiento desde Administración.
+
+Hallazgo principal:
+- el alta visible como “Dispositivo” todavía estaba acoplada internamente a CAM-5;
+- el backend buscaba obligatoriamente `CAM5-TPH-XDCW` y `cam5-balanced-v1`, por lo que un cliente nuevo no podía incorporar de forma limpia otro modelo desde el portal.
+
+Cambios:
+- `GET /api/v1/hierarchy` expone el catálogo de modelos de dispositivo;
+- el formulario de alta exige seleccionar el modelo;
+- `POST /api/v1/hierarchy` valida el modelo seleccionado;
+- CAM-5 conserva automáticamente su perfil especializado cuando corresponde;
+- otros modelos se crean con driver genérico y sin heredar configuración CAM-5;
+- mensajes backend restantes cambiados de punto/controlador a activo/dispositivo;
+- placeholders de alta dejan de sugerir CAM-5 como dispositivo universal.
+
+Commits:
+- `c85574de` — feat(provisioning): make device onboarding model driven
+- `87de8afa` — feat(provisioning): expose device model selection in operational onboarding
+
+Validación:
+- lint: PASS
+- simuladores Python: PASS
+- Gateway Agent: PASS
+- tests DB/integración: PASS
+- build Next.js + TypeScript: PASS
+- Vercel Preview: READY en `87de8afa`
+
+### Límite V1 identificado
+
+El catálogo de modelos debe existir antes de provisionar un dispositivo. Esto es correcto como separación de responsabilidades, pero el siguiente bloque de Ingeniería debe permitir administrar/registrar modelos y su mapping de métricas sin depender de seeds para incorporar hardware nuevo.
