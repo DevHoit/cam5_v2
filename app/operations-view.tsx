@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ShiftsView } from "./shifts-view";
+import { NocView } from "./noc-view";
 import {
   IconAlertTriangle,
   IconBan,
@@ -83,7 +84,7 @@ export function OperationsView({
   notify: (message: string, tone?: NoticeTone) => void;
   confirm: (request: ConfirmRequest) => void;
 }) {
-  const [tab, setTab] = useState<"maintenance" | "shifts">("maintenance");
+  const [tab, setTab] = useState<"noc" | "maintenance" | "shifts">("noc");
   const [data, setData] = useState<MaintenanceResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -151,29 +152,21 @@ export function OperationsView({
   const active = data?.windows.filter((item) => item.status === "active").length ?? 0;
   const scheduled = data?.windows.filter((item) => item.status === "scheduled").length ?? 0;
 
-  if (tab === "shifts") {
-    return <>
-      <article className="panel module-panel">
-        <div className="module-toolbar">
-          <div className="module-tabs" role="tablist" aria-label="Operación">
-            <button onClick={() => setTab("maintenance")}>Mantenimiento</button>
-            <button className="active" onClick={() => setTab("shifts")}>Turnos</button>
-          </div>
-        </div>
-      </article>
-      <ShiftsView canManageClient={canManageClient} notify={notify} />
-    </>;
-  }
+  const tabs = <article className="panel module-panel">
+    <div className="module-toolbar">
+      <div className="module-tabs" role="tablist" aria-label="Operación">
+        <button className={tab === "noc" ? "active" : ""} onClick={() => setTab("noc")}>NOC</button>
+        <button className={tab === "maintenance" ? "active" : ""} onClick={() => setTab("maintenance")}>Mantenimiento</button>
+        <button className={tab === "shifts" ? "active" : ""} onClick={() => setTab("shifts")}>Turnos</button>
+      </div>
+    </div>
+  </article>;
+
+  if (tab === "noc") return <>{tabs}<NocView /></>;
+  if (tab === "shifts") return <>{tabs}<ShiftsView canManageClient={canManageClient} notify={notify} /></>;
 
   return <>
-    <article className="panel module-panel">
-      <div className="module-toolbar">
-        <div className="module-tabs" role="tablist" aria-label="Operación">
-          <button className="active" onClick={() => setTab("maintenance")}>Mantenimiento</button>
-          <button onClick={() => setTab("shifts")}>Turnos</button>
-        </div>
-      </div>
-    </article>
+    {tabs}
     <section className="module-summary-grid">
       <article><span className="module-summary-icon amber"><IconTool size={19} /></span><div><small>Mantenimiento activo</small><strong>{active}</strong><span>Ventanas en curso</span></div></article>
       <article><span className="module-summary-icon blue"><IconCalendarTime size={19} /></span><div><small>Programado</small><strong>{scheduled}</strong><span>Próximas ventanas</span></div></article>
