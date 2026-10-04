@@ -229,9 +229,9 @@ export function GatewayProvisioningView({
     return [
       "# HoitLive Core · configuración privada del gateway",
       "# Guarda este archivo con permisos de lectura limitados al servicio.",
-      `CAM5_API_BASE=${base}`,
-      `CAM5_GATEWAY_TOKEN=${value.token}`,
-      "CAM5_RUN_ONCE=0",
+      `HOIT_API_BASE=${base}`,
+      `HOIT_GATEWAY_TOKEN=${value.token}`,
+      "HOIT_RUN_ONCE=0",
       "",
     ].join("\n");
   };
@@ -239,9 +239,9 @@ export function GatewayProvisioningView({
   const downloadEnvironment = (value: SecretResponse) => downloadText(`hoitlive-${value.credential.gateway.code.toLowerCase()}.env`, environmentFile(value));
   const downloadTemplate = (gateway: Gateway) => downloadText(`hoitlive-${gateway.code.toLowerCase()}-plantilla.env`, [
     "# HoitLive Core · plantilla de configuración",
-    `CAM5_API_BASE=${window.location.origin}/api/v1`,
-    "CAM5_GATEWAY_TOKEN=PEGAR_TOKEN_GENERADO_EN_EL_PORTAL",
-    "CAM5_RUN_ONCE=1",
+    `HOIT_API_BASE=${window.location.origin}/api/v1`,
+    "HOIT_GATEWAY_TOKEN=PEGAR_TOKEN_GENERADO_EN_EL_PORTAL",
+    "HOIT_RUN_ONCE=1",
     "",
   ].join("\n"));
   const copyToken = async () => {
