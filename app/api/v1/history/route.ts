@@ -63,14 +63,28 @@ export async function GET(request: NextRequest) {
 
     if (tab === "measurements") {
       const [targetAsset] = assetId
-        ? await db.select({ id: assets.id, assetType: assets.assetType }).from(assets)
+        ? await db.select({ id: assets.id }).from(assets)
             .where(and(eq(assets.id, assetId), eq(assets.siteId, user.siteId), eq(assets.active, true)))
             .limit(1)
         : [];
       if (assetId && !targetAsset) throw new ApiError(404, "El activo no existe en el sitio activo.");
-      const genericAsset = Boolean(targetAsset && ["electrical_point", "ats", "cold_room"].includes(targetAsset.assetType));
 
-      if (genericAsset) {
+      // Prefer the normalized device -> metric model whenever the selected asset
+      // actually exposes enabled metrics. This deliberately avoids branching on
+      // assetType: capabilities may evolve independently from the asset label.
+      const [normalizedMetric] = targetAsset
+        ? await db.select({ id: deviceMetrics.id }).from(deviceMetrics)
+            .innerJoin(devices, eq(devices.id, deviceMetrics.deviceId))
+            .where(and(
+              eq(devices.assetId, targetAsset.id),
+              eq(devices.active, true),
+              eq(deviceMetrics.enabled, true),
+            ))
+            .limit(1)
+        : [];
+      const hasNormalizedMetrics = Boolean(normalizedMetric);
+
+      if (hasNormalizedMetrics) {
         if (allowedAssetIds.length && assetId && !allowedAssetIds.includes(assetId)) throw new ApiError(403, "No tienes acceso al activo indicado.");
         const filters: SQL[] = [
           eq(assets.siteId, user.siteId),
