@@ -1052,12 +1052,14 @@ function OperationalHierarchyView({
   permissions,
   onReload,
   onSwitchSite,
+  onOpenAsset,
 }: {
   hierarchy: PortalHierarchy | null;
   loading: boolean;
   permissions: string[];
   onReload: () => Promise<void>;
   onSwitchSite: (siteId: string) => Promise<void>;
+  onOpenAsset: (siteId: string, assetId: string) => Promise<void>;
 }) {
   type Resource = "client" | "site" | "point" | "gateway" | "controller";
   type EditableResource = PortalHierarchy["clients"][number] | PortalHierarchy["sites"][number] | PortalHierarchy["points"][number] | PortalHierarchy["gateways"][number] | PortalHierarchy["controllers"][number];
@@ -1085,8 +1087,8 @@ function OperationalHierarchyView({
   ];
   const resourceLabels: Record<Resource, string> = { client: "Cliente", site: "Sitio", point: "Activo", gateway: "Gateway", controller: "Dispositivo" };
   const filteredPoints = (hierarchy?.points ?? []).filter((point) => `${point.code} ${point.name} ${point.area ?? ""}`.toLowerCase().includes(query.toLowerCase()));
-  const filteredGateways = (hierarchy?.gateways ?? []).filter((gateway) => `${gateway.code} ${gateway.name} ${gateway.ipAddress ?? ""}`.toLowerCase().includes(query.toLowerCase()));
-  const filteredControllers = (hierarchy?.controllers ?? []).filter((controller) => `${controller.code} ${controller.name} ${controller.host}`.toLowerCase().includes(query.toLowerCase()));
+  const filteredGateways = (hierarchy?.gateways ?? []).filter((gateway) => `${gateway.code} ${gateway.name} ${gateway.softwareVersion ?? ""}`.toLowerCase().includes(query.toLowerCase()));
+  const filteredControllers = (hierarchy?.controllers ?? []).filter((controller) => `${controller.code} ${controller.name} ${controller.model}`.toLowerCase().includes(query.toLowerCase()));
   const pointPage = useClientPagination(filteredPoints, 6);
   const gatewayPage = useClientPagination(filteredGateways, 6);
   const controllerPage = useClientPagination(filteredControllers, 8);
@@ -1122,7 +1124,7 @@ function OperationalHierarchyView({
       if (resource === "client") Object.assign(payload, { legalName: form.legalName, taxId: form.taxId, contactEmail: form.contactEmail });
       if (resource === "site") Object.assign(payload, { clientId: form.clientId || hierarchy.active.clientId, description: form.description, timezone: form.timezone || "America/Santiago" });
       if (resource === "point") Object.assign(payload, { siteId: hierarchy.active.siteId, area: form.area, nominalVoltageKv: form.voltage ? Number(form.voltage) : undefined });
-      if (resource === "gateway") Object.assign(payload, { siteId: hierarchy.active.siteId, ipAddress: form.ipAddress });
+      if (resource === "gateway") Object.assign(payload, { siteId: hierarchy.active.siteId });
       if (resource === "controller") Object.assign(payload, { pointId: form.pointId, gatewayId: form.gatewayId, modelId: form.modelId });
       await portalRequest("/api/v1/hierarchy", { method: "POST", body: JSON.stringify(payload) });
       await onReload();
@@ -1145,7 +1147,7 @@ function OperationalHierarchyView({
       if (editor.resource === "client") Object.assign(payload, { legalName: editor.legalName, taxId: editor.taxId, contactEmail: editor.contactEmail });
       if (editor.resource === "site") Object.assign(payload, { description: editor.description, timezone: editor.timezone });
       if (editor.resource === "point") Object.assign(payload, { area: editor.area, nominalVoltageKv: editor.voltage ? Number(editor.voltage) : null });
-      if (editor.resource === "gateway") Object.assign(payload, { ipAddress: editor.ipAddress, serialNumber: editor.serialNumber });
+      if (editor.resource === "gateway") Object.assign(payload, { serialNumber: editor.serialNumber });
       
       await portalRequest("/api/v1/hierarchy", { method: "PATCH", body: JSON.stringify(payload) });
       await onReload();
@@ -1189,78 +1191,129 @@ function OperationalHierarchyView({
 
   const activeSite = hierarchy.sites.find((site) => site.id === hierarchy.active.siteId);
   const activeGateway = hierarchy.gateways.find((gateway) => gateway.active);
+  const siteGateways = hierarchy.gateways;
+  const siteControllers = hierarchy.controllers;
+  const onlineGateways = siteGateways.filter((gateway) => gateway.active && gateway.state === "online").length;
+  const onlineControllers = siteControllers.filter((controller) => controller.active && (controller.state === "online" || controller.state === "normal" || controller.state === "active")).length;
+  const monitoredEndpoints = siteGateways.length + siteControllers.length;
+  const onlineEndpoints = onlineGateways + onlineControllers;
+  const connectivityPercent = monitoredEndpoints ? Math.round(onlineEndpoints / monitoredEndpoints * 100) : null;
+  const siteHasMonitoring = Boolean((activeSite?.pointCount ?? 0) || (activeSite?.gatewayCount ?? 0) || (activeSite?.controllerCount ?? 0));
+  const openCreateFor = (nextResource: Resource) => { setResource(nextResource); resetForm(); setShowCreate(true); };
   const stateLabel = (state: string, active = true) => !active ? "Desactivado" : state === "online" || state === "active" || state === "normal" ? "Operativo" : state === "commissioning" || state === "pending" ? "En puesta en marcha" : state === "warning" || state === "degraded" ? "Atención" : state === "critical" ? "Crítico" : state === "maintenance" ? "Mantenimiento" : "Sin conexión";
 
   return <>
-    <section className="module-summary-grid hierarchy-summary">
-      <article><span className="module-summary-icon blue"><Building2 size={19} /></span><div><small>Clientes accesibles</small><strong>{hierarchy.clients.length}</strong><span>{hierarchy.sites.length} sitios autorizados</span></div></article>
-      <article><span className="module-summary-icon green"><MapPin size={19} /></span><div><small>Activos</small><strong>{hierarchy.points.length}</strong><span>En {hierarchy.active.siteName}</span></div></article>
-      <article><span className="module-summary-icon amber"><Server size={19} /></span><div><small>Cadena de adquisición</small><strong>{hierarchy.gateways.length}</strong><span>{hierarchy.controllers.length} dispositivos asociados</span></div></article>
+    <section className="site-operations-header">
+      <div className="site-operations-identity">
+        <span className="site-operations-icon"><Building2 size={19} /></span>
+        <div>
+          <span className="site-operations-code">`{activeSite?.code ?? "SITIO"}`</span>
+          <h2>{hierarchy.active.siteName}</h2>
+        </div>
+      </div>
+      <div className="site-operations-summary">
+        <span><strong>{activeSite?.pointCount ?? 0}</strong><small>Activos</small></span>
+        <span><strong>{activeSite?.gatewayCount ?? 0}</strong><small>Gateways</small></span>
+        <span><strong>{activeSite?.controllerCount ?? 0}</strong><small>Dispositivos</small></span>
+        <span><strong>{connectivityPercent === null ? "—" : `${connectivityPercent}%`}</strong><small>Conectividad</small></span>
+      </div>
+      <span className={`site-operations-state ${siteHasMonitoring ? "configured" : "unmonitored"}`}>{siteHasMonitoring ? "Monitoreo configurado" : "Sin monitoreo"}</span>
     </section>
 
-    <article className="panel module-panel hierarchy-module">
-      <div className="module-toolbar">
+    <article className="panel module-panel hierarchy-module hierarchy-v3">
+      <div className="module-toolbar hierarchy-toolbar-v3">
         <div className="module-tabs" role="tablist" aria-label="Estructura operacional">
-          <button className={tab === "structure" ? "active" : ""} onClick={() => setTab("structure")}><Hierarchy size={16} /> Organización</button>
-          <button className={tab === "connections" ? "active" : ""} onClick={() => setTab("connections")}><PlugConnected size={16} /> Dispositivos y adquisición</button>
+          <button className={tab === "structure" ? "active" : ""} onClick={() => { setTab("structure"); setShowCreate(false); }}><CircuitBoard size={16} /> Activos</button>
+          <button className={tab === "connections" ? "active" : ""} onClick={() => { setTab("connections"); setShowCreate(false); }}><Server size={16} /> Infraestructura</button>
         </div>
-        {availableResources.length > 0 && <button className="primary-button" onClick={() => setShowCreate((current) => !current)}><Plus size={16} />{showCreate ? "Cancelar" : "Agregar elemento"}</button>}
+        <div className="hierarchy-toolbar-actions">
+          <label className="search-field hierarchy-search"><Search size={16} /><input value={query} onChange={(event) => { setQuery(event.target.value); pointPage.setPage(1); gatewayPage.setPage(1); controllerPage.setPage(1); }} placeholder={tab === "structure" ? "Buscar activo…" : "Buscar gateway o dispositivo…"} /></label>
+          {(canManageClients || canManageSites) && <button className="text-inline-button hierarchy-admin-action" onClick={() => openCreateFor(canManageClients ? "client" : "site")}>Organización</button>}
+          {tab === "structure" && canManagePoints && <button className="primary-button" onClick={() => openCreateFor("point")}><Plus size={16} /> Agregar activo</button>}
+          {tab === "connections" && canManageConnections && <button className="primary-button" onClick={() => openCreateFor("gateway")}><Plus size={16} /> Agregar infraestructura</button>}
+        </div>
       </div>
 
-      {showCreate && <form className="hierarchy-create-form" onSubmit={createResource}>
-        <div className="hierarchy-form-heading"><span className="eyebrow">Alta operacional</span><h3>Agregar a la estructura</h3></div>
-        <label><span>Tipo de elemento</span><select value={resource} onChange={(event) => changeResource(event.target.value as Resource)}>{availableResources.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+      {showCreate && <form className="hierarchy-create-form hierarchy-create-v3" onSubmit={createResource}>
+        <div className="hierarchy-form-heading"><h3>{resource === "point" ? "Nuevo activo" : resource === "gateway" || resource === "controller" ? "Nueva infraestructura" : "Administrar organización"}</h3><p>Registra el elemento dentro del contexto operacional correspondiente.</p></div>
+        <label><span>Tipo de elemento</span><select value={resource} onChange={(event) => changeResource(event.target.value as Resource)}>
+          {(resource === "client" || resource === "site"
+            ? availableResources.filter((item) => item.value === "client" || item.value === "site")
+            : tab === "structure"
+              ? availableResources.filter((item) => item.value === "point")
+              : availableResources.filter((item) => item.value === "gateway" || item.value === "controller")
+          ).map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+        </select></label>
         <label><span>Código único</span><input required value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value })} placeholder={resource === "client" ? "CLIENTE-01" : resource === "site" ? "SITIO-01" : resource === "point" ? "ACTIVO-01" : resource === "gateway" ? "GW-01" : "DEV-01"} /></label>
         <label><span>Nombre</span><input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Nombre operacional" /></label>
         {resource === "client" && <><label><span>Razón social</span><input value={form.legalName} onChange={(event) => setForm({ ...form, legalName: event.target.value })} placeholder="Razón social (opcional)" /></label><label><span>RUT / identificador fiscal</span><input value={form.taxId} onChange={(event) => setForm({ ...form, taxId: event.target.value })} placeholder="Opcional" /></label><label><span>Correo de contacto</span><input type="email" value={form.contactEmail} onChange={(event) => setForm({ ...form, contactEmail: event.target.value })} placeholder="contacto@cliente.cl" /></label></>}
         {resource === "site" && <><label><span>Cliente</span><select required value={form.clientId || hierarchy.active.clientId} onChange={(event) => setForm({ ...form, clientId: event.target.value })}>{hierarchy.clients.filter((client) => client.active).map((client) => <option key={client.id} value={client.id}>{client.name} · {client.code}</option>)}</select></label><label className="field-wide"><span>Descripción</span><input value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="Descripción operacional (opcional)" /></label><label><span>Zona horaria</span><input required value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })} placeholder="America/Santiago" /></label></>}
-        {resource === "point" && <><label><span>Área</span><input value={form.area} onChange={(event) => setForm({ ...form, area: event.target.value })} placeholder="Sala o área eléctrica" /></label><label><span>Tensión nominal (kV)</span><input type="number" min="0" step="0.1" value={form.voltage} onChange={(event) => setForm({ ...form, voltage: event.target.value })} /></label></>}
-        {resource === "gateway" && <label><span>Dirección IP</span><input value={form.ipAddress} onChange={(event) => setForm({ ...form, ipAddress: event.target.value })} placeholder="10.0.0.20" /></label>}
+        {resource === "point" && <><label><span>Área</span><input value={form.area} onChange={(event) => setForm({ ...form, area: event.target.value })} placeholder="Área o ubicación operacional" /></label><label><span>Tensión nominal (kV)</span><input type="number" min="0" step="0.1" value={form.voltage} onChange={(event) => setForm({ ...form, voltage: event.target.value })} /></label></>}
         {resource === "controller" && <><label><span>Modelo de dispositivo</span><select required value={form.modelId} onChange={(event) => setForm({ ...form, modelId: event.target.value })}><option value="">Seleccionar…</option>{hierarchy.deviceModels.map((model) => <option key={model.id} value={model.id}>{model.manufacturer} · {model.name}</option>)}</select></label><label><span>Activo</span><select required value={form.pointId} onChange={(event) => setForm({ ...form, pointId: event.target.value })}><option value="">Seleccionar…</option>{hierarchy.points.filter((point) => point.active).map((point) => <option key={point.id} value={point.id}>{point.code} · {point.name}</option>)}</select></label><label><span>Gateway</span><select required value={form.gatewayId} onChange={(event) => setForm({ ...form, gatewayId: event.target.value })}><option value="">Seleccionar…</option>{hierarchy.gateways.filter((gateway) => gateway.active).map((gateway) => <option key={gateway.id} value={gateway.id}>{gateway.code} · {gateway.name}</option>)}</select></label></>}
+        {resource === "gateway" && <div className="hierarchy-form-note field-wide"><Server size={16} /><span>La configuración física del gateway se gestiona en el propio Gateway Agent. Core registra su identidad lógica.</span></div>}
         <button className="primary-button" type="submit" disabled={saving || (resource === "controller" && (!hierarchy.points.length || !hierarchy.gateways.length || !hierarchy.deviceModels.length || !form.modelId))}>{saving ? "Guardando…" : "Registrar"}</button>
       </form>}
 
-      <div className="hierarchy-scope-bar"><div><span className="eyebrow">Contexto operacional</span><strong>{hierarchy.active.clientName} <ChevronRight size={14} /> {hierarchy.active.siteName}</strong></div><label className="search-field"><Search size={17} /><input value={query} onChange={(event) => { setQuery(event.target.value); pointPage.setPage(1); gatewayPage.setPage(1); controllerPage.setPage(1); }} placeholder="Buscar activo, gateway o dispositivo…" /></label></div>
-
-      {tab === "structure" && <div className="hierarchy-workspace">
-        <aside className="organization-tree">
-          {hierarchy.clients.map((client) => <section key={client.id} className={client.active ? "" : "inactive-resource"}>
-            <div className="organization-client"><span><Factory size={17} /></span><div><strong>{client.name}</strong><small>{client.code}{client.active ? "" : " · Desactivado"}</small></div>{canManageClients && <button className="resource-edit-button" onClick={() => openEditor("client", client)} aria-label={`Editar cliente ${client.name}`}><Pencil size={15} /></button>}</div>
-            <div className="organization-sites">{hierarchy.sites.filter((site) => site.clientId === client.id).map((site) => <div className={`organization-site-row ${site.active && client.active ? "" : "inactive-resource"}`} key={site.id}><button className={site.id === hierarchy.active.siteId ? "active" : ""} disabled={!site.active || !client.active} onClick={() => onSwitchSite(site.id)}><span><Building2 size={16} /></span><span><strong>{site.name}</strong><small>{!client.active ? "Cliente desactivado" : site.active ? `${site.pointCount} activos · ${site.gatewayCount} gateways` : "Sitio desactivado"}</small></span><ChevronRight size={15} /></button>{canManageClients && <button className="resource-edit-button" onClick={() => openEditor("site", site)} aria-label={`Editar sitio ${site.name}`}><Pencil size={15} /></button>}</div>)}{hierarchy.sites.every((site) => site.clientId !== client.id) && <p>Cliente sin sitios registrados.</p>}</div>
-          </section>)}
-        </aside>
-        <div className="site-inventory">
-          <section className="site-identity-card"><span><Building2 size={22} /></span><div><span className="eyebrow">Sitio activo · {activeSite?.code}</span><h2>{hierarchy.active.siteName}</h2><p>{hierarchy.active.clientName} · {activeSite?.roleName}</p></div><dl><div><dt>Activos</dt><dd>{activeSite?.pointCount ?? 0}</dd></div><div><dt>Gateways</dt><dd>{activeSite?.gatewayCount ?? 0}</dd></div><div><dt>Dispositivos</dt><dd>{activeSite?.controllerCount ?? 0}</dd></div></dl></section>
-          <div className="inventory-columns">
-            <section>
-              <div className="inventory-heading"><div><span className="eyebrow">Activos</span><h3>Activos del sitio</h3></div><span>{filteredPoints.length}</span></div>
-              <div className="operational-card-list">{pointPage.pageItems.map((point) => {
-                const linked = hierarchy.controllers.filter((controller) => controller.pointId === point.id);
-                return <article key={point.id} className={point.active ? "" : "inactive-resource"}><span className={`operational-state state-${point.state}`}><CircuitBoard size={18} /></span><div><strong>{point.code} · {point.name}</strong><small>{point.area || "Área sin definir"} · {point.nominalVoltageKv ? `${point.nominalVoltageKv} kV` : "Tensión sin definir"}</small><em>{linked.length} dispositivo{linked.length === 1 ? "" : "s"} asociado{linked.length === 1 ? "" : "s"}</em></div><span className="operational-card-actions"><b>{stateLabel(point.state, point.active)}</b>{canManagePoints && <button className="resource-edit-button" onClick={() => openEditor("point", point)} aria-label={`Editar activo ${point.name}`}><Pencil size={15} /></button>}</span></article>;
-              })}{pointPage.pageItems.length === 0 && <TableEmptyState title="No hay activos" detail="Registra el primer activo para asociar un dispositivo." />}</div>
-              <Pagination page={pointPage.page} totalPages={pointPage.totalPages} total={filteredPoints.length} pageSize={6} onPageChange={pointPage.setPage} itemLabel="activos" />
-            </section>
-            <section>
-              <div className="inventory-heading"><div><span className="eyebrow">Conectividad</span><h3>Gateways del sitio</h3></div><span>{filteredGateways.length}</span></div>
-              <div className="operational-card-list">{gatewayPage.pageItems.map((gateway) => {
-                const linked = hierarchy.controllers.filter((controller) => controller.gatewayId === gateway.id);
-                return <article key={gateway.id} className={gateway.active ? "" : "inactive-resource"}><span className={`operational-state state-${gateway.state}`}><Server size={18} /></span><div><strong>{gateway.code} · {gateway.name}</strong><small>{gateway.ipAddress || "IP pendiente"} · {gateway.softwareVersion || "Versión pendiente"}</small><em>{linked.length} dispositivo{linked.length === 1 ? "" : "s"} asociado{linked.length === 1 ? "" : "s"}</em></div><span className="operational-card-actions"><b>{stateLabel(gateway.state, gateway.active)}</b>{canManageConnections && <button className="resource-edit-button" onClick={() => openEditor("gateway", gateway)} aria-label={`Editar gateway ${gateway.name}`}><Pencil size={15} /></button>}</span></article>;
-              })}{gatewayPage.pageItems.length === 0 && <TableEmptyState title="No hay gateways" detail="Registra un gateway antes de asociar dispositivos." />}</div>
-              <Pagination page={gatewayPage.page} totalPages={gatewayPage.totalPages} total={filteredGateways.length} pageSize={6} onPageChange={gatewayPage.setPage} itemLabel="gateways" />
-            </section>
-          </div>
+      {tab === "structure" && <section className="site-assets-workspace">
+        <header className="site-section-heading">
+          <div><h3>Activos del sitio</h3><p>{filteredPoints.length ? `${filteredPoints.length} activos disponibles en ${hierarchy.active.siteName}.` : "Este sitio todavía no tiene activos monitoreados."}</p></div>
+          <span>{filteredPoints.length}</span>
+        </header>
+        <div className="asset-operations-grid">
+          {pointPage.pageItems.map((point) => {
+            const linked = hierarchy.controllers.filter((controller) => controller.pointId === point.id);
+            const pointState = stateLabel(point.state, point.active);
+            const noMonitoring = linked.length === 0;
+            return <article key={point.id} className={`asset-operation-card ${point.active ? "" : "inactive-resource"}`}>
+              <button className="asset-operation-main" onClick={() => void onOpenAsset(hierarchy.active.siteId, point.id)}>
+                <span className={`asset-operation-icon state-${point.state}`}><CircuitBoard size={18} /></span>
+                <span className="asset-operation-copy">
+                  <small>{point.code}</small>
+                  <strong>{point.name}</strong>
+                  <span>{point.area || "Área sin definir"}</span>
+                </span>
+                <span className={`asset-operation-status ${noMonitoring ? "unmonitored" : ""}`}>{noMonitoring ? "Sin monitoreo" : pointState}</span>
+                <span className="asset-operation-meta">{linked.length} dispositivo{linked.length === 1 ? "" : "s"} asociado{linked.length === 1 ? "" : "s"}</span>
+                <span className="asset-operation-link">{noMonitoring ? "Configurar" : "Ver activo"} <ChevronRight size={14} /></span>
+              </button>
+              {canManagePoints && <button className="asset-operation-edit" onClick={() => openEditor("point", point)} aria-label={`Editar activo ${point.name}`}><Pencil size={14} /></button>}
+            </article>;
+          })}
+          {pointPage.pageItems.length === 0 && <div className="site-empty-state"><CircuitBoard size={22} /><div><strong>Sin activos configurados</strong><p>Registra el primer activo del sitio para comenzar a asociar dispositivos y telemetría.</p></div>{canManagePoints && <button className="primary-button" onClick={() => openCreateFor("point")}><Plus size={15} /> Crear primer activo</button>}</div>}
         </div>
-      </div>}
+        <Pagination page={pointPage.page} totalPages={pointPage.totalPages} total={filteredPoints.length} pageSize={6} onPageChange={pointPage.setPage} itemLabel="activos" />
+      </section>}
 
-      {tab === "connections" && <div className="connections-content">
-        <div className="connection-explainer"><span><PlugConnected size={21} /></span><div><h3>Ruta de adquisición</h3><p>El gateway concentra la adquisición de los dispositivos asociados a cada activo. La base impide relacionar equipos de sitios distintos.</p></div><strong>{activeGateway?.code ?? "Sin gateway"} → Dispositivo → HoitLive Core</strong></div>
-        <div className="module-table-wrap"><div className="connections-table"><div className="module-table-head"><span>Dispositivo</span><span>Activo</span><span>Gateway</span><span>Conexión técnica</span><span>Estado</span><span>Acciones</span></div>{controllerPage.pageItems.map((controller) => {
-          const point = hierarchy.points.find((item) => item.id === controller.pointId);
-          const gateway = hierarchy.gateways.find((item) => item.id === controller.gatewayId);
-          return <div className={`module-table-row ${controller.active ? "" : "inactive-resource"}`} key={controller.id}><span><strong>{controller.code}</strong><small>{controller.model}</small></span><span>{point ? `${point.code} · ${point.name}` : "Activo no disponible"}</span><span>{gateway ? gateway.code : "Gateway no disponible"}</span><span>{controller.model}</span><span><i className={`connection-status state-${controller.state}`}>{stateLabel(controller.state, controller.active)}</i></span><span>{canManageConnections && <button className="resource-edit-button" onClick={() => openEditor("controller", controller)} aria-label={`Editar dispositivo ${controller.name}`}><Pencil size={15} /> Editar</button>}</span></div>;
-        })}{controllerPage.pageItems.length === 0 && <TableEmptyState title="No hay dispositivos asociados" detail="Asocia un dispositivo a un activo y a un gateway." />}</div></div>
-        <Pagination page={controllerPage.page} totalPages={controllerPage.totalPages} total={filteredControllers.length} pageSize={8} onPageChange={controllerPage.setPage} itemLabel="dispositivos" />
-      </div>}
+      {tab === "connections" && <section className="site-infrastructure-workspace">
+        <div className="infrastructure-column">
+          <header className="site-section-heading"><div><h3>Gateways</h3><p>Infraestructura que conecta el sitio con HoitLive Core.</p></div><span>{filteredGateways.length}</span></header>
+          <div className="infrastructure-list">{gatewayPage.pageItems.map((gateway) => {
+            const linked = hierarchy.controllers.filter((controller) => controller.gatewayId === gateway.id);
+            return <article key={gateway.id} className={gateway.active ? "" : "inactive-resource"}>
+              <span className={`infrastructure-icon state-${gateway.state}`}><Server size={17} /></span>
+              <div><strong>{gateway.code} · {gateway.name}</strong><small>{gateway.softwareVersion || "Versión no informada"} · {linked.length} dispositivo{linked.length === 1 ? "" : "s"}</small></div>
+              <b>{stateLabel(gateway.state, gateway.active)}</b>
+              {canManageConnections && <button className="resource-edit-button" onClick={() => openEditor("gateway", gateway)} aria-label={`Editar gateway ${gateway.name}`}><Pencil size={14} /></button>}
+            </article>;
+          })}{gatewayPage.pageItems.length === 0 && <div className="site-empty-state compact"><Server size={20} /><div><strong>Sin gateways</strong><p>Registra el gateway que operará este sitio.</p></div></div>}</div>
+          <Pagination page={gatewayPage.page} totalPages={gatewayPage.totalPages} total={filteredGateways.length} pageSize={6} onPageChange={gatewayPage.setPage} itemLabel="gateways" />
+        </div>
+
+        <div className="infrastructure-column">
+          <header className="site-section-heading"><div><h3>Dispositivos</h3><p>Equipos lógicos asociados a activos y gateways.</p></div><span>{filteredControllers.length}</span></header>
+          <div className="infrastructure-list">{controllerPage.pageItems.map((controller) => {
+            const point = hierarchy.points.find((item) => item.id === controller.pointId);
+            const gateway = hierarchy.gateways.find((item) => item.id === controller.gatewayId);
+            return <article key={controller.id} className={controller.active ? "" : "inactive-resource"}>
+              <span className={`infrastructure-icon state-${controller.state}`}><PlugConnected size={17} /></span>
+              <div><strong>{controller.code} · {controller.name}</strong><small>{controller.model} · {point ? point.name : "Sin activo"} · {gateway ? gateway.code : "Sin gateway"}</small></div>
+              <b>{stateLabel(controller.state, controller.active)}</b>
+              {canManageConnections && <button className="resource-edit-button" onClick={() => openEditor("controller", controller)} aria-label={`Editar dispositivo ${controller.name}`}><Pencil size={14} /></button>}
+            </article>;
+          })}{controllerPage.pageItems.length === 0 && <div className="site-empty-state compact"><PlugConnected size={20} /><div><strong>Sin dispositivos</strong><p>Asocia un dispositivo a un activo y a un gateway.</p></div></div>}</div>
+          <Pagination page={controllerPage.page} totalPages={controllerPage.totalPages} total={filteredControllers.length} pageSize={8} onPageChange={controllerPage.setPage} itemLabel="dispositivos" />
+        </div>
+      </section>}
     </article>
     {editor && <div className="resource-editor-backdrop" role="presentation" onMouseDown={() => !editorSaving && setEditor(null)}>
       <section className="resource-editor" role="dialog" aria-modal="true" aria-labelledby="resource-editor-title" onMouseDown={(event) => event.stopPropagation()}>
@@ -1272,7 +1325,7 @@ function OperationalHierarchyView({
             {editor.resource === "client" && <><label className="field-wide"><span>Razón social</span><input value={editor.legalName} onChange={(event) => setEditor({ ...editor, legalName: event.target.value })} /></label><label><span>RUT / identificación tributaria</span><input value={editor.taxId} onChange={(event) => setEditor({ ...editor, taxId: event.target.value })} /></label><label><span>Correo de contacto</span><input type="email" value={editor.contactEmail} onChange={(event) => setEditor({ ...editor, contactEmail: event.target.value })} /></label></>}
             {editor.resource === "site" && <><label className="field-wide"><span>Descripción</span><input value={editor.description} onChange={(event) => setEditor({ ...editor, description: event.target.value })} /></label><label className="field-wide"><span>Zona horaria</span><select value={editor.timezone} onChange={(event) => setEditor({ ...editor, timezone: event.target.value })}><option value="America/Santiago">America/Santiago</option><option value="UTC">UTC</option></select></label></>}
             {editor.resource === "point" && <><label><span>Área o sala</span><input value={editor.area} onChange={(event) => setEditor({ ...editor, area: event.target.value })} /></label><label><span>Tensión nominal (kV)</span><input type="number" min="0" step="0.1" value={editor.voltage} onChange={(event) => setEditor({ ...editor, voltage: event.target.value })} /></label></>}
-            {editor.resource === "gateway" && <><label><span>Dirección IP</span><input value={editor.ipAddress} onChange={(event) => setEditor({ ...editor, ipAddress: event.target.value })} placeholder="10.0.0.20" /></label><label><span>Número de serie</span><input value={editor.serialNumber} onChange={(event) => setEditor({ ...editor, serialNumber: event.target.value })} /></label></>}
+            {editor.resource === "gateway" && <label className="field-wide"><span>Número de serie</span><input value={editor.serialNumber} onChange={(event) => setEditor({ ...editor, serialNumber: event.target.value })} /></label>}
             
           </div>
           <label className={`resource-active-toggle ${(editor.resource === "client" && editor.id === hierarchy.active.clientId) || (editor.resource === "site" && editor.id === hierarchy.active.siteId) ? "locked" : ""}`}><input type="checkbox" checked={editor.active} disabled={(editor.resource === "client" && editor.id === hierarchy.active.clientId) || (editor.resource === "site" && editor.id === hierarchy.active.siteId)} onChange={(event) => setEditor({ ...editor, active: event.target.checked })} /><span><strong>Elemento activo</strong><small>{(editor.resource === "client" && editor.id === hierarchy.active.clientId) || (editor.resource === "site" && editor.id === hierarchy.active.siteId) ? "Cambia primero el contexto activo para poder desactivarlo." : editor.active ? "Disponible para operación y adquisición." : "Conserva el histórico, pero queda fuera de operación."}</small></span></label>
@@ -1922,7 +1975,7 @@ export default function Home() {
               : view === "trends" && <TrendsView assetId={activePoint?.id ?? ""} channels={sensors.map((sensor) => ({ id: sensor.id, label: sensor.label, zone: sensor.zone, unit: sensor.unit, state: sensor.state, enabled: sensor.enabled }))} period={period} setPeriod={setPeriod} selectedId={resolvedTrendSensorId} onSelectChannel={selectTrendChannel} onBackToMap={() => navigate("cabinet")} rangeWindow={trendWindow} setRangeWindow={setTrendWindow} canExport={sessionUser.permissions.includes("history.export")} notify={notify} />}
             {view === "alarms" && <AlarmsView assetId={activePoint?.id ?? ""} permissions={sessionUser.permissions} onSummaryChange={setAlarmSummary} onOpenTrend={openAlarmTrend} onOpenAsset={(id) => { setActivePointId(id); navigate("overview"); }} />}
             {view === "history" && <HistoryView assetId={activePoint?.id ?? ""} canExport={sessionUser.permissions.includes("history.export")} onOpenTrend={openTrendRange} />}
-            {view === "assets" && <OperationalHierarchyView hierarchy={hierarchy} loading={hierarchyLoading} permissions={sessionUser.permissions} onReload={loadHierarchy} onSwitchSite={switchSite} />}
+            {view === "assets" && <OperationalHierarchyView hierarchy={hierarchy} loading={hierarchyLoading} permissions={sessionUser.permissions} onReload={loadHierarchy} onSwitchSite={switchSite} onOpenAsset={openDashboardAsset} />}
             {view === "operations" && <OperationsView
               assets={(hierarchy?.points ?? []).map((point) => ({ id: point.id, code: point.code, name: point.name }))}
               activeAssetId={activePoint?.id ?? ""}
