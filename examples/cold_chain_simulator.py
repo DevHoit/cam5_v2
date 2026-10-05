@@ -173,7 +173,6 @@ def main() -> int:
                 },
                 "device": {
                     "code": device,
-                    "driver": "eddystone_tlm",
                 },
                 "metrics": {
                     "environment.temperature": temperature,
