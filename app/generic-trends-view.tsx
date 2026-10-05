@@ -231,19 +231,19 @@ export function GenericTrendsView({
   const invalidSamples = primarySeries?.response.points.reduce((sum, point) => sum + point.invalidSampleCount, 0) ?? 0;
   const quality = totalSamples ? Math.round((totalSamples - invalidSamples) / totalSamples * 10_000) / 100 : null;
 
-  if (!assetId) return <article className="panel generic-trend-empty"><IconChartLine size={24} /><div><h2>Selecciona un activo</h2><p>Las tendencias se muestran dentro del contexto operacional seleccionado.</p></div></article>;
+  if (!assetId) return <section className="temporal-empty-state"><span><IconChartLine size={24} /></span><div><h1>Selecciona un activo</h1><p>El análisis temporal necesita un activo para consultar métricas e historial.</p></div></section>;
 
   return <div className="generic-trends">
     <section className="generic-trend-controls panel">
       <div>
-        <label><span>Métrica principal</span><select value={selected?.optionId ?? ""} onChange={(event) => { setSelectedId(event.target.value); setComparisons([]); }}>
+        <label><span>Métrica</span><select value={selected?.optionId ?? ""} onChange={(event) => { setSelectedId(event.target.value); setComparisons([]); }}>
           {options.map((option) => <option key={option.optionId} value={option.optionId}>{option.deviceCode} · {option.name}</option>)}
         </select></label>
         <div className="generic-period-tabs">{PERIODS.map((item) => <button key={item} className={period === item ? "active" : ""} onClick={() => setPeriod(item)}>{item}</button>)}</div>
       </div>
       <div>
-        <label><span>Comparar con</span><select value={candidate} onChange={(event) => setCandidate(event.target.value)} disabled={!compatible.length || comparisons.length >= 3}><option value="">Seleccionar métrica</option>{compatible.map((option) => <option key={option.optionId} value={option.optionId}>{option.deviceCode} · {option.name}</option>)}</select></label>
-        <button className="secondary-button" disabled={!candidate || comparisons.length >= 3} onClick={() => { setComparisons((current) => [...current, candidate]); setCandidate(""); }}>Agregar</button>
+        <label><span>Comparar</span><select value={candidate} onChange={(event) => setCandidate(event.target.value)} disabled={!compatible.length || comparisons.length >= 3}><option value="">Seleccionar métrica</option>{compatible.map((option) => <option key={option.optionId} value={option.optionId}>{option.deviceCode} · {option.name}</option>)}</select></label>
+        <button className="secondary-button" disabled={!candidate || comparisons.length >= 3} onClick={() => { setComparisons((current) => [...current, candidate]); setCandidate(""); }}>Agregar métrica</button>
         <button className="secondary-button" onClick={() => setRefreshKey((value) => value + 1)} disabled={loading}><IconRefresh className={loading ? "spin" : ""} size={15} /> Actualizar</button>
         {canExport && <button className="primary-button" onClick={() => { downloadCsv(series); notify("Tendencia exportada con las métricas visibles.", "info"); }} disabled={!series.length}><IconDownload size={15} /> Exportar CSV</button>}
       </div>
@@ -255,7 +255,7 @@ export function GenericTrendsView({
     })}</div>}
 
     {error && <div className="data-error"><IconAlertTriangle size={18} /><div><strong>No se pudo cargar la tendencia</strong><p>{error}</p></div></div>}
-    {!loading && !error && !options.length && <article className="panel generic-trend-empty"><IconChartLine size={24} /><div><h2>Sin métricas numéricas</h2><p>Este activo no tiene variables numéricas habilitadas para graficar.</p></div></article>}
+    {!loading && !error && !options.length && <article className="panel generic-trend-empty"><IconChartLine size={24} /><div><h2>Sin métricas numéricas</h2><p>Este activo todavía no tiene métricas numéricas disponibles para graficar.</p></div></article>}
 
     {selected && <section className="generic-trend-kpis">
       <article><small>Última lectura</small><strong>{valueLabel(last, selected.unit)}</strong><span>{selected.deviceCode} · {selected.name}</span></article>
@@ -265,7 +265,7 @@ export function GenericTrendsView({
     </section>}
 
     {selected && <article className="panel generic-trend-chart">
-      <header><div><span className="eyebrow">Tendencia normalizada</span><h2>{selected.name}</h2><p>{selected.deviceCode} · {selected.unit || "sin unidad"} · {period}</p></div><span><IconShieldCheck size={14} /> Histórico verificado</span></header>
+      <header><div><h2>{selected.name}</h2><p>{selected.deviceCode} · {selected.unit || "sin unidad"} · {period}</p></div><span><IconShieldCheck size={14} /> Datos históricos</span></header>
       <div className="generic-chart-layout">
         <div className="generic-y-axis">{yTicks.map((tick, index) => <span key={index}>{valueLabel(tick, selected.unit)}</span>)}</div>
         <div className="generic-svg-wrap">
