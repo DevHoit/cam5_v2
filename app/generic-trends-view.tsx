@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   IconAlertTriangle,
+  IconArrowDown,
+  IconArrowUp,
   IconChartLine,
   IconDownload,
   IconRefresh,
@@ -31,7 +33,7 @@ type LatestDevice = {
 };
 type LatestResponse = {
   serverTime: string;
-  assets: Array<{ id: string; code: string; name: string; devices: LatestDevice[] }>;
+  assets: Array<{ id: string; code: string; name: string; assetType: string; devices: LatestDevice[] }>;
 };
 type HistoryPoint = {
   recordedAt: string;
@@ -76,6 +78,37 @@ function valueLabel(value: number | null, unit: string) {
   const abs = Math.abs(value);
   const digits = abs >= 100 ? 0 : abs >= 10 ? 1 : 2;
   return `${value.toFixed(digits)}${unit ? ` ${unit}` : ""}`;
+}
+
+function preferredMetricId(asset: LatestResponse["assets"][number] | undefined) {
+  if (!asset) return "";
+  const numeric = asset.devices.flatMap((device) => device.metrics
+    .filter((metric) => metric.dataType === "float" || metric.dataType === "integer")
+    .map((metric) => ({ device, metric, haystack: `${metric.key} ${metric.code} ${metric.name} ${metric.category}`.toLowerCase() })));
+  if (!numeric.length) return "";
+  const preferences: Record<string, string[]> = {
+    cold_room: ["temperature", "temperatura"],
+    room_environment: ["temperature", "temperatura"],
+    hvac: ["temperature", "temperatura"],
+    electrical_point: ["active_power", "potencia activa", "power", "voltage", "tensión"],
+    transformer: ["temperature", "temperatura", "voltage", "tensión"],
+    generator: ["active_power", "potencia activa", "frequency", "frecuencia"],
+    ups: ["load", "carga", "voltage", "tensión"],
+    motor: ["vibration", "vibración", "temperature", "temperatura", "current", "corriente"],
+    pump: ["vibration", "vibración", "temperature", "temperatura", "current", "corriente"],
+    compressor: ["temperature", "temperatura", "vibration", "vibración", "pressure", "presión"],
+    fan: ["vibration", "vibración", "temperature", "temperatura"],
+    conveyor: ["vibration", "vibración", "speed", "velocidad"],
+    tank: ["level", "nivel", "temperature", "temperatura"],
+    process_equipment: ["temperature", "temperatura", "pressure", "presión"],
+  };
+  for (const preferred of preferences[asset.assetType] ?? []) {
+    const match = numeric.find(({ metric, haystack }) => metric.quality === "good" && metric.value !== null && haystack.includes(preferred))
+      ?? numeric.find(({ haystack }) => haystack.includes(preferred));
+    if (match) return `${match.device.id}::${match.metric.key}`;
+  }
+  const good = numeric.find(({ metric }) => metric.quality === "good" && metric.value !== null) ?? numeric[0];
+  return `${good.device.id}::${good.metric.key}`;
 }
 
 function linePath(points: HistoryPoint[], fromMs: number, toMs: number, yMin: number, yMax: number) {
@@ -147,14 +180,12 @@ export function GenericTrendsView({
         if (!alive) return;
         setLatest(result);
         const asset = result.assets.find((item) => item.id === assetId);
-        const first = asset?.devices.flatMap((device) => device.metrics
-          .filter((metric) => metric.dataType === "float" || metric.dataType === "integer")
-          .map((metric) => `${device.id}::${metric.key}`))[0] ?? "";
+        const defaultId = preferredMetricId(asset);
         const preferred = initialMetricKey
           ? asset?.devices.flatMap((device) => device.metrics.map((metric) => ({ device, metric })))
               .find(({ metric }) => metric.key === initialMetricKey || metric.code === initialMetricKey)
           : null;
-        setSelectedId((current) => current || (preferred ? `${preferred.device.id}::${preferred.metric.key}` : first));
+        setSelectedId((current) => current || (preferred ? `${preferred.device.id}::${preferred.metric.key}` : defaultId));
       })
       .catch((cause) => { if (alive) setError(cause instanceof Error ? cause.message : "No fue posible consultar las métricas."); })
       .finally(() => { if (alive) setLoading(false); });
@@ -222,50 +253,66 @@ export function GenericTrendsView({
   const xTicks = [0, .25, .5, .75, 1].map((ratio) => new Date(fromMs + (toMs - fromMs) * ratio));
 
   const primarySeries = series[0] ?? null;
-  const primaryValues = primarySeries?.response.points.filter((point) => typeof point.value === "number" && point.quality !== "bad").map((point) => Number(point.value)) ?? [];
-  const average = primaryValues.length ? primaryValues.reduce((sum, value) => sum + value, 0) / primaryValues.length : null;
-  const minimum = primaryValues.length ? Math.min(...primaryValues) : null;
-  const maximum = primaryValues.length ? Math.max(...primaryValues) : null;
-  const last = primaryValues.at(-1) ?? null;
+  const primaryPoints = primarySeries?.response.points.filter((point) => typeof point.value === "number" && point.quality !== "bad") ?? [];
+  const weighted = primaryPoints.reduce((acc, point) => {
+    const goodSamples = Math.max(0, point.sampleCount - point.invalidSampleCount);
+    return { sum: acc.sum + Number(point.value) * goodSamples, count: acc.count + goodSamples };
+  }, { sum: 0, count: 0 });
+  const average = weighted.count ? weighted.sum / weighted.count : null;
+  const minimumValues = primaryPoints.flatMap((point) => typeof point.minimum === "number" ? [point.minimum] : [Number(point.value)]);
+  const maximumValues = primaryPoints.flatMap((point) => typeof point.maximum === "number" ? [point.maximum] : [Number(point.value)]);
+  const minimum = minimumValues.length ? Math.min(...minimumValues) : null;
+  const maximum = maximumValues.length ? Math.max(...maximumValues) : null;
+  const last = primaryPoints.length ? Number(primaryPoints[primaryPoints.length - 1].value) : null;
   const totalSamples = primarySeries?.response.points.reduce((sum, point) => sum + point.sampleCount, 0) ?? 0;
   const invalidSamples = primarySeries?.response.points.reduce((sum, point) => sum + point.invalidSampleCount, 0) ?? 0;
   const quality = totalSamples ? Math.round((totalSamples - invalidSamples) / totalSamples * 10_000) / 100 : null;
+  const asset = latest?.assets.find((item) => item.id === assetId) ?? null;
+  const hasHistory = Boolean(primarySeries?.response.points.length);
 
   if (!assetId) return <section className="temporal-empty-state"><span><IconChartLine size={24} /></span><div><h1>Selecciona un activo</h1><p>El análisis temporal necesita un activo para consultar métricas e historial.</p></div></section>;
 
-  return <div className="generic-trends">
-    <section className="generic-trend-controls panel">
-      <div>
-        <label><span>Métrica</span><select value={selected?.optionId ?? ""} onChange={(event) => { setSelectedId(event.target.value); setComparisons([]); }}>
-          {options.map((option) => <option key={option.optionId} value={option.optionId}>{option.deviceCode} · {option.name}</option>)}
-        </select></label>
-        <div className="generic-period-tabs">{PERIODS.map((item) => <button key={item} className={period === item ? "active" : ""} onClick={() => setPeriod(item)}>{item}</button>)}</div>
+  return <div className="generic-trends trends-v4">
+    <section className="trend-commandbar">
+      <div><h1>Tendencias</h1><span>{asset?.name ?? "Activo seleccionado"}</span></div>
+      <div className="trend-command-actions">
+        <span className="trend-history-state"><i /> Historial disponible</span>
+        <button className="trend-refresh" onClick={() => setRefreshKey((value) => value + 1)} disabled={loading} aria-label="Actualizar tendencias" title="Actualizar tendencias"><IconRefresh className={loading ? "spin" : ""} size={16} /></button>
+        {canExport && <button className="secondary-button" onClick={() => { downloadCsv(series); notify("Tendencia exportada con las métricas visibles.", "info"); }} disabled={!series.length}><IconDownload size={16} /> Exportar CSV</button>}
       </div>
-      <div>
-        <label><span>Comparar</span><select value={candidate} onChange={(event) => setCandidate(event.target.value)} disabled={!compatible.length || comparisons.length >= 3}><option value="">Seleccionar métrica</option>{compatible.map((option) => <option key={option.optionId} value={option.optionId}>{option.deviceCode} · {option.name}</option>)}</select></label>
-        <button className="secondary-button" disabled={!candidate || comparisons.length >= 3} onClick={() => { setComparisons((current) => [...current, candidate]); setCandidate(""); }}>Agregar métrica</button>
-        <button className="secondary-button" onClick={() => setRefreshKey((value) => value + 1)} disabled={loading}><IconRefresh className={loading ? "spin" : ""} size={15} /> Actualizar</button>
-        {canExport && <button className="primary-button" onClick={() => { downloadCsv(series); notify("Tendencia exportada con las métricas visibles.", "info"); }} disabled={!series.length}><IconDownload size={15} /> Exportar CSV</button>}
+    </section>
+
+    <section className="generic-trend-controls panel">
+      <div className="trend-primary-controls-v4">
+        <label className="trend-metric-select"><span>Variable a analizar</span><select value={selected?.optionId ?? ""} onChange={(event) => { setSelectedId(event.target.value); setComparisons([]); }}>
+          {options.map((option) => <option key={option.optionId} value={option.optionId}>{option.name}{option.deviceName ? ` · ${option.deviceName}` : ""}</option>)}
+        </select></label>
+        <div className="trend-period-group"><span>Período</span><div className="generic-period-tabs">{PERIODS.map((item) => <button key={item} className={period === item ? "active" : ""} onClick={() => setPeriod(item)}>{item}</button>)}</div></div>
+      </div>
+      <div className="trend-compare-controls-v4">
+        <label><span>Comparar con</span><select value={candidate} onChange={(event) => setCandidate(event.target.value)} disabled={!compatible.length || comparisons.length >= 3}><option value="">Seleccionar otra variable</option>{compatible.map((option) => <option key={option.optionId} value={option.optionId}>{option.name}{option.deviceName ? ` · ${option.deviceName}` : ""}</option>)}</select></label>
+        <button className="secondary-button" disabled={!candidate || comparisons.length >= 3} onClick={() => { setComparisons((current) => [...current, candidate]); setCandidate(""); }}>Agregar comparación</button>
+        <small>Sólo se comparan variables con la misma unidad.</small>
       </div>
     </section>
 
     {comparisons.length > 0 && <div className="generic-comparison-chips">{comparisons.map((id, index) => {
       const option = options.find((item) => item.optionId === id);
-      return <button key={id} onClick={() => setComparisons((current) => current.filter((item) => item !== id))}><i style={{ background: SERIES_COLORS[index + 1] }} />{option?.deviceCode} · {option?.name}<b>×</b></button>;
+      return <button key={id} onClick={() => setComparisons((current) => current.filter((item) => item !== id))}><i style={{ background: SERIES_COLORS[index + 1] }} />{option?.name}{option?.deviceName ? ` · ${option.deviceName}` : ""}<b>×</b></button>;
     })}</div>}
 
     {error && <div className="data-error"><IconAlertTriangle size={18} /><div><strong>No se pudo cargar la tendencia</strong><p>{error}</p></div></div>}
     {!loading && !error && !options.length && <article className="panel generic-trend-empty"><IconChartLine size={24} /><div><h2>Sin métricas numéricas</h2><p>Este activo todavía no tiene métricas numéricas disponibles para graficar.</p></div></article>}
 
-    {selected && <section className="generic-trend-kpis">
-      <article><small>Última lectura</small><strong>{valueLabel(last, selected.unit)}</strong><span>{selected.deviceCode} · {selected.name}</span></article>
-      <article><small>Promedio</small><strong>{valueLabel(average, selected.unit)}</strong><span>En el período visible</span></article>
-      <article><small>Rango</small><strong>{valueLabel(minimum, selected.unit)}</strong><span>máx. {valueLabel(maximum, selected.unit)}</span></article>
-      <article><small>Calidad</small><strong>{quality === null ? "—" : `${quality}%`}</strong><span>{totalSamples.toLocaleString("es-CL")} muestras</span></article>
+    {selected && <section className="generic-trend-kpis" aria-label="Resumen del período">
+      <article><span className="trend-kpi-icon info"><IconChartLine size={19} /></span><div><small>Última lectura</small><strong>{valueLabel(last, selected.unit)}</strong><p>{selected.name}</p></div></article>
+      <article><span className="trend-kpi-icon neutral"><IconShieldCheck size={19} /></span><div><small>Promedio</small><strong>{valueLabel(average, selected.unit)}</strong><p>Promedio ponderado del período</p></div></article>
+      <article><span className="trend-kpi-icon low"><IconArrowDown size={19} /></span><div><small>Mínimo</small><strong>{valueLabel(minimum, selected.unit)}</strong><p>Menor valor observado</p></div></article>
+      <article><span className="trend-kpi-icon high"><IconArrowUp size={19} /></span><div><small>Máximo</small><strong>{valueLabel(maximum, selected.unit)}</strong><p>Mayor valor observado</p></div></article>
     </section>}
 
     {selected && <article className="panel generic-trend-chart">
-      <header><div><h2>{selected.name}</h2><p>{selected.deviceCode} · {selected.unit || "sin unidad"} · {period}</p></div><span><IconShieldCheck size={14} /> Datos históricos</span></header>
+      <header><div><h2>{selected.name}</h2><p>{selected.deviceName}{selected.unit ? ` · ${selected.unit}` : ""} · período ${period}</p></div><span className={quality !== null && quality < 100 ? "trend-quality attention" : "trend-quality"}><IconShieldCheck size={15} /> {quality === null ? "Sin muestras" : `${quality}% datos válidos`}</span></header>
       <div className="generic-chart-layout">
         <div className="generic-y-axis">{yTicks.map((tick, index) => <span key={index}>{valueLabel(tick, selected.unit)}</span>)}</div>
         <div className="generic-svg-wrap">
@@ -274,10 +321,11 @@ export function GenericTrendsView({
             {series.map((item, index) => <path key={item.option.optionId} d={linePath(item.response.points, fromMs, toMs, yMin, yMax)} fill="none" stroke={SERIES_COLORS[index]} strokeWidth="2.4" vectorEffect="non-scaling-stroke" />)}
           </svg>
           {loading && <div className="generic-chart-loading"><IconRefresh className="spin" size={20} /> Actualizando series…</div>}
+          {!loading && !hasHistory && <div className="generic-chart-no-data"><IconChartLine size={22} /><span><strong>Sin datos en este período</strong><small>Prueba un rango mayor o revisa la adquisición del activo.</small></span></div>}
         </div>
       </div>
       <div className="generic-x-axis">{xTicks.map((tick) => <span key={tick.toISOString()}>{new Intl.DateTimeFormat("es-CL", { day: period === "30 días" || period === "7 días" ? "2-digit" : undefined, hour: "2-digit", minute: "2-digit" }).format(tick)}</span>)}</div>
-      <footer>{series.map((item, index) => <span key={item.option.optionId}><i style={{ background: SERIES_COLORS[index] }} />{item.option.deviceCode} · {item.option.name}</span>)}</footer>
+      <footer>{series.map((item, index) => <span key={item.option.optionId}><i style={{ background: SERIES_COLORS[index] }} />{item.option.name}{item.option.deviceName ? ` · ${item.option.deviceName}` : ""}</span>)}</footer>
     </article>}
   </div>;
 }
