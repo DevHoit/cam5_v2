@@ -1412,7 +1412,7 @@ function OperationalHierarchyView({
         <header className="asset-create-header-v4">
           <span className="asset-create-icon-v4"><CircuitBoard size={20} /></span>
           <div>
-            <span className="asset-create-eyebrow-v4">Nuevo activo · ${hierarchy.active.siteName}</span>
+            <span className="asset-create-eyebrow-v4">Nuevo activo · {hierarchy.active.siteName}</span>
             <h3>¿Qué quieres supervisar?</h3>
             <p>Registra el equipo, instalación o entorno operacional. Los sensores y medidores se asociarán después como dispositivos.</p>
           </div>
