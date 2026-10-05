@@ -7,7 +7,6 @@ import {
   IconBuildingFactory2 as BuildingFactory2,
   IconCircleCheck,
   IconActivity,
-  IconClock,
   IconRefresh,
   IconServer,
   IconTopologyStar3,
@@ -149,7 +148,7 @@ export function DashboardView({
       </div>
       <div className="dashboard-commandbar-actions">
         <span className="dashboard-live-status"><i /> En línea</span>
-        <span><IconClock size={14} /> Actualizado {new Intl.DateTimeFormat("es-CL", { timeStyle: "short" }).format(new Date(data.generatedAt))}</span>
+        <span className="dashboard-updated">Actualizado {new Intl.DateTimeFormat("es-CL", { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(data.generatedAt))}</span>
         <button className="dashboard-refresh" onClick={refresh} disabled={loading} aria-label="Actualizar Dashboard"><IconRefresh className={loading ? "spin" : ""} size={16} /></button>
       </div>
     </section>
