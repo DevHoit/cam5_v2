@@ -8534,3 +8534,268 @@ button.dashboard-kpi:hover { transform: translateY(-1px); border-color: #bae6fd;
 .provisioning-state button{min-height:36px;padding:0 11px;font-size:11px}
 @media(max-width:1050px){.gateway-provisioning-v4 .provisioning-form{grid-template-columns:repeat(2,minmax(0,1fr))}.gateway-provisioning-v4 .provisioning-form>button{grid-column:2}.gateway-provisioning-v4 .provisioning-toolbar{grid-template-columns:minmax(220px,1fr) 150px 150px}}
 @media(max-width:760px){.gateway-provisioning-v4 .provisioning-summary-grid{grid-template-columns:1fr}.gateway-provisioning-v4 .provisioning-guide>header{align-items:flex-start;flex-wrap:wrap}.gateway-provisioning-v4 .provisioning-guide header>div{flex-basis:calc(100% - 52px)}.gateway-provisioning-v4 .provisioning-guide header>button{width:100%;justify-content:center}.gateway-provisioning-v4 .provisioning-steps{grid-template-columns:1fr}.gateway-provisioning-v4 .provisioning-form{grid-template-columns:1fr}.gateway-provisioning-v4 .provisioning-form>button{grid-column:auto}.gateway-provisioning-v4 .provisioning-toolbar{grid-template-columns:1fr}.gateway-provisioning-v4 .provisioning-inventory>header{align-items:flex-start;flex-direction:column}.gateway-provisioning-v4 .provisioning-inventory header>button{width:100%;justify-content:center}.gateway-provisioning-v4 .credential-reveal{grid-template-columns:40px minmax(0,1fr)}.gateway-provisioning-v4 .credential-reveal-actions{grid-column:1/-1}.gateway-provisioning-v4 .credential-reveal-actions button{width:100%}.gateway-provisioning-v4 .credential-renew-dialog dl{grid-template-columns:1fr}}
+
+
+/* Specialized capabilities v4 — electrical, ATS and cold chain */
+.specialized-commandbar{
+  min-height:62px;
+  padding:0 2px 9px;
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:18px;
+  border-bottom:1px solid #e4e4e7;
+}
+.specialized-commandbar>div:first-child{min-width:0}
+.specialized-commandbar .eyebrow{display:inline-flex;align-items:center;gap:5px;color:#71717a;font-size:10px;font-weight:700;letter-spacing:.055em;text-transform:uppercase}
+.specialized-commandbar h1{margin:4px 0 0;color:#18181b;font-size:22px;line-height:1.1;font-weight:700;letter-spacing:-.035em}
+.specialized-commandbar p{max-width:760px;margin:5px 0 0;color:#71717a;font-size:12px;line-height:1.4}
+.specialized-commandbar button{min-height:38px;padding:0 12px;font-size:12px;border-radius:8px}
+
+/* Electrical v4 */
+.electrical-view-v4{gap:16px;font-family:var(--font-inter),Inter,system-ui,sans-serif}
+.electrical-view-v4 .electrical-toolbar{align-items:flex-end}
+.electrical-view-v4 .electrical-actions{gap:7px;align-items:center}
+.electrical-view-v4 .electrical-summary{gap:12px}
+.electrical-view-v4 .electrical-summary article{min-height:98px;padding:14px 16px;justify-content:center;border-radius:12px;box-shadow:0 4px 18px rgba(24,24,27,.025)}
+.electrical-view-v4 .electrical-summary span{font-size:11px;font-weight:700}
+.electrical-view-v4 .electrical-summary strong{font-size:20px;line-height:1.05;letter-spacing:-.02em}
+.electrical-view-v4 .electrical-points{gap:12px}
+.electrical-view-v4 .electrical-point{border-radius:12px;box-shadow:0 4px 20px rgba(24,24,27,.025)}
+.electrical-view-v4 .electrical-point>header{min-height:70px;padding:13px 16px;align-items:center;background:#fafafa}
+.electrical-view-v4 .electrical-point>header span{font-size:10px;letter-spacing:.04em}
+.electrical-view-v4 .electrical-point>header h3{margin:3px 0 2px;font-size:15px}
+.electrical-view-v4 .electrical-point>header p{font-size:11px}
+.electrical-view-v4 .electrical-state{min-height:26px;padding:0 8px;display:inline-flex;align-items:center;font-size:10px;font-weight:700}
+.electrical-view-v4 .electrical-point-actions{gap:6px;align-items:center}
+.electrical-view-v4 .electrical-point-actions .secondary-button{min-height:32px;padding:0 9px;font-size:10px}
+.electrical-view-v4 .pm-meter-card{padding:14px 16px 16px}
+.electrical-view-v4 .pm-meter-heading{grid-template-columns:38px minmax(0,1fr) auto;gap:11px;margin-bottom:12px}
+.electrical-view-v4 .pm-meter-icon{width:38px;height:38px;border-radius:9px}
+.electrical-view-v4 .pm-meter-heading span{font-size:10px}
+.electrical-view-v4 .pm-meter-heading h4{margin:2px 0;font-size:13px}
+.electrical-view-v4 .pm-meter-heading p{font-size:11px;line-height:1.4}
+.electrical-view-v4 .pm-meter-actions{gap:8px}
+.electrical-view-v4 .pm-meter-actions .secondary-button{min-height:32px;padding:0 9px;font-size:10px}
+.electrical-view-v4 .pm-online,.electrical-view-v4 .pm-offline{font-size:10px;line-height:1.35}
+.electrical-view-v4 .pm-online small,.electrical-view-v4 .pm-offline small{font-size:10px}
+.electrical-view-v4 .pm-phase-grid{gap:8px;margin-bottom:9px}
+.electrical-view-v4 .pm-phase-grid>div{min-height:66px;padding:10px 11px;border-radius:10px}
+.electrical-view-v4 .pm-phase-grid strong{font-size:11px}
+.electrical-view-v4 .pm-phase-grid span{font-size:12px}
+.electrical-view-v4 .pm-phase-grid small{font-size:10px}
+.electrical-view-v4 .pm-kpis{grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.electrical-view-v4 .pm-kpis>div{min-height:62px;padding:9px 10px;border-radius:9px}
+.electrical-view-v4 .pm-kpis span{font-size:10px}
+.electrical-view-v4 .pm-kpis strong{font-size:12px}
+.electrical-view-v4 .electrical-empty{min-height:120px;padding:18px;border-radius:12px;font-size:12px}
+.electrical-view-v4 .electrical-empty.compact{min-height:64px;margin:12px 16px}
+
+/* Electrical dialogs and history */
+.electrical-view-v4 .electrical-dialog{border-radius:14px}
+.electrical-view-v4 .cold-config-dialog>header{min-height:66px;padding:14px 16px}
+.electrical-view-v4 .cold-config-dialog>header strong{font-size:15px}
+.electrical-view-v4 .cold-config-dialog>header small{font-size:11px;line-height:1.4}
+.electrical-view-v4 .cold-config-form{padding:15px 16px;gap:12px}
+.electrical-view-v4 .cold-config-form label{gap:5px;font-size:12px}
+.electrical-view-v4 .cold-config-form input,.electrical-view-v4 .cold-config-form select{min-height:42px;padding:0 10px;border-radius:9px;font-size:13px}
+.electrical-view-v4 .cold-config-dialog>footer{padding:12px 16px 15px}
+.electrical-view-v4 .cold-config-dialog>footer button{min-height:36px;font-size:11px}
+.electrical-view-v4 .cold-maintenance-note{padding:11px 12px;border-radius:9px}
+.electrical-view-v4 .cold-maintenance-note strong{font-size:12px}
+.electrical-view-v4 .cold-maintenance-note p{font-size:11px;line-height:1.45}
+.electrical-view-v4 .electrical-history-dialog{border-radius:14px}
+.electrical-view-v4 .electrical-history-controls{padding:13px 16px 7px;gap:12px}
+.electrical-view-v4 .electrical-history-controls label span{font-size:10px}
+.electrical-view-v4 .electrical-history-controls select{min-height:38px;font-size:12px}
+.electrical-view-v4 .electrical-history-controls nav button{min-height:34px;padding:0 10px;font-size:11px}
+.electrical-view-v4 .electrical-history-meta{padding:7px 16px 4px;font-size:10px}
+.electrical-view-v4 .electrical-history-kpis{padding:9px 16px;gap:8px}
+.electrical-view-v4 .electrical-history-kpis article{padding:9px 10px;border-radius:9px}
+.electrical-view-v4 .electrical-history-kpis span{font-size:10px}
+.electrical-view-v4 .electrical-history-kpis strong{font-size:12px}
+.electrical-view-v4 .electrical-history-note{margin:4px 16px 16px;font-size:10px}
+
+/* ATS v4 */
+.ats-view-v4{display:grid;gap:16px;font-family:var(--font-inter),Inter,system-ui,sans-serif}
+.ats-view-v4 .electrical-toolbar{align-items:flex-end}
+.ats-view-v4 .electrical-actions{gap:7px;align-items:center}
+.ats-view-v4 .electrical-summary{gap:12px}
+.ats-view-v4 .electrical-summary article{min-height:98px;padding:14px 16px;justify-content:center;border-radius:12px;box-shadow:0 4px 18px rgba(24,24,27,.025)}
+.ats-view-v4 .electrical-summary span{font-size:11px;font-weight:700}
+.ats-view-v4 .electrical-summary strong{font-size:20px;line-height:1.05;letter-spacing:-.02em}
+.ats-view-v4 .ats-units{gap:12px}
+.ats-view-v4 .ats-unit-card{border-radius:12px;box-shadow:0 4px 20px rgba(24,24,27,.025)}
+.ats-view-v4 .ats-unit-card>header{min-height:70px;padding:13px 16px;align-items:center;background:#fafafa}
+.ats-view-v4 .ats-unit-card>header span{font-size:10px;letter-spacing:.04em}
+.ats-view-v4 .ats-unit-card>header h3{font-size:15px}
+.ats-view-v4 .ats-unit-card>header p{font-size:11px}
+.ats-view-v4 .ats-controller-card{padding:14px 16px 16px;gap:12px}
+.ats-view-v4 .pm-meter-heading{grid-template-columns:38px minmax(0,1fr) auto;gap:11px;margin-bottom:0}
+.ats-view-v4 .pm-meter-icon{width:38px;height:38px;border-radius:9px}
+.ats-view-v4 .pm-meter-heading span{font-size:10px}
+.ats-view-v4 .pm-meter-heading h4{margin:2px 0;font-size:13px}
+.ats-view-v4 .pm-meter-heading p{font-size:11px;line-height:1.4}
+.ats-view-v4 .pm-meter-actions{gap:8px}
+.ats-view-v4 .pm-meter-actions .secondary-button{min-height:32px;padding:0 9px;font-size:10px}
+.ats-view-v4 .pm-online,.ats-view-v4 .pm-offline{font-size:10px}
+.ats-view-v4 .pm-online small,.ats-view-v4 .pm-offline small{font-size:10px}
+.ats-view-v4 .ats-source-grid{grid-template-columns:minmax(0,1fr) 136px minmax(0,1fr);gap:9px}
+.ats-view-v4 .ats-source-grid>article{min-height:116px;padding:10px 11px;gap:8px;border-radius:10px}
+.ats-view-v4 .ats-source-grid>article header{gap:6px}
+.ats-view-v4 .ats-source-grid>article header strong{font-size:12px}
+.ats-view-v4 .ats-source-grid>article header b{font-size:9px}
+.ats-view-v4 .ats-source-grid>article>div{gap:5px}
+.ats-view-v4 .ats-source-grid>article>div span{font-size:9px}
+.ats-view-v4 .ats-source-grid>article>div b{font-size:11px}
+.ats-view-v4 .ats-source-grid>article footer{font-size:9px}
+.ats-view-v4 .ats-transfer-core{padding:9px;border-radius:10px;gap:4px}
+.ats-view-v4 .ats-transfer-core small,.ats-view-v4 .ats-transfer-core span{font-size:9px}
+.ats-view-v4 .ats-transfer-core strong{font-size:13px}
+.ats-view-v4 .ats-transfer-core b{font-size:9px}
+.ats-view-v4 .pm-kpis{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.ats-view-v4 .pm-kpis>div{min-height:62px;padding:9px 10px;border-radius:9px}
+.ats-view-v4 .pm-kpis span{font-size:10px}
+.ats-view-v4 .pm-kpis strong{font-size:12px}
+.ats-view-v4 .cold-maintenance-note{margin:0;padding:11px 12px;border-radius:9px}
+.ats-view-v4 .cold-maintenance-note strong{font-size:12px}
+.ats-view-v4 .cold-maintenance-note p{font-size:11px;line-height:1.45}
+.ats-view-v4 .electrical-empty{min-height:120px;padding:18px;border-radius:12px;font-size:12px}
+.ats-view-v4 .electrical-empty.compact{min-height:64px;margin:12px 16px}
+.ats-view-v4 .electrical-point-actions .secondary-button{min-height:32px;padding:0 9px;font-size:10px}
+.ats-view-v4 .electrical-state{min-height:26px;padding:0 8px;display:inline-flex;align-items:center;font-size:10px;font-weight:700}
+.ats-view-v4 .electrical-dialog{border-radius:14px}
+.ats-view-v4 .cold-config-dialog>header{min-height:66px;padding:14px 16px}
+.ats-view-v4 .cold-config-dialog>header strong{font-size:15px}
+.ats-view-v4 .cold-config-dialog>header small{font-size:11px;line-height:1.4}
+.ats-view-v4 .cold-config-form{padding:15px 16px;gap:12px}
+.ats-view-v4 .cold-config-form label{gap:5px;font-size:12px}
+.ats-view-v4 .cold-config-form input,.ats-view-v4 .cold-config-form select{min-height:42px;padding:0 10px;border-radius:9px;font-size:13px}
+.ats-view-v4 .ats-checkbox{min-height:42px}
+.ats-view-v4 .ats-checkbox input{width:16px;height:16px}
+.ats-view-v4 .cold-config-dialog>footer{padding:12px 16px 15px}
+.ats-view-v4 .cold-config-dialog>footer button{min-height:36px;font-size:11px}
+.ats-view-v4 .ats-history-dialog{border-radius:14px}
+.ats-view-v4 .ats-event-history{gap:8px;padding:5px 16px 16px}
+.ats-view-v4 .ats-event-history h3{font-size:14px}
+.ats-view-v4 .ats-event-history>p{font-size:11px}
+.ats-view-v4 .ats-event-history article{min-height:58px;padding:8px 9px;border-radius:8px}
+.ats-view-v4 .ats-event-history time{font-size:10px}
+.ats-view-v4 .ats-event-history article span strong{font-size:11px}
+.ats-view-v4 .ats-event-history article span small{font-size:10px}
+.ats-view-v4 .ats-event-history article b{font-size:10px}
+
+/* Cold chain v4 */
+.cold-chain-view-v4{gap:16px;font-family:var(--font-inter),Inter,system-ui,sans-serif}
+.cold-chain-view-v4 .cold-chain-commandbar{align-items:flex-end}
+.cold-chain-view-v4 .cold-chain-toolbar{display:flex;align-items:center;justify-content:flex-end}
+.cold-chain-view-v4 .cold-chain-summary-grid{gap:12px}
+.cold-chain-view-v4 .cold-chain-summary-card{min-height:108px;padding:16px 17px;gap:11px;border-radius:12px;box-shadow:0 4px 18px rgba(24,24,27,.025)}
+.cold-chain-view-v4 .cold-chain-summary-card>svg{width:20px;height:20px;flex:0 0 auto}
+.cold-chain-view-v4 .cold-chain-summary-card span{font-size:11px;font-weight:700}
+.cold-chain-view-v4 .cold-chain-summary-card strong{font-size:24px;line-height:1}
+.cold-chain-view-v4 .cold-chain-summary-card small{font-size:11px;line-height:1.35}
+.cold-chain-view-v4 .cold-chain-grid{gap:12px}
+.cold-chain-view-v4 .cold-room-card{border-radius:12px;box-shadow:0 4px 20px rgba(24,24,27,.025)}
+.cold-chain-view-v4 .cold-room-card>header{min-height:72px;padding:13px 15px;gap:11px;background:#fafafa}
+.cold-chain-view-v4 .cold-room-icon{width:38px;height:38px;border-radius:9px}
+.cold-chain-view-v4 .cold-room-card>header h2{margin:2px 0;font-size:14px}
+.cold-chain-view-v4 .cold-room-card>header p,.cold-chain-view-v4 .cold-room-card>header span{font-size:10px}
+.cold-chain-view-v4 .cold-room-card>header b{min-height:26px;padding:0 8px;display:inline-flex;align-items:center;font-size:10px}
+.cold-chain-view-v4 .cold-room-header-actions{gap:6px}
+.cold-chain-view-v4 .cold-room-action{width:32px;height:32px;border-radius:8px}
+.cold-chain-view-v4 .cold-room-primary>div{min-height:74px;padding:12px 13px}
+.cold-chain-view-v4 .cold-room-primary span{font-size:10px}
+.cold-chain-view-v4 .cold-room-primary strong{font-size:13px}
+.cold-chain-view-v4 .cold-room-stats{padding:11px 13px;gap:9px}
+.cold-chain-view-v4 .cold-room-stats small{font-size:10px}
+.cold-chain-view-v4 .cold-room-stats strong{font-size:12px}
+.cold-chain-view-v4 .cold-room-warning{margin:10px 13px;padding:9px 10px;border-radius:9px;font-size:11px;line-height:1.4}
+.cold-chain-view-v4 .cold-sensor-row{min-height:64px;padding:10px 13px;grid-template-columns:12px minmax(120px,1fr) minmax(135px,.8fr) auto;gap:9px}
+.cold-chain-view-v4 .cold-sensor-name strong,.cold-chain-view-v4 .cold-sensor-reading strong{font-size:12px}
+.cold-chain-view-v4 .cold-sensor-name small,.cold-chain-view-v4 .cold-sensor-reading small{font-size:10px}
+.cold-chain-view-v4 .cold-sensor-health{gap:8px;font-size:10px}
+.cold-chain-view-v4 .cold-room-footer{padding:10px 13px 13px;gap:7px}
+.cold-chain-view-v4 .cold-room-footer button{min-height:34px;padding:0 10px;font-size:11px}
+.cold-chain-view-v4 .cold-chain-state{min-height:150px;padding:20px;border-radius:12px;font-size:12px}
+.cold-chain-view-v4 .cold-chain-state strong{font-size:13px}
+.cold-chain-view-v4 .cold-chain-state p{font-size:11px;line-height:1.45}
+.cold-chain-view-v4 .cold-chain-refresh-warning{font-size:11px}
+
+/* Cold chain configuration */
+.cold-chain-view-v4 .cold-config-dialog{border-radius:14px}
+.cold-chain-view-v4 .cold-config-dialog>header{min-height:66px;padding:14px 16px}
+.cold-chain-view-v4 .cold-config-dialog>header h2{font-size:17px}
+.cold-chain-view-v4 .cold-config-dialog>header .eyebrow{font-size:10px}
+.cold-chain-view-v4 .cold-config-form{padding:15px 16px;gap:12px}
+.cold-chain-view-v4 .cold-config-form label{gap:5px;font-size:12px}
+.cold-chain-view-v4 .cold-config-form label>span{font-size:11px}
+.cold-chain-view-v4 .cold-config-form input,.cold-chain-view-v4 .cold-config-form select{min-height:42px;padding:0 10px;border-radius:9px;font-size:13px}
+.cold-chain-view-v4 .cold-config-context{padding:9px 10px;font-size:11px}
+.cold-chain-view-v4 .cold-config-error{margin:0 16px;padding:9px 10px;font-size:11px}
+.cold-chain-view-v4 .cold-config-dialog>footer{padding:12px 16px 15px}
+.cold-chain-view-v4 .cold-config-dialog>footer button{min-height:36px;font-size:11px}
+
+/* Cold chain detail */
+.cold-chain-view-v4 .cold-detail-panel{border-radius:14px}
+.cold-chain-view-v4 .cold-detail-panel>header{padding:15px 17px}
+.cold-chain-view-v4 .cold-detail-panel>header .eyebrow{font-size:10px}
+.cold-chain-view-v4 .cold-detail-panel>header h2{font-size:18px}
+.cold-chain-view-v4 .cold-detail-panel>header p{font-size:11px}
+.cold-chain-view-v4 .cold-detail-tabs{gap:3px;padding:10px 16px 0}
+.cold-chain-view-v4 .cold-detail-tabs button{min-height:36px;padding:0 10px;font-size:11px}
+.cold-chain-view-v4 .cold-detail-range{gap:6px;padding:11px 16px 0}
+.cold-chain-view-v4 .cold-detail-range button{min-height:32px;padding:0 10px;font-size:10px}
+.cold-chain-view-v4 .cold-detail-loading{min-height:110px;padding:22px 17px;font-size:11px}
+.cold-chain-view-v4 .cold-detail-kpis{gap:8px;padding:13px 16px}
+.cold-chain-view-v4 .cold-detail-kpis article{min-height:66px;padding:10px;border-radius:9px}
+.cold-chain-view-v4 .cold-detail-kpis span{font-size:10px}
+.cold-chain-view-v4 .cold-detail-kpis strong{font-size:12px}
+.cold-chain-view-v4 .cold-detail-section{padding:15px 16px}
+.cold-chain-view-v4 .cold-detail-heading{gap:8px;margin-bottom:10px}
+.cold-chain-view-v4 .cold-detail-heading h3{font-size:14px}
+.cold-chain-view-v4 .cold-detail-heading p{font-size:11px;line-height:1.4}
+.cold-chain-view-v4 .cold-history-resolution{margin:-3px 0 10px;font-size:10px}
+.cold-chain-view-v4 .cold-history-chart{min-height:230px}
+.cold-chain-view-v4 .cold-history-legend{gap:10px;font-size:10px}
+.cold-chain-view-v4 .cold-history-empty{padding:15px;border-radius:9px;font-size:11px}
+.cold-chain-view-v4 .cold-config-summary-grid{gap:8px;margin-bottom:13px}
+.cold-chain-view-v4 .cold-config-summary-grid article{min-height:66px;padding:10px;border-radius:9px}
+.cold-chain-view-v4 .cold-config-summary-grid span{font-size:10px}
+.cold-chain-view-v4 .cold-config-summary-grid strong{font-size:11px}
+.cold-chain-view-v4 .cold-alarm-kpis{gap:8px;margin-bottom:12px}
+.cold-chain-view-v4 .cold-alarm-kpis article{min-height:66px;padding:10px;border-radius:9px}
+.cold-chain-view-v4 .cold-alarm-kpis span{font-size:10px}
+.cold-chain-view-v4 .cold-alarm-kpis strong{font-size:12px}
+.cold-chain-view-v4 .cold-alarm-list{gap:8px}
+.cold-chain-view-v4 .cold-alarm-card{border-radius:9px}
+.cold-chain-view-v4 .cold-alarm-card>header{padding:10px 12px}
+.cold-chain-view-v4 .cold-alarm-card>header span{font-size:10px}
+.cold-chain-view-v4 .cold-alarm-card>header h4{font-size:12px}
+.cold-chain-view-v4 .cold-alarm-card>header b{font-size:10px}
+.cold-chain-view-v4 .cold-alarm-card>p{padding:10px 12px 5px;font-size:11px}
+.cold-chain-view-v4 .cold-alarm-meta{padding:5px 12px 10px;font-size:10px}
+.cold-chain-view-v4 .cold-alarm-card>footer{padding:8px 12px 12px}
+.cold-chain-view-v4 .cold-alarm-card>footer button{min-height:34px;font-size:11px}
+
+@media(max-width:980px){
+  .specialized-commandbar{align-items:flex-start;flex-direction:column}
+  .electrical-view-v4 .electrical-actions,.ats-view-v4 .electrical-actions,.cold-chain-view-v4 .cold-chain-toolbar{width:100%;justify-content:flex-start}
+  .electrical-view-v4 .electrical-summary,.ats-view-v4 .electrical-summary,.cold-chain-view-v4 .cold-chain-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .ats-view-v4 .ats-source-grid{grid-template-columns:1fr}
+  .ats-view-v4 .ats-transfer-core{min-height:96px}
+}
+@media(max-width:680px){
+  .specialized-commandbar h1{font-size:20px}
+  .electrical-view-v4 .electrical-actions,.ats-view-v4 .electrical-actions{display:grid;grid-template-columns:1fr}
+  .electrical-view-v4 .electrical-actions button,.ats-view-v4 .electrical-actions button,.cold-chain-view-v4 .cold-chain-toolbar button{width:100%;justify-content:center}
+  .electrical-view-v4 .electrical-summary,.ats-view-v4 .electrical-summary,.cold-chain-view-v4 .cold-chain-summary-grid{grid-template-columns:1fr}
+  .electrical-view-v4 .pm-kpis,.ats-view-v4 .pm-kpis{grid-template-columns:1fr}
+  .electrical-view-v4 .pm-meter-heading,.ats-view-v4 .pm-meter-heading{grid-template-columns:38px minmax(0,1fr)}
+  .electrical-view-v4 .pm-meter-actions,.ats-view-v4 .pm-meter-actions{grid-column:1/-1;justify-content:space-between}
+  .cold-chain-view-v4 .cold-room-primary,.cold-chain-view-v4 .cold-room-stats{grid-template-columns:1fr}
+  .cold-chain-view-v4 .cold-sensor-row{grid-template-columns:12px minmax(0,1fr)}
+  .cold-chain-view-v4 .cold-sensor-reading,.cold-chain-view-v4 .cold-sensor-health{grid-column:2}
+  .cold-chain-view-v4 .cold-detail-panel{height:100dvh;max-height:100dvh;border:0;border-radius:0}
+  .cold-chain-view-v4 .cold-detail-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
