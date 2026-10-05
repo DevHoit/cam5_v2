@@ -966,7 +966,7 @@ function AlarmsView({ assetId, permissions, onSummaryChange, onOpenTrend, onOpen
               <span className="alarm-feed-severity"><i /></span>
               <span className="alarm-feed-copy">
                 <strong>{alarm.title}</strong>
-                <small>{alarm.assetCode}{alarm.deviceCode ? ` · ${alarm.deviceCode}` : ""} · {alarmSourceLabel(alarm)}</small>
+                <small>{alarm.assetName}{alarm.deviceName ? ` · ${alarm.deviceName}` : ""} · {alarmSourceLabel(alarm)}</small>
                 <em>{formatRelativeTime(alarm.openedAt)}</em>
               </span>
               <span className="alarm-feed-value">{alarmValue(alarm)}</span>
@@ -983,7 +983,7 @@ function AlarmsView({ assetId, permissions, onSummaryChange, onOpenTrend, onOpen
           <>
             <header className={`alarm-detail-heading severity-${selected.severity}`}>
               <span className="alarm-detail-severity"><AlertTriangle size={18} /></span>
-              <div><small>{selected.code} · {selected.kind === "communication" ? "Comunicación" : selected.kind === "data_quality" ? "Calidad de datos" : "Umbral"}</small><h2>{selected.title}</h2><p>{selected.detail || `${selected.assetCode} · ${alarmSourceLabel(selected)}`}</p></div>
+              <div><small>{selected.code} · {selected.kind === "communication" ? "Comunicación" : selected.kind === "data_quality" ? "Calidad de datos" : "Umbral"}</small><h2>{selected.title}</h2><p>{selected.detail || `${selected.assetName} · ${alarmSourceLabel(selected)}`}</p></div>
               <span className={`workflow-badge workflow-${selected.status}`}>{statusText(selected.status)}</span>
             </header>
 
