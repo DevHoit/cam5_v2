@@ -465,3 +465,23 @@ Rediseño visual/UX acordado tras revisión del Preview.
 - Responsive actualizado para desktop/tablet/mobile.
 
 Validación: lint, simuladores, Gateway Agent, tests DB y build PASS.
+
+
+## Activos / estructura operacional v3 (2026-10-05)
+
+Rediseño alineado con Dashboard y shell global.
+
+- La vista deja de estar centrada en el árbol Cliente → Sitio y pasa a estar centrada en el sitio activo.
+- Cabecera compacta del sitio con código, nombre, activos, gateways, dispositivos, conectividad y estado de monitoreo.
+- Navegación principal simplificada a Activos / Infraestructura.
+- Activos pasan a ser el contenido protagonista y cada tarjeta permite entrar al detalle del activo.
+- Infraestructura agrupa Gateways y Dispositivos como segundo nivel operacional.
+- Sitios sin infraestructura muestran Sin monitoreo, nunca un estado saludable por ausencia de datos.
+- Búsqueda de dispositivos deja de depender de host físico.
+- Alta/edición de Gateway deja de solicitar Dirección IP; Core conserva identidad lógica y el Gateway Agent administra configuración física.
+- Cliente/Sitio siguen disponibles para administración mediante una acción secundaria hasta completar su separación definitiva en Administración.
+- Se elimina la cabecera global redundante en la vista Activos; la identidad del sitio pasa a ser el encabezado de trabajo.
+- Navegación lateral renombrada de “Organización y activos” a “Activos”.
+- Responsive desktop/tablet/mobile actualizado.
+
+Validación: lint, simuladores, Gateway Agent, tests DB y build PASS.
