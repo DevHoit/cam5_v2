@@ -88,6 +88,11 @@ function scheduleLabel(schedule: ShiftSchedule) {
   return `${day} ${shortTime(schedule.startTime)}–${shortTime(schedule.endTime)}`;
 }
 
+function priorityLabel(priority: number) {
+  if (priority === 0) return "Principal";
+  return `Respaldo ${priority}`;
+}
+
 export function ShiftsView({
   canManageClient,
   notify,
@@ -293,7 +298,7 @@ export function ShiftsView({
           <span><strong>{assignment.shiftName}</strong></span>
           <span><strong>{assignment.userName}</strong><small>{assignment.userEmail}</small></span>
           <span><strong>{new Intl.DateTimeFormat("es-CL", { dateStyle: "short", timeStyle: "short" }).format(new Date(assignment.startsAt))}</strong><small> hasta {new Intl.DateTimeFormat("es-CL", { dateStyle: "short", timeStyle: "short" }).format(new Date(assignment.endsAt))}</small></span>
-          <span><i className="site-count-chip">{assignment.priority}</i></span>
+          <span><i className="site-count-chip">{priorityLabel(assignment.priority)}</i></span>
           <span>{canManage && <button className="ghost-button" onClick={() => void removeAssignment(assignment)}>Quitar</button>}</span>
         </div>)}
         {!onCall?.assignments.length && <div className="table-empty-state"><IconUsersGroup size={21} /><div><strong>Sin guardias asignadas</strong><p>Define quién atiende cada turno y su período de vigencia.</p></div></div>}
