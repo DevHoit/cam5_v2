@@ -2275,14 +2275,21 @@ export default function Home() {
         <div className="content-scroll">
           <div className="page-content" key={`context:${sessionUser.clientId}:${sessionUser.siteId}`}>
             {view !== "dashboard" && view !== "overview" && activePoint && (!["electrical_point", "ats", "cold_room"].includes(activePoint.type)) && systemMode !== "normal" && <section className={`operational-banner banner-${systemMode}`} role={systemMode === "offline" || systemMode === "error" ? "alert" : "status"} aria-live="polite"><span>{systemMode === "offline" ? <PlugConnected size={19} /> : systemMode === "loading" ? <Refresh className="spin" size={19} /> : systemMode === "error" ? <AlertTriangle size={19} /> : <Clock3 size={19} />}</span><div><strong>{systemMessage.title}</strong><p>{systemMessage.detail}</p></div>{systemMode !== "loading" && <button onClick={() => { setTelemetryState({ status: "loading", data: null }); setSystemMode("loading"); setTelemetryRefreshKey((current) => current + 1); notify("Consultando nuevamente la telemetría.", "info"); }}><Refresh size={15} /> Reintentar</button>}</section>}
-            {(["engineering", "settings", "diagnostics", "commissioning", "provisioning"] as View[]).includes(view) && <nav className="engineering-context-nav engineering-context-nav-v3" aria-label="Herramientas de ingeniería">
-              <div><strong>Ingeniería</strong><small>{view === "provisioning" ? `${sessionUser.siteName} · infraestructura del sitio` : activePoint ? `${activePoint.code} · ${activePoint.name}` : "Sin activo seleccionado"}</small></div>
-              <div>
-                <button className={view === "engineering" ? "active" : ""} onClick={() => navigate("engineering")}>Inicio</button>
-                <button className={view === "settings" ? "active" : ""} onClick={() => navigate("settings")}>Configuración</button>
-                <button className={view === "diagnostics" ? "active" : ""} onClick={() => navigate("diagnostics")}>Diagnóstico</button>
-                <button className={view === "commissioning" ? "active" : ""} onClick={() => navigate("commissioning")}>Puesta en marcha</button>
-                <button className={view === "provisioning" ? "active" : ""} onClick={() => navigate("provisioning")}>Gateways</button>
+            {(["settings", "diagnostics", "commissioning", "provisioning"] as View[]).includes(view) && <nav className="engineering-context-nav engineering-context-nav-v5" aria-label="Herramientas de ingeniería">
+              <div className="engineering-nav-breadcrumb">
+                <button onClick={() => navigate("engineering")}>Ingeniería</button>
+                <ChevronRight size={14} />
+                <strong>{view === "settings" ? "Configuración" : view === "diagnostics" ? "Diagnóstico" : view === "commissioning" ? "Puesta en marcha" : "Gateways"}</strong>
+                <small>{view === "provisioning" ? `Sitio · ${sessionUser.siteName}` : activePoint ? `Activo · ${activePoint.name}` : "Sin activo seleccionado"}</small>
+              </div>
+              <div className="engineering-nav-scopes">
+                <span>Activo</span>
+                <button className={view === "settings" ? "active" : ""} onClick={() => navigate("settings")}><Settings size={14} /> Configurar</button>
+                <button className={view === "diagnostics" ? "active" : ""} onClick={() => navigate("diagnostics")}><Activity size={14} /> Diagnóstico</button>
+                <button className={view === "commissioning" ? "active" : ""} onClick={() => navigate("commissioning")}><ClipboardCheck size={14} /> Puesta en marcha</button>
+                <i aria-hidden="true" />
+                <span>Sitio</span>
+                <button className={view === "provisioning" ? "active" : ""} onClick={() => navigate("provisioning")}><Server size={14} /> Gateways</button>
               </div>
             </nav>}
             {view !== "dashboard" && view !== "assets" && view !== "overview" && view !== "alarms" && view !== "trends" && view !== "history" && view !== "reports" && view !== "organization" && view !== "users" && view !== "operations" && view !== "electrical" && view !== "ats" && view !== "cold-chain" && !(["engineering", "settings", "diagnostics", "commissioning", "provisioning"] as View[]).includes(view) && <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> {viewSectionLabel(view)}</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{view === "cabinet" && (!activePoint || !["electrical_point", "ats", "cold_room"].includes(activePoint.type)) && <button className="secondary-button" onClick={() => setVisibilityOpen(true)} disabled={!activePoint || !sensors.some((sensor) => sensor.enabled)}><AdjustmentsHorizontal size={16} /><span>Configurar visualización</span></button>}{view !== "engineering" && view !== "settings" && view !== "provisioning" && view !== "notifications" && view !== "account" && view !== "diagnostics" && view !== "commissioning" && <button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button>}{canSeeNavItem("alarms", sessionUser) && <button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{alarmSummary.critical + alarmSummary.warning} alertas activas</button>}</div></section>}
