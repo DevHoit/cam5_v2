@@ -265,6 +265,7 @@ export async function GET(request: NextRequest) {
           detail: alarms.detail,
           triggerValue: alarms.triggerValue,
           assetName: assets.name,
+          deviceId: devices.id,
           deviceCode: devices.code,
           deviceName: devices.name,
           context: alarms.context,
