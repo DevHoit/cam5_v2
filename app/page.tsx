@@ -1033,11 +1033,56 @@ function AlarmsView({ assetId, permissions, onSummaryChange, onOpenTrend, onOpen
 
 
 
+function formatHistoryDate(value: string) {
+  return new Intl.DateTimeFormat("es-CL", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(`${value}T12:00:00`));
+}
+
+function auditResourceLabel(value: string) {
+  const labels: Record<string, string> = {
+    client: "Cliente",
+    site: "Sitio",
+    point: "Activo",
+    asset: "Activo",
+    gateway: "Gateway",
+    controller: "Dispositivo",
+    device: "Dispositivo",
+    alarm: "Alarma",
+    alarm_rule: "Regla de alarma",
+    maintenance_window: "Ventana de mantenimiento",
+    shift: "Turno",
+    escalation_policy: "Política de escalamiento",
+    user: "Usuario",
+  };
+  return labels[value] ?? value.replaceAll("_", " ");
+}
+
+function auditActionLabel(value: string) {
+  const direct: Record<string, string> = {
+    "hierarchy.client.create": "Cliente creado",
+    "hierarchy.client.update": "Cliente actualizado",
+    "hierarchy.client.delete": "Cliente eliminado",
+    "hierarchy.site.create": "Sitio creado",
+    "hierarchy.site.update": "Sitio actualizado",
+    "hierarchy.site.delete": "Sitio eliminado",
+    "hierarchy.point.create": "Activo creado",
+    "hierarchy.point.update": "Activo actualizado",
+    "hierarchy.point.delete": "Activo eliminado",
+    "hierarchy.gateway.create": "Gateway creado",
+    "hierarchy.gateway.update": "Gateway actualizado",
+    "hierarchy.gateway.delete": "Gateway eliminado",
+    "hierarchy.controller.create": "Dispositivo creado",
+    "hierarchy.controller.update": "Dispositivo actualizado",
+    "hierarchy.controller.delete": "Dispositivo eliminado",
+  };
+  if (direct[value]) return direct[value];
+  return value.replaceAll(".", " · ").replaceAll("_", " ");
+}
+
 function HistoryView({ assetId, canExport, onOpenTrend }: { assetId: string; canExport: boolean; onOpenTrend: (channelId: string, from: string, to: string) => void }) {
   const sensors = useSensorData();
   const notify = useFeedback();
   const [tab, setTab] = useState<HistoryTab>("measurements");
-  const [today] = useState(() => new Date().toISOString().slice(0, 10));
+  const [today] = useState(() => new Intl.DateTimeFormat("en-CA").format(new Date()));
   const [from, setFrom] = useState(() => new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10));
   const [to, setTo] = useState(() => new Date().toISOString().slice(0, 10));
   const [channel, setChannel] = useState("all");
@@ -1055,13 +1100,13 @@ function HistoryView({ assetId, canExport, onOpenTrend }: { assetId: string; can
   useEffect(() => {
     let active = true;
     if (!assetId) return () => { active = false; };
-    void portalRequest<{ assets: Array<{ id: string; devices: Array<{ id: string; code: string; metrics: Array<{ key: string; code: string; name: string; dataType: string }> }> }> }>(`/api/v1/telemetry/metrics/latest?assetId=${encodeURIComponent(assetId)}`)
+    void portalRequest<{ assets: Array<{ id: string; devices: Array<{ id: string; code: string; name: string; metrics: Array<{ key: string; code: string; name: string; dataType: string }> }> }> }>(`/api/v1/telemetry/metrics/latest?assetId=${encodeURIComponent(assetId)}`)
       .then((data) => {
         if (!active) return;
         const asset = data.assets.find((item) => item.id === assetId);
         const options = asset?.devices.flatMap((device) => device.metrics.map((metric) => ({
-          id: metric.key,
-          label: `${device.code} · ${metric.name}`,
+          id: `${device.id}::${metric.key}`,
+          label: `${metric.name} · ${device.name}`,
         }))) ?? [];
         setMetricOptions(options);
         setNormalizedHistory(options.length > 0);
@@ -1120,9 +1165,9 @@ function HistoryView({ assetId, canExport, onOpenTrend }: { assetId: string; can
 
   const currentViewLabel = tab === "measurements" ? "Mediciones" : tab === "alarms" ? "Alarmas" : "Auditoría";
 
-  return <>
+  return <div className="history-v4">
     <section className="temporal-commandbar history-commandbar-v3">
-      <div><h1>Histórico</h1><p>{currentViewLabel} · {from} → {to}</p></div>
+      <div><h1>Histórico</h1><p>{currentViewLabel} · {formatHistoryDate(from)} → {formatHistoryDate(to)}</p></div>
       <div className="history-command-actions">
         <span><Database size={14} /> {total.toLocaleString("es-CL")} registros</span>
         {canExport && <button onClick={() => void exportHistory()} disabled={loading}><Download size={14} /> Exportar CSV</button>}
@@ -1134,13 +1179,13 @@ function HistoryView({ assetId, canExport, onOpenTrend }: { assetId: string; can
         <div className="module-tabs history-tabs-v3" role="tablist" aria-label="Tipo de histórico">
           <button className={tab === "measurements" ? "active" : ""} onClick={() => changeTab("measurements")}><Timeline size={15} /> Mediciones</button>
           <button className={tab === "alarms" ? "active" : ""} onClick={() => changeTab("alarms")}><BellRing size={15} /> Alarmas</button>
-          <button className={tab === "audit" ? "active" : ""} onClick={() => changeTab("audit")}><ShieldCheck size={15} /> Auditoría</button>
+          <button className={tab === "audit" ? "active" : ""} onClick={() => changeTab("audit")}><ShieldCheck size={15} /> Auditoría del sitio</button>
         </div>
         <div className="history-range-summary"><span>{result?.page ?? page}/{result?.totalPages ?? 1}</span><small>Página</small></div>
       </div>
 
       <div className="history-filterbar-v3">
-        <label className="search-field"><Search size={16} /><input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder={tab === "audit" ? "Buscar acción o recurso…" : normalizedHistory ? "Buscar dispositivo, métrica o evento…" : "Buscar métrica, código o evento…"} /></label>
+        <label className="search-field"><Search size={16} /><input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder={tab === "audit" ? "Buscar acción o recurso del sitio…" : normalizedHistory ? "Buscar dispositivo o métrica…" : "Buscar métrica o evento…"} /></label>
         {tab === "measurements" && <label className="history-filter-select"><span>{normalizedHistory ? "Métrica" : "Variable"}</span><select value={channel} onChange={(event) => { setChannel(event.target.value); setPage(1); }}><option value="all">{normalizedHistory ? "Todas las métricas" : "Todas las variables"}</option>{normalizedHistory ? metricOptions.map((metric) => <option key={metric.id} value={metric.id}>{metric.label}</option>) : activeSensors.map((sensor) => <option key={sensor.id} value={sensor.id}>{sensor.id} · {sensor.label}</option>)}</select><ChevronDown size={12} /></label>}
         <label className="history-date-filter"><span>Desde</span><input type="date" value={from} max={to} onChange={(event) => { setFrom(event.target.value); setPage(1); }} /></label>
         <label className="history-date-filter"><span>Hasta</span><input type="date" value={to} min={from} max={today} onChange={(event) => { setTo(event.target.value); setPage(1); }} /></label>
@@ -1156,10 +1201,10 @@ function HistoryView({ assetId, canExport, onOpenTrend }: { assetId: string; can
           const lagMs = Math.max(0, new Date(item.receivedAt).getTime() - new Date(item.recordedAt).getTime());
           return <article className="history-feed-row" key={item.id}>
             <time><strong>{formatDateTime(item.recordedAt)}</strong><small>UTC {new Date(item.recordedAt).toISOString().slice(11, 19)}</small></time>
-            <div className="history-feed-source"><strong>{item.name}</strong><small>{item.code}{item.zone ? ` · ${item.zone}` : ""}{normalizedHistory && item.metricKey ? ` · ${item.metricKey}` : ""}</small></div>
+            <div className="history-feed-source"><strong>{item.name}</strong><small>{item.zone || item.code}</small></div>
             <div className="history-feed-reading"><strong>{item.value === null || item.value === undefined ? "—" : typeof item.value === "number" ? `${item.value.toFixed(1)} ${item.unit}`.trim() : typeof item.value === "boolean" ? (item.value ? "Activo" : "Inactivo") : String(item.value)}</strong><small>Recepción {lagMs < 1_000 ? `${lagMs} ms` : `${(lagMs / 1_000).toFixed(1)} s`}</small></div>
             <span className={`history-quality quality-${item.quality}`}>{qualityLabel}</span>
-            <button disabled={normalizedHistory && item.dataType !== "float" && item.dataType !== "integer"} onClick={() => onOpenTrend(normalizedHistory ? item.metricKey ?? item.code : item.code, fromIso, new Date(Math.min(Date.now(), new Date(toIso).getTime())).toISOString())}><TrendingUp size={14} /> Tendencia</button>
+            <button disabled={normalizedHistory && item.dataType !== "float" && item.dataType !== "integer"} onClick={() => onOpenTrend(normalizedHistory && item.deviceId && item.metricKey ? `${item.deviceId}::${item.metricKey}` : item.metricKey ?? item.code, fromIso, new Date(Math.min(Date.now(), new Date(toIso).getTime())).toISOString())}><TrendingUp size={14} /> Tendencia</button>
           </article>;
         })}
         {result?.items.length === 0 && <div className="history-empty-v3"><Database size={21} /><div><strong>Sin mediciones en este rango</strong><p>Ajusta las fechas o espera la primera recepción de métricas.</p></div></div>}
@@ -1167,13 +1212,14 @@ function HistoryView({ assetId, canExport, onOpenTrend }: { assetId: string; can
 
       {!loading && !error && tab === "alarms" && <div className="history-feed-v3">
         {result?.items.map((raw) => {
-          const item = raw as { id: string; code: string; openedAt: string; severity: Severity; status: string; title: string; detail?: string; triggerValue?: string; deviceCode?: string; context?: Record<string, unknown>; channelCode?: string; unit?: string };
-          const sourceKey = typeof item.context?.metricKey === "string" ? item.context.metricKey : item.channelCode;
+          const item = raw as { id: string; code: string; openedAt: string; severity: Severity; status: string; title: string; detail?: string; triggerValue?: string; assetName?: string; deviceId?: string; deviceCode?: string; deviceName?: string; context?: Record<string, unknown>; channelCode?: string; unit?: string };
+          const metricKey = typeof item.context?.metricKey === "string" ? item.context.metricKey : item.channelCode;
+          const sourceKey = item.deviceId && metricKey ? `${item.deviceId}::${metricKey}` : metricKey;
           const closed = item.status === "closed";
           const resolved = item.status === "resolved";
           return <article className={`history-feed-row history-alarm-row severity-${item.severity}`} key={item.id}>
             <time><strong>{formatDateTime(item.openedAt)}</strong><small>{item.code}</small></time>
-            <div className="history-feed-source"><strong>{item.title}</strong><small>{item.detail || item.deviceCode || "Evento del activo"}</small></div>
+            <div className="history-feed-source"><strong>{item.title}</strong><small>{[item.assetName, item.deviceName, item.detail].filter(Boolean).join(" · ") || "Evento del activo"}</small></div>
             <div className="history-feed-reading"><strong>{item.triggerValue ? `${Number(item.triggerValue).toFixed(1)} ${item.unit || ""}`.trim() : "—"}</strong><small>{item.severity === "critical" ? "Crítica" : item.severity === "warning" ? "Advertencia" : "Informativa"}</small></div>
             <span className={closed || resolved ? "history-quality quality-good" : "history-quality quality-stale"}>{closed ? "Cerrada" : resolved ? "Atendida" : item.status === "acknowledged" ? "Reconocida" : "Abierta"}</span>
             {sourceKey ? <button onClick={() => onOpenTrend(sourceKey, new Date(new Date(item.openedAt).getTime() - 12 * 3600_000).toISOString(), new Date(Math.min(Date.now(), new Date(item.openedAt).getTime() + 12 * 3600_000)).toISOString())}><TrendingUp size={14} /> Tendencia</button> : <span />}
@@ -1187,7 +1233,7 @@ function HistoryView({ assetId, canExport, onOpenTrend }: { assetId: string; can
           const item = raw as { id: number; createdAt: string; actor: string; action: string; resourceType: string; resourceId?: string; outcome: string };
           return <article className="history-feed-row history-audit-row" key={item.id}>
             <time><strong>{formatDateTime(item.createdAt)}</strong><small>{item.actor}</small></time>
-            <div className="history-feed-source"><strong>{item.action}</strong><small>{item.resourceType}{item.resourceId ? ` · ${item.resourceId}` : ""}</small></div>
+            <div className="history-feed-source"><strong>{auditActionLabel(item.action)}</strong><small>{auditResourceLabel(item.resourceType)}{item.resourceId ? ` · ${item.resourceId}` : ""}</small></div>
             <span className={item.outcome === "success" ? "history-quality quality-good" : "history-quality quality-bad"}>{item.outcome === "success" ? "Correcto" : item.outcome}</span>
           </article>;
         })}
@@ -1195,9 +1241,9 @@ function HistoryView({ assetId, canExport, onOpenTrend }: { assetId: string; can
       </div>}
 
       {!loading && !error && result && <Pagination page={result.page} totalPages={result.totalPages} total={result.total} pageSize={result.pageSize} onPageChange={setPage} itemLabel={tab === "measurements" ? "mediciones" : tab === "alarms" ? "eventos" : "acciones"} />}
-      <footer className="history-footer-v3"><span><Database size={13} /> Retención: 30 días crudos · 5 años agregados</span><small>Rango inclusivo · acceso según perfil.</small></footer>
+      <footer className="history-footer-v3"><span><Database size={13} /> Datos consultados dentro del rango seleccionado</span><small>{tab === "audit" ? "Auditoría a nivel de sitio · acceso según perfil." : "Rango inclusivo · acceso según perfil."}</small></footer>
     </article>
-  </>;
+  </div>;
 }
 
 function OperationalHierarchyView({
