@@ -2088,8 +2088,8 @@ export default function Home() {
         <div className="content-scroll">
           <div className="page-content">
             {view !== "dashboard" && view !== "overview" && activePoint && (!["electrical_point", "ats", "cold_room"].includes(activePoint.type)) && systemMode !== "normal" && <section className={`operational-banner banner-${systemMode}`} role={systemMode === "offline" || systemMode === "error" ? "alert" : "status"} aria-live="polite"><span>{systemMode === "offline" ? <PlugConnected size={19} /> : systemMode === "loading" ? <Refresh className="spin" size={19} /> : systemMode === "error" ? <AlertTriangle size={19} /> : <Clock3 size={19} />}</span><div><strong>{systemMessage.title}</strong><p>{systemMessage.detail}</p></div>{systemMode !== "loading" && <button onClick={() => { setTelemetryState({ status: "loading", data: null }); setSystemMode("loading"); setTelemetryRefreshKey((current) => current + 1); notify("Consultando nuevamente la telemetría.", "info"); }}><Refresh size={15} /> Reintentar</button>}</section>}
-            {(["engineering", "settings", "diagnostics", "commissioning", "provisioning"] as View[]).includes(view) && <nav className="engineering-context-nav" aria-label="Herramientas de ingeniería">
-              <div><span className="eyebrow">Área técnica</span><strong>Ingeniería del activo</strong></div>
+            {(["engineering", "settings", "diagnostics", "commissioning", "provisioning"] as View[]).includes(view) && <nav className="engineering-context-nav engineering-context-nav-v3" aria-label="Herramientas de ingeniería">
+              <div><strong>Ingeniería</strong><small>{activePoint ? `${activePoint.code} · ${activePoint.name}` : "Sin activo seleccionado"}</small></div>
               <div>
                 <button className={view === "engineering" ? "active" : ""} onClick={() => navigate("engineering")}>Inicio</button>
                 <button className={view === "settings" ? "active" : ""} onClick={() => navigate("settings")}>Configuración</button>
