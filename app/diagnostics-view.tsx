@@ -158,7 +158,7 @@ export function DiagnosticsView({ assetId, canExecute, notify }: {
         <Pagination page={data.pagination.page} totalPages={data.pagination.totalPages} total={data.pagination.total} pageSize={data.pagination.pageSize} onPageChange={setPage} itemLabel="lotes" />
       </section>
 
-      <footer className="engineering-boundary-note"><IconShieldCheck size={16} /><p><strong>Core diagnostica datos semánticos.</strong> Buses, direcciones físicas, registros, escalamiento y drivers pertenecen al Gateway Agent.</p></footer>
+      <footer className="engineering-boundary-note"><IconShieldCheck size={16} /><p><strong>Core diagnostica datos semánticos.</strong> Buses, direcciones físicas, registros, factores de escala y drivers pertenecen al Gateway Agent.</p></footer>
     </article>
   </div>;
 }
