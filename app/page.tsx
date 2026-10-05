@@ -1387,7 +1387,7 @@ function OperationalHierarchyView({
       </div>
 
       {showCreate && <form className="hierarchy-create-form hierarchy-create-v3" onSubmit={createResource}>
-        <div className="hierarchy-form-heading"><h3>{resource === "point" ? "Nuevo activo" : resource === "gateway" || resource === "controller" ? "Nueva infraestructura" : "Administrar organización"}</h3><p>Registra el elemento dentro del contexto operacional correspondiente.</p></div>
+        <div className="hierarchy-form-heading"><h3>{resource === "point" ? "Nuevo activo" : resource === "gateway" || resource === "controller" ? "Nueva infraestructura" : "Administrar organización"}</h3><p>{resource === "point" ? "El activo es el equipo, instalación o entorno que quieres supervisar; no es el sensor. Ej.: tablero principal, ATS o cámara de frío." : resource === "controller" ? "El dispositivo es el sensor o equipo que reporta métricas del activo. Ej.: PM5560, DSE8660, sensor BLE o CAM5." : "Registra el elemento dentro del contexto operacional correspondiente."}</p></div>
         <label><span>Tipo de elemento</span><select value={resource} onChange={(event) => changeResource(event.target.value as Resource)}>
           {(resource === "client" || resource === "site"
             ? availableResources.filter((item) => item.value === "client" || item.value === "site")
@@ -1408,7 +1408,7 @@ function OperationalHierarchyView({
 
       {tab === "structure" && <section className="site-assets-workspace">
         <header className="site-section-heading">
-          <div><h3>Activos del sitio</h3><p>{filteredPoints.length ? `${filteredPoints.length} activos disponibles en ${hierarchy.active.siteName}.` : "Este sitio todavía no tiene activos monitoreados."}</p></div>
+          <div><h3>Activos del sitio</h3><p>{filteredPoints.length ? `${filteredPoints.length} activos disponibles en ${hierarchy.active.siteName}. Un activo es lo que HOIT supervisa; los sensores y medidores se registran como dispositivos.` : "Este sitio todavía no tiene activos monitoreados. Crea primero el equipo, instalación o entorno que quieres supervisar."}</p></div>
           <span>{filteredPoints.length}</span>
         </header>
         <div className="asset-operations-grid">
@@ -1425,7 +1425,7 @@ function OperationalHierarchyView({
                   <span>{point.area || "Área sin definir"}</span>
                 </span>
                 <span className={`asset-operation-status ${noMonitoring ? "unmonitored" : ""}`}>{noMonitoring ? "Sin monitoreo" : pointState}</span>
-                <span className="asset-operation-meta">{linked.length} dispositivo{linked.length === 1 ? "" : "s"} asociado{linked.length === 1 ? "" : "s"}</span>
+                <span className="asset-operation-meta">{linked.length} dispositivo{linked.length === 1 ? "" : "s"} monitoreando este activo</span>
                 <span className="asset-operation-link">{noMonitoring ? "Configurar" : "Ver activo"} <ChevronRight size={14} /></span>
               </button>
               {canManagePoints && <button className="asset-operation-edit" onClick={() => openEditor("point", point)} aria-label={`Editar activo ${point.name}`}><Pencil size={14} /></button>}
@@ -1452,7 +1452,7 @@ function OperationalHierarchyView({
         </div>
 
         <div className="infrastructure-column">
-          <header className="site-section-heading"><div><h3>Dispositivos</h3><p>Equipos lógicos asociados a activos y gateways.</p></div><span>{filteredControllers.length}</span></header>
+          <header className="site-section-heading"><div><h3>Dispositivos</h3><p>Sensores, medidores o controladores que reportan métricas de los activos a través de un gateway.</p></div><span>{filteredControllers.length}</span></header>
           <div className="infrastructure-list">{controllerPage.pageItems.map((controller) => {
             const point = hierarchy.points.find((item) => item.id === controller.pointId);
             const gateway = hierarchy.gateways.find((item) => item.id === controller.gatewayId);
@@ -1462,7 +1462,7 @@ function OperationalHierarchyView({
               <b>{stateLabel(controller.state, controller.active)}</b>
               {canManageConnections && <button className="resource-edit-button" onClick={() => openEditor("controller", controller)} aria-label={`Editar dispositivo ${controller.name}`}><Pencil size={14} /></button>}
             </article>;
-          })}{controllerPage.pageItems.length === 0 && <div className="site-empty-state compact"><PlugConnected size={20} /><div><strong>Sin dispositivos</strong><p>Asocia un dispositivo a un activo y a un gateway.</p></div></div>}</div>
+          })}{controllerPage.pageItems.length === 0 && <div className="site-empty-state compact"><PlugConnected size={20} /><div><strong>Sin dispositivos</strong><p>Registra el sensor, medidor o controlador que entregará datos de un activo y asígnalo a un gateway.</p></div></div>}</div>
           <Pagination page={controllerPage.page} totalPages={controllerPage.totalPages} total={filteredControllers.length} pageSize={8} onPageChange={controllerPage.setPage} itemLabel="dispositivos" />
         </div>
       </section>}
