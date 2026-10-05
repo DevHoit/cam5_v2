@@ -931,7 +931,7 @@ function AlarmsView({ assetId, permissions, onSummaryChange, onOpenTrend, onOpen
 
   const activeCount = (result?.summary.critical ?? 0) + (result?.summary.warning ?? 0);
 
-  return <>
+  return <div className="alarm-center-v4">
     <section className="alarm-commandbar">
       <div>
         <h1>Centro de alertas</h1>
@@ -1029,7 +1029,9 @@ function AlarmsView({ assetId, permissions, onSummaryChange, onOpenTrend, onOpen
       {ruleResult && <Pagination page={ruleResult.page} totalPages={ruleResult.totalPages} total={ruleResult.total} pageSize={ruleResult.pageSize} onPageChange={setRulePage} itemLabel="reglas" />}
       <div className="alarm-rule-note"><ShieldCheck size={18} /><p><strong>Control contra falsos positivos</strong><span>Las reglas pueden exigir muestras consecutivas, aplicar histéresis y conservar estado para evitar eventos espurios.</span></p></div>
     </article>}
-  </>;}
+  </div>;}
+
+
 
 function HistoryView({ assetId, canExport, onOpenTrend }: { assetId: string; canExport: boolean; onOpenTrend: (channelId: string, from: string, to: string) => void }) {
   const sensors = useSensorData();
