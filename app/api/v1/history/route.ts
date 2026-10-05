@@ -112,6 +112,7 @@ export async function GET(request: NextRequest) {
             name: deviceMetrics.name,
             deviceId: devices.id,
             deviceCode: devices.code,
+            deviceName: devices.name,
             category: metricDefinitions.category,
             metricKey: metricDefinitions.key,
             unit: metricDefinitions.unit,
@@ -150,7 +151,7 @@ export async function GET(request: NextRequest) {
             receivedAt: item.receivedAt ?? item.recordedAt,
             code: item.code,
             name: item.name,
-            zone: `${item.deviceCode} · ${item.category}`,
+            zone: `${item.deviceName} · ${item.category}`,
             deviceId: item.deviceId,
             metricKey: item.metricKey,
             dataType: item.dataType,
@@ -255,7 +256,9 @@ export async function GET(request: NextRequest) {
           title: alarms.title,
           detail: alarms.detail,
           triggerValue: alarms.triggerValue,
+          assetName: assets.name,
           deviceCode: devices.code,
+          deviceName: devices.name,
           context: alarms.context,
           channelCode: channels.code,
           unit: channels.unit,
@@ -271,8 +274,8 @@ export async function GET(request: NextRequest) {
       ]);
       const total = Number(totals[0]?.total ?? 0);
       if (exporting) return csvResponse("hoitlive-historico-alarmas.csv", [
-        ["fecha_apertura_utc", "codigo", "severidad", "estado", "dispositivo", "origen", "titulo", "detalle", "valor", "unidad"],
-        ...items.map((item) => [item.openedAt.toISOString(), item.code, item.severity, item.status, item.deviceCode, typeof item.context?.metricKey === "string" ? item.context.metricKey : item.channelCode, item.title, item.detail, item.triggerValue, item.unit]),
+        ["fecha_apertura_utc", "codigo", "severidad", "estado", "activo", "dispositivo", "origen", "titulo", "detalle", "valor", "unidad"],
+        ...items.map((item) => [item.openedAt.toISOString(), item.code, item.severity, item.status, item.assetName, item.deviceName ?? item.deviceCode, typeof item.context?.metricKey === "string" ? item.context.metricKey : item.channelCode, item.title, item.detail, item.triggerValue, item.unit]),
       ]);
       return Response.json({
         items: items.map((item) => ({ ...item, openedAt: item.openedAt.toISOString() })),
