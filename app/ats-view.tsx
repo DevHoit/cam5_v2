@@ -285,7 +285,7 @@ export function AtsView({
     <section className="electrical-toolbar">
       <div>
         <span className="eyebrow"><Transfer size={13} /> Capacidad · transferencia automática</span>
-        <h2>Transferencia automática</h2>
+        <h1>Transferencia automática</h1>
         <p>Supervisión normalizada de fuentes, transferencia, carga y alarmas del activo.</p>
       </div>
       <div className="electrical-actions">
