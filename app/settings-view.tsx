@@ -280,7 +280,7 @@ export function SettingsView({
         </div>
       </section>}
 
-      <footer className="engineering-boundary-note"><IconShieldCheck size={16} /><p><strong>Configuración física fuera de Core.</strong> Drivers, buses, direcciones, registros, escalamiento, endianess y polling se administran en el Gateway Agent. Esta pantalla sólo administra contexto lógico y contrato semántico.</p></footer>
+      <footer className="engineering-boundary-note"><IconShieldCheck size={16} /><p><strong>Configuración física fuera de Core.</strong> Drivers, buses, direcciones, registros, factores de escala, endianess y polling se administran en el Gateway Agent. Esta pantalla sólo administra contexto lógico y contrato semántico.</p></footer>
     </article>
   </div>;
 }
