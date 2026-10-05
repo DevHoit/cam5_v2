@@ -8230,3 +8230,48 @@ button.dashboard-kpi:hover { transform: translateY(-1px); border-color: #bae6fd;
 .users-v5 .role-matrix-v3{padding:16px;grid-template-columns:200px 1fr;gap:16px}.users-v5 .role-matrix-v3 h3{font-size:15px}.users-v5 .role-matrix-v3>div:first-child p{font-size:11px}.users-v5 .role-matrix-v3 .role-matrix-grid strong{font-size:12px}.users-v5 .role-matrix-v3 .role-matrix-grid small{font-size:11px}
 @media(max-width:900px){.users-v5 .user-editor-v3{grid-template-columns:1fr}.users-v5 .user-editor-heading,.users-v5 .user-editor-v3 .user-site-access,.users-v5 .user-editor-actions{grid-column:auto}.users-v5 .role-matrix-v3{grid-template-columns:1fr}}
 @media(max-width:680px){.users-v5 .users-commandbar-v3{align-items:flex-start;flex-direction:column}.users-v5 .user-status-strip{grid-template-columns:1fr}}
+
+
+/* Engineering v4 — navigation and hub */
+.engineering-context-nav-v3{min-height:58px;margin-bottom:16px;padding:8px 10px;border-radius:11px}
+.engineering-context-nav-v3>div:first-child{min-width:210px;gap:3px}
+.engineering-context-nav-v3>div:first-child strong{font-size:13px}
+.engineering-context-nav-v3>div:first-child small{font-size:11px}
+.engineering-context-nav-v3>div:last-child{padding:4px;border-radius:9px}
+.engineering-context-nav-v3 button{min-height:34px;padding:0 10px;font-size:11px;border-radius:7px;font-weight:680}
+.engineering-loading-state{min-height:260px;font-size:12px}
+.engineering-error-state{min-height:128px;padding:17px}
+.engineering-error-state strong{font-size:13px}
+.engineering-error-state p{font-size:11px}
+.engineering-error-state button{min-height:36px;padding:0 11px;font-size:11px}
+.engineering-commandbar{min-height:62px;margin-bottom:16px;padding:0 2px 9px;align-items:flex-end;border-bottom:1px solid #e4e4e7}
+.engineering-commandbar h1{font-size:22px;font-weight:700}
+.engineering-commandbar p{margin-top:5px;font-size:12px;line-height:1.4}
+.engineering-command-actions{gap:9px}
+.engineering-command-actions>button{min-height:36px;padding:0 11px;font-size:11px;border-radius:8px}
+.engineering-state{min-height:30px;padding:0 9px;font-size:11px}
+.engineering-hub-v3{gap:16px}
+.engineering-asset-strip{min-height:86px;padding:14px 16px;grid-template-columns:42px minmax(0,1fr) auto auto;gap:12px;border-radius:12px}
+.engineering-hub-v3 .engineering-asset-icon{width:42px;height:42px;border-radius:10px}
+.engineering-asset-strip>div:nth-child(2) small{font-size:10px}
+.engineering-asset-strip>div:nth-child(2) strong{margin:3px 0;font-size:14px}
+.engineering-asset-strip>div:nth-child(2) p{font-size:11px}
+.engineering-asset-count{min-width:66px}
+.engineering-asset-count strong{font-size:20px}
+.engineering-asset-count small{font-size:11px}
+.engineering-tools-v3,.engineering-catalog-section{border-radius:12px}
+.engineering-tools-v3>header,.engineering-catalog-section>header{min-height:70px;padding:14px 16px;gap:11px}
+.engineering-tools-v3 h2,.engineering-catalog-section h2{font-size:17px;font-weight:700}
+.engineering-tools-v3 p,.engineering-catalog-section p{font-size:12px;line-height:1.45}
+.engineering-tools-v3>div>button{min-height:92px;padding:14px 16px;grid-template-columns:38px minmax(0,1fr) 16px;gap:11px}
+.engineering-tools-v3>div>button>span{width:38px;height:38px;border-radius:10px}
+.engineering-tools-v3 button strong{font-size:13px}
+.engineering-tools-v3 button small{margin-top:4px;font-size:11px;line-height:1.45;white-space:normal}
+.engineering-device-inventory-v3>header{min-height:70px;padding:14px 16px}
+.engineering-device-inventory-v3 h2{font-size:17px}
+.engineering-device-inventory-v3 header p{font-size:12px}
+.engineering-device-inventory-v3>header>span{min-width:30px;height:28px;font-size:11px}
+.engineering-device-inventory-v3 article{min-height:70px;padding:11px 16px}
+.engineering-device-inventory-v3 article strong{font-size:13px}
+.engineering-device-inventory-v3 article small{font-size:11px}
+.engineering-device-state{padding:5px 8px;font-size:10px}
