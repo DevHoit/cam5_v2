@@ -1776,7 +1776,7 @@ export default function Home() {
     finally { setSessionUser(null); setHierarchy(null); setAuthState("anonymous"); }
   };
 
-  const switchSite = async (siteId: string, preferredAssetId?: string) => {
+  const switchSite = async (siteId: string, preferredAssetId?: string, silent = false) => {
     if (siteId === sessionUser?.siteId) {
       if (preferredAssetId) setActivePointId(preferredAssetId);
       return;
@@ -1789,14 +1789,19 @@ export default function Home() {
       setActivePointId("");
       await loadHierarchy();
       if (preferredAssetId) setActivePointId(preferredAssetId);
-      notify(`Contexto cambiado a ${response.user.siteName}.`, "info");
+      if (!silent) notify(`Contexto cambiado a ${response.user.siteName}.`, "info");
     } catch (requestError) {
       notify(requestError instanceof Error ? requestError.message : "No fue posible cambiar de sitio.", "warning");
     }
   };
 
+  const openDashboardSite = async (siteId: string) => {
+    await switchSite(siteId, undefined, true);
+    navigate("assets");
+  };
+
   const openDashboardAsset = async (siteId: string, assetId: string) => {
-    await switchSite(siteId, assetId);
+    await switchSite(siteId, assetId, true);
     setActivePointId(assetId);
     navigate("overview");
   };
@@ -1890,7 +1895,7 @@ export default function Home() {
                 <button className={view === "provisioning" ? "active" : ""} onClick={() => navigate("provisioning")}>Gateways</button>
               </div>
             </nav>}
-            <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> {viewSectionLabel(view)}</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{(view === "overview" || view === "cabinet") && (!activePoint || !["electrical_point", "ats", "cold_room"].includes(activePoint.type)) && <button className="secondary-button" onClick={() => setVisibilityOpen(true)} disabled={!activePoint || !sensors.some((sensor) => sensor.enabled)}><AdjustmentsHorizontal size={16} /><span>Personalizar canales</span></button>}{view !== "dashboard" && view !== "assets" && view !== "engineering" && view !== "settings" && view !== "provisioning" && view !== "users" && view !== "notifications" && view !== "account" && view !== "reports" && view !== "diagnostics" && view !== "commissioning" && view !== "trends" && view !== "history" && <button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button>}{view !== "dashboard" && canSeeNavItem("alarms", sessionUser) && <button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{alarmSummary.critical + alarmSummary.warning} alertas activas</button>}</div></section>
+            {view !== "dashboard" && <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> {viewSectionLabel(view)}</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{(view === "overview" || view === "cabinet") && (!activePoint || !["electrical_point", "ats", "cold_room"].includes(activePoint.type)) && <button className="secondary-button" onClick={() => setVisibilityOpen(true)} disabled={!activePoint || !sensors.some((sensor) => sensor.enabled)}><AdjustmentsHorizontal size={16} /><span>Personalizar canales</span></button>}{view !== "dashboard" && view !== "assets" && view !== "engineering" && view !== "settings" && view !== "provisioning" && view !== "users" && view !== "notifications" && view !== "account" && view !== "reports" && view !== "diagnostics" && view !== "commissioning" && view !== "trends" && view !== "history" && <button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button>}{view !== "dashboard" && canSeeNavItem("alarms", sessionUser) && <button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{alarmSummary.critical + alarmSummary.warning} alertas activas</button>}</div></section>
             {view === "dashboard" && <DashboardView onSwitchSite={(siteId) => void switchSite(siteId)} onSelectAsset={(siteId, assetId) => void openDashboardAsset(siteId, assetId)} onOpenAlerts={() => navigate("alarms")} onOpenOperations={() => navigate("operations")} />}
             {view === "engineering" && <EngineeringHubView asset={activePoint} devices={hierarchy?.controllers ?? []} canWrite={sessionUser.permissions.includes("settings.write")} onNavigate={(target) => navigate(target)} notify={notify} />}
             {view === "overview" && activePoint && ["electrical_point", "ats", "cold_room"].includes(activePoint.type)
