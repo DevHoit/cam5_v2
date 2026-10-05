@@ -2067,23 +2067,72 @@ export default function Home() {
     finally { setSessionUser(null); setHierarchy(null); setAuthState("anonymous"); }
   };
 
+  const resetContextState = () => {
+    setHierarchy(null);
+    setActivePointId("");
+    setTelemetryState({ status: "loading", data: null });
+    setSystemMode("loading");
+    setAlarmPreview([]);
+    setAlarmSummary({ critical: 0, warning: 0 });
+    setTrendSensorId("");
+    setTrendWindow(null);
+    setPeriod("24 h");
+    setVisibilityOpen(false);
+  };
+
   const switchSite = async (siteId: string, preferredAssetId?: string, silent = false) => {
     if (siteId === sessionUser?.siteId) {
       if (preferredAssetId) setActivePointId(preferredAssetId);
       return;
     }
+    setHierarchyLoading(true);
     try {
       const response = await portalRequest<{ user: PortalSessionUser }>("/api/v1/auth/context", { method: "PATCH", body: JSON.stringify({ siteId }) });
+      resetContextState();
       setSessionUser(response.user);
-      setTelemetryState({ status: "loading", data: null });
-      setSystemMode("loading");
-      setActivePointId("");
-      await loadHierarchy();
-      if (preferredAssetId) setActivePointId(preferredAssetId);
-      if (!silent) notify(`Contexto cambiado a ${response.user.siteName}.`, "info");
+
+      const data = await portalRequest<PortalHierarchy>("/api/v1/hierarchy");
+      setHierarchy(data);
+      const nextAssetId = preferredAssetId && data.points.some((point) => point.id === preferredAssetId && point.active)
+        ? preferredAssetId
+        : data.points.find((point) => point.active)?.id ?? "";
+      setActivePointId(nextAssetId);
+
+      if (!canSeeNavItem(view, response.user)) {
+        setView("dashboard");
+        const url = new URL(window.location.href);
+        url.searchParams.set("view", "dashboard");
+        url.searchParams.delete("channel");
+        url.searchParams.delete("record");
+        url.searchParams.delete("from");
+        url.searchParams.delete("to");
+        window.history.replaceState({}, "", url);
+      }
+      if (!silent) notify(`Contexto cambiado a ${response.user.clientName} · ${response.user.siteName}.`, "info");
     } catch (requestError) {
       notify(requestError instanceof Error ? requestError.message : "No fue posible cambiar de sitio.", "warning");
+      try {
+        const response = await portalRequest<{ user: PortalSessionUser }>("/api/v1/auth/session");
+        setSessionUser(response.user);
+        await loadHierarchy();
+      } catch {
+        // Mantener el portal en estado seguro; el siguiente refresh recuperará la sesión.
+      }
+    } finally {
+      setHierarchyLoading(false);
     }
+  };
+
+  const switchClient = async (clientId: string) => {
+    if (!sessionUser || clientId === sessionUser.clientId) return;
+    const candidateSites = (hierarchy?.sites ?? sessionUser.sites)
+      .filter((site) => site.clientId === clientId && (!("active" in site) || site.active));
+    const nextSite = candidateSites[0];
+    if (!nextSite) {
+      notify("El cliente seleccionado no tiene un sitio activo disponible para este usuario.", "warning");
+      return;
+    }
+    await switchSite(nextSite.id);
   };
 
   const openDashboardSite = async (siteId: string) => {
@@ -2163,12 +2212,12 @@ export default function Home() {
 
       <main className="main-shell">
         <header className="topbar">
-          <div className="topbar-left"><button className="menu-button" aria-label="Abrir navegación" onClick={() => setMenuOpen(true)}><Menu size={22} /></button><span className="mobile-brand"><Zap size={18} fill="currentColor" /></span><div className="operational-context"><span className="context-icon"><Building2 size={16} /></span><label><span>Cliente</span><select value={sessionUser.clientId} onChange={(event) => { const firstSite = hierarchy?.sites.find((site) => site.active && site.clientId === event.target.value); if (firstSite) void switchSite(firstSite.id); }} aria-label="Cliente activo">{hierarchy?.clients.filter((client) => client.active).map((client) => <option key={client.id} value={client.id}>{client.name}</option>) ?? <option value={sessionUser.clientId}>{sessionUser.clientName}</option>}</select></label>{view !== "dashboard" && <><i className="context-separator" aria-hidden="true" /><label><span>Sitio</span><select value={sessionUser.siteId} onChange={(event) => void switchSite(event.target.value)} aria-label="Sitio activo">{(hierarchy?.sites ?? sessionUser.sites).filter((site) => site.clientId === sessionUser.clientId && (!("active" in site) || site.active)).map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}</select></label>{view !== "operations" && <><i className="context-separator" aria-hidden="true" /><label><span>Activo</span><select value={activePoint?.id ?? ""} onChange={(event) => { setTelemetryState({ status: "loading", data: null }); setSystemMode("loading"); setActivePointId(event.target.value); }} aria-label="Activo seleccionado"><option value="">Sin activo seleccionado</option>{hierarchy?.points.filter((point) => point.active).map((point) => <option key={point.id} value={point.id}>{point.name}</option>)}</select></label></>}</>}</div></div>
+          <div className="topbar-left"><button className="menu-button" aria-label="Abrir navegación" onClick={() => setMenuOpen(true)}><Menu size={22} /></button><span className="mobile-brand"><Zap size={18} fill="currentColor" /></span><div className="operational-context"><span className="context-icon"><Building2 size={16} /></span><label><span>Cliente</span><select value={sessionUser.clientId} onChange={(event) => void switchClient(event.target.value)} aria-label="Cliente activo">{hierarchy?.clients.filter((client) => client.active).map((client) => <option key={client.id} value={client.id}>{client.name}</option>) ?? <option value={sessionUser.clientId}>{sessionUser.clientName}</option>}</select></label>{view !== "dashboard" && <><i className="context-separator" aria-hidden="true" /><label><span>Sitio</span><select value={sessionUser.siteId} onChange={(event) => void switchSite(event.target.value)} aria-label="Sitio activo">{(hierarchy?.sites ?? sessionUser.sites).filter((site) => site.clientId === sessionUser.clientId && (!("active" in site) || site.active)).map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}</select></label>{view !== "operations" && <><i className="context-separator" aria-hidden="true" /><label><span>Activo</span><select value={activePoint?.id ?? ""} onChange={(event) => { setTelemetryState({ status: "loading", data: null }); setSystemMode("loading"); setActivePointId(event.target.value); }} aria-label="Activo seleccionado"><option value="">Sin activo seleccionado</option>{hierarchy?.points.filter((point) => point.active).map((point) => <option key={point.id} value={point.id}>{point.name}</option>)}</select></label></>}</>}</div></div>
           <div className="topbar-right"><button className="authenticated-role" onClick={() => navigate("account")} aria-label="Abrir mi cuenta"><ShieldCheck size={16} /><strong>{sessionUser.roleName}</strong></button><button className="topbar-logout" onClick={logout} aria-label="Cerrar sesión"><LogOut size={18} /></button></div>
         </header>
 
         <div className="content-scroll">
-          <div className="page-content">
+          <div className="page-content" key={`context:${sessionUser.clientId}:${sessionUser.siteId}`}>
             {view !== "dashboard" && view !== "overview" && activePoint && (!["electrical_point", "ats", "cold_room"].includes(activePoint.type)) && systemMode !== "normal" && <section className={`operational-banner banner-${systemMode}`} role={systemMode === "offline" || systemMode === "error" ? "alert" : "status"} aria-live="polite"><span>{systemMode === "offline" ? <PlugConnected size={19} /> : systemMode === "loading" ? <Refresh className="spin" size={19} /> : systemMode === "error" ? <AlertTriangle size={19} /> : <Clock3 size={19} />}</span><div><strong>{systemMessage.title}</strong><p>{systemMessage.detail}</p></div>{systemMode !== "loading" && <button onClick={() => { setTelemetryState({ status: "loading", data: null }); setSystemMode("loading"); setTelemetryRefreshKey((current) => current + 1); notify("Consultando nuevamente la telemetría.", "info"); }}><Refresh size={15} /> Reintentar</button>}</section>}
             {(["engineering", "settings", "diagnostics", "commissioning", "provisioning"] as View[]).includes(view) && <nav className="engineering-context-nav engineering-context-nav-v3" aria-label="Herramientas de ingeniería">
               <div><strong>Ingeniería</strong><small>{activePoint ? `${activePoint.code} · ${activePoint.name}` : "Sin activo seleccionado"}</small></div>
