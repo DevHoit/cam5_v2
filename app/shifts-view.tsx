@@ -243,52 +243,115 @@ export function ShiftsView({
         <button className="secondary-button" onClick={() => { setLoading(true); setError(""); setReload((value) => value + 1); }} disabled={loading}><IconRefresh className={loading ? "spin" : ""} size={16} /> Actualizar</button>
       </div>
 
-      {canManage && <section className="guard-form-grid-v5">
-        <form className="guard-form-card-v5" onSubmit={createShift}>
-          <header className="guard-form-head-v5">
-            <span><IconClockHour4 size={20} /></span>
-            <div><small>Paso 1</small><h3>Definir turno semanal</h3><p>Configura el horario base en que debe existir cobertura operacional.</p></div>
-          </header>
-          <div className="guard-form-body-v5">
-            <label className="guard-field-wide-v5"><span>Nombre del turno</span><input required minLength={2} maxLength={160} value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Ej.: Turno día / Técnico 24x7" /></label>
-            <label><span>Zona horaria</span><input required value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })} /></label>
-            <div className="guard-time-grid-v5">
-              <label><span>Inicio</span><input type="time" required value={form.startTime} onChange={(event) => setForm({ ...form, startTime: event.target.value })} /></label>
-              <label><span>Término</span><input type="time" required value={form.endTime} onChange={(event) => setForm({ ...form, endTime: event.target.value })} /></label>
+      {canManage && (
+        <section className="ops-split-grid">
+          <form className="ops-form-card" onSubmit={createShift}>
+            <div className="ops-form-card__header">
+              <div>
+                <h3>Definir turno</h3>
+                <p>Configura el horario base en que debe existir cobertura on-call.</p>
+              </div>
             </div>
-            <fieldset className="guard-days-v5"><legend>Días de cobertura</legend><div>{DAYS.map((day) => <label key={day.id} className={form.days.includes(day.id) ? "selected" : ""}><input type="checkbox" checked={form.days.includes(day.id)} onChange={() => toggleDay(day.id)} /><span>{day.label}</span></label>)}</div></fieldset>
-          </div>
-          <footer className="guard-form-actions-v5"><button className="primary-button" type="submit" disabled={saving || !form.name.trim() || !form.days.length || form.startTime === form.endTime}>{saving ? "Creando…" : "Crear turno"}</button></footer>
-        </form>
 
-        <form className="guard-form-card-v5" onSubmit={createAssignment}>
-          <header className="guard-form-head-v5">
-            <span><IconUsersGroup size={20} /></span>
-            <div><small>Paso 2</small><h3>Asignar responsable</h3><p>Define quién atiende ese turno y durante qué período tendrá la guardia.</p></div>
-          </header>
-          <div className="guard-form-body-v5">
-            <label><span>Turno</span><select required value={assignmentForm.shiftId} onChange={(event) => setAssignmentForm({ ...assignmentForm, shiftId: event.target.value })}>
-              <option value="">Seleccionar turno…</option>
-              {(data?.shifts ?? []).filter((shift) => shift.active).map((shift) => <option key={shift.id} value={shift.id}>{shift.name}</option>)}
-            </select></label>
-            <label><span>Responsable</span><select required value={assignmentForm.userId} onChange={(event) => setAssignmentForm({ ...assignmentForm, userId: event.target.value })}>
-              <option value="">Seleccionar persona…</option>
-              {(onCall?.users ?? []).map((user) => <option key={user.id} value={user.id}>{user.displayName} · {user.email}</option>)}
-            </select></label>
-            <div className="guard-time-grid-v5 guard-field-wide-v5">
-              <label><span>Desde</span><input type="datetime-local" required value={assignmentForm.startsAt} onChange={(event) => setAssignmentForm({ ...assignmentForm, startsAt: event.target.value })} /></label>
-              <label><span>Hasta</span><input type="datetime-local" required value={assignmentForm.endsAt} onChange={(event) => setAssignmentForm({ ...assignmentForm, endsAt: event.target.value })} /></label>
+            <div className="ops-form-card__body">
+              <div className="ops-form-grid">
+                <label className="ops-field ops-field--full">
+                  <span>Nombre del turno</span>
+                  <input required minLength={2} maxLength={160} value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Ej.: Turno día / Técnico 24x7" />
+                </label>
+
+                <label className="ops-field ops-field--full">
+                  <span>Zona horaria</span>
+                  <input required value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })} />
+                </label>
+
+                <label className="ops-field">
+                  <span>Inicio</span>
+                  <input type="time" required value={form.startTime} onChange={(event) => setForm({ ...form, startTime: event.target.value })} />
+                </label>
+
+                <label className="ops-field">
+                  <span>Término</span>
+                  <input type="time" required value={form.endTime} onChange={(event) => setForm({ ...form, endTime: event.target.value })} />
+                </label>
+              </div>
+
+              <fieldset className="ops-days">
+                <legend>Días de cobertura</legend>
+                <div className="ops-days__grid">
+                  {DAYS.map((day) => (
+                    <label key={day.id} className={form.days.includes(day.id) ? "selected" : ""}>
+                      <input type="checkbox" checked={form.days.includes(day.id)} onChange={() => toggleDay(day.id)} />
+                      <span>{day.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
             </div>
-            <label className="guard-priority-v5"><span>Prioridad de atención</span><select value={assignmentForm.priority} onChange={(event) => setAssignmentForm({ ...assignmentForm, priority: event.target.value })}>
-              <option value="0">Principal</option>
-              <option value="1">Respaldo 1</option>
-              <option value="2">Respaldo 2</option>
-              <option value="3">Respaldo 3</option>
-            </select><small>El responsable principal se resuelve antes que los respaldos.</small></label>
-          </div>
-          <footer className="guard-form-actions-v5"><button className="primary-button" type="submit" disabled={saving || !assignmentForm.shiftId || !assignmentForm.userId || !assignmentForm.startsAt || !assignmentForm.endsAt}>{saving ? "Asignando…" : "Asignar guardia"}</button></footer>
-        </form>
-      </section>}
+
+            <div className="ops-form-card__footer">
+              <button className="primary-button" type="submit" disabled={saving || !form.name.trim() || !form.days.length || form.startTime === form.endTime}>
+                {saving ? "Creando…" : "Crear turno"}
+              </button>
+            </div>
+          </form>
+
+          <form className="ops-form-card" onSubmit={createAssignment}>
+            <div className="ops-form-card__header">
+              <div>
+                <h3>Asignar responsable</h3>
+                <p>Define quién atenderá el turno y durante qué vigencia.</p>
+              </div>
+            </div>
+
+            <div className="ops-form-card__body">
+              <div className="ops-form-grid">
+                <label className="ops-field ops-field--full">
+                  <span>Turno</span>
+                  <select required value={assignmentForm.shiftId} onChange={(event) => setAssignmentForm({ ...assignmentForm, shiftId: event.target.value })}>
+                    <option value="">Seleccionar turno…</option>
+                    {(data?.shifts ?? []).filter((shift) => shift.active).map((shift) => <option key={shift.id} value={shift.id}>{shift.name}</option>)}
+                  </select>
+                </label>
+
+                <label className="ops-field ops-field--full">
+                  <span>Responsable</span>
+                  <select required value={assignmentForm.userId} onChange={(event) => setAssignmentForm({ ...assignmentForm, userId: event.target.value })}>
+                    <option value="">Seleccionar persona…</option>
+                    {(onCall?.users ?? []).map((user) => <option key={user.id} value={user.id}>{user.displayName} · {user.email}</option>)}
+                  </select>
+                </label>
+
+                <label className="ops-field">
+                  <span>Desde</span>
+                  <input type="datetime-local" required value={assignmentForm.startsAt} onChange={(event) => setAssignmentForm({ ...assignmentForm, startsAt: event.target.value })} />
+                </label>
+
+                <label className="ops-field">
+                  <span>Hasta</span>
+                  <input type="datetime-local" required value={assignmentForm.endsAt} onChange={(event) => setAssignmentForm({ ...assignmentForm, endsAt: event.target.value })} />
+                </label>
+
+                <label className="ops-field ops-field--full">
+                  <span>Prioridad</span>
+                  <select value={assignmentForm.priority} onChange={(event) => setAssignmentForm({ ...assignmentForm, priority: event.target.value })}>
+                    <option value="0">Principal</option>
+                    <option value="1">Respaldo 1</option>
+                    <option value="2">Respaldo 2</option>
+                    <option value="3">Respaldo 3</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+
+            <div className="ops-form-card__footer">
+              <button className="primary-button" type="submit" disabled={saving || !assignmentForm.shiftId || !assignmentForm.userId || !assignmentForm.startsAt || !assignmentForm.endsAt}>
+                {saving ? "Asignando…" : "Asignar guardia"}
+              </button>
+            </div>
+          </form>
+        </section>
+      )}
 
       <section className="guard-list-section-v5">
         <header><div><h3>Guardias asignadas</h3><p>Responsables y vigencias configuradas para los turnos activos.</p></div></header>
