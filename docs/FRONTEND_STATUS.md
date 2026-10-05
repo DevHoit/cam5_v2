@@ -538,3 +538,22 @@ Rediseño conjunto del análisis temporal para alinear la experiencia con Dashbo
 - Responsive actualizado para desktop/tablet/mobile.
 
 Validación: lint, simuladores, Gateway Agent, tests DB y build PASS.
+
+
+## Ingeniería + Diagnóstico + Puesta en marcha v3 (2026-10-05)
+
+Rediseño y saneamiento del bloque técnico, alineado con Dashboard, Activos, Alertas y análisis temporal.
+
+- Ingeniería adopta una barra de contexto compacta y elimina la doble cabecera global.
+- El hub técnico se centra en activo, dispositivos asociados, diagnóstico, puesta en marcha, gateways y capacidades semánticas.
+- Se retiran textos de “adquisición” y detalles físicos de protocolo de la experiencia de Core.
+- Diagnóstico se simplifica a dispositivo → gateway → ingesta normalizada → Core, con métricas recientes, calidad y evidencia de lotes.
+- Puesta en marcha se reemplaza por un flujo genérico basado en readiness, capacidades, métricas recientes, calidad y evidencia de terreno.
+- Se elimina el componente/archivo CAM5 específico y se reemplaza por CommissioningView.
+- La API de commissioning deja de seleccionar host/port/unitId/protocol/registerMapVersion para esta vista.
+- La activación deja de mencionar CAM5 y exige telemetría reciente del dispositivo de forma genérica.
+- Se corrige un bug de evidencia manual: el checklist genérico usa itemKey=field y ahora el PATCH acepta correctamente ese control.
+- Core explicita en la UI que drivers, buses, direcciones físicas, registros y escalamiento pertenecen al Gateway Agent.
+- Responsive actualizado para desktop/tablet/mobile.
+
+Validación: lint, simuladores, Gateway Agent, tests DB y build PASS.
