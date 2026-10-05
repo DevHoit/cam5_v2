@@ -184,21 +184,53 @@ export function OperationsView({
         <button className="secondary-button" onClick={() => { setLoading(true); setError(""); setReload((value) => value + 1); }} disabled={loading}><IconRefresh className={loading ? "spin" : ""} size={16} /> Actualizar</button>
       </div>
 
-      {canWrite && <form className="hierarchy-create-form" onSubmit={createWindow}>
-        <div className="hierarchy-form-heading"><h3>Programar mantenimiento</h3><p>Define alcance y periodo de supresión operacional.</p></div>
-        <label><span>Alcance</span><select value={form.scopeType} onChange={(event) => setForm({ ...form, scopeType: event.target.value as typeof form.scopeType })}>
-          <option value="site">Sitio activo</option>
-          <option value="asset">Activo</option>
-          {canManageClient && <option value="tenant">Cliente completo</option>}
-        </select></label>
-        {form.scopeType === "asset" && <label><span>Activo</span><select required value={form.scopeId || activeAssetId} onChange={(event) => setForm({ ...form, scopeId: event.target.value })}>
-          <option value="">Seleccionar…</option>
-          {assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}
-        </select></label>}
-        <label><span>Inicio</span><input type="datetime-local" required value={form.startsAt} onChange={(event) => setForm({ ...form, startsAt: event.target.value })} /></label>
-        <label><span>Término</span><input type="datetime-local" required value={form.endsAt} onChange={(event) => setForm({ ...form, endsAt: event.target.value })} /></label>
-        <label><span>Motivo</span><input required minLength={3} maxLength={1000} value={form.reason} onChange={(event) => setForm({ ...form, reason: event.target.value })} placeholder="Trabajo programado, inspección, pruebas…" /></label>
-        <button className="primary-button" type="submit" disabled={saving || !form.reason.trim() || (form.scopeType === "asset" && !(form.scopeId || activeAssetId))}>{saving ? "Guardando…" : "Programar"}</button>
+      {canWrite && <form className="continuity-form-v5 maintenance-form-v5" onSubmit={createWindow}>
+        <header className="continuity-form-head-v5">
+          <span><IconTool size={20} /></span>
+          <div><h3>Programar mantenimiento</h3><p>Define exactamente dónde y cuándo deben suprimirse las notificaciones operacionales.</p></div>
+        </header>
+
+        <div className="continuity-form-body-v5">
+          <section className="continuity-form-section-v5">
+            <div className="continuity-section-heading-v5"><b>1</b><div><strong>Alcance</strong><small>Selecciona qué parte de la operación estará bajo mantenimiento.</small></div></div>
+            <div className="continuity-fields-v5">
+              <label><span>Aplicar mantenimiento a</span><select value={form.scopeType} onChange={(event) => setForm({ ...form, scopeType: event.target.value as typeof form.scopeType })}>
+                <option value="site">Sitio completo</option>
+                <option value="asset">Un activo específico</option>
+                {canManageClient && <option value="tenant">Cliente completo</option>}
+              </select></label>
+              {form.scopeType === "asset" && <label><span>Activo</span><select required value={form.scopeId || activeAssetId} onChange={(event) => setForm({ ...form, scopeId: event.target.value })}>
+                <option value="">Seleccionar activo…</option>
+                {assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}
+              </select></label>}
+              <div className="continuity-context-note-v5"><IconCircleCheck size={17} /><span>{form.scopeType === "asset" ? "Sólo se suprimirán las notificaciones asociadas al activo seleccionado." : form.scopeType === "tenant" ? "La ventana aplicará a todos los sitios del cliente." : "La ventana aplicará a todos los activos e infraestructura del sitio activo."}</span></div>
+            </div>
+          </section>
+
+          <section className="continuity-form-section-v5">
+            <div className="continuity-section-heading-v5"><b>2</b><div><strong>Período</strong><small>Define desde cuándo y hasta cuándo estará vigente la ventana.</small></div></div>
+            <div className="continuity-fields-v5 continuity-period-grid-v5">
+              <label><span>Inicio</span><input type="datetime-local" required value={form.startsAt} onChange={(event) => setForm({ ...form, startsAt: event.target.value })} /></label>
+              <label><span>Término</span><input type="datetime-local" required value={form.endsAt} onChange={(event) => setForm({ ...form, endsAt: event.target.value })} /></label>
+            </div>
+          </section>
+
+          <section className="continuity-form-section-v5">
+            <div className="continuity-section-heading-v5"><b>3</b><div><strong>Motivo</strong><small>Deja una explicación reconocible para operación y auditoría.</small></div></div>
+            <div className="continuity-fields-v5">
+              <label className="continuity-wide-v5"><span>Descripción del trabajo</span><textarea required minLength={3} maxLength={1000} value={form.reason} onChange={(event) => setForm({ ...form, reason: event.target.value })} placeholder="Ej.: Mantención preventiva de cámara de frío, revisión de sensores y pruebas de comunicación." /></label>
+            </div>
+          </section>
+
+          <div className="continuity-form-summary-v5">
+            <IconCalendarTime size={18} />
+            <div><strong>Durante esta ventana la telemetría seguirá registrándose.</strong><p>Sólo se suprimirán las notificaciones dentro del alcance y período definidos; el histórico se conserva.</p></div>
+          </div>
+        </div>
+
+        <footer className="continuity-form-actions-v5">
+          <button className="primary-button" type="submit" disabled={saving || !form.reason.trim() || (form.scopeType === "asset" && !(form.scopeId || activeAssetId))}>{saving ? "Programando…" : "Programar mantenimiento"}</button>
+        </footer>
       </form>}
 
       {error && <div className="data-error"><IconAlertTriangle size={18} /><div><strong>No se pudo consultar mantenimiento</strong><p>{error}</p></div></div>}
