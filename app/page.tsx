@@ -13,6 +13,7 @@ import { GatewayProvisioningView } from "./gateway-provisioning-view";
 import { GenericTrendsView } from "./generic-trends-view";
 import { Pagination, useClientPagination } from "./pagination";
 import { NotificationsView as DatabaseNotificationsView } from "./notifications-view";
+import { OrganizationAdminView } from "./organization-admin-view";
 import { OperationsView } from "./operations-view";
 import { ReportsView as DatabaseReportsView } from "./reports-view";
 import { SettingsView as DatabaseSettingsView } from "./settings-view";
@@ -67,7 +68,7 @@ import {
   IconX as X,
 } from "@tabler/icons-react";
 
-type View = "dashboard" | "overview" | "engineering" | "cabinet" | "electrical" | "ats" | "cold-chain" | "diagnostics" | "commissioning" | "trends" | "alarms" | "history" | "assets" | "operations" | "reports" | "settings" | "provisioning" | "users" | "notifications" | "account";
+type View = "dashboard" | "overview" | "engineering" | "cabinet" | "electrical" | "ats" | "cold-chain" | "diagnostics" | "commissioning" | "trends" | "alarms" | "history" | "assets" | "operations" | "reports" | "settings" | "provisioning" | "organization" | "users" | "notifications" | "account";
 type Severity = "critical" | "warning" | "info";
 type SensorState = "normal" | "warning" | "critical";
 type HistoryTab = "measurements" | "alarms" | "audit";
@@ -228,6 +229,7 @@ const useFeedback = () => useContext(FeedbackContext);
 const ConfirmContext = createContext<(request: ConfirmRequest) => void>(() => undefined);
 const useConfirm = () => useContext(ConfirmContext);
 function canSeeNavItem(view: View, user: PortalSessionUser) {
+  if (view === "organization") return user.permissions.includes("clients.manage") || user.permissions.includes("sites.manage");
   if (view === "users") return user.permissions.includes("users.manage");
   if (view === "engineering" || view === "settings" || view === "diagnostics" || view === "commissioning" || view === "provisioning") return user.permissions.includes("settings.read") || user.permissions.includes("settings.write");
   if (view === "notifications") return user.permissions.includes("notifications.read") || user.permissions.includes("notifications.write");
@@ -386,9 +388,10 @@ const navGroups = [
     label: "Administración",
     items: [
       { id: "assets" as View, label: "Activos", description: "Activos e infraestructura del sitio", icon: Factory },
+      { id: "organization" as View, label: "Organización", description: "Clientes y sitios", icon: Hierarchy },
       { id: "notifications" as View, label: "Notificaciones", description: "Canales y entregas", icon: Mail },
       { id: "users" as View, label: "Usuarios y roles", description: "Acceso y permisos", icon: Users },
-      { id: "engineering" as View, label: "Ingeniería", description: "Capacidades y adquisición", icon: Settings },
+      { id: "engineering" as View, label: "Ingeniería", description: "Capacidades y dispositivos", icon: Settings },
     ],
   },
 ];
@@ -411,6 +414,7 @@ const viewTitles: Record<View, { title: string; description: string }> = {
   engineering: { title: "Ingeniería", description: "Herramientas técnicas adaptadas a las capacidades del activo seleccionado." },
   settings: { title: "Configuración avanzada", description: "Parámetros técnicos del dispositivo y su adquisición." },
   provisioning: { title: "Provisionamiento del gateway", description: "Credenciales seguras, configuración inicial y verificación de conexión." },
+  organization: { title: "Organización", description: "Administración de clientes y sitios de la plataforma." },
   users: { title: "Usuarios y roles", description: "Control de acceso y permisos para la operación técnica." },
   notifications: { title: "Notificaciones", description: "Canales de entrega, reglas de escalamiento y trazabilidad." },
   account: { title: "Mi cuenta", description: "Perfil personal, credenciales y sesiones activas del portal." },
@@ -2090,7 +2094,7 @@ export default function Home() {
                 <button className={view === "provisioning" ? "active" : ""} onClick={() => navigate("provisioning")}>Gateways</button>
               </div>
             </nav>}
-            {view !== "dashboard" && view !== "assets" && view !== "overview" && view !== "alarms" && view !== "trends" && view !== "history" && view !== "reports" && !(["engineering", "settings", "diagnostics", "commissioning", "provisioning"] as View[]).includes(view) && <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> {viewSectionLabel(view)}</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{view === "cabinet" && (!activePoint || !["electrical_point", "ats", "cold_room"].includes(activePoint.type)) && <button className="secondary-button" onClick={() => setVisibilityOpen(true)} disabled={!activePoint || !sensors.some((sensor) => sensor.enabled)}><AdjustmentsHorizontal size={16} /><span>Configurar visualización</span></button>}{view !== "engineering" && view !== "settings" && view !== "provisioning" && view !== "users" && view !== "notifications" && view !== "account" && view !== "diagnostics" && view !== "commissioning" && <button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button>}{canSeeNavItem("alarms", sessionUser) && <button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{alarmSummary.critical + alarmSummary.warning} alertas activas</button>}</div></section>}
+            {view !== "dashboard" && view !== "assets" && view !== "overview" && view !== "alarms" && view !== "trends" && view !== "history" && view !== "reports" && view !== "organization" && view !== "users" && !(["engineering", "settings", "diagnostics", "commissioning", "provisioning"] as View[]).includes(view) && <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> {viewSectionLabel(view)}</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{view === "cabinet" && (!activePoint || !["electrical_point", "ats", "cold_room"].includes(activePoint.type)) && <button className="secondary-button" onClick={() => setVisibilityOpen(true)} disabled={!activePoint || !sensors.some((sensor) => sensor.enabled)}><AdjustmentsHorizontal size={16} /><span>Configurar visualización</span></button>}{view !== "engineering" && view !== "settings" && view !== "provisioning" && view !== "users" && view !== "notifications" && view !== "account" && view !== "diagnostics" && view !== "commissioning" && <button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button>}{canSeeNavItem("alarms", sessionUser) && <button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{alarmSummary.critical + alarmSummary.warning} alertas activas</button>}</div></section>}
             {view === "dashboard" && <DashboardView onSwitchSite={(siteId) => void openDashboardSite(siteId)} onSelectAsset={(siteId, assetId) => void openDashboardAsset(siteId, assetId)} onOpenAlerts={() => navigate("alarms")} />}
             {view === "engineering" && <EngineeringHubView asset={activePoint} devices={hierarchy?.controllers ?? []} canWrite={sessionUser.permissions.includes("settings.write")} onNavigate={(target) => navigate(target)} notify={notify} />}
             {view === "overview" && !activePoint && <section className="asset-overview-empty">
@@ -2134,7 +2138,8 @@ export default function Home() {
             {view === "reports" && <DatabaseReportsView assetId={activePoint?.id ?? ""} assetLabel={activePoint ? `${activePoint.code} · ${activePoint.name}` : "Sin activo seleccionado"} timezone={hierarchy?.sites.find((site) => site.id === sessionUser.siteId)?.timezone ?? "America/Santiago"} canGenerate={sessionUser.permissions.includes("reports.generate")} canSchedule={sessionUser.permissions.includes("reports.schedule")} notify={notify} confirm={(request) => setConfirmRequest(request)} />}
             {view === "settings" && <DatabaseSettingsView assetId={activePoint?.id ?? ""} canWrite={sessionUser.permissions.includes("settings.write")} notify={notify} confirm={(request) => setConfirmRequest(request)} onReloadHierarchy={loadHierarchy} />}
             {view === "provisioning" && <GatewayProvisioningView canWrite={sessionUser.permissions.includes("settings.write")} notify={notify} confirm={(request) => setConfirmRequest(request)} />}
-            {view === "users" && <UsersView currentUserId={sessionUser.id} currentRoleKey={sessionUser.roleKey} clientScopes={sessionUser.clientScopes} sites={sessionUser.sites} activeSiteId={sessionUser.siteId} activeClientId={sessionUser.clientId} canManageUsers={sessionUser.permissions.includes("users.manage")} />}
+            {view === "organization" && hierarchy && <OrganizationAdminView clients={hierarchy.clients} sites={hierarchy.sites} activeClientId={sessionUser.clientId} activeSiteId={sessionUser.siteId} canManageClients={sessionUser.permissions.includes("clients.manage")} canManageSites={sessionUser.permissions.includes("sites.manage")} onReload={loadHierarchy} notify={notify} />}
+             {view === "users" && <UsersView currentUserId={sessionUser.id} currentRoleKey={sessionUser.roleKey} clientScopes={sessionUser.clientScopes} sites={sessionUser.sites} activeSiteId={sessionUser.siteId} activeClientId={sessionUser.clientId} canManageUsers={sessionUser.permissions.includes("users.manage")} />}
             {view === "notifications" && <NotificationsView canWrite={sessionUser.permissions.includes("notifications.write")} />}
             {view === "account" && <AccountView notify={notify} confirm={(request) => setConfirmRequest(request)} onProfileUpdated={(displayName) => setSessionUser((current) => current ? { ...current, displayName } : current)} />}
           </div>
