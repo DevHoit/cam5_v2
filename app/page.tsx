@@ -596,7 +596,7 @@ function OverviewChannelRow({ sensor, onOpenTrend }: { sensor: PortalSensor; onO
   </article>;
 }
 
-function Overview({ onNavigate, onOpenTrend, onAcknowledge, activeAlarms, alarmSummary, point }: { onNavigate: (view: View) => void; onOpenTrend: (id: string) => void; onAcknowledge: (id: string) => void; activeAlarms: PortalAlarm[]; alarmSummary: { critical: number; warning: number }; point?: PortalHierarchy["points"][number] }) {
+function Overview({ onNavigate, onOpenTrend, onAcknowledge, onConfigureVisual, activeAlarms, alarmSummary, point }: { onNavigate: (view: View) => void; onOpenTrend: (id: string) => void; onAcknowledge: (id: string) => void; onConfigureVisual: () => void; activeAlarms: PortalAlarm[]; alarmSummary: { critical: number; warning: number }; point?: PortalHierarchy["points"][number] }) {
   const telemetryState = useContext(TelemetryContext);
   const telemetry = telemetryState.data;
   const sensors = useSensorData();
@@ -665,6 +665,7 @@ function Overview({ onNavigate, onOpenTrend, onAcknowledge, activeAlarms, alarmS
         <span>{latestReadingAt ? `Última telemetría ${formatRelativeTime(latestReadingAt)}` : "Sin telemetría disponible"}</span>
       </div>
       <div className="asset-overview-actions">
+        <button onClick={onConfigureVisual}><AdjustmentsHorizontal size={15} /> Configurar visualización</button>
         <button onClick={() => onNavigate("trends")}><TrendingUp size={15} /> Tendencias</button>
         <button onClick={() => onNavigate("alarms")}><BellRing size={15} /> Alertas {alarmTotal ? `· ${alarmTotal}` : ""}</button>
       </div>
@@ -1969,7 +1970,7 @@ export default function Home() {
             </section>}
             {view === "overview" && activePoint && ["electrical_point", "ats", "cold_room"].includes(activePoint.type)
               ? <UniversalAssetOverview asset={activePoint} alarms={alarmPreview} alarmSummary={alarmSummary} onNavigate={(target) => navigate(target)} />
-              : view === "overview" && activePoint && <Overview onNavigate={navigate} onOpenTrend={openChannelTrend} onAcknowledge={acknowledge} activeAlarms={alarmPreview} alarmSummary={alarmSummary} point={activePoint} />}
+              : view === "overview" && activePoint && <Overview onNavigate={navigate} onOpenTrend={openChannelTrend} onAcknowledge={acknowledge} onConfigureVisual={() => setVisibilityOpen(true)} activeAlarms={alarmPreview} alarmSummary={alarmSummary} point={activePoint} />}
             {view === "cabinet" && <CabinetView onOpenTrend={openChannelTrend} />}
             {view === "electrical" && <ElectricalView
               canWriteAssets={sessionUser.permissions.includes("assets.write")}
