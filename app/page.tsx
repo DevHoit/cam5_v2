@@ -653,18 +653,28 @@ function Overview({ onNavigate, onOpenTrend, onAcknowledge, activeAlarms, alarmS
     { id: "cold-chain" as View, label: "Cadena de frío", detail: "Temperatura y sensores", show: point?.type === "cold_room" },
   ].filter((item) => item.show);
 
-  return <div className="operational-overview">
-    <nav className="asset-capability-nav" aria-label="Capacidades del activo">
-      <div><span className="eyebrow">Activo seleccionado</span><strong>{pointRecord?.code ?? "Sin activo"} · {pointRecord?.name ?? "Selecciona un activo"}</strong></div>
-      <div className="asset-capability-actions">{capabilityActions.map((item) => <button key={item.id} onClick={() => onNavigate(item.id)}><span>{item.label}</span><small>{item.detail}</small><ChevronRight size={15} /></button>)}</div>
-    </nav>
-    <section className={`panel overview-statusbar overview-command-${overallState}`} title={statusDetail}>
-      <span className="overview-statusbar-icon">{overallState === "normal" ? <CheckCircle2 size={22} /> : overallState === "waiting" || overallState === "stale" ? <Clock3 size={22} /> : <AlertTriangle size={22} />}</span>
-      <div className="overview-statusbar-asset"><span className="eyebrow">{pointRecord ? `${pointRecord.code} · ${pointRecord.name}` : "Punto sin seleccionar"}</span><strong>{statusTitle}</strong><small>{pointRecord?.nominalVoltageKv ? `${pointRecord.nominalVoltageKv} kV · ` : ""}{telemetry?.point.area || "Ubicación no informada"}</small></div>
-      <div className="overview-statusbar-health"><StatusPill state={overallState}>{overallState === "offline" ? "Sin comunicación" : overallState === "waiting" ? "Esperando datos" : overallState === "stale" ? "Datos atrasados" : overallState === "critical" ? "Condición crítica" : overallState === "warning" ? "Atención requerida" : "Operación normal"}</StatusPill><span><Wifi size={15} />{telemetry?.gateway?.code ?? "Sin gateway"} · {telemetryAge(telemetry?.gateway?.lastSeenAt ?? null)}</span></div>
-      {priorityAlarm && <strong className="overview-priority-value">{alarmValue(priorityAlarm)}</strong>}
-      <div className="overview-statusbar-actions"><button onClick={() => onNavigate("alarms")}>Alertas <ChevronRight size={15} /></button><button onClick={() => onNavigate("cabinet")}>Mapa <ChevronRight size={15} /></button></div>
+  return <div className="operational-overview asset-overview-v3">
+    <section className={`asset-overview-header state-${overallState}`}>
+      <div className="asset-overview-identity">
+        <span className="asset-overview-code">{pointRecord?.code ?? "ACTIVO"}</span>
+        <h1>{pointRecord?.name ?? "Activo"}</h1>
+        <p>{telemetry?.point.area || pointRecord?.area || "Ubicación no informada"}</p>
+      </div>
+      <div className="asset-overview-health">
+        <StatusPill state={overallState}>{overallState === "offline" ? "Sin comunicación" : overallState === "waiting" ? "Esperando datos" : overallState === "stale" ? "Datos atrasados" : overallState === "critical" ? "Condición crítica" : overallState === "warning" ? "Atención requerida" : "Operativo"}</StatusPill>
+        <span>{latestReadingAt ? `Última telemetría ${formatRelativeTime(latestReadingAt)}` : "Sin telemetría disponible"}</span>
+      </div>
+      <div className="asset-overview-actions">
+        <button onClick={() => onNavigate("trends")}><TrendingUp size={15} /> Tendencias</button>
+        <button onClick={() => onNavigate("alarms")}><BellRing size={15} /> Alertas {alarmTotal ? `· ${alarmTotal}` : ""}</button>
+      </div>
     </section>
+    <section className={`asset-operational-message message-${overallState}`} title={statusDetail}>
+      <span>{overallState === "normal" ? <CheckCircle2 size={17} /> : overallState === "waiting" || overallState === "stale" ? <Clock3 size={17} /> : <AlertTriangle size={17} />}</span>
+      <div><strong>{statusTitle}</strong><p>{statusDetail}</p></div>
+      {priorityAlarm && <b>{alarmValue(priorityAlarm)}</b>}
+    </section>
+    {capabilityActions.length > 0 && <nav className="asset-capability-strip" aria-label="Capacidades del activo">{capabilityActions.map((item) => <button key={item.id} onClick={() => onNavigate(item.id)}><span>{item.label}</span><ChevronRight size={14} /></button>)}</nav>}
 
     <section className="overview-metric-grid" aria-label="Indicadores operativos">
       <article className={alarmSummary.critical ? "metric-critical" : "metric-normal"}><span><AlertTriangle size={19} /></span><div><small>Alertas activas</small><strong>{alarmTotal}</strong><p><b>{alarmSummary.critical} críticas</b> · {alarmSummary.warning} advertencias</p></div></article>
