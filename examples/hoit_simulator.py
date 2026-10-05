@@ -121,8 +121,10 @@ def request_json(base_url: str, token: str, path: str, method: str = "GET", payl
         return 0, None, str(error)
 
 
-def load_profile_module(profile: str, args: argparse.Namespace) -> ModuleType:
+def load_profile_module(profile: str, args: argparse.Namespace, devices: list[str]) -> ModuleType:
     os.environ["HOIT_SCENARIO"] = args.scenario
+    os.environ["HOIT_DEVICES"] = ",".join(devices)
+    os.environ["HOIT_DEVICE_CODE"] = devices[0]
     os.environ["HOIT_INTERVAL"] = str(args.interval)
     os.environ["HOIT_PHASE_SECONDS"] = str(args.phase_seconds)
     os.environ["HOIT_MIN_C"] = str(args.min_c)
@@ -298,7 +300,7 @@ def main() -> int:
 
     try:
         remote = validate_remote_configuration(base_url, token, gateway_code, devices)
-        module = load_profile_module(args.profile, args)
+        module = load_profile_module(args.profile, args, devices)
     except (RuntimeError, ValueError) as error:
         print(str(error), file=sys.stderr)
         return 2
