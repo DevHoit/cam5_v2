@@ -8202,3 +8202,31 @@ button.dashboard-kpi:hover { transform: translateY(-1px); border-color: #bae6fd;
     grid-column:auto;
   }
 }
+
+
+/* Users v5 — portal scale */
+.users-v5{display:grid;gap:16px;font-family:var(--font-inter),Inter,system-ui,sans-serif}
+.users-v5 .users-commandbar-v3{min-height:62px;padding:0 2px 9px;align-items:flex-end;border-bottom:1px solid #e4e4e7}
+.users-v5 .users-commandbar-v3 h1{margin:0;color:#18181b;font-size:22px;line-height:1.1;font-weight:700;letter-spacing:-.035em}
+.users-v5 .users-commandbar-v3 p{margin:5px 0 0;color:#71717a;font-size:12px;line-height:1.4}
+.users-v5 .users-commandbar-v3 .admin-command-actions button{min-height:38px;padding:0 13px;font-size:12px}
+.users-v5 .user-status-strip{margin:0;grid-template-columns:repeat(3,minmax(0,1fr));border-radius:12px;box-shadow:0 4px 18px rgba(24,24,27,.025)}
+.users-v5 .user-status-strip article{min-height:108px;padding:16px 17px;grid-template-columns:38px minmax(0,1fr);gap:11px}
+.users-v5 .user-status-strip article>span{width:38px;height:38px;border-radius:10px}
+.users-v5 .user-status-strip small{font-size:11px}.users-v5 .user-status-strip strong{margin:4px 0 5px;font-size:24px}.users-v5 .user-status-strip article div>span{font-size:11px}
+.users-v5 .users-module-v3{overflow:hidden;border-radius:12px;box-shadow:0 4px 20px rgba(24,24,27,.03)}
+.users-v5 .users-section-head{min-height:72px;padding:15px 17px 13px}.users-v5 .users-section-head h2{font-size:17px}.users-v5 .users-section-head p{font-size:12px}.users-v5 .users-section-head>span{font-size:11px}
+.users-v5 .user-editor-v3{padding:17px 18px;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px 14px;background:#fafafa}
+.users-v5 .user-editor-heading{grid-column:1/-1;padding-bottom:12px;border-bottom:1px solid #e4e4e7}
+.users-v5 .user-editor-heading h3{font-size:17px}.users-v5 .user-editor-heading p{font-size:12px}
+.users-v5 .user-editor-v3 label>span{font-size:12px}.users-v5 .user-editor-v3 input,.users-v5 .user-editor-v3 select{min-height:44px;padding:0 11px;font-size:14px;border-radius:9px}
+.users-v5 .user-editor-v3 label>small{font-size:11px}.users-v5 .user-editor-v3 .user-site-access{grid-column:1/-1;padding:14px;border-radius:10px}
+.users-v5 .user-editor-v3 .user-site-access legend{font-size:12px}.users-v5 .user-editor-v3 .user-site-access>p{font-size:11px}.users-v5 .user-editor-v3 .user-site-access label strong{font-size:12px}.users-v5 .user-editor-v3 .user-site-access label small{font-size:10px}
+.users-v5 .user-editor-actions{grid-column:1/-1;padding-top:12px;border-top:1px solid #e4e4e7}.users-v5 .user-editor-actions button{min-height:38px;font-size:12px}
+.users-v5 .user-list-toolbar-v3{padding:13px 14px}.users-v5 .user-list-toolbar-v3 .search-field{min-height:42px}.users-v5 .user-list-toolbar-v3 input,.users-v5 .user-list-toolbar-v3 select{min-height:42px!important;font-size:14px!important}.users-v5 .user-list-toolbar-v3 label>span{font-size:11px!important}
+.users-v5 .users-table{min-width:1080px}.users-v5 .users-table .module-table-head{min-height:44px;padding:0 16px;font-size:10px}.users-v5 .users-table .module-table-row{min-height:76px;padding:11px 16px;font-size:12px}
+.users-v5 .user-identity>b{width:40px;height:40px;font-size:11px}.users-v5 .user-identity strong{font-size:13px}.users-v5 .user-identity small{font-size:11px}
+.users-v5 .role-chip,.users-v5 .site-count-chip,.users-v5 .user-status{min-height:28px;padding:0 9px;font-size:10px}.users-v5 .user-security-state small{font-size:10px}.users-v5 .row-actions .ghost-button{min-height:34px;font-size:11px}
+.users-v5 .role-matrix-v3{padding:16px;grid-template-columns:200px 1fr;gap:16px}.users-v5 .role-matrix-v3 h3{font-size:15px}.users-v5 .role-matrix-v3>div:first-child p{font-size:11px}.users-v5 .role-matrix-v3 .role-matrix-grid strong{font-size:12px}.users-v5 .role-matrix-v3 .role-matrix-grid small{font-size:11px}
+@media(max-width:900px){.users-v5 .user-editor-v3{grid-template-columns:1fr}.users-v5 .user-editor-heading,.users-v5 .user-editor-v3 .user-site-access,.users-v5 .user-editor-actions{grid-column:auto}.users-v5 .role-matrix-v3{grid-template-columns:1fr}}
+@media(max-width:680px){.users-v5 .users-commandbar-v3{align-items:flex-start;flex-direction:column}.users-v5 .user-status-strip{grid-template-columns:1fr}}
