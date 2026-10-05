@@ -447,3 +447,21 @@ Se cerró el saneamiento inmediato del control plane antes de continuar con camb
 CI del punto de corte: PASS completo.
 
 Decisión de trabajo: detener aquí nuevas expansiones visuales/funcionales y realizar una revisión visual del Preview pantalla por pantalla antes de seguir modificando el frontend.
+
+
+## Dashboard operacional v3 (2026-10-05)
+
+Rediseño visual/UX acordado tras revisión del Preview.
+
+- Se elimina el hero redundante Inicio/Dashboard/Vista cliente y la explicación de independencia de protocolo.
+- Cabecera compacta: estado de operación, cliente, estado online, hora de actualización y refresh.
+- KPI consolidados en una franja única: alertas, salud de activos, conectividad y sitios monitoreados.
+- Un entorno sin activos/equipos devuelve “— / Sin monitoreo”; nunca 100% saludable por ausencia de datos.
+- “Adquisición” se reemplaza visualmente por “Conectividad”.
+- Operación por sitio comunica estado, cobertura, conectividad, alertas y acción explícita Ver sitio/Configurar.
+- Atención operacional y actividad reciente reemplazan paneles vacíos sobredimensionados.
+- Se agrega vista temporal de 24 h usando exclusivamente eventos disponibles; no se inventan métricas históricas.
+- Menos uppercase/eyebrows, menor radio, densidad mayor y uso de color reservado para significado operacional.
+- Responsive actualizado para desktop/tablet/mobile.
+
+Validación: lint, simuladores, Gateway Agent, tests DB y build PASS.
