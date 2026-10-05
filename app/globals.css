@@ -6564,19 +6564,19 @@ button.dashboard-kpi:hover { transform: translateY(-1px); border-color: #bae6fd;
   line-height:1.45;
   text-overflow:ellipsis;
 }
-.operations-v4 .module-panel > .module-table-wrap .module-table {
+.operations-v4 .escalation-v6 .module-panel > .module-table-wrap .module-table {
   min-width:980px;
 }
-.operations-v4 .module-panel > .module-table-wrap .module-table-head,
-.operations-v4 .module-panel > .module-table-wrap .module-table-row {
+.operations-v4 .escalation-v6 .module-panel > .module-table-wrap .module-table-head,
+.operations-v4 .escalation-v6 .module-panel > .module-table-wrap .module-table-row {
   grid-template-columns:minmax(170px,.9fr) 95px 80px 120px minmax(320px,1.6fr) 170px;
 }
-.operations-v4 .module-panel > .module-table-wrap .row-actions {
+.operations-v4 .escalation-v6 .module-panel > .module-table-wrap .row-actions {
   display:flex;
   align-items:center;
   gap:6px;
 }
-.operations-v4 .module-panel > .module-table-wrap .row-actions .ghost-button {
+.operations-v4 .escalation-v6 .module-panel > .module-table-wrap .row-actions .ghost-button {
   min-height:32px;
   padding:0 9px;
   font-size:11px;
