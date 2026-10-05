@@ -189,7 +189,7 @@ export function UniversalAssetOverview({
 
   if (loading && !data) return <div className="universal-asset-overview asset-overview-v3" aria-live="polite" aria-busy="true">
     <section className="asset-overview-header">
-      <div className="asset-overview-identity"><span className="asset-overview-code">{asset.code}</span><h1>{asset.name}</h1><p>{asset.area || "Estado operacional"}</p></div>
+      <div className="asset-overview-identity"><h1>{asset.name}</h1><p>{asset.area || "Estado operacional"}</p></div>
       <span className="asset-overview-loading"><IconRefresh className="spin" size={14} /> Actualizando datos</span>
     </section>
     <section className="asset-loading-grid" aria-hidden="true"><i /><i /><i /><i /></section>
@@ -198,7 +198,7 @@ export function UniversalAssetOverview({
 
   return <div className="universal-asset-overview">
     <section className={`asset-overview-header state-${overall}`}>
-      <div className="asset-overview-identity"><span className="asset-overview-code">{asset.code}</span><h1>{asset.name}</h1><p>{assetTypeLabel(asset.type)} · {asset.area || "Ubicación sin definir"} · {devices.length ? `${devices.length} dispositivo${devices.length === 1 ? "" : "s"} monitoreando` : "sin dispositivos asociados"}</p></div>
+      <div className="asset-overview-identity"><h1>{asset.name}</h1><p>{assetTypeLabel(asset.type)} · {asset.area || "Ubicación sin definir"} · {devices.length ? `${devices.length} dispositivo${devices.length === 1 ? "" : "s"} monitoreando` : "sin dispositivos asociados"}</p></div>
       <div className="asset-overview-health"><span className={`status-pill status-${overall}`}>{overall === "critical" ? "Condición crítica" : overall === "warning" ? "Atención requerida" : overall === "offline" ? devices.length ? "Datos no disponibles" : "Sin monitoreo" : "Operativo"}</span><span>{data && latestAt ? `Última telemetría ${formatAge(latestAt, data.serverTime).toLowerCase()}` : "Sin telemetría disponible"}</span></div>
       <div className="asset-overview-actions"><button onClick={() => onNavigate(feature.view as "electrical" | "ats" | "cold-chain" | "cabinet")}><FeatureIcon size={15} /> {feature.title}</button><button onClick={() => onNavigate("alarms")}><IconAlertTriangle size={15} /> Alertas {activeAlarmCount ? `· ${activeAlarmCount}` : ""}</button><button aria-label="Actualizar activo" onClick={() => { setLoading(true); setError(""); setReload((value) => value + 1); }}><IconRefresh className={loading ? "spin" : ""} size={15} /></button></div>
     </section>
