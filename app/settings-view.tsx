@@ -4,32 +4,26 @@ import { useEffect, useMemo, useState } from "react";
 import {
   IconActivity,
   IconAlertTriangle,
-  IconBook2,
   IconBuilding,
   IconCheck,
-  IconCircleCheck,
-  IconClock,
-  IconDatabase,
+  IconCircuitCell,
   IconDeviceFloppy,
-  IconHistory,
-  IconPlugConnected,
   IconRefresh,
-  IconSearch,
+  IconRouter,
   IconServer,
+  IconSettings,
   IconShieldCheck,
 } from "@tabler/icons-react";
-import { Pagination, useClientPagination } from "./pagination";
 
 type NoticeTone = "success" | "info" | "warning";
-type ConfirmRequest = { title: string; detail: string; confirmLabel: string; tone?: "default" | "danger"; onConfirm: () => void };
-type SettingsTab = "asset" | "channels" | "registers" | "acquisition" | "versions";
+type SettingsTab = "asset" | "devices" | "metrics";
+
 type ConfigurationData = {
   asset: {
     id: string;
     code: string;
     name: string;
     area: string | null;
-    nominalVoltageKv: number | null;
     state: string;
     active: boolean;
     siteId: string;
@@ -37,113 +31,49 @@ type ConfigurationData = {
     siteName: string;
     siteTimezone: string;
   };
-  controller: {
+  devices: Array<{
     id: string;
     code: string;
     name: string;
+    state: string;
     serialNumber: string | null;
     firmwareVersion: string | null;
-    dataVersion: number | null;
-    state: string;
-    active: boolean;
-    protocol: string;
-    host: string;
-    port: number;
-    unitId: number;
-    timeoutMs: number;
-    retries: number;
-    registerConvention: string;
     lastReadAt: string | null;
-    updatedAt: string;
-    modelId: string;
-    modelCode: string;
-    modelName: string;
-    registerMapVersion: string;
-    profileId: string | null;
-    gatewayId: string;
-    gatewayCode: string;
-    gatewayName: string;
-    gatewayIpAddress: string | null;
-    gatewayState: string;
+    modelCode: string | null;
+    modelName: string | null;
+    gatewayId: string | null;
+    gatewayCode: string | null;
+    gatewayName: string | null;
+    gatewayState: string | null;
     gatewayLastSeenAt: string | null;
-  } | null;
-  gateways: Array<{ id: string; code: string; name: string; state: string; active: boolean; ipAddress: string | null; lastSeenAt: string | null }>;
-  profile: {
-    id: string;
-    key: string;
-    name: string;
-    description: string | null;
-    staleAfterSeconds: number;
-    storageIntervalSeconds: number;
-    heartbeatIntervalSeconds: number;
-    diagnosticIntervalSeconds: number;
-    rawRetentionDays: number;
-    aggregateRetentionDays: number;
-    ranges: Array<{ id: string; name: string; startRegister: number; endRegister: number; functionCode: number; intervalMs: number; priority: number; enabled: boolean }>;
-  } | null;
-  channels: Array<{
+  }>;
+  gateways: Array<{
     id: string;
     code: string;
     name: string;
-    zone: string | null;
-    metric: string;
-    unit: string;
-    enabled: boolean;
-    displayOrder: number;
-    register: number;
-    reference: string;
-    warningThreshold: number | null;
-    criticalThreshold: number | null;
-    hysteresis: number;
-    activationSamples: number | null;
-    recoverySamples: number | null;
-    staleAfterSeconds: number | null;
-    ruleId: string | null;
+    state: string;
+    lastSeenAt: string | null;
   }>;
-  registers: Array<{
+  metrics: Array<{
+    deviceId: string;
     id: string;
-    nativeRegister: number;
-    humanReference: string;
+    code: string;
     name: string;
-    group: string;
-    metric: string;
-    dataType: "int16" | "uint16";
-    scaleFactor: number;
-    scaleNote: string | null;
+    enabled: boolean;
+    key: string;
+    category: string;
     unit: string;
-    errorRawValue: number | null;
-    minimumValue: number | null;
-    maximumValue: number | null;
-    writable: boolean;
+    dataType: string;
   }>;
-  snapshots: Array<{ id: string; version: number; kind: string; checksumSha256: string; section: string; createdAt: string }>;
-  validation: { valid: boolean; warnings: string[]; mapValid: boolean };
+  capabilities: Array<{
+    deviceId: string;
+    key: string;
+    enabled: boolean;
+  }>;
+  validation: { valid: boolean; warnings: string[] };
 };
-type ChannelDraft = {
-  enabled: boolean;
-  warningThreshold: string;
-  criticalThreshold: string;
-  hysteresis: string;
-  activationSamples: string;
-  recoverySamples: string;
-  staleAfterSeconds: string;
-};
-type AcquisitionDraft = {
-  name: string;
-  gatewayId: string;
-  host: string;
-  port: string;
-  unitId: string;
-  timeoutMs: string;
-  retries: string;
-  staleAfterSeconds: string;
-  storageIntervalSeconds: string;
-  heartbeatIntervalSeconds: string;
-  diagnosticIntervalSeconds: string;
-  rawRetentionDays: string;
-  aggregateRetentionDays: string;
-  ranges: Array<{ id: string; name: string; startRegister: string; endRegister: string; functionCode: string; intervalMs: string; enabled: boolean }>;
-};
+
+type DeviceDraft = { name: string; gatewayId: string };
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, { ...init, credentials: "include", headers: { "Content-Type": "application/json", ...init?.headers } });
@@ -154,290 +84,205 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-function formatDateTime(value: string | null) {
-  if (!value) return "Sin actividad registrada";
-  return new Intl.DateTimeFormat("es-CL", { dateStyle: "medium", timeStyle: "medium" }).format(new Date(value));
-}
-
-function age(value: string | null) {
-  if (!value) return "Nunca";
-  const seconds = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 1_000));
+function relativeAge(value: string | null) {
+  if (!value) return "Sin registro";
+  const seconds = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 1000));
   if (seconds < 60) return `Hace ${seconds} s`;
-  if (seconds < 3_600) return `Hace ${Math.round(seconds / 60)} min`;
-  if (seconds < 86_400) return `Hace ${Math.round(seconds / 3_600)} h`;
-  return `Hace ${Math.round(seconds / 86_400)} d`;
+  if (seconds < 3600) return `Hace ${Math.round(seconds / 60)} min`;
+  if (seconds < 86400) return `Hace ${Math.round(seconds / 3600)} h`;
+  return `Hace ${Math.round(seconds / 86400)} d`;
 }
 
-function channelDrafts(data: ConfigurationData) {
-  return Object.fromEntries(data.channels.map((channel) => [channel.id, {
-    enabled: channel.enabled,
-    warningThreshold: channel.warningThreshold === null ? "" : String(channel.warningThreshold),
-    criticalThreshold: channel.criticalThreshold === null ? "" : String(channel.criticalThreshold),
-    hysteresis: String(channel.hysteresis),
-    activationSamples: String(channel.activationSamples ?? 3),
-    recoverySamples: String(channel.recoverySamples ?? 3),
-    staleAfterSeconds: String(channel.staleAfterSeconds ?? 180),
-  }])) as Record<string, ChannelDraft>;
-}
-
-function acquisitionDraft(data: ConfigurationData): AcquisitionDraft | null {
-  if (!data.controller || !data.profile) return null;
-  return {
-    name: data.controller.name,
-    gatewayId: data.controller.gatewayId,
-    host: data.controller.host,
-    port: String(data.controller.port),
-    unitId: String(data.controller.unitId),
-    timeoutMs: String(data.controller.timeoutMs),
-    retries: String(data.controller.retries),
-    staleAfterSeconds: String(data.profile.staleAfterSeconds),
-    storageIntervalSeconds: String(data.profile.storageIntervalSeconds),
-    heartbeatIntervalSeconds: String(data.profile.heartbeatIntervalSeconds),
-    diagnosticIntervalSeconds: String(data.profile.diagnosticIntervalSeconds),
-    rawRetentionDays: String(data.profile.rawRetentionDays),
-    aggregateRetentionDays: String(data.profile.aggregateRetentionDays),
-    ranges: data.profile.ranges.map((range) => ({
-      id: range.id,
-      name: range.name,
-      startRegister: String(range.startRegister),
-      endRegister: String(range.endRegister),
-      functionCode: String(range.functionCode),
-      intervalMs: String(range.intervalMs),
-      enabled: range.enabled,
-    })),
-  };
+function stateLabel(value: string) {
+  if (["active", "online", "normal"].includes(value)) return "Operativo";
+  if (["commissioning", "pending", "degraded", "warning"].includes(value)) return "Atención";
+  if (value === "critical") return "Crítico";
+  return "Sin comunicación";
 }
 
 export function SettingsView({
   assetId,
   canWrite,
   notify,
-  confirm,
   onReloadHierarchy,
 }: {
   assetId: string;
   canWrite: boolean;
   notify: (message: string, tone?: NoticeTone) => void;
-  confirm: (request: ConfirmRequest) => void;
   onReloadHierarchy: () => Promise<void>;
 }) {
   const [tab, setTab] = useState<SettingsTab>("asset");
   const [data, setData] = useState<ConfigurationData | null>(null);
-  const [assetForm, setAssetForm] = useState({ name: "", area: "", nominalVoltageKv: "" });
-  const [acquisitionForm, setAcquisitionForm] = useState<AcquisitionDraft | null>(null);
-  const [drafts, setDrafts] = useState<Record<string, ChannelDraft>>({});
+  const [assetForm, setAssetForm] = useState({ name: "", area: "" });
+  const [deviceDrafts, setDeviceDrafts] = useState<Record<string, DeviceDraft>>({});
   const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [savingAsset, setSavingAsset] = useState(false);
+  const [savingDevice, setSavingDevice] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [reload, setReload] = useState(0);
-  const [channelQuery, setChannelQuery] = useState("");
-  const [channelState, setChannelState] = useState("all");
-  const [registerQuery, setRegisterQuery] = useState("");
-  const [registerGroup, setRegisterGroup] = useState("all");
 
   useEffect(() => {
     if (!assetId) return;
     let active = true;
-    const timeout = window.setTimeout(() => {
-      setLoading(true);
-      setError("");
-      void requestJson<ConfigurationData>(`/api/v1/configuration?assetId=${encodeURIComponent(assetId)}`)
-        .then((result) => {
-          if (!active) return;
-          setData(result);
-          setAssetForm({ name: result.asset.name, area: result.asset.area ?? "", nominalVoltageKv: result.asset.nominalVoltageKv === null ? "" : String(result.asset.nominalVoltageKv) });
-          setAcquisitionForm(acquisitionDraft(result));
-          setDrafts(channelDrafts(result));
-        })
-        .catch((loadError) => { if (active) setError(loadError instanceof Error ? loadError.message : "No fue posible cargar la configuración."); })
-        .finally(() => { if (active) setLoading(false); });
-    }, 0);
-    return () => { active = false; window.clearTimeout(timeout); };
+    setLoading(true);
+    setError("");
+    void requestJson<ConfigurationData>(`/api/v1/configuration?assetId=${encodeURIComponent(assetId)}`)
+      .then((result) => {
+        if (!active) return;
+        setData(result);
+        setAssetForm({ name: result.asset.name, area: result.asset.area ?? "" });
+        setDeviceDrafts(Object.fromEntries(result.devices.map((device) => [device.id, { name: device.name, gatewayId: device.gatewayId ?? "" }])));
+      })
+      .catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : "No fue posible cargar la configuración."); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
   }, [assetId, reload]);
 
   const refresh = () => setReload((value) => value + 1);
-  const channelItems = useMemo(() => (data?.channels ?? []).filter((channel) => {
-    const matchesQuery = !channelQuery.trim() || `${channel.code} ${channel.name} ${channel.zone ?? ""} ${channel.reference}`.toLowerCase().includes(channelQuery.trim().toLowerCase());
-    const matchesState = channelState === "all" || (channelState === "enabled" ? channel.enabled : !channel.enabled);
-    return matchesQuery && matchesState;
-  }), [channelQuery, channelState, data]);
-  const channelPage = useClientPagination(channelItems, 8);
-  const registerGroups = useMemo(() => [...new Set((data?.registers ?? []).map((register) => register.group))], [data]);
-  const registerItems = useMemo(() => (data?.registers ?? []).filter((register) => {
-    const matchesQuery = !registerQuery.trim() || `${register.nativeRegister} ${register.humanReference} ${register.name}`.toLowerCase().includes(registerQuery.trim().toLowerCase());
-    return matchesQuery && (registerGroup === "all" || register.group === registerGroup);
-  }), [data, registerGroup, registerQuery]);
-  const registerPage = useClientPagination(registerItems, 10);
+  const assetDirty = Boolean(data && (assetForm.name !== data.asset.name || assetForm.area !== (data.asset.area ?? "")));
+  const configuredMetrics = data?.metrics.filter((metric) => metric.enabled).length ?? 0;
+  const enabledCapabilities = data?.capabilities.filter((capability) => capability.enabled).length ?? 0;
+  const onlineDevices = data?.devices.filter((device) => ["active", "online", "normal"].includes(device.state)).length ?? 0;
 
-  const changedChannels = useMemo(() => (data?.channels ?? []).filter((channel) => {
-    const draft = drafts[channel.id];
-    if (!draft) return false;
-    return draft.enabled !== channel.enabled
-      || draft.warningThreshold !== String(channel.warningThreshold ?? "")
-      || draft.criticalThreshold !== String(channel.criticalThreshold ?? "")
-      || draft.hysteresis !== String(channel.hysteresis)
-      || draft.activationSamples !== String(channel.activationSamples ?? 3)
-      || draft.recoverySamples !== String(channel.recoverySamples ?? 3)
-      || draft.staleAfterSeconds !== String(channel.staleAfterSeconds ?? 180);
-  }), [data, drafts]);
-  const assetDirty = Boolean(data && (assetForm.name !== data.asset.name || assetForm.area !== (data.asset.area ?? "") || assetForm.nominalVoltageKv !== String(data.asset.nominalVoltageKv ?? "")));
-  const acquisitionDirty = Boolean(data && JSON.stringify(acquisitionForm) !== JSON.stringify(acquisitionDraft(data)));
-  const monitoredChannelCount = Object.values(drafts).filter((channel) => channel.enabled).length;
-  const estimatedReadingsPerDay = acquisitionForm ? monitoredChannelCount * Math.ceil(86_400 / Math.max(10, Number(acquisitionForm.storageIntervalSeconds) || 60)) : 0;
+  const metricsByDevice = useMemo(() => {
+    const grouped = new Map<string, ConfigurationData["metrics"]>();
+    for (const metric of data?.metrics ?? []) {
+      const list = grouped.get(metric.deviceId) ?? [];
+      list.push(metric);
+      grouped.set(metric.deviceId, list);
+    }
+    return grouped;
+  }, [data]);
 
-  const patchConfiguration = async (payload: Record<string, unknown>, successMessage: string) => {
-    setSaving(true);
+  const capabilitiesByDevice = useMemo(() => {
+    const grouped = new Map<string, ConfigurationData["capabilities"]>();
+    for (const capability of data?.capabilities ?? []) {
+      const list = grouped.get(capability.deviceId) ?? [];
+      list.push(capability);
+      grouped.set(capability.deviceId, list);
+    }
+    return grouped;
+  }, [data]);
+
+  const saveAsset = async () => {
+    if (!data || !assetDirty) return;
+    setSavingAsset(true);
     try {
-      const response = await requestJson<{ snapshot: { version: number } | null }>("/api/v1/configuration", { method: "PATCH", body: JSON.stringify({ assetId, ...payload }) });
-      notify(`${successMessage}${response.snapshot ? ` · versión ${response.snapshot.version}` : ""}`);
+      await requestJson("/api/v1/configuration", {
+        method: "PATCH",
+        body: JSON.stringify({ assetId, section: "asset", name: assetForm.name, area: assetForm.area }),
+      });
+      notify("Identificación del activo actualizada.");
+      await onReloadHierarchy();
       refresh();
-    } catch (saveError) {
-      notify(saveError instanceof Error ? saveError.message : "No fue posible guardar la configuración.", "warning");
+    } catch (cause) {
+      notify(cause instanceof Error ? cause.message : "No fue posible actualizar el activo.", "warning");
     } finally {
-      setSaving(false);
+      setSavingAsset(false);
     }
   };
 
-  const saveAsset = async () => {
-    await patchConfiguration({ section: "asset", name: assetForm.name, area: assetForm.area, nominalVoltageKv: assetForm.nominalVoltageKv || null }, "Identificación actualizada en PostgreSQL");
-    await onReloadHierarchy();
+  const saveDevice = async (deviceId: string) => {
+    const draft = deviceDrafts[deviceId];
+    if (!draft) return;
+    setSavingDevice(deviceId);
+    try {
+      await requestJson("/api/v1/configuration", {
+        method: "PATCH",
+        body: JSON.stringify({ assetId, section: "device", deviceId, name: draft.name, gatewayId: draft.gatewayId }),
+      });
+      notify("Asociación lógica del dispositivo actualizada.");
+      await onReloadHierarchy();
+      refresh();
+    } catch (cause) {
+      notify(cause instanceof Error ? cause.message : "No fue posible actualizar el dispositivo.", "warning");
+    } finally {
+      setSavingDevice(null);
+    }
   };
 
-  const saveAcquisition = () => {
-    if (!acquisitionForm) return;
-    void patchConfiguration({
-      section: "acquisition",
-      ...acquisitionForm,
-      port: Number(acquisitionForm.port),
-      unitId: Number(acquisitionForm.unitId),
-      timeoutMs: Number(acquisitionForm.timeoutMs),
-      retries: Number(acquisitionForm.retries),
-      staleAfterSeconds: Number(acquisitionForm.staleAfterSeconds),
-      storageIntervalSeconds: Number(acquisitionForm.storageIntervalSeconds),
-      heartbeatIntervalSeconds: Number(acquisitionForm.heartbeatIntervalSeconds),
-      diagnosticIntervalSeconds: Number(acquisitionForm.diagnosticIntervalSeconds),
-      rawRetentionDays: Number(acquisitionForm.rawRetentionDays),
-      aggregateRetentionDays: Number(acquisitionForm.aggregateRetentionDays),
-      ranges: acquisitionForm.ranges.map((range) => ({ ...range, startRegister: Number(range.startRegister), endRegister: Number(range.endRegister), functionCode: Number(range.functionCode), intervalMs: Number(range.intervalMs) })),
-    }, "Adquisición CAM5 actualizada");
-  };
+  if (!assetId) return <section className="engineering-empty-state">
+    <span><IconSettings size={24} /></span>
+    <div><h1>Selecciona un activo</h1><p>La configuración de Core se aplica dentro del contexto del activo seleccionado.</p></div>
+  </section>;
 
-  const saveChannels = () => {
-    const items = changedChannels.map((channel) => ({ id: channel.id, ...drafts[channel.id], warningThreshold: Number(drafts[channel.id].warningThreshold), criticalThreshold: Number(drafts[channel.id].criticalThreshold), hysteresis: Number(drafts[channel.id].hysteresis), activationSamples: Number(drafts[channel.id].activationSamples), recoverySamples: Number(drafts[channel.id].recoverySamples), staleAfterSeconds: Number(drafts[channel.id].staleAfterSeconds) }));
-    if (!items.length) return;
-    const submit = () => void patchConfiguration({ section: "channels", items }, `${items.length} canal${items.length === 1 ? "" : "es"} actualizado${items.length === 1 ? "" : "s"}`);
-    if (changedChannels.some((channel) => channel.enabled && !drafts[channel.id].enabled)) {
-      confirm({ title: "Desactivar canales de adquisición", detail: "Los canales desactivados dejarán de generar lecturas y alarmas. Las alarmas activas asociadas se resolverán con trazabilidad.", confirmLabel: "Guardar y desactivar", tone: "danger", onConfirm: submit });
-    } else submit();
-  };
+  if (loading && !data) return <section className="engineering-loading-state"><IconRefresh className="spin" size={18} /><span>Consultando configuración de Core…</span></section>;
+  if (error && !data) return <section className="engineering-error-state"><IconAlertTriangle size={20} /><div><strong>No se pudo cargar la configuración</strong><p>{error}</p></div><button onClick={refresh}>Reintentar</button></section>;
+  if (!data) return null;
 
-  const updateChannel = (id: string, field: keyof ChannelDraft, value: string | boolean) => setDrafts((current) => ({ ...current, [id]: { ...current[id], [field]: value } }));
-  const updateRange = (id: string, field: "enabled" | "startRegister" | "endRegister" | "functionCode" | "intervalMs", value: string | boolean) => setAcquisitionForm((current) => current ? ({ ...current, ranges: current.ranges.map((range) => range.id === id ? { ...range, [field]: value } : range) }) : current);
-  const updateStorageInterval = (value: string) => setAcquisitionForm((current) => current ? ({
-    ...current,
-    storageIntervalSeconds: value,
-    staleAfterSeconds: String(Math.max(Number(current.staleAfterSeconds) || 0, Number(value) * 3)),
-  }) : current);
-  const tabDirty = tab === "channels" ? changedChannels.length > 0 : false;
-
-  if (!assetId) return <article className="panel configuration-empty"><IconBuilding size={26} /><h2>Selecciona un activo</h2><p>La configuración técnica se aplica al activo seleccionado en el encabezado.</p></article>;
-
-  return <article className={`panel module-panel settings-module ${!canWrite ? "role-readonly" : ""}`}>
-    <div className="module-toolbar configuration-toolbar">
-      <div className="module-tabs" role="tablist" aria-label="Secciones de configuración">
-        <button className={tab === "asset" ? "active" : ""} onClick={() => setTab("asset")}><IconBuilding size={16} /> Activo</button>
-        <button className={tab === "acquisition" ? "active" : ""} onClick={() => setTab("acquisition")}><IconPlugConnected size={16} /> Adquisición avanzada</button>
-        <button className={tab === "channels" ? "active" : ""} onClick={() => setTab("channels")}><IconActivity size={16} /> Métricas</button>
-        <button className={tab === "registers" ? "active" : ""} onClick={() => setTab("registers")}><IconDatabase size={16} /> Decodificación</button>
-        <button className={tab === "versions" ? "active" : ""} onClick={() => setTab("versions")}><IconHistory size={16} /> Versiones</button>
+  return <div className="core-settings-v3">
+    <section className="engineering-commandbar">
+      <div><h1>Configuración</h1><p>{data.asset.code} · {data.asset.name} · {data.asset.siteName}</p></div>
+      <div className="engineering-command-actions">
+        <span className={`engineering-state state-${data.validation.valid ? "ready" : "warning"}`}>{data.validation.valid ? <IconCheck size={14} /> : <IconAlertTriangle size={14} />}{data.validation.valid ? "Configuración lista" : "Revisar configuración"}</span>
+        <button onClick={refresh} disabled={loading}><IconRefresh className={loading ? "spin" : ""} size={14} /> Actualizar</button>
       </div>
-      <div className="configuration-actions">
-        <button className="secondary-button" onClick={refresh} disabled={loading}><IconRefresh className={loading ? "spin" : ""} size={16} /> Actualizar</button>
-        {canWrite && tab === "asset" && <button className="save-config-button" onClick={() => void saveAsset()} disabled={saving || loading || !assetDirty}><IconDeviceFloppy size={16} /> {saving ? "Guardando…" : "Guardar activo"}</button>}
-        {canWrite && tab === "acquisition" && <button className="save-config-button" onClick={saveAcquisition} disabled={saving || loading || !acquisitionForm || !acquisitionDirty}><IconDeviceFloppy size={16} /> {saving ? "Guardando…" : "Guardar adquisición"}</button>}
-        {canWrite && tab === "channels" && <button className="save-config-button" onClick={saveChannels} disabled={saving || loading || !tabDirty}><IconDeviceFloppy size={16} /> {saving ? "Guardando…" : `Guardar${changedChannels.length ? ` (${changedChannels.length})` : ""}`}</button>}
+    </section>
+
+    <section className="core-settings-status">
+      <article><span><IconBuilding size={17} /></span><div><small>Activo</small><strong>{stateLabel(data.asset.state)}</strong><p>{data.asset.code} · {data.asset.area || "Sin área"}</p></div></article>
+      <article className={onlineDevices === data.devices.length && data.devices.length ? "healthy" : "warning"}><span><IconCircuitCell size={17} /></span><div><small>Dispositivos</small><strong>{data.devices.length}</strong><p>{onlineDevices} operativos</p></div></article>
+      <article><span><IconActivity size={17} /></span><div><small>Métricas</small><strong>{configuredMetrics}</strong><p>{enabledCapabilities} capacidades habilitadas</p></div></article>
+      <article><span><IconServer size={17} /></span><div><small>Gateways disponibles</small><strong>{data.gateways.length}</strong><p>del sitio {data.asset.siteCode}</p></div></article>
+    </section>
+
+    <article className="panel core-settings-workspace">
+      <div className="engineering-tabs-v3" role="tablist" aria-label="Configuración de Core">
+        <button className={tab === "asset" ? "active" : ""} onClick={() => setTab("asset")}>Activo</button>
+        <button className={tab === "devices" ? "active" : ""} onClick={() => setTab("devices")}>Dispositivos</button>
+        <button className={tab === "metrics" ? "active" : ""} onClick={() => setTab("metrics")}>Métricas y capacidades</button>
       </div>
-    </div>
 
-    {loading && <div className="data-loading"><IconRefresh className="spin" size={18} /> Consultando configuración persistente…</div>}
-    {error && <div className="data-error"><IconAlertTriangle size={18} /><div><strong>No se pudo cargar la configuración</strong><p>{error}</p></div><button className="ghost-button" onClick={refresh}>Reintentar</button></div>}
-    {!loading && !error && data && <>
-      {!data.validation.valid && <div className="validation-summary" role="alert"><IconAlertTriangle size={18} /><div><strong>Configuración pendiente de completar</strong><p>{data.validation.warnings.join(" · ")}</p></div></div>}
+      {error && <div className="engineering-inline-warning"><IconAlertTriangle size={16} /><span>{error}</span></div>}
+      {!data.validation.valid && <div className="core-settings-warnings">{data.validation.warnings.map((warning) => <span key={warning}><IconAlertTriangle size={14} />{warning}</span>)}</div>}
 
-      {tab === "asset" && <div className="settings-content">
-        <div className="settings-section-head"><span className="settings-icon"><IconBuilding size={20} /></span><div><h2>Identificación del activo</h2><p>Nombre operativo y datos eléctricos usados en navegación, alarmas y reportes.</p></div></div>
-        <div className="configuration-context-grid">
-          <div className="form-grid">
-            <label><span>Código estable</span><input value={data.asset.code} readOnly /></label>
-            <label><span>Nombre operativo</span><input value={assetForm.name} disabled={!canWrite} onChange={(event) => setAssetForm({ ...assetForm, name: event.target.value })} /></label>
-            <label><span>Área / ubicación interna</span><input value={assetForm.area} disabled={!canWrite} onChange={(event) => setAssetForm({ ...assetForm, area: event.target.value })} placeholder="Ej.: Sala eléctrica norte" /></label>
-            <label><span>Tensión nominal</span><div className="input-unit"><input type="number" min="0.001" step="0.001" value={assetForm.nominalVoltageKv} disabled={!canWrite} onChange={(event) => setAssetForm({ ...assetForm, nominalVoltageKv: event.target.value })} /><b>kV</b></div></label>
-            <label><span>Sitio</span><input value={`${data.asset.siteCode} · ${data.asset.siteName}`} readOnly /></label>
-            <label><span>Zona horaria del sitio</span><input value={data.asset.siteTimezone} readOnly /></label>
-          </div>
-          <aside className="configuration-status-card"><span className={`configuration-status-dot status-${data.asset.state}`} /><small>Estado operacional</small><strong>{data.asset.state === "normal" ? "Normal" : data.asset.state === "offline" ? "Sin telemetría" : data.asset.state}</strong><p>El código y el sitio se administran en Organización y activos para proteger la trazabilidad histórica.</p></aside>
+      {tab === "asset" && <section className="core-settings-section">
+        <header><div><h2>Identificación del activo</h2><p>Datos lógicos usados en navegación, contexto y reportes.</p></div>{canWrite && <button className="primary-button" disabled={!assetDirty || savingAsset} onClick={() => void saveAsset()}>{savingAsset ? <><IconRefresh className="spin" size={14} /> Guardando</> : <><IconDeviceFloppy size={14} /> Guardar</>}</button>}</header>
+        <div className="core-settings-form">
+          <label><span>Código</span><input value={data.asset.code} readOnly /></label>
+          <label><span>Nombre</span><input value={assetForm.name} disabled={!canWrite} onChange={(event) => setAssetForm({ ...assetForm, name: event.target.value })} /></label>
+          <label><span>Área / ubicación</span><input value={assetForm.area} disabled={!canWrite} onChange={(event) => setAssetForm({ ...assetForm, area: event.target.value })} placeholder="Ej.: Sala eléctrica norte" /></label>
+          <label><span>Sitio</span><input value={`${data.asset.siteCode} · ${data.asset.siteName}`} readOnly /></label>
+          <label><span>Zona horaria</span><input value={data.asset.siteTimezone} readOnly /></label>
+          <label><span>Estado</span><input value={stateLabel(data.asset.state)} readOnly /></label>
         </div>
-        <div className="configuration-note"><IconShieldCheck size={17} /><p><strong>Configuración auditada.</strong> Los cambios quedan versionados y trazables cuando existe un dispositivo asociado.</p></div>
-      </div>}
+      </section>}
 
-      {tab === "acquisition" && <div className="settings-content acquisition-settings">
-        <div className="settings-section-head"><span className="settings-icon"><IconPlugConnected size={20} /></span><div><h2>Gateway, dispositivo y perfil de adquisición</h2><p>Configuración avanzada que el gateway utilizará para adquirir datos del dispositivo asociado.</p></div></div>
-        {!data.controller || !acquisitionForm || !data.profile ? <div className="configuration-empty-inline"><IconAlertTriangle size={21} /><div><strong>Falta un dispositivo asociado</strong><p>Créalo y asígnalo al activo desde Organización y activos antes de definir la adquisición.</p></div></div> : <>
-          <div className="acquisition-overview">
-            <section className="system-config-grid">
-              <section><h3><IconServer size={18} /> Enlace de campo</h3><div className="form-grid">
-                <label><span>Nombre del dispositivo</span><input value={acquisitionForm.name} disabled={!canWrite} onChange={(event) => setAcquisitionForm({ ...acquisitionForm, name: event.target.value })} /></label>
-                <label><span>Gateway asignado</span><select value={acquisitionForm.gatewayId} disabled={!canWrite} onChange={(event) => setAcquisitionForm({ ...acquisitionForm, gatewayId: event.target.value })}>{data.gateways.map((gateway) => <option key={gateway.id} value={gateway.id}>{gateway.code} · {gateway.name}</option>)}</select></label>
-                <label><span>IP / host del CAM5</span><input value={acquisitionForm.host} disabled={!canWrite} onChange={(event) => setAcquisitionForm({ ...acquisitionForm, host: event.target.value })} /></label>
-                <label><span>Puerto</span><input type="number" min="1" max="65535" value={acquisitionForm.port} disabled={!canWrite} onChange={(event) => setAcquisitionForm({ ...acquisitionForm, port: event.target.value })} /></label>
-                <label><span>Unit ID</span><input type="number" min="0" max="247" value={acquisitionForm.unitId} disabled={!canWrite} onChange={(event) => setAcquisitionForm({ ...acquisitionForm, unitId: event.target.value })} /></label>
-                <label><span>Timeout</span><div className="input-unit"><input type="number" min="100" value={acquisitionForm.timeoutMs} disabled={!canWrite} onChange={(event) => setAcquisitionForm({ ...acquisitionForm, timeoutMs: event.target.value })} /><b>ms</b></div></label>
-                <label><span>Reintentos</span><input type="number" min="0" max="10" value={acquisitionForm.retries} disabled={!canWrite} onChange={(event) => setAcquisitionForm({ ...acquisitionForm, retries: event.target.value })} /></label>
-                <label><span>Protocolo</span><input value="Modbus TCP · FC 03/04" readOnly /></label>
-              </div></section>
-              <section><h3><IconClock size={18} /> Datos e histórico</h3><div className="form-grid">
-                <label><span>Almacenar telemetría cada</span><select value={acquisitionForm.storageIntervalSeconds} disabled={!canWrite} onChange={(event) => updateStorageInterval(event.target.value)}><option value="30">30 segundos</option><option value="60">1 minuto · recomendado</option><option value="300">5 minutos</option></select></label>
-                <label><span>Heartbeat del gateway</span><select value={acquisitionForm.heartbeatIntervalSeconds} disabled={!canWrite} onChange={(event) => setAcquisitionForm({ ...acquisitionForm, heartbeatIntervalSeconds: event.target.value })}><option value="15">15 segundos</option><option value="30">30 segundos · recomendado</option><option value="60">1 minuto</option></select></label>
-                <label><span>Diagnóstico completo cada</span><select value={acquisitionForm.diagnosticIntervalSeconds} disabled={!canWrite} onChange={(event) => setAcquisitionForm({ ...acquisitionForm, diagnosticIntervalSeconds: event.target.value })}><option value="60">1 minuto</option><option value="300">5 minutos · recomendado</option><option value="900">15 minutos</option></select></label>
-                <label><span>Dato atrasado después de</span><div className="input-unit"><input type="number" min="1" value={acquisitionForm.staleAfterSeconds} disabled={!canWrite} onChange={(event) => setAcquisitionForm({ ...acquisitionForm, staleAfterSeconds: event.target.value })} /><b>s</b></div></label>
-                <label><span>Retención de datos crudos</span><div className="input-unit"><input type="number" min="1" value={acquisitionForm.rawRetentionDays} disabled={!canWrite} onChange={(event) => setAcquisitionForm({ ...acquisitionForm, rawRetentionDays: event.target.value })} /><b>días</b></div></label>
-                <label><span>Retención de agregados</span><div className="input-unit"><input type="number" min="1" value={acquisitionForm.aggregateRetentionDays} disabled={!canWrite} onChange={(event) => setAcquisitionForm({ ...acquisitionForm, aggregateRetentionDays: event.target.value })} /><b>días</b></div></label>
-                <label><span>Perfil</span><input value={`${data.profile.key} · ${data.profile.name}`} readOnly /></label>
-              </div><div className="configuration-note"><IconDatabase size={17} /><p><strong>Lectura y almacenamiento son independientes.</strong> El gateway puede consultar el CAM5 cada 2 segundos, pero guarda telemetría operativa con esta frecuencia. Las alarmas y recuperaciones se envían inmediatamente; el heartbeat no crea históricos.</p></div><div className="acquisition-diagnostic"><span className={data.controller.gatewayState === "online" ? "online" : "pending"}><IconServer size={16} /></span><div><strong>Gateway {data.controller.gatewayCode}: {data.controller.gatewayState}</strong><small>Último contacto: {age(data.controller.gatewayLastSeenAt)}</small></div></div><div className="acquisition-diagnostic"><span className={data.controller.lastReadAt ? "online" : "pending"}><IconActivity size={16} /></span><div><strong>Última lectura del dispositivo</strong><small>{formatDateTime(data.controller.lastReadAt)}</small></div></div></section>
-            </section>
-          </div>
-          <div className="reading-ranges"><div className="settings-subhead"><div><span className="eyebrow">Perfil de adquisición</span><h3>Bloques de adquisición configurados en el gateway</h3></div><span>{acquisitionForm.ranges.filter((range) => range.enabled).length} activos</span></div>
-            <div className="reading-ranges-table"><div className="reading-range-head"><span>Bloque</span><span>Inicio</span><span>Fin</span><span>Función</span><span>Intervalo</span><span>Estado</span></div>{acquisitionForm.ranges.map((range) => <div className="reading-range-row" key={range.id}><span><strong>{range.name}</strong><small>{Number(range.endRegister) - Number(range.startRegister) + 1} registros</small></span><input type="number" value={range.startRegister} disabled={!canWrite} onChange={(event) => updateRange(range.id, "startRegister", event.target.value)} /><input type="number" value={range.endRegister} disabled={!canWrite} onChange={(event) => updateRange(range.id, "endRegister", event.target.value)} /><select value={range.functionCode} disabled={!canWrite} onChange={(event) => updateRange(range.id, "functionCode", event.target.value)}><option value="3">03 · Holding</option><option value="4">04 · Input</option></select><div className="input-unit"><input type="number" min="500" value={range.intervalMs} disabled={!canWrite} onChange={(event) => updateRange(range.id, "intervalMs", event.target.value)} /><b>ms</b></div><button className={`channel-toggle ${range.enabled ? "on" : ""}`} disabled={!canWrite} onClick={() => updateRange(range.id, "enabled", !range.enabled)}><i />{range.enabled ? "Activo" : "Inactivo"}</button></div>)}</div>
-          </div>
-          <div className="modbus-address-note"><IconShieldCheck size={17} /><div><strong>Diagnóstico verificable, no simulado</strong><p>HoitLive Core no intenta abrir el puerto 502 desde Internet. El estado se determina con el último contacto del gateway y la última lectura reportada por el propio agente local.</p></div></div>
-        </>}
-      </div>}
+      {tab === "devices" && <section className="core-settings-section">
+        <header><div><h2>Dispositivos asociados</h2><p>Core administra identidad y asociación lógica con un gateway del sitio.</p></div><span>{data.devices.length} dispositivos</span></header>
+        <div className="core-device-list">
+          {data.devices.map((device) => {
+            const draft = deviceDrafts[device.id] ?? { name: device.name, gatewayId: device.gatewayId ?? "" };
+            const dirty = draft.name !== device.name || draft.gatewayId !== (device.gatewayId ?? "");
+            return <article key={device.id}>
+              <span className="core-device-icon"><IconCircuitCell size={17} /></span>
+              <div className="core-device-identity"><small>{device.code}</small><strong>{device.modelName || device.modelCode || "Modelo no informado"}</strong><p>{device.serialNumber || "Sin número de serie"} · {relativeAge(device.lastReadAt)}</p></div>
+              <label><span>Nombre lógico</span><input value={draft.name} disabled={!canWrite} onChange={(event) => setDeviceDrafts((current) => ({ ...current, [device.id]: { ...draft, name: event.target.value } }))} /></label>
+              <label><span>Gateway asociado</span><select value={draft.gatewayId} disabled={!canWrite} onChange={(event) => setDeviceDrafts((current) => ({ ...current, [device.id]: { ...draft, gatewayId: event.target.value } }))}><option value="">Seleccionar…</option>{data.gateways.map((gateway) => <option key={gateway.id} value={gateway.id}>{gateway.code} · {gateway.name}</option>)}</select></label>
+              <span className={`core-device-state state-${["active","online","normal"].includes(device.state) ? "ready" : "warning"}`}>{stateLabel(device.state)}</span>
+              {canWrite && <button disabled={!dirty || savingDevice === device.id || !draft.gatewayId} onClick={() => void saveDevice(device.id)}>{savingDevice === device.id ? <IconRefresh className="spin" size={14} /> : <IconDeviceFloppy size={14} />}{savingDevice === device.id ? "Guardando" : "Guardar"}</button>}
+            </article>;
+          })}
+          {!data.devices.length && <div className="core-settings-empty"><IconCircuitCell size={20} /><div><strong>Sin dispositivos asociados</strong><p>Agrega un dispositivo desde Activos → Infraestructura.</p></div></div>}
+        </div>
+      </section>}
 
-      {tab === "channels" && <div className="settings-content channels-settings database-channel-settings">
-        <div className="settings-section-head"><span className="settings-icon"><IconActivity size={20} /></span><div><h2>Canales y política de condición</h2><p>Señales habilitadas, umbrales, histéresis y persistencia antes de activar una alarma.</p></div></div>
-        <div className="channel-monitoring-summary"><article><span>Monitoreados</span><strong>{monitoredChannelCount}</strong><small>Con histórico y alarmas</small></article><article><span>Disponibles</span><strong>{data.channels.length}</strong><small>Canales definidos en CAM5</small></article><article><span>Volumen operativo estimado</span><strong>{estimatedReadingsPerDay.toLocaleString("es-CL")}</strong><small>Lecturas por día</small></article></div>
-        <div className="configuration-note channel-monitoring-note"><IconDatabase size={17} /><p><strong>Monitorear y mostrar son decisiones distintas.</strong> Desactivar un canal detiene sus nuevas lecturas, histórico y alarmas. Cada usuario elige cuáles de los canales monitoreados quiere ver en Resumen y Mapa de condición.</p></div>
-        <div className="configuration-list-toolbar"><label className="search-field"><IconSearch size={17} /><input value={channelQuery} onChange={(event) => { setChannelQuery(event.target.value); channelPage.setPage(1); }} placeholder="Buscar métrica, zona o referencia técnica…" /></label><label className="status-filter"><span>Canales</span><select value={channelState} onChange={(event) => { setChannelState(event.target.value); channelPage.setPage(1); }}><option value="all">Todos</option><option value="enabled">Activos</option><option value="disabled">Inactivos</option></select></label></div>
-        <div className="channel-config-scroll"><div className="database-channel-table"><div className="database-channel-head"><span>Canal</span><span>Registro</span><span>Advertencia</span><span>Crítico</span><span>Histéresis</span><span>Activación</span><span>Recuperación</span><span>Atrasado</span><span>Monitoreo</span></div>{channelPage.pageItems.map((channel) => { const draft = drafts[channel.id]; if (!draft) return null; return <div className={`database-channel-row ${changedChannels.some((item) => item.id === channel.id) ? "changed" : ""}`} key={channel.id}><span className="history-channel"><b className="sensor-code">{channel.code}</b><span><strong>{channel.name}</strong><small>{channel.zone ?? channel.metric}</small></span></span><span className="mono-cell">{channel.register}<small>{channel.reference}</small></span><label className="compact-input"><input type="number" step="0.1" value={draft.warningThreshold} disabled={!canWrite} onChange={(event) => updateChannel(channel.id, "warningThreshold", event.target.value)} /><b>{channel.unit}</b></label><label className="compact-input"><input type="number" step="0.1" value={draft.criticalThreshold} disabled={!canWrite} onChange={(event) => updateChannel(channel.id, "criticalThreshold", event.target.value)} /><b>{channel.unit}</b></label><label className="compact-input"><input type="number" min="0" step="0.1" value={draft.hysteresis} disabled={!canWrite} onChange={(event) => updateChannel(channel.id, "hysteresis", event.target.value)} /></label><label className="compact-input"><input type="number" min="1" max="100" value={draft.activationSamples} disabled={!canWrite} onChange={(event) => updateChannel(channel.id, "activationSamples", event.target.value)} /></label><label className="compact-input"><input type="number" min="1" max="100" value={draft.recoverySamples} disabled={!canWrite} onChange={(event) => updateChannel(channel.id, "recoverySamples", event.target.value)} /></label><label className="compact-input"><input type="number" min="1" value={draft.staleAfterSeconds} disabled={!canWrite} onChange={(event) => updateChannel(channel.id, "staleAfterSeconds", event.target.value)} /><b>s</b></label><button className={`channel-toggle ${draft.enabled ? "on" : ""}`} disabled={!canWrite} onClick={() => updateChannel(channel.id, "enabled", !draft.enabled)}><i />{draft.enabled ? "Monitoreado" : "Sin monitoreo"}</button></div>})}</div></div>
-        {!channelPage.pageItems.length && <div className="configuration-empty-inline"><IconSearch size={21} /><div><strong>No hay canales con estos filtros</strong><p>Cambia el texto o el estado seleccionado.</p></div></div>}
-        <Pagination page={channelPage.page} totalPages={channelPage.totalPages} total={channelPage.total} pageSize={channelPage.pageSize} onPageChange={channelPage.setPage} itemLabel="canales" />
-      </div>}
+      {tab === "metrics" && <section className="core-settings-section">
+        <header><div><h2>Métricas y capacidades</h2><p>Contrato semántico que Core recibe y utiliza para supervisión, alertas, tendencias y reportes.</p></div><span>{configuredMetrics} métricas habilitadas</span></header>
+        <div className="core-metric-device-list">
+          {data.devices.map((device) => {
+            const metrics = metricsByDevice.get(device.id) ?? [];
+            const capabilities = capabilitiesByDevice.get(device.id) ?? [];
+            return <article key={device.id}>
+              <header><span><IconActivity size={16} /></span><div><small>{device.code}</small><strong>{device.name}</strong><p>{device.modelName || device.modelCode || "Modelo no informado"}</p></div><b>{metrics.filter((metric) => metric.enabled).length} métricas</b></header>
+              <div className="core-capability-tags">{capabilities.filter((item) => item.enabled).map((capability) => <span key={capability.key}>{capability.key}</span>)}{!capabilities.some((item) => item.enabled) && <span className="empty">Sin capacidades declaradas</span>}</div>
+              <div className="core-metric-list">{metrics.map((metric) => <span key={metric.id} className={metric.enabled ? "" : "disabled"}><i>{metric.category}</i><strong>{metric.name}</strong><small>{metric.key} · {metric.dataType}{metric.unit ? ` · ${metric.unit}` : ""}</small></span>)}{!metrics.length && <div className="core-settings-empty compact"><IconActivity size={18} /><div><strong>Sin métricas configuradas</strong><p>El modelo del dispositivo aún no materializa métricas semánticas.</p></div></div>}</div>
+            </article>;
+          })}
+        </div>
+      </section>}
 
-      {tab === "registers" && <div className="settings-content register-settings database-register-settings">
-        <div className="register-settings-head"><div className="settings-section-head"><span className="settings-icon"><IconBook2 size={20} /></span><div><h2>Decodificación técnica del dispositivo</h2><p>Catálogo técnico entregado al gateway. Esta vista es de ingeniería y no forma parte de la operación cotidiana.</p></div></div><span className={`map-integrity ${data.validation.mapValid ? "valid" : "invalid"}`}>{data.validation.mapValid ? <IconCircleCheck size={16} /> : <IconAlertTriangle size={16} />}{data.validation.mapValid ? "Mapa íntegro" : "Revisar catálogo"}</span></div>
-        <div className="register-map-summary"><article><small>Registros documentados</small><strong>{data.registers.length}</strong><span>Rango esperado 418–522</span></article><article><small>Modelo</small><strong>{data.controller?.modelCode ?? "—"}</strong><span>{data.controller?.modelName ?? "Sin dispositivo"}</span></article><article className={data.validation.mapValid ? "is-valid" : "has-issues"}><small>Versión documental</small><strong>{data.controller?.registerMapVersion ?? "—"}</strong><span>{data.validation.mapValid ? "Referencias validadas" : "Catálogo incompleto"}</span></article></div>
-        <div className="configuration-list-toolbar"><label className="search-field"><IconSearch size={17} /><input value={registerQuery} onChange={(event) => { setRegisterQuery(event.target.value); registerPage.setPage(1); }} placeholder="Buscar referencia técnica o variable…" /></label><label className="status-filter"><span>Grupo</span><select value={registerGroup} onChange={(event) => { setRegisterGroup(event.target.value); registerPage.setPage(1); }}><option value="all">Todos</option>{registerGroups.map((group) => <option key={group}>{group}</option>)}</select></label></div>
-        <div className="register-map-scroll"><div className="official-register-table"><div className="official-register-head"><span>Registro</span><span>Variable</span><span>Grupo</span><span>Tipo</span><span>Escala</span><span>Unidad</span><span>Rango válido</span><span>Error</span></div>{registerPage.pageItems.map((register) => <div className="official-register-row" key={register.id}><span><strong>{register.nativeRegister}</strong><small>{register.humanReference}</small></span><span><strong>{register.name}</strong><small>{register.metric}</small></span><span>{register.group}</span><span className="mono-cell">{register.dataType.toUpperCase()}</span><span className="mono-cell">{register.scaleNote ?? register.scaleFactor}</span><span>{register.unit || "—"}</span><span className="mono-cell">{register.minimumValue ?? "—"} → {register.maximumValue ?? "—"}</span><span className="mono-cell">{register.errorRawValue === null ? "—" : `0x${register.errorRawValue.toString(16).toUpperCase().padStart(4, "0")}`}</span></div>)}</div></div>
-        <Pagination page={registerPage.page} totalPages={registerPage.totalPages} total={registerPage.total} pageSize={registerPage.pageSize} onPageChange={registerPage.setPage} itemLabel="referencias" />
-        <div className="configuration-note"><IconShieldCheck size={17} /><p><strong>Fuente de verdad protegida.</strong> Este mapa proviene del modelo CAM5 R1.6. Los ajustes operativos se realizan en los canales y el perfil de lectura, no alterando direcciones ni escalas del fabricante.</p></div>
-      </div>}
-
-      {tab === "versions" && <div className="settings-content version-settings">
-        <div className="settings-section-head"><span className="settings-icon"><IconHistory size={20} /></span><div><h2>Versiones de configuración</h2><p>Cada cambio técnico genera un checksum y queda enlazado a la auditoría del usuario.</p></div></div>
-        <div className="version-summary"><article><small>Versión vigente</small><strong>{data.snapshots[0] ? `v${data.snapshots[0].version}` : "Sin versión"}</strong><span>{data.snapshots[0] ? formatDateTime(data.snapshots[0].createdAt) : "Se crea con el primer cambio"}</span></article><article><small>Integridad</small><strong>{data.snapshots[0] ? "SHA-256" : "Pendiente"}</strong><span>{data.snapshots[0]?.checksumSha256.slice(0, 16) ?? "—"}{data.snapshots[0] ? "…" : ""}</span></article><article><small>Sincronización</small><strong>API gateway</strong><span>GET /api/v1/gateway/config</span></article></div>
-        {data.snapshots.length ? <div className="version-list"><div className="version-list-head"><span>Versión</span><span>Sección</span><span>Tipo</span><span>Fecha</span><span>Checksum</span></div>{data.snapshots.map((snapshot, index) => <div className="version-list-row" key={snapshot.id}><span><b>v{snapshot.version}</b>{index === 0 && <i><IconCheck size={12} /> Vigente</i>}</span><span>{snapshot.section === "asset" ? "Punto" : snapshot.section === "acquisition" ? "Adquisición" : snapshot.section === "channels" ? "Canales" : snapshot.section}</span><span>{snapshot.kind === "manual" ? "Cambio manual" : snapshot.kind}</span><span>{formatDateTime(snapshot.createdAt)}</span><code title={snapshot.checksumSha256}>{snapshot.checksumSha256.slice(0, 12)}…</code></div>)}</div> : <div className="configuration-empty-inline"><IconHistory size={22} /><div><strong>Aún no hay versiones</strong><p>La primera versión se generará al guardar una configuración del dispositivo.</p></div></div>}
-        <div className="modbus-address-note"><IconDatabase size={17} /><div><strong>Contrato de sincronización</strong><p>El gateway consulta la configuración vigente y recibe host, Unit ID, rangos, intervalos, escalas y catálogo. El backend sigue siendo la única fuente de verdad.</p></div></div>
-      </div>}
-    </>}
-  </article>;
+      <footer className="engineering-boundary-note"><IconShieldCheck size={16} /><p><strong>Configuración física fuera de Core.</strong> Drivers, buses, direcciones, registros, escalamiento, endianess y polling se administran en el Gateway Agent. Esta pantalla sólo administra contexto lógico y contrato semántico.</p></footer>
+    </article>
+  </div>;
 }
