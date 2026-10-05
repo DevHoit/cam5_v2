@@ -184,54 +184,100 @@ export function OperationsView({
         <button className="secondary-button" onClick={() => { setLoading(true); setError(""); setReload((value) => value + 1); }} disabled={loading}><IconRefresh className={loading ? "spin" : ""} size={16} /> Actualizar</button>
       </div>
 
-      {canWrite && <form className="continuity-form-v5 maintenance-form-v5" onSubmit={createWindow}>
-        <header className="continuity-form-head-v5">
-          <span><IconTool size={20} /></span>
-          <div><h3>Programar mantenimiento</h3><p>Define exactamente dónde y cuándo deben suprimirse las notificaciones operacionales.</p></div>
-        </header>
-
-        <div className="continuity-form-body-v5">
-          <section className="continuity-form-section-v5">
-            <div className="continuity-section-heading-v5"><b>1</b><div><strong>Alcance</strong><small>Selecciona qué parte de la operación estará bajo mantenimiento.</small></div></div>
-            <div className="continuity-fields-v5">
-              <label><span>Aplicar mantenimiento a</span><select value={form.scopeType} onChange={(event) => setForm({ ...form, scopeType: event.target.value as typeof form.scopeType })}>
-                <option value="site">Sitio completo</option>
-                <option value="asset">Un activo específico</option>
-                {canManageClient && <option value="tenant">Cliente completo</option>}
-              </select></label>
-              {form.scopeType === "asset" && <label><span>Activo</span><select required value={form.scopeId || activeAssetId} onChange={(event) => setForm({ ...form, scopeId: event.target.value })}>
-                <option value="">Seleccionar activo…</option>
-                {assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}
-              </select></label>}
-              <div className="continuity-context-note-v5"><IconCircleCheck size={17} /><span>{form.scopeType === "asset" ? "Sólo se suprimirán las notificaciones asociadas al activo seleccionado." : form.scopeType === "tenant" ? "La ventana aplicará a todos los sitios del cliente." : "La ventana aplicará a todos los activos e infraestructura del sitio activo."}</span></div>
+      {canWrite && (
+        <form className="ops-form-card ops-maintenance-form" onSubmit={createWindow}>
+          <div className="ops-form-card__header">
+            <div>
+              <h3>Programar mantenimiento</h3>
+              <p>Define alcance, período y motivo de la ventana operacional.</p>
             </div>
-          </section>
-
-          <section className="continuity-form-section-v5">
-            <div className="continuity-section-heading-v5"><b>2</b><div><strong>Período</strong><small>Define desde cuándo y hasta cuándo estará vigente la ventana.</small></div></div>
-            <div className="continuity-fields-v5 continuity-period-grid-v5">
-              <label><span>Inicio</span><input type="datetime-local" required value={form.startsAt} onChange={(event) => setForm({ ...form, startsAt: event.target.value })} /></label>
-              <label><span>Término</span><input type="datetime-local" required value={form.endsAt} onChange={(event) => setForm({ ...form, endsAt: event.target.value })} /></label>
-            </div>
-          </section>
-
-          <section className="continuity-form-section-v5">
-            <div className="continuity-section-heading-v5"><b>3</b><div><strong>Motivo</strong><small>Deja una explicación reconocible para operación y auditoría.</small></div></div>
-            <div className="continuity-fields-v5">
-              <label className="continuity-wide-v5"><span>Descripción del trabajo</span><textarea required minLength={3} maxLength={1000} value={form.reason} onChange={(event) => setForm({ ...form, reason: event.target.value })} placeholder="Ej.: Mantención preventiva de cámara de frío, revisión de sensores y pruebas de comunicación." /></label>
-            </div>
-          </section>
-
-          <div className="continuity-form-summary-v5">
-            <IconCalendarTime size={18} />
-            <div><strong>Durante esta ventana la telemetría seguirá registrándose.</strong><p>Sólo se suprimirán las notificaciones dentro del alcance y período definidos; el histórico se conserva.</p></div>
           </div>
-        </div>
 
-        <footer className="continuity-form-actions-v5">
-          <button className="primary-button" type="submit" disabled={saving || !form.reason.trim() || (form.scopeType === "asset" && !(form.scopeId || activeAssetId))}>{saving ? "Programando…" : "Programar mantenimiento"}</button>
-        </footer>
-      </form>}
+          <div className="ops-form-card__body">
+            <section className="ops-form-section">
+              <div className="ops-form-section__title">
+                <h4>Alcance</h4>
+                <p>Selecciona dónde se aplicará la supresión de notificaciones.</p>
+              </div>
+
+              <div className="ops-form-grid">
+                <label className="ops-field ops-field--full">
+                  <span>Aplicar mantenimiento a</span>
+                  <select value={form.scopeType} onChange={(event) => setForm({ ...form, scopeType: event.target.value as typeof form.scopeType })}>
+                    <option value="site">Sitio completo</option>
+                    <option value="asset">Activo específico</option>
+                    {canManageClient && <option value="tenant">Cliente completo</option>}
+                  </select>
+                </label>
+
+                {form.scopeType === "asset" && (
+                  <label className="ops-field ops-field--full">
+                    <span>Activo</span>
+                    <select required value={form.scopeId || activeAssetId} onChange={(event) => setForm({ ...form, scopeId: event.target.value })}>
+                      <option value="">Seleccionar activo…</option>
+                      {assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}
+                    </select>
+                  </label>
+                )}
+              </div>
+            </section>
+
+            <section className="ops-form-section">
+              <div className="ops-form-section__title">
+                <h4>Período</h4>
+                <p>Define la vigencia de la ventana de mantenimiento.</p>
+              </div>
+
+              <div className="ops-form-grid ops-form-grid--2">
+                <label className="ops-field">
+                  <span>Inicio</span>
+                  <input type="datetime-local" required value={form.startsAt} onChange={(event) => setForm({ ...form, startsAt: event.target.value })} />
+                </label>
+                <label className="ops-field">
+                  <span>Término</span>
+                  <input type="datetime-local" required value={form.endsAt} onChange={(event) => setForm({ ...form, endsAt: event.target.value })} />
+                </label>
+              </div>
+            </section>
+
+            <section className="ops-form-section">
+              <div className="ops-form-section__title">
+                <h4>Motivo</h4>
+                <p>Texto visible para operación y auditoría.</p>
+              </div>
+
+              <div className="ops-form-grid">
+                <label className="ops-field ops-field--full">
+                  <span>Descripción del trabajo</span>
+                  <textarea
+                    required
+                    minLength={3}
+                    maxLength={1000}
+                    value={form.reason}
+                    onChange={(event) => setForm({ ...form, reason: event.target.value })}
+                    placeholder="Ej.: Mantención preventiva de cámara de frío, revisión de sensores y pruebas de comunicación."
+                  />
+                </label>
+              </div>
+            </section>
+
+            <div className="ops-inline-note">
+              <strong>La telemetría seguirá registrándose.</strong>
+              <span>Solo se suprimirán notificaciones dentro del alcance y período definidos. El histórico se conserva.</span>
+            </div>
+          </div>
+
+          <div className="ops-form-card__footer">
+            <button
+              className="primary-button"
+              type="submit"
+              disabled={saving || !form.reason.trim() || (form.scopeType === "asset" && !(form.scopeId || activeAssetId))}
+            >
+              {saving ? "Programando…" : "Programar mantenimiento"}
+            </button>
+          </div>
+        </form>
+      )}
 
       {error && <div className="data-error"><IconAlertTriangle size={18} /><div><strong>No se pudo consultar mantenimiento</strong><p>{error}</p></div></div>}
       {loading && <div className="data-loading"><IconRefresh className="spin" size={18} /> Consultando ventanas…</div>}
