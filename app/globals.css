@@ -2749,3 +2749,9 @@ button.dashboard-kpi:hover { transform: translateY(-1px); border-color: #bae6fd;
   .operational-context label span { display:none; }
   .operational-context select { max-width:150px; }
 }
+
+/* Global context v2.1 — explicit single-line label/value */
+.operational-context label { flex-direction:row; align-items:center; gap:4px; white-space:nowrap; }
+.operational-context label span { display:inline; line-height:30px; }
+.operational-context label span::after { content:" -"; }
+.operational-context select { display:inline-block; line-height:30px; vertical-align:middle; }
