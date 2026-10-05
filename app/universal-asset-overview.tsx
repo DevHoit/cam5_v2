@@ -166,14 +166,14 @@ export function UniversalAssetOverview({
 
     <section className="universal-asset-kpis">
       <article><span className={activeAlarmCount ? "critical" : "normal"}><IconAlertTriangle size={19} /></span><div><small>Alertas activas</small><strong>{activeAlarmCount}</strong><p>{alarmSummary.critical} críticas · {alarmSummary.warning} advertencias</p></div></article>
-      <article><span className={devices.length && activeDevices === devices.length ? "normal" : "warning"}><IconServer size={19} /></span><div><small>Dispositivos</small><strong>{activeDevices}/{devices.length}</strong><p>{devices.length ? "Con estado operativo" : "Sin dispositivos registrados"}</p></div></article>
+      <article><span className={devices.length && activeDevices === devices.length ? "normal" : "warning"}><IconServer size={19} /></span><div><small>Dispositivos</small><strong>{activeDevices}/{devices.length}</strong><p>{devices.length ? "Fuentes de telemetría del activo" : "Sin sensores o equipos asociados"}</p></div></article>
       <article><span className={!staleMetrics.length && !badMetrics.length ? "normal" : "warning"}><IconCircleCheck size={19} /></span><div><small>Calidad de métricas</small><strong>{validMetrics.length}/{metrics.length}</strong><p>{staleMetrics.length} atrasadas · {badMetrics.length} inválidas</p></div></article>
       <article><span className={latestAt ? "info" : "warning"}><IconClock size={19} /></span><div><small>Última lectura</small><strong>{data && latestAt ? formatAge(latestAt, data.serverTime) : "Sin datos"}</strong><p>{latestAt ? new Intl.DateTimeFormat("es-CL", { timeStyle: "medium" }).format(new Date(latestAt)) : "Esperando telemetría"}</p></div></article>
     </section>
 
     <section className="universal-asset-layout">
       <article className="panel universal-metrics-panel">
-        <header><div><h2>Métricas del activo</h2><p>Variables vigentes reportadas por los dispositivos asociados.</p></div><button className="secondary-button" onClick={() => onNavigate(feature.view as "electrical" | "ats" | "cold-chain" | "cabinet")}><FeatureIcon size={15} /> {feature.title}</button></header>
+        <header><div><h2>Métricas del activo</h2><p><strong>{asset.name}</strong> es el activo supervisado. Las métricas siguientes provienen de sus sensores, medidores o controladores asociados.</p></div><button className="secondary-button" onClick={() => onNavigate(feature.view as "electrical" | "ats" | "cold-chain" | "cabinet")}><FeatureIcon size={15} /> {feature.title}</button></header>
         <div className="universal-device-list">
           {devices.map((device) => <section key={device.id} className="universal-device-block">
             <div className="universal-device-head"><span><IconServer size={16} /></span><div><strong>{device.code} · {device.name}</strong><small>{device.deviceType.replaceAll("_", " ")} · {formatAge(device.lastReadAt, data?.serverTime ?? new Date().toISOString())}</small></div><i className={`status-pill status-${["active", "online", "normal"].includes(device.state) ? "normal" : "offline"}`}>{device.state}</i></div>
@@ -181,7 +181,7 @@ export function UniversalAssetOverview({
               <small>{metric.category}</small><strong>{formatValue(metric)}</strong><span>{metric.name}</span><em>{metric.quality === "good" ? "Vigente" : metric.quality === "stale" ? "Atrasada" : "Revisar"}</em>
             </article>)}</div>
           </section>)}
-          {!devices.length && !loading && <div className="table-empty-state"><IconServer size={21} /><div><strong>Sin dispositivos con métricas</strong><p>Asocia un dispositivo al activo desde Organización o Ingeniería.</p></div></div>}
+          {!devices.length && !loading && <div className="table-empty-state"><IconServer size={21} /><div><strong>Sin dispositivos con métricas</strong><p>Asocia al activo un sensor, medidor o controlador desde Activos o Ingeniería.</p></div></div>}
         </div>
       </article>
 
@@ -197,7 +197,7 @@ export function UniversalAssetOverview({
           {!alarms.length && <div className="universal-all-clear"><IconCircleCheck size={20} /><span>Sin alertas activas</span></div>}</div>
           <button className="text-action" onClick={() => onNavigate("alarms")}>Gestionar alertas <IconArrowRight size={15} /></button>
         </article>
-        <button className="panel universal-engineering-link" onClick={() => onNavigate("engineering")}><IconDeviceDesktopAnalytics size={20} /><span><strong>Ingeniería del activo</strong><small>Dispositivos, configuración y puesta en marcha</small></span><IconArrowRight size={16} /></button>
+        <button className="panel universal-engineering-link" onClick={() => onNavigate("engineering")}><IconDeviceDesktopAnalytics size={20} /><span><strong>Ingeniería del activo</strong><small>Sensores/equipos, capacidades y puesta en marcha</small></span><IconArrowRight size={16} /></button>
       </aside>
     </section>
   </div>;
