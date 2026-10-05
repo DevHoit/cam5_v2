@@ -8406,3 +8406,14 @@ button.dashboard-kpi:hover { transform: translateY(-1px); border-color: #bae6fd;
 .commissioning-v3 .commissioning-evidence-grid h3{margin:10px 0 5px;font-size:14px}
 .commissioning-v3 .commissioning-evidence-grid p{font-size:11px;line-height:1.45}
 .commissioning-v3 .commissioning-evidence-grid dt,.commissioning-v3 .commissioning-evidence-grid dd,.commissioning-v3 .commissioning-evidence-grid footer{font-size:10px}
+
+
+/* Asset capability v4 — portal scale */
+.asset-capability-strip{gap:8px}
+.asset-capability-strip button{min-height:36px;padding:0 11px;font-size:11px;border-radius:8px}
+.asset-operational-message{min-height:64px;padding:11px 14px;grid-template-columns:36px minmax(0,1fr) auto;gap:11px}
+.asset-operational-message>span{width:36px;height:36px;border-radius:9px}
+.asset-operational-message strong{font-size:13px}
+.asset-operational-message p{margin-top:3px;font-size:11px;line-height:1.4}
+.asset-operational-message>b{font-size:14px}
+.asset-loading-panel{min-height:170px;font-size:12px}
