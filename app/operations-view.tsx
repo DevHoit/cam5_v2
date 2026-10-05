@@ -175,7 +175,7 @@ export function OperationsView({
       <article className="healthy"><span><IconCircleCheck size={17} /></span><div><small>Histórico</small><strong>{data?.windows.length ?? 0}</strong><span>Con trazabilidad</span></div></article>
     </section>
 
-    <article className="panel module-panel operations-panel-v3">
+    <article className="panel module-panel operations-panel-v3 maintenance-workspace-v6">
       <div className="operations-panel-head">
         <div>
           <h2>Ventanas de mantenimiento</h2>
