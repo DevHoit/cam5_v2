@@ -62,7 +62,7 @@ const PERIOD_MS: Record<(typeof PERIODS)[number], number> = {
   "7 días": 7 * 86400_000,
   "30 días": 30 * 86400_000,
 };
-const SERIES_COLORS = ["#0284c7", "#7c3aed", "#d97706", "#059669"];
+const SERIES_COLORS = ["#0284c7", "#4f46e5", "#0891b2", "#64748b"];
 
 async function requestJson<T>(path: string): Promise<T> {
   const response = await fetch(path, { credentials: "include", cache: "no-store" });
@@ -276,7 +276,7 @@ export function GenericTrendsView({
     <section className="trend-commandbar">
       <div><h1>Tendencias</h1><span>{asset?.name ?? "Activo seleccionado"}</span></div>
       <div className="trend-command-actions">
-        <span className="trend-history-state"><i /> Historial disponible</span>
+        <span className="trend-history-state"><i /> Historial de telemetría</span>
         <button className="trend-refresh" onClick={() => setRefreshKey((value) => value + 1)} disabled={loading} aria-label="Actualizar tendencias" title="Actualizar tendencias"><IconRefresh className={loading ? "spin" : ""} size={16} /></button>
         {canExport && <button className="secondary-button" onClick={() => { downloadCsv(series); notify("Tendencia exportada con las métricas visibles.", "info"); }} disabled={!series.length}><IconDownload size={16} /> Exportar CSV</button>}
       </div>
