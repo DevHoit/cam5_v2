@@ -8383,3 +8383,26 @@ button.dashboard-kpi:hover { transform: translateY(-1px); border-color: #bae6fd;
 .commissioning-readiness-facts small{font-size:11px}
 .commissioning-readiness-facts strong{font-size:20px}
 .commissioning-readiness-facts span{font-size:10px}
+
+
+/* Engineering v4 — commissioning controls */
+.commissioning-controls-v3,.commissioning-evidence-v3{padding:16px}
+.commissioning-controls-v3>header,.commissioning-evidence-v3>header{min-height:64px;margin-bottom:12px}
+.commissioning-controls-v3 h2,.commissioning-evidence-v3 h2{font-size:17px}
+.commissioning-controls-v3 header p,.commissioning-evidence-v3 header p{font-size:12px;line-height:1.45}
+.commissioning-v3 .commissioning-control-list{gap:9px}
+.commissioning-v3 .commissioning-control{min-height:96px;padding:12px 13px;grid-template-columns:28px 38px minmax(0,1fr) auto auto;gap:11px;border-radius:10px}
+.commissioning-v3 .control-status{width:38px;height:38px;border-radius:9px}
+.commissioning-v3 .control-type{font-size:10px}
+.commissioning-v3 .commissioning-control strong{font-size:13px}
+.commissioning-v3 .commissioning-control p,.commissioning-v3 .commissioning-control small{font-size:11px;line-height:1.4}
+.commissioning-v3 .commissioning-control>i{padding:5px 8px;font-size:10px}
+.commissioning-v3 .commissioning-control .ghost-button{min-height:34px;font-size:11px}
+.commissioning-v3 .commissioning-activation{margin-top:12px;padding:14px;border-radius:10px}
+.commissioning-v3 .commissioning-activation strong{font-size:14px}
+.commissioning-v3 .commissioning-activation p{font-size:11px;line-height:1.45}
+.commissioning-v3 .commissioning-evidence-grid{gap:10px}
+.commissioning-v3 .commissioning-evidence-grid article{min-height:190px;padding:14px;border-radius:10px}
+.commissioning-v3 .commissioning-evidence-grid h3{margin:10px 0 5px;font-size:14px}
+.commissioning-v3 .commissioning-evidence-grid p{font-size:11px;line-height:1.45}
+.commissioning-v3 .commissioning-evidence-grid dt,.commissioning-v3 .commissioning-evidence-grid dd,.commissioning-v3 .commissioning-evidence-grid footer{font-size:10px}
