@@ -153,12 +153,12 @@ export function OperationsView({
   const active = data?.windows.filter((item) => item.status === "active").length ?? 0;
   const scheduled = data?.windows.filter((item) => item.status === "scheduled").length ?? 0;
 
-  const tabs = <section className="operations-commandbar">
-    <div><h1>Operación</h1><p>Continuidad, mantenimiento, guardias y escalamiento del sitio.</p></div>
+  const tabs = <section className="operations-commandbar operations-commandbar-v4">
+    <div><h1>NOC y continuidad</h1><p>Estado del sitio, incidentes, cobertura de guardia y mantenimiento operacional.</p></div>
     <div className="operations-tabs" role="tablist" aria-label="Operación">
-      <button className={tab === "noc" ? "active" : ""} onClick={() => setTab("noc")}>Estado operacional</button>
+      <button className={tab === "noc" ? "active" : ""} onClick={() => setTab("noc")}>NOC</button>
       <button className={tab === "maintenance" ? "active" : ""} onClick={() => setTab("maintenance")}>Mantenimiento</button>
-      <button className={tab === "shifts" ? "active" : ""} onClick={() => setTab("shifts")}>Turnos</button>
+      <button className={tab === "shifts" ? "active" : ""} onClick={() => setTab("shifts")}>Guardias</button>
       <button className={tab === "escalation" ? "active" : ""} onClick={() => setTab("escalation")}>Escalamiento</button>
     </div>
   </section>;
@@ -193,7 +193,7 @@ export function OperationsView({
         </select></label>
         {form.scopeType === "asset" && <label><span>Activo</span><select required value={form.scopeId || activeAssetId} onChange={(event) => setForm({ ...form, scopeId: event.target.value })}>
           <option value="">Seleccionar…</option>
-          {assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.code} · {asset.name}</option>)}
+          {assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name}</option>)}
         </select></label>}
         <label><span>Inicio</span><input type="datetime-local" required value={form.startsAt} onChange={(event) => setForm({ ...form, startsAt: event.target.value })} /></label>
         <label><span>Término</span><input type="datetime-local" required value={form.endsAt} onChange={(event) => setForm({ ...form, endsAt: event.target.value })} /></label>
