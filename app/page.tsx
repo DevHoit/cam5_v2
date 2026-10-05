@@ -412,7 +412,7 @@ const viewTitles: Record<View, { title: string; description: string }> = {
   operations: { title: "Operación", description: "Ventanas de mantenimiento, turnos y continuidad operacional." },
   reports: { title: "Reportes", description: "Informes de condición, eventos y cumplimiento para operación y confiabilidad." },
   engineering: { title: "Ingeniería", description: "Herramientas técnicas adaptadas a las capacidades del activo seleccionado." },
-  settings: { title: "Configuración avanzada", description: "Parámetros técnicos del dispositivo y su adquisición." },
+  settings: { title: "Configuración", description: "Contexto lógico, dispositivos, capacidades y métricas administradas por Core." },
   provisioning: { title: "Provisionamiento del gateway", description: "Credenciales seguras, configuración inicial y verificación de conexión." },
   organization: { title: "Organización", description: "Administración de clientes y sitios de la plataforma." },
   users: { title: "Usuarios y roles", description: "Control de acceso y permisos para la operación técnica." },
