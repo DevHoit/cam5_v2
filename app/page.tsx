@@ -385,7 +385,7 @@ const navGroups = [
     index: "04",
     label: "Administración",
     items: [
-      { id: "assets" as View, label: "Organización y activos", description: "Clientes, sitios y activos", icon: Factory },
+      { id: "assets" as View, label: "Activos", description: "Activos e infraestructura del sitio", icon: Factory },
       { id: "notifications" as View, label: "Notificaciones", description: "Canales y entregas", icon: Mail },
       { id: "users" as View, label: "Usuarios y roles", description: "Acceso y permisos", icon: Users },
       { id: "engineering" as View, label: "Ingeniería", description: "Capacidades y adquisición", icon: Settings },
@@ -405,7 +405,7 @@ const viewTitles: Record<View, { title: string; description: string }> = {
   trends: { title: "Tendencias", description: "Evolución temporal de las métricas disponibles para el activo seleccionado." },
   alarms: { title: "Centro de alertas", description: "Triage operativo, reconocimiento y trazabilidad de eventos." },
   history: { title: "Histórico", description: "Mediciones, alarmas y cambios administrativos en una sola trazabilidad." },
-  assets: { title: "Organización y activos", description: "Clientes, sitios, activos, gateways y dispositivos asociados." },
+  assets: { title: "Activos", description: "Activos e infraestructura asociados al sitio seleccionado." },
   operations: { title: "Operación", description: "Ventanas de mantenimiento, turnos y continuidad operacional." },
   reports: { title: "Reportes", description: "Informes de condición, eventos y cumplimiento para operación y confiabilidad." },
   engineering: { title: "Ingeniería", description: "Herramientas técnicas adaptadas a las capacidades del activo seleccionado." },
@@ -1207,7 +1207,7 @@ function OperationalHierarchyView({
       <div className="site-operations-identity">
         <span className="site-operations-icon"><Building2 size={19} /></span>
         <div>
-          <span className="site-operations-code">`{activeSite?.code ?? "SITIO"}`</span>
+          <span className="site-operations-code">{activeSite?.code ?? "SITIO"}</span>
           <h2>{hierarchy.active.siteName}</h2>
         </div>
       </div>
@@ -1948,7 +1948,7 @@ export default function Home() {
                 <button className={view === "provisioning" ? "active" : ""} onClick={() => navigate("provisioning")}>Gateways</button>
               </div>
             </nav>}
-            {view !== "dashboard" && <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> {viewSectionLabel(view)}</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{(view === "overview" || view === "cabinet") && (!activePoint || !["electrical_point", "ats", "cold_room"].includes(activePoint.type)) && <button className="secondary-button" onClick={() => setVisibilityOpen(true)} disabled={!activePoint || !sensors.some((sensor) => sensor.enabled)}><AdjustmentsHorizontal size={16} /><span>Personalizar canales</span></button>}{view !== "assets" && view !== "engineering" && view !== "settings" && view !== "provisioning" && view !== "users" && view !== "notifications" && view !== "account" && view !== "reports" && view !== "diagnostics" && view !== "commissioning" && view !== "trends" && view !== "history" && <button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button>}{canSeeNavItem("alarms", sessionUser) && <button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{alarmSummary.critical + alarmSummary.warning} alertas activas</button>}</div></section>}
+            {view !== "dashboard" && view !== "assets" && <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> {viewSectionLabel(view)}</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{(view === "overview" || view === "cabinet") && (!activePoint || !["electrical_point", "ats", "cold_room"].includes(activePoint.type)) && <button className="secondary-button" onClick={() => setVisibilityOpen(true)} disabled={!activePoint || !sensors.some((sensor) => sensor.enabled)}><AdjustmentsHorizontal size={16} /><span>Personalizar canales</span></button>}{view !== "assets" && view !== "engineering" && view !== "settings" && view !== "provisioning" && view !== "users" && view !== "notifications" && view !== "account" && view !== "reports" && view !== "diagnostics" && view !== "commissioning" && view !== "trends" && view !== "history" && <button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button>}{canSeeNavItem("alarms", sessionUser) && <button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{alarmSummary.critical + alarmSummary.warning} alertas activas</button>}</div></section>}
             {view === "dashboard" && <DashboardView onSwitchSite={(siteId) => void openDashboardSite(siteId)} onSelectAsset={(siteId, assetId) => void openDashboardAsset(siteId, assetId)} onOpenAlerts={() => navigate("alarms")} />}
             {view === "engineering" && <EngineeringHubView asset={activePoint} devices={hierarchy?.controllers ?? []} canWrite={sessionUser.permissions.includes("settings.write")} onNavigate={(target) => navigate(target)} notify={notify} />}
             {view === "overview" && activePoint && ["electrical_point", "ats", "cold_room"].includes(activePoint.type)
