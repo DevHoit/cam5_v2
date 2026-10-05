@@ -151,7 +151,7 @@ export function AccountView({
   if (error && !data) return <section className="panel account-state account-error"><IconAlertTriangle size={24} /><div><h2>No fue posible cargar tu cuenta</h2><p>{error}</p><button onClick={() => void load()}>Reintentar</button></div></section>;
   if (!data) return null;
 
-  return <>
+  return <div className="account-v4">
     <section className="module-summary-grid account-summary-grid">
       <article><span className="module-summary-icon blue"><IconUser size={19} /></span><div><small>Perfil activo</small><strong>{data.profile.roleName}</strong><span>{data.profile.email}</span></div></article>
       <article><span className="module-summary-icon green"><IconShieldCheck size={19} /></span><div><small>Sesiones activas</small><strong>{data.sessions.length}</strong><span>Incluye este dispositivo</span></div></article>
@@ -190,5 +190,5 @@ export function AccountView({
         {session.current ? <i><IconShieldCheck size={14} /> Protegida</i> : <button className="danger-button" onClick={() => revokeSession(session)}>Cerrar sesión</button>}
       </article>)}</div>
     </section>
-  </>;
+  </div>;
 }
