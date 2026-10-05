@@ -2260,10 +2260,6 @@ export default function Home() {
             </div>
           ))}
         </nav>
-        <div className="sidebar-status">
-          <button className="user-card" onClick={() => navigate("account")} aria-label="Abrir mi cuenta"><span className="user-avatar">{sessionUser.displayName.split(" ").map((part) => part[0]).slice(0, 2).join("").toUpperCase()}</span><span className="user-copy"><strong>{sessionUser.displayName}</strong><small>{sessionUser.roleName}</small></span><ChevronRight size={16} /></button>
-          <button className="sidebar-logout" onClick={logout}><LogOut size={17} /> Cerrar sesión</button>
-        </div>
       </aside>
 
       <main className="main-shell">
