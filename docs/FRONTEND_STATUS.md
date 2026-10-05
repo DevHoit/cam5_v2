@@ -485,3 +485,20 @@ Rediseño alineado con Dashboard y shell global.
 - Responsive desktop/tablet/mobile actualizado.
 
 Validación: lint, simuladores, Gateway Agent, tests DB y build PASS.
+
+
+## Resumen del activo v3 (2026-10-05)
+
+Rediseño del flujo Dashboard → Sitio → Activo, alineado con el nuevo shell global.
+
+- El topbar deja de mostrar “Sincronizando adquisición / Gateway verificando estado”; la adquisición ya no compite con el contexto global.
+- El encabezado global “Supervisión / Resumen del activo” se elimina de la vista Overview.
+- Sin activo seleccionado se muestra un estado vacío explícito con acción Seleccionar/Configurar activo; no se muestran loaders, alertas ni acciones inválidas.
+- La carga de un activo usa una única señal “Actualizando datos” y skeletons; se eliminan los tres mensajes simultáneos de sincronización.
+- La vista operativa usa cabecera compacta con código, nombre, ubicación, estado, última telemetría y acciones contextuales.
+- “Personalizar canales” se reemplaza por “Configurar visualización” en el flujo legacy.
+- Terminología visual migra de “canales” a “métricas” donde corresponde.
+- El overview universal de activos adopta el mismo patrón compacto.
+- Los banners globales de adquisición ya no se muestran en Overview; las vistas técnicas pueden seguir mostrando estados técnicos cuando corresponda.
+
+Validación: lint, simuladores, Gateway Agent, tests DB y build PASS.
