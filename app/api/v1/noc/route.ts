@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
     const { db, user } = await requireApiSession(request, "overview.read");
     const now = new Date();
 
-    const [alarmRows, gatewayRows, deviceRows, maintenanceRows, shiftRows] = await Promise.all([
+    const [alarmRows, gatewayRows, deviceRows, maintenanceRows, shiftRows, assetRows] = await Promise.all([
       db.select({
         id: alarms.id,
         code: alarms.code,
@@ -67,6 +67,12 @@ export async function GET(request: NextRequest) {
       }).from(shifts)
         .where(and(eq(shifts.clientId, user.clientId), eq(shifts.active, true)))
         .orderBy(shifts.name),
+      db.select({
+        id: assets.id,
+        name: assets.name,
+      }).from(assets)
+        .where(and(eq(assets.siteId, user.siteId), eq(assets.active, true)))
+        .orderBy(assets.name),
     ]);
 
     const onCall = await Promise.all(shiftRows.map(async (shift) => {
@@ -95,6 +101,8 @@ export async function GET(request: NextRequest) {
       };
     }));
 
+    const assetNames = new Map(assetRows.map((asset) => [asset.id, asset.name]));
+    const deviceNames = new Map(deviceRows.map((device) => [device.id, device.name]));
     const maintenance = maintenanceRows
       .map((window) => ({ ...window, status: maintenanceWindowStatus(window, now) }))
       .filter((window) => window.status === "active" || window.status === "scheduled")
@@ -102,6 +110,15 @@ export async function GET(request: NextRequest) {
         id: window.id,
         scopeType: window.scopeType,
         scopeId: window.scopeId,
+        scopeName: window.scopeType === "tenant"
+          ? user.clientName
+          : window.scopeType === "site"
+            ? user.siteName
+            : window.scopeType === "asset"
+              ? assetNames.get(window.scopeId) ?? null
+              : window.scopeType === "device"
+                ? deviceNames.get(window.scopeId) ?? null
+                : null,
         startsAt: window.startsAt.toISOString(),
         endsAt: window.endsAt.toISOString(),
         reason: window.reason,
