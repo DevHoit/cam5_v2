@@ -2692,3 +2692,9 @@ button.dashboard-kpi:hover { transform: translateY(-1px); border-color: #bae6fd;
   .dashboard-site-state { display:none; }
   .dashboard-timeline-track { gap:3px; padding-left:14px; padding-right:14px; }
 }
+
+/* Dashboard v3.1 compact top context */
+.dashboard-v3 .dashboard-commandbar { min-height:44px; padding:0 2px 10px; }
+.dashboard-v3 .dashboard-commandbar h1 { font-size:18px; }
+.dashboard-v3 .dashboard-commandbar-actions { margin-left:auto; }
+.dashboard-v3 .dashboard-client-context { display:none; }
