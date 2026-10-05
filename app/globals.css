@@ -8315,3 +8315,54 @@ button.dashboard-kpi:hover { transform: translateY(-1px); border-color: #bae6fd;
 .engineering-tabs-v3{min-height:54px;padding:8px 10px}
 .engineering-tabs-v3 button{min-height:36px;padding:0 11px;font-size:12px}
 .engineering-inline-warning{min-height:46px;padding:9px 12px;font-size:11px}
+
+
+/* Engineering v4 — Core settings */
+.core-settings-v3{gap:16px}
+.core-settings-status{border-radius:12px}
+.core-settings-status article{min-height:108px;padding:16px 17px;grid-template-columns:38px minmax(0,1fr);gap:11px}
+.core-settings-status article>span{width:38px;height:38px;border-radius:10px}
+.core-settings-status small{font-size:11px}
+.core-settings-status strong{margin:4px 0 5px;font-size:18px}
+.core-settings-status p{font-size:11px;line-height:1.35}
+.core-settings-workspace{border-radius:12px}
+.core-settings-warnings{padding:10px 12px;gap:6px}
+.core-settings-warnings span{font-size:11px}
+.core-settings-section{padding:16px}
+.core-settings-section>header{min-height:68px;margin-bottom:12px}
+.core-settings-section>header h2{font-size:17px}
+.core-settings-section>header p{font-size:12px;line-height:1.45}
+.core-settings-section>header>span{font-size:11px}
+.core-settings-section>header button{min-height:36px;padding:0 11px;font-size:11px}
+.core-settings-form{gap:12px}
+.core-settings-form label{gap:6px}
+.core-settings-form label>span{font-size:12px}
+.core-settings-form input{min-height:44px;padding:0 11px;border-radius:9px;font-size:14px}
+.core-device-list{gap:9px}
+.core-device-list>article{min-height:104px;padding:13px;grid-template-columns:40px minmax(180px,.85fr) minmax(170px,.8fr) minmax(190px,.9fr) auto auto;gap:11px;border-radius:10px}
+.core-device-icon{width:40px;height:40px;border-radius:10px}
+.core-device-identity small{font-size:10px}
+.core-device-identity strong{margin:3px 0;font-size:13px}
+.core-device-identity p{font-size:11px}
+.core-device-list label{gap:5px}
+.core-device-list label>span{font-size:11px}
+.core-device-list input,.core-device-list select{min-height:40px;padding:0 10px;border-radius:8px;font-size:12px}
+.core-device-state{min-height:26px;padding:0 8px;font-size:10px}
+.core-device-list article>button{min-height:36px;padding:0 9px;font-size:11px}
+.core-metric-device-list{gap:11px}
+.core-metric-device-list>article{border-radius:10px}
+.core-metric-device-list>article>header{min-height:72px;padding:12px 13px;grid-template-columns:36px minmax(0,1fr) auto;gap:10px}
+.core-metric-device-list>article>header>span{width:36px;height:36px;border-radius:9px}
+.core-metric-device-list header small{font-size:10px}
+.core-metric-device-list header strong{margin:3px 0;font-size:13px}
+.core-metric-device-list header p{font-size:11px}
+.core-metric-device-list header b{font-size:11px}
+.core-capability-tags{padding:10px 13px;gap:6px}
+.core-capability-tags span{min-height:26px;padding:0 8px;font-size:10px}
+.core-metric-list>span{min-height:72px;padding:10px 13px;grid-template-columns:90px minmax(0,1fr);gap:8px}
+.core-metric-list i{font-size:10px}
+.core-metric-list strong{font-size:12px}
+.core-metric-list small{font-size:10px}
+.core-settings-empty{min-height:110px}
+.core-settings-empty strong{font-size:13px}
+.core-settings-empty p{font-size:11px}
