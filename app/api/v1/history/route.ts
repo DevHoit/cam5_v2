@@ -159,7 +159,7 @@ export async function GET(request: NextRequest) {
             receivedAt: item.receivedAt ?? item.recordedAt,
             code: item.code,
             name: item.name,
-            zone: `${item.deviceName} · ${item.category}`,
+            zone: item.deviceName,
             deviceId: item.deviceId,
             metricKey: item.metricKey,
             dataType: item.dataType,
