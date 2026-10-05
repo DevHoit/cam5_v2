@@ -146,14 +146,20 @@ export function UniversalAssetOverview({
         : metrics.length && !validMetrics.length ? "offline"
           : "normal";
 
-  if (loading && !data) return <article className="panel universal-asset-state"><IconRefresh className="spin" size={22} /><div><strong>Cargando activo</strong><p>Consultando dispositivos y métricas normalizadas.</p></div></article>;
+  if (loading && !data) return <div className="universal-asset-overview asset-overview-v3" aria-live="polite" aria-busy="true">
+    <section className="asset-overview-header">
+      <div className="asset-overview-identity"><span className="asset-overview-code">{asset.code}</span><h1>{asset.name}</h1><p>{asset.area || "Estado operacional"}</p></div>
+      <span className="asset-overview-loading"><IconRefresh className="spin" size={14} /> Actualizando datos</span>
+    </section>
+    <section className="asset-loading-grid" aria-hidden="true"><i /><i /><i /><i /></section>
+    <section className="asset-loading-panel"><span>Consultando métricas y eventos del activo…</span></section>
+  </div>;
 
   return <div className="universal-asset-overview">
-    <section className={`panel universal-asset-hero state-${overall}`}>
-      <span className="universal-asset-hero-icon"><FeatureIcon size={25} /></span>
-      <div><span className="eyebrow">Activo seleccionado</span><h2>{asset.code} · {asset.name}</h2><p>{asset.area || feature.title}</p></div>
-      <span className={`status-pill status-${overall}`}>{overall === "critical" ? "Condición crítica" : overall === "warning" ? "Atención requerida" : overall === "offline" ? "Datos no disponibles" : "Operación normal"}</span>
-      <button className="secondary-button" onClick={() => { setLoading(true); setError(""); setReload((value) => value + 1); }}><IconRefresh className={loading ? "spin" : ""} size={15} /> Actualizar</button>
+    <section className={`asset-overview-header state-${overall}`}>
+      <div className="asset-overview-identity"><span className="asset-overview-code">{asset.code}</span><h1>{asset.name}</h1><p>{asset.area || feature.title}</p></div>
+      <div className="asset-overview-health"><span className={`status-pill status-${overall}`}>{overall === "critical" ? "Condición crítica" : overall === "warning" ? "Atención requerida" : overall === "offline" ? "Datos no disponibles" : "Operativo"}</span><span>{data && latestAt ? `Última telemetría ${formatAge(latestAt, data.serverTime).toLowerCase()}` : "Sin telemetría disponible"}</span></div>
+      <div className="asset-overview-actions"><button onClick={() => onNavigate(feature.view as "electrical" | "ats" | "cold-chain" | "cabinet")}><FeatureIcon size={15} /> {feature.title}</button><button onClick={() => onNavigate("alarms")}><IconAlertTriangle size={15} /> Alertas {activeAlarmCount ? `· ${activeAlarmCount}` : ""}</button><button aria-label="Actualizar activo" onClick={() => { setLoading(true); setError(""); setReload((value) => value + 1); }}><IconRefresh className={loading ? "spin" : ""} size={15} /></button></div>
     </section>
 
     {error && <div className="data-error"><IconAlertTriangle size={18} /><div><strong>No se pudo actualizar el activo</strong><p>{error}</p></div></div>}
@@ -167,7 +173,7 @@ export function UniversalAssetOverview({
 
     <section className="universal-asset-layout">
       <article className="panel universal-metrics-panel">
-        <header><div><span className="eyebrow">Telemetría normalizada</span><h2>Métricas del activo</h2><p>Información presentada por significado operacional, independiente del protocolo de adquisición.</p></div><button className="secondary-button" onClick={() => onNavigate(feature.view as "electrical" | "ats" | "cold-chain" | "cabinet")}><FeatureIcon size={15} /> {feature.title}</button></header>
+        <header><div><h2>Métricas del activo</h2><p>Variables vigentes reportadas por los dispositivos asociados.</p></div><button className="secondary-button" onClick={() => onNavigate(feature.view as "electrical" | "ats" | "cold-chain" | "cabinet")}><FeatureIcon size={15} /> {feature.title}</button></header>
         <div className="universal-device-list">
           {devices.map((device) => <section key={device.id} className="universal-device-block">
             <div className="universal-device-head"><span><IconServer size={16} /></span><div><strong>{device.code} · {device.name}</strong><small>{device.deviceType.replaceAll("_", " ")} · {formatAge(device.lastReadAt, data?.serverTime ?? new Date().toISOString())}</small></div><i className={`status-pill status-${["active", "online", "normal"].includes(device.state) ? "normal" : "offline"}`}>{device.state}</i></div>
@@ -182,11 +188,11 @@ export function UniversalAssetOverview({
       <aside className="universal-asset-side">
         <article className="panel universal-capability-card">
           <span><FeatureIcon size={22} /></span>
-          <div><span className="eyebrow">Capacidad principal</span><h2>{feature.title}</h2><p>{feature.detail}</p></div>
+          <div><h2>{feature.title}</h2><p>{feature.detail}</p></div>
           <button onClick={() => onNavigate(feature.view as "electrical" | "ats" | "cold-chain" | "cabinet")}>Abrir capacidad <IconArrowRight size={15} /></button>
         </article>
         <article className="panel universal-alarm-card">
-          <header><span className="eyebrow">Atención requerida</span><h2>Eventos del activo</h2></header>
+          <header><h2>Actividad y alertas</h2></header>
           <div>{alarms.slice(0, 4).map((alarm) => <div key={alarm.id}><i className={`priority-state ${alarm.severity === "critical" ? "critical" : "warning"}`} /><span><strong>{alarm.title}</strong><small>{alarm.code}</small></span></div>)}
           {!alarms.length && <div className="universal-all-clear"><IconCircleCheck size={20} /><span>Sin alertas activas</span></div>}</div>
           <button className="text-action" onClick={() => onNavigate("alarms")}>Gestionar alertas <IconArrowRight size={15} /></button>
