@@ -330,6 +330,7 @@ export async function PATCH(request: NextRequest) {
         [record] = await tx.update(assets).set({
           ...(typeof body.name === "string" ? { name: textField(body, "name", "El nombre") } : {}),
           ...(typeof body.area === "string" ? { area: optionalText(body, "area") } : {}),
+          ...(typeof body.type === "string" ? { assetType: textField(body, "type", "El tipo de activo") } : {}),
           ...(typeof body.nominalVoltageKv === "number" || body.nominalVoltageKv === null ? { nominalVoltageKv: body.nominalVoltageKv === null ? null : String(body.nominalVoltageKv) } : {}),
           ...(typeof body.active === "boolean" ? { active: body.active, state: body.active ? "offline" : "maintenance" } : {}),
           updatedAt: new Date(),
