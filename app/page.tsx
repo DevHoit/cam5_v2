@@ -1763,10 +1763,10 @@ function UsersView({
   );
 }
 
-function NotificationsView({ canWrite }: { canWrite: boolean }) {
+function NotificationsView({ canWrite, siteName }: { canWrite: boolean; siteName: string }) {
   const notify = useFeedback();
   const confirm = useConfirm();
-  return <DatabaseNotificationsView canWrite={canWrite} notify={notify} confirm={confirm} />;
+  return <DatabaseNotificationsView canWrite={canWrite} siteName={siteName} notify={notify} confirm={confirm} />;
 }
 function AuthFrame({ children }: { children: React.ReactNode }) {
   return <main className="login-shell">
@@ -2331,7 +2331,7 @@ export default function Home() {
             {view === "provisioning" && <GatewayProvisioningView canWrite={sessionUser.permissions.includes("settings.write")} notify={notify} confirm={(request) => setConfirmRequest(request)} />}
             {view === "organization" && hierarchy && <OrganizationAdminView clients={hierarchy.clients} sites={hierarchy.sites} activeClientId={sessionUser.clientId} activeSiteId={sessionUser.siteId} canManageClients={sessionUser.permissions.includes("clients.manage")} canManageSites={sessionUser.permissions.includes("sites.manage")} onReload={loadHierarchy} notify={notify} />}
              {view === "users" && <UsersView currentUserId={sessionUser.id} currentRoleKey={sessionUser.roleKey} clientScopes={sessionUser.clientScopes} sites={sessionUser.sites} activeSiteId={sessionUser.siteId} activeClientId={sessionUser.clientId} canManageUsers={sessionUser.permissions.includes("users.manage")} />}
-            {view === "notifications" && <NotificationsView canWrite={sessionUser.permissions.includes("notifications.write")} />}
+            {view === "notifications" && <NotificationsView canWrite={sessionUser.permissions.includes("notifications.write")} siteName={sessionUser.siteName} />}
             {view === "account" && <AccountView notify={notify} confirm={(request) => setConfirmRequest(request)} onProfileUpdated={(displayName) => setSessionUser((current) => current ? { ...current, displayName } : current)} />}
           </div>
         </div>
