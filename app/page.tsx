@@ -1078,7 +1078,7 @@ function auditActionLabel(value: string) {
   return value.replaceAll(".", " · ").replaceAll("_", " ");
 }
 
-function HistoryView({ assetId, canExport, onOpenTrend }: { assetId: string; canExport: boolean; onOpenTrend: (channelId: string, from: string, to: string) => void }) {
+function HistoryView({ assetId, assetName, siteName, canExport, onOpenTrend }: { assetId: string; assetName: string; siteName: string; canExport: boolean; onOpenTrend: (channelId: string, from: string, to: string) => void }) {
   const sensors = useSensorData();
   const notify = useFeedback();
   const [tab, setTab] = useState<HistoryTab>("measurements");
@@ -1122,14 +1122,19 @@ function HistoryView({ assetId, canExport, onOpenTrend }: { assetId: string; can
   }, [assetId]);
 
   useEffect(() => {
-    if (!assetId) return;
+    if (tab !== "audit" && !assetId) {
+      setResult(null);
+      setError("");
+      setLoading(false);
+      return;
+    }
     let active = true;
     const timeout = window.setTimeout(async () => {
       setLoading(true);
       setError("");
       try {
         const params = new URLSearchParams({ tab, from: fromIso, to: toIso, page: String(page), pageSize: tab === "measurements" ? "20" : "8" });
-        params.set("assetId", assetId);
+        if (tab !== "audit") params.set("assetId", assetId);
         if (query.trim()) params.set("q", query.trim());
         if (tab === "measurements" && channel !== "all") params.set("channel", channel);
         const data = await portalRequest<PaginationMeta & { items: Array<Record<string, unknown>> }>(`/api/v1/history?${params}`);
@@ -1148,7 +1153,8 @@ function HistoryView({ assetId, canExport, onOpenTrend }: { assetId: string; can
 
   const exportHistory = async () => {
     try {
-      const params = new URLSearchParams({ tab, from: fromIso, to: toIso, format: "csv", assetId });
+      const params = new URLSearchParams({ tab, from: fromIso, to: toIso, format: "csv" });
+      if (tab !== "audit") params.set("assetId", assetId);
       if (query.trim()) params.set("q", query.trim());
       if (tab === "measurements" && channel !== "all") params.set("channel", channel);
       await downloadAuthenticatedCsv(`/api/v1/history?${params}`, `hoitlive-historico-${tab}.csv`);
@@ -1158,19 +1164,14 @@ function HistoryView({ assetId, canExport, onOpenTrend }: { assetId: string; can
     }
   };
 
-  if (!assetId) return <section className="temporal-empty-state">
-    <span><History size={24} /></span>
-    <div><h1>Selecciona un activo</h1><p>El histórico se consulta dentro del contexto de un activo y sus métricas.</p></div>
-  </section>;
-
   const currentViewLabel = tab === "measurements" ? "Mediciones" : tab === "alarms" ? "Alarmas" : "Auditoría";
 
   return <div className="history-v4">
     <section className="temporal-commandbar history-commandbar-v3">
-      <div><h1>Histórico</h1><p>{currentViewLabel} · {formatHistoryDate(from)} → {formatHistoryDate(to)}</p></div>
+      <div><h1>Histórico</h1><p>{tab === "audit" ? `Auditoría del sitio · ${siteName || "Sitio activo"}` : `${currentViewLabel} · ${assetName || "Sin activo seleccionado"}`} · {formatHistoryDate(from)} → {formatHistoryDate(to)}</p></div>
       <div className="history-command-actions">
         <span><Database size={14} /> {total.toLocaleString("es-CL")} registros</span>
-        {canExport && <button onClick={() => void exportHistory()} disabled={loading}><Download size={14} /> Exportar CSV</button>}
+        {canExport && <button onClick={() => void exportHistory()} disabled={loading || (tab !== "audit" && !assetId)}><Download size={14} /> Exportar CSV</button>}
       </div>
     </section>
 
@@ -1186,7 +1187,7 @@ function HistoryView({ assetId, canExport, onOpenTrend }: { assetId: string; can
 
       <div className="history-filterbar-v3">
         <label className="search-field"><Search size={16} /><input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder={tab === "audit" ? "Buscar acción o recurso del sitio…" : normalizedHistory ? "Buscar dispositivo o métrica…" : "Buscar métrica o evento…"} /></label>
-        {tab === "measurements" && <label className="history-filter-select"><span>{normalizedHistory ? "Métrica" : "Variable"}</span><select value={channel} onChange={(event) => { setChannel(event.target.value); setPage(1); }}><option value="all">{normalizedHistory ? "Todas las métricas" : "Todas las variables"}</option>{normalizedHistory ? metricOptions.map((metric) => <option key={metric.id} value={metric.id}>{metric.label}</option>) : activeSensors.map((sensor) => <option key={sensor.id} value={sensor.id}>{sensor.id} · {sensor.label}</option>)}</select><ChevronDown size={12} /></label>}
+        {tab === "measurements" && assetId && <label className="history-filter-select"><span>{normalizedHistory ? "Métrica" : "Variable"}</span><select value={channel} onChange={(event) => { setChannel(event.target.value); setPage(1); }}><option value="all">{normalizedHistory ? "Todas las métricas" : "Todas las variables"}</option>{normalizedHistory ? metricOptions.map((metric) => <option key={metric.id} value={metric.id}>{metric.label}</option>) : activeSensors.map((sensor) => <option key={sensor.id} value={sensor.id}>{sensor.id} · {sensor.label}</option>)}</select><ChevronDown size={12} /></label>}
         <label className="history-date-filter"><span>Desde</span><input type="date" value={from} max={to} onChange={(event) => { setFrom(event.target.value); setPage(1); }} /></label>
         <label className="history-date-filter"><span>Hasta</span><input type="date" value={to} min={from} max={today} onChange={(event) => { setTo(event.target.value); setPage(1); }} /></label>
       </div>
@@ -1194,7 +1195,8 @@ function HistoryView({ assetId, canExport, onOpenTrend }: { assetId: string; can
       {error && <div className="data-error"><AlertTriangle size={18} /><div><strong>No se pudo cargar el histórico</strong><p>{error}</p></div></div>}
       {loading && <div className="history-loading-v3"><Refresh className="spin" size={17} /> Consultando histórico…</div>}
 
-      {!loading && !error && tab === "measurements" && <div className="history-feed-v3">
+      {!loading && !error && tab === "measurements" && !assetId && <div className="history-empty-v3 history-context-empty-v4"><Database size={22} /><div><strong>Selecciona un activo</strong><p>Las mediciones históricas se consultan dentro del contexto de un activo.</p></div></div>}
+      {!loading && !error && tab === "measurements" && assetId && <div className="history-feed-v3">
         {result?.items.map((raw) => {
           const item = raw as { id: number; recordedAt: string; receivedAt: string; code: string; name: string; zone?: string; deviceId?: string; metricKey?: string; dataType?: string; unit: string; value?: number | boolean | string | null; rawValue?: number | null; quality: "good" | "stale" | "bad" | "disabled"; qualityFlags: string[]; sequence?: number | null };
           const qualityLabel = item.quality === "good" ? "Válida" : item.quality === "stale" ? "Atrasada" : item.quality === "bad" ? "Inválida" : "Deshabilitada";
@@ -1210,7 +1212,8 @@ function HistoryView({ assetId, canExport, onOpenTrend }: { assetId: string; can
         {result?.items.length === 0 && <div className="history-empty-v3"><Database size={21} /><div><strong>Sin mediciones en este rango</strong><p>Ajusta las fechas o espera la primera recepción de métricas.</p></div></div>}
       </div>}
 
-      {!loading && !error && tab === "alarms" && <div className="history-feed-v3">
+      {!loading && !error && tab === "alarms" && !assetId && <div className="history-empty-v3 history-context-empty-v4"><BellRing size={22} /><div><strong>Selecciona un activo</strong><p>Las alarmas históricas se consultan para el activo seleccionado.</p></div></div>}
+      {!loading && !error && tab === "alarms" && assetId && <div className="history-feed-v3">
         {result?.items.map((raw) => {
           const item = raw as { id: string; code: string; openedAt: string; severity: Severity; status: string; title: string; detail?: string; triggerValue?: string; assetName?: string; deviceId?: string; deviceCode?: string; deviceName?: string; context?: Record<string, unknown>; channelCode?: string; unit?: string };
           const metricKey = typeof item.context?.metricKey === "string" ? item.context.metricKey : item.channelCode;
@@ -2308,7 +2311,7 @@ export default function Home() {
               ? <GenericTrendsView assetId={activePoint.id} initialMetricKey={trendSensorId} canExport={sessionUser.permissions.includes("history.export")} notify={notify} />
               : view === "trends" && <TrendsView assetId={activePoint?.id ?? ""} channels={sensors.map((sensor) => ({ id: sensor.id, label: sensor.label, zone: sensor.zone, unit: sensor.unit, state: sensor.state, enabled: sensor.enabled }))} period={period} setPeriod={setPeriod} selectedId={resolvedTrendSensorId} onSelectChannel={selectTrendChannel} onBackToMap={() => navigate("cabinet")} rangeWindow={trendWindow} setRangeWindow={setTrendWindow} canExport={sessionUser.permissions.includes("history.export")} notify={notify} />}
             {view === "alarms" && <AlarmsView assetId={activePoint?.id ?? ""} permissions={sessionUser.permissions} onSummaryChange={setAlarmSummary} onOpenTrend={openAlarmTrend} onOpenAsset={(id) => { setActivePointId(id); navigate("overview"); }} />}
-            {view === "history" && <HistoryView assetId={activePoint?.id ?? ""} canExport={sessionUser.permissions.includes("history.export")} onOpenTrend={openTrendRange} />}
+            {view === "history" && <HistoryView assetId={activePoint?.id ?? ""} assetName={activePoint?.name ?? ""} siteName={sessionUser.siteName} canExport={sessionUser.permissions.includes("history.export")} onOpenTrend={openTrendRange} />}
             {view === "assets" && <OperationalHierarchyView hierarchy={hierarchy} loading={hierarchyLoading} permissions={sessionUser.permissions} onReload={loadHierarchy} onSwitchSite={switchSite} onOpenAsset={openDashboardAsset} />}
             {view === "operations" && <OperationsView
               assets={(hierarchy?.points ?? []).map((point) => ({ id: point.id, code: point.code, name: point.name }))}
