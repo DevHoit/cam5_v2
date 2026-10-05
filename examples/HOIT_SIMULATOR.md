@@ -2,46 +2,62 @@
 
 Herramienta de desarrollo para poblar HOIT Core con telemetría realista antes de disponer de todos los dispositivos físicos.
 
-El simulador **no escribe directamente en PostgreSQL**. Envía datos al mismo endpoint autenticado que utiliza el Gateway Agent:
+El simulador **no escribe directamente en PostgreSQL** y tampoco inventa un camino alternativo de ingestión. Emula la comunicación actual del **HOIT Gateway Agent**:
 
 ```text
-Simulador
-   ↓ HTTPS + Bearer token
-/api/v1/gateway/ingest
-   ↓
-validación schemaVersion 2.0
-   ↓
-telemetría normalizada
-   ↓
-latest readings / histórico
-   ↓
-motores de condición y alarmas
-   ↓
-Dashboard / Activo / Tendencias / Histórico / Alertas / Reportes
+Simulador HOIT Gateway
+   │
+   ├── GET  /api/v1/gateway/config
+   │       valida identidad y dispositivos asignados
+   │
+   ├── POST /api/v1/gateway/ingest
+   │       schema_version 1.0 + samples[]
+   │
+   └── POST /api/v1/gateway/heartbeat
+           salud del gateway y dispositivos
+                ↓
+           HOIT Core
+                ↓
+     telemetría / histórico / alarmas
+                ↓
+ Dashboard / Activo / Tendencias / Reportes
 ```
 
-Esto permite validar el circuito completo y evita crear datos que el gateway real nunca podría producir.
+Las métricas simuladas son generadas por perfiles PM5560, DSE8660 y cadena de frío, pero el transporte hacia Core usa el mismo envelope que el Gateway Agent productivo.
 
-## Requisito previo
+## Requisitos previos
 
-En Core deben existir:
+En Core deben existir previamente:
 
 1. Cliente.
 2. Sitio.
 3. Activo.
 4. Gateway.
-5. Dispositivo asociado al activo y al gateway.
-6. Modelo del dispositivo con sus métricas habilitadas.
-7. Token Bearer vigente del gateway.
+5. Dispositivo asociado al activo.
+6. Binding de adquisición dispositivo ↔ gateway disponible en `GET /api/v1/gateway/config`.
+7. Modelo del dispositivo con sus métricas habilitadas.
+8. Token Bearer vigente del gateway.
 
-El token completo se obtiene al provisionar el gateway y sólo se muestra una vez. No debe guardarse en Git.
+El token completo se obtiene durante el provisionamiento del gateway y no debe guardarse en Git.
 
-## Uso
+## Seguridad
 
-Exporta el token:
+El token se entrega únicamente mediante variable de entorno:
 
 ```bash
 export HOIT_GATEWAY_TOKEN="<token>"
+```
+
+El launcher se niega por defecto a enviar datos a los hosts productivos conocidos. Para una prueba deliberada en producción debe utilizarse `--allow-production`.
+
+La recomendación normal es ejecutar el simulador contra un **Vercel Preview** o un ambiente de pruebas.
+
+## Uso
+
+También puede invocarse mediante:
+
+```bash
+npm run simulator -- <argumentos>
 ```
 
 ### PM5560
@@ -114,7 +130,7 @@ demo
 
 ## Ejecución continua o acotada
 
-Por defecto el simulador corre hasta detenerlo.
+Por defecto el simulador permanece ejecutándose.
 
 Para enviar 20 ciclos:
 
@@ -128,87 +144,152 @@ Para cambiar la frecuencia:
 python3 examples/hoit_simulator.py ... --interval 5
 ```
 
-El intervalo mínimo del launcher es 1 segundo. Para pruebas de UI y alarmas normalmente 5 segundos es suficiente.
+El intervalo mínimo es un segundo. Para pruebas normales de UI, tendencias y alarmas, cinco segundos suele ser suficiente.
 
-## Contrato enviado
+## Contrato de ingestión utilizado
 
-Cada muestra utiliza exclusivamente el contrato normalizado vigente:
+El simulador reproduce el envelope V1 del Gateway Agent:
 
 ```json
 {
-  "schemaVersion": "2.0",
-  "batchKey": "GW-PM01:<boot-id>:1:PM5560-01",
-  "sentAt": "2026-10-05T14:00:00Z",
-  "sampledAt": "2026-10-05T14:00:00Z",
-  "timeQuality": "synced",
-  "quality": "good",
-  "qualityFlags": [],
-  "gateway": {
-    "code": "GW-PM01",
-    "bootId": "<uuid>",
-    "sequence": 1
-  },
-  "device": {
-    "code": "PM5560-01"
-  },
-  "metrics": {
-    "electrical.voltage.l1_n": 230.4,
-    "electrical.frequency": 50.01
-  }
+  "schema_version": "1.0",
+  "gateway_id": "GW-DSE-01",
+  "boot_id": "550e8400-e29b-41d4-a716-446655440000",
+  "message_id": "d1025c19-cfa7-4b90-93d7-725ad310d431",
+  "sequence": 18452,
+  "created_at": "2026-10-05T14:00:00.000Z",
+  "time_quality": "SYNCED",
+  "samples": [
+    {
+      "device_id": "DSE8660-01",
+      "sampled_at": "2026-10-05T13:59:59.900Z",
+      "quality": "GOOD",
+      "metrics": {
+        "ats.source1.available": true,
+        "ats.source2.available": true,
+        "ats.transfer.position": "source1"
+      }
+    }
+  ]
 }
 ```
 
-El bloque `device` contiene sólo identidad lógica. Driver, protocolo, bus, Unit ID, registros, escalamiento y decodificación son responsabilidad del Gateway Agent y no se envían a Core.
+Cada elemento de `samples[]` contiene exclusivamente:
 
-## Qué valida
+- `device_id`;
+- `sampled_at`;
+- `quality`;
+- `metrics`.
 
-Al usar un gateway y dispositivo realmente provisionados, la simulación comprueba:
+No se envían dentro de la telemetría:
 
-- autenticación del gateway;
-- vínculo gateway ↔ dispositivo;
-- catálogo de métricas habilitadas;
-- validación de tipos;
-- idempotencia por `batchKey`;
-- actualización de estado del gateway/dispositivo;
+- driver;
+- protocolo;
+- puerto físico;
+- Unit ID;
+- registros;
+- escalas;
+- endianess.
+
+Esos detalles pertenecen al plano local de adquisición del Gateway Agent. Core recibe telemetría semántica normalizada.
+
+## Heartbeat
+
+El simulador también publica el heartbeat V1 del gateway, incluyendo:
+
+- uptime;
+- buffer;
+- disponibilidad de red;
+- salud básica del sistema;
+- estado ONLINE de los dispositivos simulados;
+- última lectura exitosa.
+
+Esto permite que el Front muestre conectividad y estado de dispositivos de forma coherente con un gateway real.
+
+## Validación previa al envío
+
+Antes de publicar la primera muestra, el simulador ejecuta:
+
+```text
+GET /api/v1/gateway/config
+```
+
+y comprueba:
+
+1. que la credencial sea válida;
+2. que el código del gateway coincida;
+3. que los dispositivos solicitados estén habilitados para ese gateway.
+
+Si alguna condición falla, se detiene sin generar telemetría.
+
+## Qué valida realmente
+
+Al usar un gateway y dispositivos provisionados en el ambiente de pruebas, el simulador comprueba el circuito completo:
+
+- autenticación Bearer;
+- configuración Cloud → Gateway;
+- asociación gateway ↔ dispositivo;
+- contrato Gateway → Core;
+- catálogo de métricas;
+- tipos de datos;
+- idempotencia por `message_id`;
+- estado del gateway;
+- estado del dispositivo;
 - latest readings;
 - histórico;
 - motores de condición;
 - alarmas y recuperaciones;
-- vistas del Front que consumen telemetría real.
+- tendencias;
+- reportes;
+- vistas del Front.
 
 ## Qué no valida
 
-No valida el protocolo físico del equipo. Por ejemplo, no comprueba:
+El simulador no reemplaza las pruebas de hardware y no valida:
 
-- mapa Modbus del PM5560;
-- mapa GenComm/Modbus del DSE8660;
-- recepción BLE real;
+- mapa Modbus real del PM5560;
+- mapa GenComm/Modbus real del DSE8660;
+- recepción BLE física;
 - RS-485;
 - baud rate;
+- direccionamiento;
 - registros;
 - endianess;
-- escalas físicas.
+- escalado físico.
 
-Eso corresponde al Gateway Agent y a las pruebas con hardware.
+Esas responsabilidades pertenecen al Gateway Agent y a los drivers productivos.
 
-## Recomendación para poblar el Preview
+## Entorno sugerido para validar el Front
 
-Crear al menos cuatro activos de prueba:
+Un conjunto mínimo útil sería:
 
 ```text
-Tablero Principal
-└── PM5560-01
-
-ATS Principal
-└── DSE8660-01
-└── DSE8660-02
-
-Cámara de Frío 01
-└── TEMP-01
-└── TEMP-02
-
-Celda MT-01
-└── CAM5-01
+Cliente Demo
+└── Sitio Demo
+    ├── Tablero Principal
+    │   └── PM5560-01
+    │
+    ├── ATS Principal
+    │   ├── DSE8660-01
+    │   └── DSE8660-02
+    │
+    └── Cámara de Frío 01
+        ├── TEMP-01
+        └── TEMP-02
 ```
 
-Ejecutando los perfiles en paralelo se obtiene un entorno con telemetría, tendencias, eventos y alarmas suficientemente rico para validar el Front sin depender del hardware de terreno.
+Ejecutando los tres perfiles en paralelo se obtiene un ambiente con suficiente telemetría para revisar Dashboard, activos, métricas, tendencias, histórico, conectividad, alertas y reportes.
+
+CAM5 puede incorporarse como un cuarto perfil del simulador unificado cuando migremos su generador de datos al contrato V1 del Gateway Agent.
+
+## Precaución
+
+Para Core, la telemetría simulada es telemetría válida. Por lo tanto puede:
+
+- cambiar el estado de un activo;
+- abrir alarmas;
+- resolver alarmas;
+- alimentar tendencias e históricos;
+- aparecer en reportes.
+
+Por eso debe utilizarse normalmente en Preview o en un tenant/sitio explícitamente destinado a pruebas.
