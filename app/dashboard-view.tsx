@@ -206,7 +206,7 @@ export function DashboardView({
           <div className="dashboard-priority-list">
             {data.priorityAssets.map((asset) => <button key={asset.id} onClick={() => onSelectAsset(asset.siteId, asset.id)}>
               <span className={`priority-state ${asset.criticalAlarms ? "critical" : asset.warningAlarms ? "warning" : "offline"}`} />
-              <span><strong>{asset.code} · {asset.name}</strong><small>{asset.area || assetTypeLabel(asset.assetType)}{asset.latestAlarmAt ? ` · ${relativeTime(asset.latestAlarmAt, data.generatedAt)}` : ""}</small></span>
+              <span><strong>{asset.name}</strong><small>{asset.area || assetTypeLabel(asset.assetType)}{asset.latestAlarmAt ? ` · ${relativeTime(asset.latestAlarmAt, data.generatedAt)}` : ""}</small></span>
               <span className="priority-count">{asset.criticalAlarms ? `${asset.criticalAlarms} crítica${asset.criticalAlarms === 1 ? "" : "s"}` : asset.warningAlarms ? `${asset.warningAlarms} advertencia${asset.warningAlarms === 1 ? "" : "s"}` : asset.state}</span>
               <IconArrowRight size={15} />
             </button>)}
