@@ -105,7 +105,7 @@ Esto permite observar en el portal:
 
 ## Métricas
 
-El payload usa `schemaVersion: "2.0"`, driver `dse8660_mkii` y el catálogo normalizado V1 del ATS:
+El payload usa `schemaVersion: "2.0"` y el catálogo normalizado V1 del ATS. El payload identifica al dispositivo sólo por su código; driver, protocolo y mapa físico permanecen en el Gateway Agent:
 
 - tensiones L-N y L-L de Fuente 1 y Fuente 2;
 - frecuencia de ambas fuentes;
