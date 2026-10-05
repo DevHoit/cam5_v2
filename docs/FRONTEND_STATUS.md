@@ -578,3 +578,19 @@ Validación: lint, simuladores, Gateway Agent, tests DB y build PASS.
 - El menú de Ingeniería deja de usar “adquisición” como descripción y pasa a capacidades/dispositivos.
 
 Validación final del bloque: lint, simuladores, Gateway Agent, tests DB y build PASS.
+
+
+## Configuración Core-only v3 (2026-10-05)
+
+Saneamiento funcional y visual de Configuración para respetar la frontera Gateway/Core.
+
+- Se eliminan de la UI de Core las pestañas Adquisición avanzada, Decodificación y Versiones legacy.
+- Configuración queda organizada en Activo / Dispositivos / Métricas y capacidades.
+- Core permite editar sólo identidad del activo y asociación lógica dispositivo → gateway.
+- La API de configuración devuelve métricas y capacidades de todos los dispositivos activos del activo, no sólo del primero.
+- Se eliminan formularios que intentaban PATCH de secciones acquisition/channels ya no soportadas por la API.
+- La UI deja explícito que drivers, buses, direcciones, registros, escalamiento, endianess y polling pertenecen al Gateway Agent.
+- Provisionamiento de Gateways aclara que Core entrega identidad/credenciales y que la configuración física permanece local en el Gateway Agent.
+- Estados vacíos, loading y diseño adoptan el sistema compacto v3.
+
+Validación final: lint, simuladores, Gateway Agent, tests DB y build PASS.
