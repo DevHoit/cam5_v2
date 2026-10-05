@@ -1078,13 +1078,13 @@ function auditActionLabel(value: string) {
   return value.replaceAll(".", " · ").replaceAll("_", " ");
 }
 
-function HistoryView({ assetId, assetName, siteName, canExport, onOpenTrend }: { assetId: string; assetName: string; siteName: string; canExport: boolean; onOpenTrend: (channelId: string, from: string, to: string) => void }) {
+function HistoryView({ assetId, assetName, siteName, canExport, canReadAlarms, canAudit, onOpenTrend }: { assetId: string; assetName: string; siteName: string; canExport: boolean; canReadAlarms: boolean; canAudit: boolean; onOpenTrend: (channelId: string, from: string, to: string) => void }) {
   const sensors = useSensorData();
   const notify = useFeedback();
   const [tab, setTab] = useState<HistoryTab>("measurements");
   const [today] = useState(() => new Intl.DateTimeFormat("en-CA").format(new Date()));
-  const [from, setFrom] = useState(() => new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10));
-  const [to, setTo] = useState(() => new Date().toISOString().slice(0, 10));
+  const [from, setFrom] = useState(() => new Intl.DateTimeFormat("en-CA").format(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)));
+  const [to, setTo] = useState(() => new Intl.DateTimeFormat("en-CA").format(new Date()));
   const [channel, setChannel] = useState("all");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
@@ -1099,7 +1099,12 @@ function HistoryView({ assetId, assetName, siteName, canExport, onOpenTrend }: {
 
   useEffect(() => {
     let active = true;
-    if (!assetId) return () => { active = false; };
+    if (!assetId) {
+      setMetricOptions([]);
+      setNormalizedHistory(false);
+      setChannel("all");
+      return () => { active = false; };
+    }
     void portalRequest<{ assets: Array<{ id: string; devices: Array<{ id: string; code: string; name: string; metrics: Array<{ key: string; code: string; name: string; dataType: string }> }> }> }>(`/api/v1/telemetry/metrics/latest?assetId=${encodeURIComponent(assetId)}`)
       .then((data) => {
         if (!active) return;
@@ -1179,13 +1184,13 @@ function HistoryView({ assetId, assetName, siteName, canExport, onOpenTrend }: {
       <div className="history-toolbar-v3">
         <div className="module-tabs history-tabs-v3" role="tablist" aria-label="Tipo de histórico">
           <button className={tab === "measurements" ? "active" : ""} onClick={() => changeTab("measurements")}><Timeline size={15} /> Mediciones</button>
-          <button className={tab === "alarms" ? "active" : ""} onClick={() => changeTab("alarms")}><BellRing size={15} /> Alarmas</button>
-          <button className={tab === "audit" ? "active" : ""} onClick={() => changeTab("audit")}><ShieldCheck size={15} /> Auditoría del sitio</button>
+          {canReadAlarms && <button className={tab === "alarms" ? "active" : ""} onClick={() => changeTab("alarms")}><BellRing size={15} /> Alarmas</button>}
+          {canAudit && <button className={tab === "audit" ? "active" : ""} onClick={() => changeTab("audit")}><ShieldCheck size={15} /> Auditoría del sitio</button>}
         </div>
         <div className="history-range-summary"><span>{result?.page ?? page}/{result?.totalPages ?? 1}</span><small>Página</small></div>
       </div>
 
-      <div className="history-filterbar-v3">
+      <div className={`history-filterbar-v3 ${tab !== "measurements" || !assetId ? "history-filterbar-compact-v4" : ""}`}>
         <label className="search-field"><Search size={16} /><input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder={tab === "audit" ? "Buscar acción o recurso del sitio…" : normalizedHistory ? "Buscar dispositivo o métrica…" : "Buscar métrica o evento…"} /></label>
         {tab === "measurements" && assetId && <label className="history-filter-select"><span>{normalizedHistory ? "Métrica" : "Variable"}</span><select value={channel} onChange={(event) => { setChannel(event.target.value); setPage(1); }}><option value="all">{normalizedHistory ? "Todas las métricas" : "Todas las variables"}</option>{normalizedHistory ? metricOptions.map((metric) => <option key={metric.id} value={metric.id}>{metric.label}</option>) : activeSensors.map((sensor) => <option key={sensor.id} value={sensor.id}>{sensor.id} · {sensor.label}</option>)}</select><ChevronDown size={12} /></label>}
         <label className="history-date-filter"><span>Desde</span><input type="date" value={from} max={to} onChange={(event) => { setFrom(event.target.value); setPage(1); }} /></label>
@@ -2311,7 +2316,7 @@ export default function Home() {
               ? <GenericTrendsView assetId={activePoint.id} initialMetricKey={trendSensorId} canExport={sessionUser.permissions.includes("history.export")} notify={notify} />
               : view === "trends" && <TrendsView assetId={activePoint?.id ?? ""} channels={sensors.map((sensor) => ({ id: sensor.id, label: sensor.label, zone: sensor.zone, unit: sensor.unit, state: sensor.state, enabled: sensor.enabled }))} period={period} setPeriod={setPeriod} selectedId={resolvedTrendSensorId} onSelectChannel={selectTrendChannel} onBackToMap={() => navigate("cabinet")} rangeWindow={trendWindow} setRangeWindow={setTrendWindow} canExport={sessionUser.permissions.includes("history.export")} notify={notify} />}
             {view === "alarms" && <AlarmsView assetId={activePoint?.id ?? ""} permissions={sessionUser.permissions} onSummaryChange={setAlarmSummary} onOpenTrend={openAlarmTrend} onOpenAsset={(id) => { setActivePointId(id); navigate("overview"); }} />}
-            {view === "history" && <HistoryView assetId={activePoint?.id ?? ""} assetName={activePoint?.name ?? ""} siteName={sessionUser.siteName} canExport={sessionUser.permissions.includes("history.export")} onOpenTrend={openTrendRange} />}
+            {view === "history" && <HistoryView assetId={activePoint?.id ?? ""} assetName={activePoint?.name ?? ""} siteName={sessionUser.siteName} canExport={sessionUser.permissions.includes("history.export")} canReadAlarms={sessionUser.permissions.includes("alarms.read")} canAudit={sessionUser.permissions.includes("audit.read")} onOpenTrend={openTrendRange} />}
             {view === "assets" && <OperationalHierarchyView hierarchy={hierarchy} loading={hierarchyLoading} permissions={sessionUser.permissions} onReload={loadHierarchy} onSwitchSite={switchSite} onOpenAsset={openDashboardAsset} />}
             {view === "operations" && <OperationsView
               assets={(hierarchy?.points ?? []).map((point) => ({ id: point.id, code: point.code, name: point.name }))}
