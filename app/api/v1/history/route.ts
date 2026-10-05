@@ -94,7 +94,15 @@ export async function GET(request: NextRequest) {
           eq(deviceMetrics.enabled, true),
           between(metricReadings.recordedAt, from, to),
         ];
-        if (channel !== "all") filters.push(or(eq(deviceMetrics.code, channel), eq(metricDefinitions.key, channel))!);
+        if (channel !== "all") {
+          const [deviceId, metricKey] = channel.includes("::") ? channel.split("::", 2) : ["", channel];
+          if (deviceId && metricKey) {
+            filters.push(eq(devices.id, deviceId));
+            filters.push(or(eq(deviceMetrics.code, metricKey), eq(metricDefinitions.key, metricKey))!);
+          } else {
+            filters.push(or(eq(deviceMetrics.code, channel), eq(metricDefinitions.key, channel))!);
+          }
+        }
         if (q) filters.push(or(
           ilike(deviceMetrics.code, `%${q}%`),
           ilike(deviceMetrics.name, `%${q}%`),
