@@ -3985,3 +3985,7 @@ button.dashboard-kpi:hover { transform: translateY(-1px); border-color: #bae6fd;
   .role-matrix-v3 { grid-template-columns:1fr; }
   .role-matrix-v3 .role-matrix-grid { grid-template-columns:1fr; }
 }
+
+
+/* Optional field hint */
+.optional-field { margin-left:5px; color:#a1a1aa; font-size:.9em; font-style:normal; font-weight:500; }
