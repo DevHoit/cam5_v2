@@ -89,10 +89,12 @@ function downloadText(filename: string, content: string, type = "text/plain;char
 
 export function GatewayProvisioningView({
   canWrite,
+  siteName,
   notify,
   confirm,
 }: {
   canWrite: boolean;
+  siteName: string;
   notify: (message: string, tone?: NoticeTone) => void;
   confirm: (request: ConfirmRequest) => void;
 }) {
@@ -261,7 +263,11 @@ export function GatewayProvisioningView({
   if (error && !data) return <section className="panel provisioning-state provisioning-error"><IconAlertTriangle size={24} /><div><h2>No fue posible cargar el módulo</h2><p>{error}</p><button onClick={() => setReload((current) => current + 1)}>Reintentar</button></div></section>;
   if (!data) return null;
 
-  return <>
+  return <div className="gateway-provisioning-v4">
+    <section className="engineering-commandbar">
+      <div><h1>Gateways</h1><p>{siteName} · identidad, credenciales y conexión segura con HoitLive Core.</p></div>
+      <div className="engineering-command-actions"><span className="engineering-state state-ready"><IconShieldCheck size={14} /> Contexto de sitio</span></div>
+    </section>
     <section className="module-summary-grid provisioning-summary-grid">
       <article><span className="module-summary-icon blue"><IconRouter size={19} /></span><div><small>Gateways del sitio</small><strong>{data.summary.gateways}</strong><span>{data.summary.onlineGateways} en línea</span></div></article>
       <article><span className="module-summary-icon green"><IconKey size={19} /></span><div><small>Credenciales vigentes</small><strong>{data.summary.activeCredentials}</strong><span>{data.summary.usedCredentials} verificadas por uso</span></div></article>
@@ -314,5 +320,5 @@ export function GatewayProvisioningView({
       <Pagination page={data.page} totalPages={data.totalPages} total={data.total} pageSize={data.pageSize} onPageChange={setPage} itemLabel="credenciales" />
       <footer><IconShieldCheck size={15} /><span>Renovar conserva el token instalado; rotar crea uno nuevo. Toda renovación, rotación o revocación queda registrada en auditoría.</span></footer>
     </section>
-  </>;
+  </div>;
 }
