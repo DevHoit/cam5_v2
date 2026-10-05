@@ -169,7 +169,6 @@ def main() -> int:
             },
             "device": {
                 "code": DEVICE_CODE,
-                "driver": "schneider_pm5560",
             },
             "metrics": values,
         }
