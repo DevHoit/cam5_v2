@@ -520,3 +520,21 @@ Rediseño alineado con Dashboard, Activos y Resumen del activo.
 - Responsive actualizado para desktop/tablet/mobile.
 
 Validación: lint, simuladores, Gateway Agent, tests DB y build PASS.
+
+
+## Tendencias + Histórico v3 (2026-10-05)
+
+Rediseño conjunto del análisis temporal para alinear la experiencia con Dashboard, Alertas y Resumen del activo.
+
+- Tendencias normalizadas y legacy comparten cabecera compacta y terminología basada en métricas.
+- Se eliminan las cabeceras globales redundantes de Tendencias e Histórico.
+- Estados sin activo se muestran como estados vacíos explícitos, sin controles inválidos.
+- Tendencias prioriza métrica, periodo, comparación, calidad y datos históricos.
+- Se reemplaza “Canal principal” por “Métrica” en la interfaz visible.
+- Histórico deja la tabla ancha como patrón principal y adopta un feed temporal con fecha, origen, lectura, calidad y acceso a tendencia.
+- Histórico mantiene Mediciones / Alarmas / Auditoría como vistas separadas.
+- Filtros de búsqueda, métrica y rango temporal se compactan en una sola barra.
+- Exportación CSV se mantiene y queda integrada en la command bar.
+- Responsive actualizado para desktop/tablet/mobile.
+
+Validación: lint, simuladores, Gateway Agent, tests DB y build PASS.
