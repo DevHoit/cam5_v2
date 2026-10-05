@@ -153,16 +153,15 @@ export function OperationsView({
   const active = data?.windows.filter((item) => item.status === "active").length ?? 0;
   const scheduled = data?.windows.filter((item) => item.status === "scheduled").length ?? 0;
 
-  const tabs = <article className="panel module-panel">
-    <div className="module-toolbar">
-      <div className="module-tabs" role="tablist" aria-label="Operación">
-        <button className={tab === "noc" ? "active" : ""} onClick={() => setTab("noc")}>NOC</button>
-        <button className={tab === "maintenance" ? "active" : ""} onClick={() => setTab("maintenance")}>Mantenimiento</button>
-        <button className={tab === "shifts" ? "active" : ""} onClick={() => setTab("shifts")}>Turnos</button>
-        <button className={tab === "escalation" ? "active" : ""} onClick={() => setTab("escalation")}>Escalamiento</button>
-      </div>
+  const tabs = <section className="operations-commandbar">
+    <div><h1>Operación</h1><p>Continuidad, mantenimiento, guardias y escalamiento del sitio.</p></div>
+    <div className="operations-tabs" role="tablist" aria-label="Operación">
+      <button className={tab === "noc" ? "active" : ""} onClick={() => setTab("noc")}>Estado operacional</button>
+      <button className={tab === "maintenance" ? "active" : ""} onClick={() => setTab("maintenance")}>Mantenimiento</button>
+      <button className={tab === "shifts" ? "active" : ""} onClick={() => setTab("shifts")}>Turnos</button>
+      <button className={tab === "escalation" ? "active" : ""} onClick={() => setTab("escalation")}>Escalamiento</button>
     </div>
-  </article>;
+  </section>;
 
   if (tab === "noc") return <>{tabs}<NocView /></>;
   if (tab === "shifts") return <>{tabs}<ShiftsView canManageClient={canManageClient} notify={notify} /></>;
@@ -170,16 +169,15 @@ export function OperationsView({
 
   return <>
     {tabs}
-    <section className="module-summary-grid">
-      <article><span className="module-summary-icon amber"><IconTool size={19} /></span><div><small>Mantenimiento activo</small><strong>{active}</strong><span>Ventanas en curso</span></div></article>
-      <article><span className="module-summary-icon blue"><IconCalendarTime size={19} /></span><div><small>Programado</small><strong>{scheduled}</strong><span>Próximas ventanas</span></div></article>
-      <article><span className="module-summary-icon green"><IconCircleCheck size={19} /></span><div><small>Histórico</small><strong>{data?.windows.length ?? 0}</strong><span>Con trazabilidad</span></div></article>
+    <section className="operations-status-strip">
+      <article className={active ? "warning" : ""}><span><IconTool size={17} /></span><div><small>Mantenimiento activo</small><strong>{active}</strong><span>Ventanas en curso</span></div></article>
+      <article><span><IconCalendarTime size={17} /></span><div><small>Programado</small><strong>{scheduled}</strong><span>Próximas ventanas</span></div></article>
+      <article className="healthy"><span><IconCircleCheck size={17} /></span><div><small>Histórico</small><strong>{data?.windows.length ?? 0}</strong><span>Con trazabilidad</span></div></article>
     </section>
 
-    <article className="panel module-panel">
-      <div className="module-toolbar">
+    <article className="panel module-panel operations-panel-v3">
+      <div className="operations-panel-head">
         <div>
-          <span className="eyebrow">Operación</span>
           <h2>Ventanas de mantenimiento</h2>
           <p>La telemetría continúa; las notificaciones se suprimen únicamente dentro del alcance y período definidos.</p>
         </div>
@@ -187,7 +185,7 @@ export function OperationsView({
       </div>
 
       {canWrite && <form className="hierarchy-create-form" onSubmit={createWindow}>
-        <div className="hierarchy-form-heading"><span className="eyebrow">Nueva ventana</span><h3>Programar mantenimiento</h3></div>
+        <div className="hierarchy-form-heading"><h3>Programar mantenimiento</h3><p>Define alcance y periodo de supresión operacional.</p></div>
         <label><span>Alcance</span><select value={form.scopeType} onChange={(event) => setForm({ ...form, scopeType: event.target.value as typeof form.scopeType })}>
           <option value="site">Sitio activo</option>
           <option value="asset">Activo</option>
