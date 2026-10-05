@@ -502,3 +502,21 @@ Rediseño del flujo Dashboard → Sitio → Activo, alineado con el nuevo shell 
 - Los banners globales de adquisición ya no se muestran en Overview; las vistas técnicas pueden seguir mostrando estados técnicos cuando corresponda.
 
 Validación: lint, simuladores, Gateway Agent, tests DB y build PASS.
+
+
+## Centro de Alertas v3 (2026-10-05)
+
+Rediseño alineado con Dashboard, Activos y Resumen del activo.
+
+- La vista deja de ser una tabla administrativa con detalle inferior y pasa a ser un workspace de atención operacional.
+- Se elimina la cabecera global redundante de la vista Alarmas; el módulo usa una command bar compacta.
+- Resumen superior compacto: críticas, advertencias, eventos sin responsable y MTTA.
+- Eventos se muestran como lista priorizada con severidad, origen, antigüedad, valor y estado de workflow.
+- El evento seleccionado se gestiona en un panel lateral con responsable, acciones, acceso al activo, tendencia y trazabilidad.
+- Se mantienen reconocimiento, asignación, resolución, reapertura, cierre con nota y notas de seguimiento.
+- Sin activo seleccionado se presenta un estado vacío explícito, sin tabla ni loaders inválidos.
+- Reglas y umbrales permanecen como segunda pestaña técnica, separada de la operación diaria.
+- Terminología visible migra de Canal a Métrica / origen donde el contrato actual lo permite.
+- Responsive actualizado para desktop/tablet/mobile.
+
+Validación: lint, simuladores, Gateway Agent, tests DB y build PASS.
