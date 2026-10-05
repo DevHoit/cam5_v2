@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { assets, auditLogs, deviceCapabilities, deviceMetrics, deviceModels, devices, gateways, metricDefinitions, sites, userAssetScopes } from "../../../../db/schema";
 import { apiErrorResponse, ApiError, requestMetadata, requireApiSession } from "../_lib/auth";
 
@@ -21,10 +21,10 @@ export async function GET(request:NextRequest){
   if(!asset) throw new ApiError(404,"El activo no existe.");
   const deviceRows=await db.select({id:devices.id,code:devices.code,name:devices.name,state:devices.state,serialNumber:devices.serialNumber,firmwareVersion:devices.firmwareVersion,lastReadAt:devices.lastReadAt,modelCode:deviceModels.code,modelName:deviceModels.name,gatewayId:gateways.id,gatewayCode:gateways.code,gatewayName:gateways.name,gatewayState:gateways.state,gatewayLastSeenAt:gateways.lastSeenAt}).from(devices).leftJoin(deviceModels,eq(deviceModels.id,devices.modelId)).leftJoin(gateways,eq(gateways.id,devices.gatewayId)).where(and(eq(devices.assetId,assetId),eq(devices.active,true))).orderBy(asc(devices.code));
   const deviceIds=deviceRows.map(d=>d.id);
-  const metrics=deviceIds.length?await db.select({deviceId:deviceMetrics.deviceId,id:deviceMetrics.id,code:deviceMetrics.code,name:deviceMetrics.name,enabled:deviceMetrics.enabled,key:metricDefinitions.key,category:metricDefinitions.category,unit:metricDefinitions.unit,dataType:metricDefinitions.dataType}).from(deviceMetrics).innerJoin(metricDefinitions,eq(metricDefinitions.id,deviceMetrics.metricDefinitionId)).where(eq(deviceMetrics.deviceId,deviceIds[0])).orderBy(deviceMetrics.displayOrder):[];
-  const capabilities=deviceIds.length?await db.select({deviceId:deviceCapabilities.deviceId,key:deviceCapabilities.capabilityKey,enabled:deviceCapabilities.enabled}).from(deviceCapabilities).where(eq(deviceCapabilities.deviceId,deviceIds[0])):[];
+  const metrics=deviceIds.length?await db.select({deviceId:deviceMetrics.deviceId,id:deviceMetrics.id,code:deviceMetrics.code,name:deviceMetrics.name,enabled:deviceMetrics.enabled,key:metricDefinitions.key,category:metricDefinitions.category,unit:metricDefinitions.unit,dataType:metricDefinitions.dataType}).from(deviceMetrics).innerJoin(metricDefinitions,eq(metricDefinitions.id,deviceMetrics.metricDefinitionId)).where(inArray(deviceMetrics.deviceId,deviceIds)).orderBy(deviceMetrics.deviceId,deviceMetrics.displayOrder):[];
+  const capabilities=deviceIds.length?await db.select({deviceId:deviceCapabilities.deviceId,key:deviceCapabilities.capabilityKey,enabled:deviceCapabilities.enabled}).from(deviceCapabilities).where(inArray(deviceCapabilities.deviceId,deviceIds)):[];
   const siteGateways=await db.select({id:gateways.id,code:gateways.code,name:gateways.name,state:gateways.state,lastSeenAt:gateways.lastSeenAt}).from(gateways).where(and(eq(gateways.siteId,asset.siteId),eq(gateways.active,true))).orderBy(gateways.code);
-  const warnings:string[]=[]; if(!deviceRows.length) warnings.push("El activo no tiene dispositivos asociados."); if(!siteGateways.length) warnings.push("El sitio no tiene gateways activos."); if(deviceRows.length&&!metrics.some(m=>m.enabled)) warnings.push("El dispositivo no tiene métricas habilitadas.");
+  const warnings:string[]=[]; if(!deviceRows.length) warnings.push("El activo no tiene dispositivos asociados."); if(!siteGateways.length) warnings.push("El sitio no tiene gateways activos."); if(deviceRows.length&&!metrics.some(m=>m.enabled)) warnings.push("Los dispositivos del activo no tienen métricas habilitadas.");
   return Response.json({asset,devices:deviceRows.map(d=>({...d,lastReadAt:d.lastReadAt?.toISOString()??null,gatewayLastSeenAt:d.gatewayLastSeenAt?.toISOString()??null})),gateways:siteGateways.map(g=>({...g,lastSeenAt:g.lastSeenAt?.toISOString()??null})),metrics,capabilities,validation:{valid:warnings.length===0,warnings}}, {headers:{"Cache-Control":"no-store"}});
  }catch(error){return apiErrorResponse(error);}
 }
