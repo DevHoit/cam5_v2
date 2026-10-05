@@ -182,10 +182,10 @@ export function GenericTrendsView({
         const asset = result.assets.find((item) => item.id === assetId);
         const defaultId = preferredMetricId(asset);
         const preferred = initialMetricKey
-          ? asset?.devices.flatMap((device) => device.metrics.map((metric) => ({ device, metric })))
-              .find(({ metric }) => metric.key === initialMetricKey || metric.code === initialMetricKey)
+          ? asset?.devices.flatMap((device) => device.metrics.map((metric) => ({ device, metric, optionId: `${device.id}::${metric.key}` })))
+              .find(({ metric, optionId }) => optionId === initialMetricKey || metric.key === initialMetricKey || metric.code === initialMetricKey)
           : null;
-        setSelectedId((current) => current || (preferred ? `${preferred.device.id}::${preferred.metric.key}` : defaultId));
+        setSelectedId((current) => current || (preferred ? preferred.optionId : defaultId));
       })
       .catch((cause) => { if (alive) setError(cause instanceof Error ? cause.message : "No fue posible consultar las métricas."); })
       .finally(() => { if (alive) setLoading(false); });
