@@ -5436,6 +5436,7 @@ button.dashboard-kpi:hover { transform: translateY(-1px); border-color: #bae6fd;
 /* Continuity tabs share the same scale */
 .operations-v4 .module-summary-grid {
   margin:0;
+  grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
   gap:12px;
 }
 .operations-v4 .module-summary-grid > article {
