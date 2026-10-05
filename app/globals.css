@@ -40,7 +40,7 @@ button { cursor: pointer; }
 .brand-copy small { color: #5d6067; font-size: var(--text-xs); font-weight: 650; letter-spacing: .08em; text-transform: uppercase; }
 .sidebar-close { width: 34px; height: 34px; display: none; margin-left: auto; place-items: center; border: 1px solid #303238; border-radius: 9px; color: #a1a1aa; background: #181a1e; }
 
-.sidebar-nav { padding: 25px 14px 12px; overflow: auto; flex: 1; scrollbar-width: thin; scrollbar-color: #34363c transparent; }
+.sidebar-nav { padding: 25px 14px 22px; overflow: auto; flex: 1; scrollbar-width: thin; scrollbar-color: #34363c transparent; }
 .nav-group { margin-bottom: 21px; }
 .nav-group-heading { height: 25px; padding: 0 7px; display: flex; align-items: center; gap: 8px; }
 .nav-group-heading > span { color: #3f4248; font-size: var(--text-xs); font-weight: 760; font-variant-numeric: tabular-nums; }
@@ -63,13 +63,6 @@ button { cursor: pointer; }
 .nav-chevron { color: #44474d; transition: color .18s ease, transform .18s ease; }
 .nav-items > button:hover .nav-chevron, .nav-items > button.active .nav-chevron { color: #7dd3fc; transform: translateX(2px); }
 
-.sidebar-status { padding: 13px 14px 15px; border-top: 1px solid rgba(63,63,70,.55); background: rgba(7,8,10,.5); }
-.user-card { width: 100%; min-height: 52px; padding: 7px 8px; display: grid; grid-template-columns: 35px 1fr 16px; align-items: center; gap: 9px; color: #777a82; background: transparent; border: 1px solid transparent; border-radius: 10px; text-align: left; }
-.user-card:hover { color: #a1a1aa; background: #17191c; border-color: #272a2f; }
-.user-avatar { width: 35px; height: 35px; display: grid; place-items: center; border-radius: 10px; color: #bae6fd; background: linear-gradient(145deg, rgba(2,132,199,.22), rgba(2,132,199,.11)); border: 1px solid rgba(56,189,248,.18); font-size: var(--text-xs); font-weight: 820; }
-.user-copy { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.user-copy strong { overflow: hidden; color: #d4d4d8; font-size: var(--text-xs); font-weight: 670; text-overflow: ellipsis; white-space: nowrap; }
-.user-copy small { color: #565961; font-size: var(--text-xs); }
 
 .main-shell { min-width: 0; flex: 1; height: 100vh; display: flex; flex-direction: column; }
 .topbar { height: 72px; flex: 0 0 72px; padding: 0 28px; display: flex; align-items: center; justify-content: space-between; gap: 18px; background: rgba(255,255,255,.88); backdrop-filter: blur(16px); border-bottom: 1px solid rgba(228,228,231,.9); box-shadow: 0 1px 2px rgba(0,0,0,.03); position: relative; z-index: 20; }
@@ -1807,7 +1800,6 @@ button.module-table-row { width: 100%; }
 .login-checking { color: #0369a1; background: #f0f9ff; border: 1px solid #bae6fd; }.login-checking strong { color: #075985; }.login-checking small { color: #64748b; }
 .authenticated-role { min-height: 42px; padding: 0 12px; display: flex; align-items: center; gap: 8px; color: #0369a1; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 9px; }.authenticated-role span { display: flex; flex-direction: column; }.authenticated-role small { color: #64748b; font-size: var(--text-xs); }.authenticated-role strong { font-size: var(--text-label); }
 .topbar-logout { width: 40px; height: 40px; display: grid; place-items: center; color: #64748b; background: #fff; border: 1px solid #e2e8f0; border-radius: 9px; }.topbar-logout:hover { color: #b91c1c; border-color: #fecaca; background: #fff7f7; }
-.sidebar-logout { width: 100%; min-height: 39px; margin-top: 8px; display: flex; align-items: center; justify-content: center; gap: 8px; color: #a1a1aa; background: transparent; border: 1px solid #27272a; border-radius: 9px; font-size: var(--text-label); font-weight: 650; }.sidebar-logout:hover { color: #fecaca; border-color: #7f1d1d; background: rgba(127,29,29,.16); }
 .history-search-bar, .user-list-toolbar { padding: 14px 16px; display: flex; align-items: flex-end; gap: 10px; background: #fbfcfd; border-bottom: 1px solid #e4e4e7; }
 .history-search-bar .search-field, .user-list-toolbar .search-field { flex: 1; min-width: 220px; }
 .history-search-bar > label:not(.search-field), .user-list-toolbar > label:not(.search-field) { min-width: 145px; display: flex; flex-direction: column; gap: 5px; position: relative; }
