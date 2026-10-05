@@ -210,7 +210,7 @@ export function EscalationPoliciesView({
     }
   };
 
-  return <>
+  return <div className="escalation-v6">
     <section className="module-summary-grid">
       <article><span className="module-summary-icon blue"><IconBellRinging size={19} /></span><div><small>Políticas</small><strong>{data?.policies.length ?? 0}</strong><span>{data?.policies.filter((item) => item.enabled).length ?? 0} activas</span></div></article>
       <article><span className="module-summary-icon green"><IconShieldCheck size={19} /></span><div><small>Niveles configurados</small><strong>{data?.policies.reduce((total, item) => total + item.levels.length, 0) ?? 0}</strong><span>Secuencias de atención</span></div></article>
@@ -330,5 +330,5 @@ export function EscalationPoliciesView({
         {!data?.policies.length && <div className="table-empty-state"><IconBellRinging size={21} /><div><strong>Sin políticas de escalamiento</strong><p>Crea una secuencia para definir quién recibe las alertas y cuándo deben escalarse.</p></div></div>}
       </div></div>}
     </article>
-  </>;
+  </div>;
 }
