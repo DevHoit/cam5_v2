@@ -1215,7 +1215,7 @@ function OperationalHierarchyView({
 }) {
   type Resource = "client" | "site" | "point" | "gateway" | "controller";
   type EditableResource = PortalHierarchy["clients"][number] | PortalHierarchy["sites"][number] | PortalHierarchy["points"][number] | PortalHierarchy["gateways"][number] | PortalHierarchy["controllers"][number];
-  type EditorState = { resource: Resource; id: string; code: string; name: string; active: boolean; legalName: string; taxId: string; contactEmail: string; description: string; timezone: string; area: string; voltage: string; ipAddress: string; serialNumber: string };
+  type EditorState = { resource: Resource; id: string; code: string; name: string; active: boolean; legalName: string; taxId: string; contactEmail: string; description: string; timezone: string; area: string; assetType: string; voltage: string; ipAddress: string; serialNumber: string };
   const notify = useFeedback();
   const confirm = useConfirm();
   const [tab, setTab] = useState<"structure" | "connections">("structure");
@@ -1225,7 +1225,7 @@ function OperationalHierarchyView({
   const [saving, setSaving] = useState(false);
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [editorSaving, setEditorSaving] = useState(false);
-  const [form, setForm] = useState({ code: "", name: "", clientId: "", legalName: "", taxId: "", contactEmail: "", description: "", timezone: "America/Santiago", area: "", voltage: "", ipAddress: "", pointId: "", gatewayId: "", modelId: "" });
+  const [form, setForm] = useState({ code: "", name: "", clientId: "", legalName: "", taxId: "", contactEmail: "", description: "", timezone: "America/Santiago", area: "", assetType: "general_asset", voltage: "", ipAddress: "", pointId: "", gatewayId: "", modelId: "" });
 
   const canManageClients = permissions.includes("clients.manage");
   const canManageSites = permissions.includes("sites.manage");
@@ -1238,6 +1238,27 @@ function OperationalHierarchyView({
     ...(canManageConnections ? [{ value: "gateway" as const, label: "Gateway" }, { value: "controller" as const, label: "Dispositivo" }] : []),
   ];
   const resourceLabels: Record<Resource, string> = { client: "Cliente", site: "Sitio", point: "Activo", gateway: "Gateway", controller: "Dispositivo" };
+  const assetTypes = [
+    { value: "general_asset", label: "Activo general", group: "General", electrical: false },
+    { value: "room_environment", label: "Sala / ambiente", group: "General", electrical: false },
+    { value: "cold_room", label: "Cámara de frío", group: "Climatización y frío", electrical: false },
+    { value: "hvac", label: "Climatización / HVAC", group: "Climatización y frío", electrical: false },
+    { value: "electrical_point", label: "Punto o sistema eléctrico", group: "Eléctrico", electrical: true },
+    { value: "switchgear_cabinet", label: "Celda / tablero eléctrico", group: "Eléctrico", electrical: true },
+    { value: "transformer", label: "Transformador", group: "Eléctrico", electrical: true },
+    { value: "ats", label: "ATS / transferencia automática", group: "Eléctrico", electrical: true },
+    { value: "generator", label: "Generador", group: "Eléctrico", electrical: true },
+    { value: "ups", label: "UPS", group: "Eléctrico", electrical: true },
+    { value: "motor", label: "Motor", group: "Equipos rotativos", electrical: false },
+    { value: "pump", label: "Bomba", group: "Equipos rotativos", electrical: false },
+    { value: "compressor", label: "Compresor", group: "Equipos rotativos", electrical: false },
+    { value: "fan", label: "Ventilador", group: "Equipos rotativos", electrical: false },
+    { value: "conveyor", label: "Correa transportadora", group: "Proceso", electrical: false },
+    { value: "tank", label: "Estanque / depósito", group: "Proceso", electrical: false },
+    { value: "process_equipment", label: "Equipo de proceso", group: "Proceso", electrical: false },
+  ] as const;
+  const assetTypeLabel = (value: string) => assetTypes.find((item) => item.value === value)?.label ?? value.replaceAll("_", " ");
+  const assetTypeIsElectrical = (value: string) => Boolean(assetTypes.find((item) => item.value === value)?.electrical);
   const filteredPoints = (hierarchy?.points ?? []).filter((point) => `${point.code} ${point.name} ${point.area ?? ""}`.toLowerCase().includes(query.toLowerCase()));
   const filteredGateways = (hierarchy?.gateways ?? []).filter((gateway) => `${gateway.code} ${gateway.name} ${gateway.softwareVersion ?? ""}`.toLowerCase().includes(query.toLowerCase()));
   const filteredControllers = (hierarchy?.controllers ?? []).filter((controller) => `${controller.code} ${controller.name} ${controller.model}`.toLowerCase().includes(query.toLowerCase()));
@@ -1245,7 +1266,7 @@ function OperationalHierarchyView({
   const gatewayPage = useClientPagination(filteredGateways, 6);
   const controllerPage = useClientPagination(filteredControllers, 8);
 
-  const resetForm = () => setForm({ code: "", name: "", clientId: hierarchy?.active.clientId ?? "", legalName: "", taxId: "", contactEmail: "", description: "", timezone: "America/Santiago", area: "", voltage: "", ipAddress: "", pointId: "", gatewayId: "", modelId: "" });
+  const resetForm = () => setForm({ code: "", name: "", clientId: hierarchy?.active.clientId ?? "", legalName: "", taxId: "", contactEmail: "", description: "", timezone: "America/Santiago", area: "", assetType: "general_asset", voltage: "", ipAddress: "", pointId: "", gatewayId: "", modelId: "" });
   const changeResource = (value: Resource) => { setResource(value); resetForm(); };
   const openEditor = (nextResource: Resource, value: EditableResource) => {
     const item = value as unknown as Record<string, unknown>;
@@ -1262,6 +1283,7 @@ function OperationalHierarchyView({
       description: field("description"),
       timezone: field("timezone") || "America/Santiago",
       area: field("area"),
+      assetType: field("type") || "general_asset",
       voltage: item.nominalVoltageKv === null || item.nominalVoltageKv === undefined ? "" : String(item.nominalVoltageKv),
       ipAddress: field("ipAddress"),
       serialNumber: field("serialNumber"),
@@ -1275,7 +1297,7 @@ function OperationalHierarchyView({
       const payload: Record<string, unknown> = { resource, code: form.code, name: form.name };
       if (resource === "client") Object.assign(payload, { legalName: form.legalName, taxId: form.taxId, contactEmail: form.contactEmail });
       if (resource === "site") Object.assign(payload, { clientId: form.clientId || hierarchy.active.clientId, description: form.description, timezone: form.timezone || "America/Santiago" });
-      if (resource === "point") Object.assign(payload, { siteId: hierarchy.active.siteId, area: form.area, nominalVoltageKv: form.voltage ? Number(form.voltage) : undefined });
+      if (resource === "point") Object.assign(payload, { siteId: hierarchy.active.siteId, area: form.area, type: form.assetType, nominalVoltageKv: assetTypeIsElectrical(form.assetType) && form.voltage ? Number(form.voltage) : undefined });
       if (resource === "gateway") Object.assign(payload, { siteId: hierarchy.active.siteId });
       if (resource === "controller") Object.assign(payload, { pointId: form.pointId, gatewayId: form.gatewayId, modelId: form.modelId });
       await portalRequest("/api/v1/hierarchy", { method: "POST", body: JSON.stringify(payload) });
@@ -1298,7 +1320,7 @@ function OperationalHierarchyView({
       const payload: Record<string, unknown> = { resource: editor.resource, id: editor.id, name: editor.name, active: editor.active };
       if (editor.resource === "client") Object.assign(payload, { legalName: editor.legalName, taxId: editor.taxId, contactEmail: editor.contactEmail });
       if (editor.resource === "site") Object.assign(payload, { description: editor.description, timezone: editor.timezone });
-      if (editor.resource === "point") Object.assign(payload, { area: editor.area, nominalVoltageKv: editor.voltage ? Number(editor.voltage) : null });
+      if (editor.resource === "point") Object.assign(payload, { area: editor.area, type: editor.assetType, nominalVoltageKv: assetTypeIsElectrical(editor.assetType) && editor.voltage ? Number(editor.voltage) : null });
       if (editor.resource === "gateway") Object.assign(payload, { serialNumber: editor.serialNumber });
       
       await portalRequest("/api/v1/hierarchy", { method: "PATCH", body: JSON.stringify(payload) });
@@ -1400,7 +1422,18 @@ function OperationalHierarchyView({
         <label><span>Nombre</span><input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Nombre operacional" /></label>
         {resource === "client" && <><label><span>Razón social</span><input value={form.legalName} onChange={(event) => setForm({ ...form, legalName: event.target.value })} placeholder="Razón social (opcional)" /></label><label><span>RUT / identificador fiscal</span><input value={form.taxId} onChange={(event) => setForm({ ...form, taxId: event.target.value })} placeholder="Opcional" /></label><label><span>Correo de contacto</span><input type="email" value={form.contactEmail} onChange={(event) => setForm({ ...form, contactEmail: event.target.value })} placeholder="contacto@cliente.cl" /></label></>}
         {resource === "site" && <><label><span>Cliente</span><select required value={form.clientId || hierarchy.active.clientId} onChange={(event) => setForm({ ...form, clientId: event.target.value })}>{hierarchy.clients.filter((client) => client.active).map((client) => <option key={client.id} value={client.id}>{client.name} · {client.code}</option>)}</select></label><label className="field-wide"><span>Descripción</span><input value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="Descripción operacional (opcional)" /></label><label><span>Zona horaria</span><input required value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })} placeholder="America/Santiago" /></label></>}
-        {resource === "point" && <><label><span>Área</span><input value={form.area} onChange={(event) => setForm({ ...form, area: event.target.value })} placeholder="Área o ubicación operacional" /></label><label><span>Tensión nominal (kV)</span><input type="number" min="0" step="0.1" value={form.voltage} onChange={(event) => setForm({ ...form, voltage: event.target.value })} /></label></>}
+        {resource === "point" && <>
+          <label><span>Tipo de activo</span><select required value={form.assetType} onChange={(event) => setForm({ ...form, assetType: event.target.value, voltage: assetTypeIsElectrical(event.target.value) ? form.voltage : "" })}>
+            <optgroup label="General"><option value="general_asset">Activo general</option><option value="room_environment">Sala / ambiente</option></optgroup>
+            <optgroup label="Climatización y frío"><option value="cold_room">Cámara de frío</option><option value="hvac">Climatización / HVAC</option></optgroup>
+            <optgroup label="Eléctrico"><option value="electrical_point">Punto o sistema eléctrico</option><option value="switchgear_cabinet">Celda / tablero eléctrico</option><option value="transformer">Transformador</option><option value="ats">ATS / transferencia automática</option><option value="generator">Generador</option><option value="ups">UPS</option></optgroup>
+            <optgroup label="Equipos rotativos"><option value="motor">Motor</option><option value="pump">Bomba</option><option value="compressor">Compresor</option><option value="fan">Ventilador</option></optgroup>
+            <optgroup label="Proceso"><option value="conveyor">Correa transportadora</option><option value="tank">Estanque / depósito</option><option value="process_equipment">Equipo de proceso</option></optgroup>
+          </select></label>
+          <label><span>Área / ubicación</span><input value={form.area} onChange={(event) => setForm({ ...form, area: event.target.value })} placeholder="Ej.: Sala eléctrica norte, Línea 2…" /></label>
+          {assetTypeIsElectrical(form.assetType) && <label><span>Tensión nominal (kV) <i className="optional-field">Opcional</i></span><input type="number" min="0" step="0.001" value={form.voltage} onChange={(event) => setForm({ ...form, voltage: event.target.value })} placeholder="Ej.: 0.4, 13.2, 23" /></label>}
+          <div className="hierarchy-form-note field-wide"><CircuitBoard size={16} /><span><strong>{assetTypeLabel(form.assetType)}</strong> es el elemento que quieres supervisar. Los sensores, medidores y controladores se agregan después como dispositivos.</span></div>
+        </>}
         {resource === "controller" && <><label><span>Modelo de dispositivo</span><select required value={form.modelId} onChange={(event) => setForm({ ...form, modelId: event.target.value })}><option value="">Seleccionar…</option>{hierarchy.deviceModels.map((model) => <option key={model.id} value={model.id}>{model.manufacturer} · {model.name}</option>)}</select></label><label><span>Activo</span><select required value={form.pointId} onChange={(event) => setForm({ ...form, pointId: event.target.value })}><option value="">Seleccionar…</option>{hierarchy.points.filter((point) => point.active).map((point) => <option key={point.id} value={point.id}>{point.code} · {point.name}</option>)}</select></label><label><span>Gateway</span><select required value={form.gatewayId} onChange={(event) => setForm({ ...form, gatewayId: event.target.value })}><option value="">Seleccionar…</option>{hierarchy.gateways.filter((gateway) => gateway.active).map((gateway) => <option key={gateway.id} value={gateway.id}>{gateway.code} · {gateway.name}</option>)}</select></label></>}
         {resource === "gateway" && <div className="hierarchy-form-note field-wide"><Server size={16} /><span>La configuración física del gateway se gestiona en el propio Gateway Agent. Core registra su identidad lógica.</span></div>}
         <button className="primary-button" type="submit" disabled={saving || (resource === "controller" && (!hierarchy.points.length || !hierarchy.gateways.length || !hierarchy.deviceModels.length || !form.modelId))}>{saving ? "Guardando…" : "Registrar"}</button>
@@ -1422,7 +1455,7 @@ function OperationalHierarchyView({
                 <span className="asset-operation-copy">
                   <small>{point.code}</small>
                   <strong>{point.name}</strong>
-                  <span>{point.area || "Área sin definir"}</span>
+                  <span>{assetTypeLabel(point.type)} · {point.area || "Ubicación sin definir"}</span>
                 </span>
                 <span className={`asset-operation-status ${noMonitoring ? "unmonitored" : ""}`}>{noMonitoring ? "Sin monitoreo" : pointState}</span>
                 <span className="asset-operation-meta">{linked.length} dispositivo{linked.length === 1 ? "" : "s"} monitoreando este activo</span>
@@ -1476,7 +1509,17 @@ function OperationalHierarchyView({
             <label className="field-wide"><span>Nombre</span><input required minLength={2} value={editor.name} onChange={(event) => setEditor({ ...editor, name: event.target.value })} /></label>
             {editor.resource === "client" && <><label className="field-wide"><span>Razón social</span><input value={editor.legalName} onChange={(event) => setEditor({ ...editor, legalName: event.target.value })} /></label><label><span>RUT / identificación tributaria</span><input value={editor.taxId} onChange={(event) => setEditor({ ...editor, taxId: event.target.value })} /></label><label><span>Correo de contacto</span><input type="email" value={editor.contactEmail} onChange={(event) => setEditor({ ...editor, contactEmail: event.target.value })} /></label></>}
             {editor.resource === "site" && <><label className="field-wide"><span>Descripción</span><input value={editor.description} onChange={(event) => setEditor({ ...editor, description: event.target.value })} /></label><label className="field-wide"><span>Zona horaria</span><select value={editor.timezone} onChange={(event) => setEditor({ ...editor, timezone: event.target.value })}><option value="America/Santiago">America/Santiago</option><option value="UTC">UTC</option></select></label></>}
-            {editor.resource === "point" && <><label><span>Área o sala</span><input value={editor.area} onChange={(event) => setEditor({ ...editor, area: event.target.value })} /></label><label><span>Tensión nominal (kV)</span><input type="number" min="0" step="0.1" value={editor.voltage} onChange={(event) => setEditor({ ...editor, voltage: event.target.value })} /></label></>}
+            {editor.resource === "point" && <>
+              <label><span>Tipo de activo</span><select value={editor.assetType} onChange={(event) => setEditor({ ...editor, assetType: event.target.value, voltage: assetTypeIsElectrical(event.target.value) ? editor.voltage : "" })}>
+                <optgroup label="General"><option value="general_asset">Activo general</option><option value="room_environment">Sala / ambiente</option></optgroup>
+                <optgroup label="Climatización y frío"><option value="cold_room">Cámara de frío</option><option value="hvac">Climatización / HVAC</option></optgroup>
+                <optgroup label="Eléctrico"><option value="electrical_point">Punto o sistema eléctrico</option><option value="switchgear_cabinet">Celda / tablero eléctrico</option><option value="transformer">Transformador</option><option value="ats">ATS / transferencia automática</option><option value="generator">Generador</option><option value="ups">UPS</option></optgroup>
+                <optgroup label="Equipos rotativos"><option value="motor">Motor</option><option value="pump">Bomba</option><option value="compressor">Compresor</option><option value="fan">Ventilador</option></optgroup>
+                <optgroup label="Proceso"><option value="conveyor">Correa transportadora</option><option value="tank">Estanque / depósito</option><option value="process_equipment">Equipo de proceso</option></optgroup>
+              </select></label>
+              <label><span>Área o ubicación</span><input value={editor.area} onChange={(event) => setEditor({ ...editor, area: event.target.value })} /></label>
+              {assetTypeIsElectrical(editor.assetType) && <label><span>Tensión nominal (kV) <i className="optional-field">Opcional</i></span><input type="number" min="0" step="0.001" value={editor.voltage} onChange={(event) => setEditor({ ...editor, voltage: event.target.value })} /></label>}
+            </>}
             {editor.resource === "gateway" && <label className="field-wide"><span>Número de serie</span><input value={editor.serialNumber} onChange={(event) => setEditor({ ...editor, serialNumber: event.target.value })} /></label>}
             
           </div>
@@ -2106,7 +2149,7 @@ export default function Home() {
               <div><h1>Selecciona un activo</h1><p>{hierarchy?.points.length ? `Elige un activo de ${sessionUser.siteName} para consultar su estado, métricas, alertas e historial.` : `${sessionUser.siteName} todavía no tiene activos configurados.`}</p></div>
               <button className="primary-button" onClick={() => navigate("assets")}>{hierarchy?.points.length ? "Seleccionar activo" : "Configurar activos"} <ChevronRight size={15} /></button>
             </section>}
-            {view === "overview" && activePoint && ["electrical_point", "ats", "cold_room"].includes(activePoint.type)
+            {view === "overview" && activePoint && activePoint.type !== "switchgear_cabinet"
               ? <UniversalAssetOverview asset={activePoint} alarms={alarmPreview} alarmSummary={alarmSummary} onNavigate={(target) => navigate(target)} />
               : view === "overview" && activePoint && <Overview onNavigate={navigate} onOpenTrend={openChannelTrend} onAcknowledge={acknowledge} onConfigureVisual={() => setVisibilityOpen(true)} activeAlarms={alarmPreview} alarmSummary={alarmSummary} point={activePoint} />}
             {view === "cabinet" && <CabinetView onOpenTrend={openChannelTrend} />}
@@ -2125,7 +2168,7 @@ export default function Home() {
             />}
             {view === "diagnostics" && <DatabaseDiagnosticsView assetId={activePoint?.id ?? ""} canExecute={sessionUser.permissions.includes("diagnostics.execute")} notify={notify} />}
             {view === "commissioning" && <CommissioningView assetId={activePoint?.id ?? ""} canExecute={sessionUser.permissions.includes("commissioning.execute")} notify={notify} confirm={(request) => setConfirmRequest(request)} onOpenSettings={() => navigate("settings")} onOpenReports={() => navigate("reports")} />}
-            {view === "trends" && activePoint && ["electrical_point", "ats", "cold_room"].includes(activePoint.type)
+            {view === "trends" && activePoint && activePoint.type !== "switchgear_cabinet"
               ? <GenericTrendsView assetId={activePoint.id} initialMetricKey={trendSensorId} canExport={sessionUser.permissions.includes("history.export")} notify={notify} />
               : view === "trends" && <TrendsView assetId={activePoint?.id ?? ""} channels={sensors.map((sensor) => ({ id: sensor.id, label: sensor.label, zone: sensor.zone, unit: sensor.unit, state: sensor.state, enabled: sensor.enabled }))} period={period} setPeriod={setPeriod} selectedId={resolvedTrendSensorId} onSelectChannel={selectTrendChannel} onBackToMap={() => navigate("cabinet")} rangeWindow={trendWindow} setRangeWindow={setTrendWindow} canExport={sessionUser.permissions.includes("history.export")} notify={notify} />}
             {view === "alarms" && <AlarmsView assetId={activePoint?.id ?? ""} permissions={sessionUser.permissions} onSummaryChange={setAlarmSummary} onOpenTrend={openAlarmTrend} onOpenAsset={(id) => { setActivePointId(id); navigate("overview"); }} />}
