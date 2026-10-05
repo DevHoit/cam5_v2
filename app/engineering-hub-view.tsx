@@ -20,11 +20,26 @@ type EngineeringDevice = { id: string; pointId: string; code: string; name: stri
 type View = "electrical" | "ats" | "cold-chain" | "settings" | "diagnostics" | "commissioning" | "provisioning";
 
 function typeLabel(type: string) {
-  if (type === "electrical_point") return "Activo eléctrico";
-  if (type === "ats") return "Transferencia automática";
-  if (type === "cold_room") return "Cadena de frío";
-  if (type === "switchgear_cabinet") return "Monitoreo de condición";
-  return type.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+  const labels: Record<string, string> = {
+    general_asset: "Activo general",
+    room_environment: "Sala / ambiente",
+    cold_room: "Cámara de frío",
+    hvac: "Climatización / HVAC",
+    electrical_point: "Punto o sistema eléctrico",
+    switchgear_cabinet: "Celda / tablero eléctrico",
+    transformer: "Transformador",
+    ats: "ATS / transferencia automática",
+    generator: "Generador",
+    ups: "UPS",
+    motor: "Motor",
+    pump: "Bomba",
+    compressor: "Compresor",
+    fan: "Ventilador",
+    conveyor: "Correa transportadora",
+    tank: "Estanque / depósito",
+    process_equipment: "Equipo de proceso",
+  };
+  return labels[type] ?? type.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function operationalState(value: string) {
