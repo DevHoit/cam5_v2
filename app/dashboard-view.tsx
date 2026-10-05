@@ -148,7 +148,6 @@ export function DashboardView({
     <section className="dashboard-commandbar">
       <div>
         <h1>Estado de la operación</h1>
-        <span className="dashboard-client-context">{data.client.name}</span>
       </div>
       <div className="dashboard-commandbar-actions">
         <span className="dashboard-live-status"><i /> En línea</span>
@@ -190,7 +189,7 @@ export function DashboardView({
             const hasMonitoring = site.assets > 0 || site.gatewaysTotal > 0 || site.devicesTotal > 0;
             const stateLabel = !hasMonitoring ? "Sin monitoreo" : site.criticalAlarms ? "Crítico" : site.warningAlarms ? "Atención" : "Operación normal";
             const stateClass = !hasMonitoring ? "unmonitored" : site.criticalAlarms ? "critical" : site.warningAlarms ? "warning" : "normal";
-            return <button key={site.id} className={`dashboard-site-row ${site.id === data.activeSiteId ? "active" : ""}`} onClick={() => onSwitchSite(site.id)}>
+            return <button key={site.id} className={`dashboard-site-row ${site.id === data.activeSiteId ? "active" : ""}`} onClick={() => onSwitchSite(site.id)} aria-label={`${site.assets || site.devicesTotal || site.gatewaysTotal ? "Ver" : "Configurar"} sitio ${site.name}`}>
               <span className="dashboard-site-icon"><BuildingFactory2 size={18} /></span>
               <span className="dashboard-site-name"><strong>{site.name}</strong><small>{site.code}</small></span>
               <span className={`dashboard-site-state ${stateClass}`}><b>{stateLabel}</b><small>{hasMonitoring ? `${site.assets} activos · ${site.devicesTotal} dispositivos` : "Sin activos ni dispositivos asociados"}</small></span>
