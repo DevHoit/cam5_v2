@@ -8366,3 +8366,20 @@ button.dashboard-kpi:hover { transform: translateY(-1px); border-color: #bae6fd;
 .core-settings-empty{min-height:110px}
 .core-settings-empty strong{font-size:13px}
 .core-settings-empty p{font-size:11px}
+
+
+/* Engineering v4 — commissioning overview */
+.commissioning-overview-v3{grid-template-columns:minmax(0,1.2fr) minmax(320px,.8fr);gap:14px;padding:16px}
+.commissioning-readiness-v3{min-height:210px;padding:18px;grid-template-columns:128px minmax(0,1fr);gap:20px;border-radius:11px}
+.commissioning-readiness-v3 .readiness-dial{width:118px;height:118px}
+.commissioning-readiness-v3 .readiness-dial::before{width:92px;height:92px}
+.commissioning-readiness-v3 .readiness-dial strong{font-size:23px}
+.commissioning-readiness-v3 h2{margin:0 0 6px;font-size:17px}
+.commissioning-readiness-v3 p{font-size:12px;line-height:1.5}
+.commissioning-readiness-actions{margin-top:13px;gap:8px}
+.commissioning-readiness-actions button{min-height:38px;font-size:12px}
+.commissioning-readiness-facts{gap:10px}
+.commissioning-readiness-facts>div{min-height:100px;padding:13px;border-radius:10px}
+.commissioning-readiness-facts small{font-size:11px}
+.commissioning-readiness-facts strong{font-size:20px}
+.commissioning-readiness-facts span{font-size:10px}
