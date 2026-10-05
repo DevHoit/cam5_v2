@@ -104,11 +104,26 @@ function capability(assetType: string) {
 }
 
 function assetTypeLabel(assetType: string) {
-  if (assetType === "electrical_point") return "Activo eléctrico";
-  if (assetType === "ats") return "Sistema ATS";
-  if (assetType === "cold_room") return "Cámara de frío";
-  if (assetType === "switchgear_cabinet") return "Celda o tablero";
-  return "Activo monitoreado";
+  const labels: Record<string, string> = {
+    general_asset: "Activo general",
+    room_environment: "Sala / ambiente",
+    cold_room: "Cámara de frío",
+    hvac: "Climatización / HVAC",
+    electrical_point: "Punto o sistema eléctrico",
+    switchgear_cabinet: "Celda / tablero eléctrico",
+    transformer: "Transformador",
+    ats: "ATS / transferencia automática",
+    generator: "Generador",
+    ups: "UPS",
+    motor: "Motor",
+    pump: "Bomba",
+    compressor: "Compresor",
+    fan: "Ventilador",
+    conveyor: "Correa transportadora",
+    tank: "Estanque / depósito",
+    process_equipment: "Equipo de proceso",
+  };
+  return labels[assetType] ?? assetType.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function deviceTypeLabel(deviceType: string) {
