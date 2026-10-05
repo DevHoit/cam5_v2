@@ -92,7 +92,7 @@ export function EngineeringHubView({ asset, devices, canWrite, onNavigate, notif
     <section className="panel engineering-device-inventory engineering-device-inventory-v3">
       <header><div><h2>Dispositivos asociados</h2><p>Equipos lógicos vinculados al activo seleccionado.</p></div><span>{assetDevices.length}</span></header>
       <div>
-        {assetDevices.map((device) => <article key={device.id}><span className="engineering-device-icon"><IconRouter size={16} /></span><div><strong>{device.code} · {device.name}</strong><small>{device.model}</small></div><i className={`engineering-device-state state-${["active","online","normal"].includes(device.state) ? "ready" : "warning"}`}>{operationalState(device.state)}</i></article>)}
+        {assetDevices.map((device) => <article key={device.id}><span className="engineering-device-icon"><IconRouter size={16} /></span><div><strong>{device.name}</strong><small>{device.code} · {device.model}</small></div><i className={`engineering-device-state state-${["active","online","normal"].includes(device.state) ? "ready" : "warning"}`}>{operationalState(device.state)}</i></article>)}
         {!assetDevices.length && <div className="engineering-no-devices"><IconRouter size={19} /><span><strong>Sin dispositivos asociados</strong><small>{canWrite ? "Asocia un dispositivo desde Activos → Infraestructura." : "Un administrador debe asociar un dispositivo al activo."}</small></span></div>}
       </div>
     </section>
