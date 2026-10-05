@@ -15,25 +15,8 @@ import {
 } from "@tabler/icons-react";
 import { DeviceModelCatalog } from "./device-model-catalog";
 
-type EngineeringAsset = {
-  id: string;
-  code: string;
-  name: string;
-  area: string | null;
-  type: string;
-  state: string;
-};
-
-type EngineeringDevice = {
-  id: string;
-  pointId: string;
-  code: string;
-  name: string;
-  model: string;
-  state: string;
-  active: boolean;
-};
-
+type EngineeringAsset = { id: string; code: string; name: string; area: string | null; type: string; state: string };
+type EngineeringDevice = { id: string; pointId: string; code: string; name: string; model: string; state: string; active: boolean };
 type View = "electrical" | "ats" | "cold-chain" | "settings" | "diagnostics" | "commissioning" | "provisioning";
 
 function typeLabel(type: string) {
@@ -44,81 +27,64 @@ function typeLabel(type: string) {
   return type.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-export function EngineeringHubView({
-  asset,
-  devices,
-  canWrite,
-  onNavigate,
-  notify,
-}: {
+function operationalState(value: string) {
+  if (["active", "online", "normal"].includes(value)) return "Operativo";
+  if (["warning", "degraded", "commissioning"].includes(value)) return "Atención";
+  if (value === "critical") return "Crítico";
+  return "Sin comunicación";
+}
+
+export function EngineeringHubView({ asset, devices, canWrite, onNavigate, notify }: {
   asset?: EngineeringAsset;
   devices: EngineeringDevice[];
   canWrite: boolean;
   onNavigate: (view: View) => void;
   notify: (message: string, tone?: "success" | "info" | "warning") => void;
 }) {
-  if (!asset) {
-    return <article className="panel engineering-hub-empty">
-      <IconTool size={25} />
-      <div><span className="eyebrow">Ingeniería</span><h2>Selecciona un activo</h2><p>Las herramientas técnicas se muestran según las capacidades del activo seleccionado.</p></div>
-    </article>;
-  }
+  if (!asset) return <section className="engineering-empty-state">
+    <span><IconTool size={24} /></span>
+    <div><h1>Selecciona un activo</h1><p>Las herramientas de ingeniería se habilitan dentro del contexto del activo seleccionado.</p></div>
+  </section>;
 
   const assetDevices = devices.filter((device) => device.pointId === asset.id && device.active);
   const capability = asset.type === "electrical_point"
-    ? { icon: IconBolt, title: "Análisis y configuración eléctrica", detail: "Medidores, variables, umbrales y adquisición eléctrica.", view: "electrical" as const }
+    ? { icon: IconBolt, title: "Variables eléctricas", detail: "Métricas, umbrales y comportamiento eléctrico del activo.", view: "electrical" as const }
     : asset.type === "ats"
-      ? { icon: IconArrowsExchange, title: "Transferencia automática", detail: "Fuentes, posición, controlador y reglas ATS.", view: "ats" as const }
+      ? { icon: IconArrowsExchange, title: "Transferencia automática", detail: "Fuentes, posición y condiciones operacionales ATS.", view: "ats" as const }
       : asset.type === "cold_room"
-        ? { icon: IconTemperature, title: "Cadena de frío", detail: "Cámara, sensores, rangos térmicos y excursiones.", view: "cold-chain" as const }
-        : { icon: IconCircuitCell, title: "Monitoreo de condición", detail: "Métricas, canales y configuración técnica del dispositivo.", view: "settings" as const };
+        ? { icon: IconTemperature, title: "Cadena de frío", detail: "Temperatura, humedad, rangos y excursiones del activo.", view: "cold-chain" as const }
+        : { icon: IconCircuitCell, title: "Métricas del dispositivo", detail: "Capacidades, métricas y configuración lógica en Core.", view: "settings" as const };
   const CapabilityIcon = capability.icon;
 
-  return <div className="engineering-hub">
-    <section className="panel engineering-asset-card">
-      <div className="engineering-asset-icon"><CapabilityIcon size={24} /></div>
-      <div><span className="eyebrow">Activo seleccionado</span><h2>{asset.code} · {asset.name}</h2><p>{typeLabel(asset.type)}{asset.area ? ` · ${asset.area}` : ""}</p></div>
-      <span className={`status-pill status-${asset.state === "normal" ? "normal" : asset.state === "critical" ? "critical" : asset.state === "warning" ? "warning" : "offline"}`}>{asset.state}</span>
+  return <div className="engineering-hub engineering-hub-v3">
+    <section className="engineering-asset-strip">
+      <span className="engineering-asset-icon"><CapabilityIcon size={19} /></span>
+      <div><small>{asset.code}</small><strong>{asset.name}</strong><p>{typeLabel(asset.type)}{asset.area ? ` · ${asset.area}` : ""}</p></div>
+      <span className={`engineering-state state-${["active","online","normal"].includes(asset.state) ? "ready" : asset.state === "critical" ? "critical" : "warning"}`}>{operationalState(asset.state)}</span>
+      <div className="engineering-asset-count"><strong>{assetDevices.length}</strong><small>dispositivos</small></div>
     </section>
 
-    <section className="engineering-hub-grid">
-      <button className="panel engineering-tool-card primary" onClick={() => onNavigate(capability.view)}>
-        <span><CapabilityIcon size={21} /></span>
-        <div><small>Capacidad del activo</small><strong>{capability.title}</strong><p>{capability.detail}</p></div>
-        <IconChevronRight size={18} />
-      </button>
-
-      <button className="panel engineering-tool-card" onClick={() => onNavigate("provisioning")}>
-        <span><IconKey size={21} /></span>
-        <div><small>Infraestructura</small><strong>Gateways y credenciales</strong><p>Provisionamiento, rotación y estado de credenciales de adquisición.</p></div>
-        <IconChevronRight size={18} />
-      </button>
-
-      {<button className="panel engineering-tool-card" onClick={() => onNavigate("diagnostics")}>
-        <span><IconActivity size={21} /></span>
-        <div><small>Validación técnica</small><strong>Diagnóstico de adquisición</strong><p>Calidad, latencia y continuidad de la cadena del dispositivo.</p></div>
-        <IconChevronRight size={18} />
-      </button>}
-
-      {<button className="panel engineering-tool-card" onClick={() => onNavigate("commissioning")}>
-        <span><IconSettings size={21} /></span>
-        <div><small>Habilitación</small><strong>Puesta en marcha</strong><p>Controles, evidencias y habilitación del dispositivo para operación.</p></div>
-        <IconChevronRight size={18} />
-      </button>}
-    </section>
-
-    <section className="panel engineering-tool-card" style={{ marginBottom: "1rem" }}>
-      <span><IconListDetails size={21} /></span>
-      <div><small>Catálogo técnico</small><strong>Modelos de dispositivo</strong><p>Plantillas reutilizables de capacidades y métricas para nuevas altas.</p></div>
-    </section>
-    <DeviceModelCatalog canWrite={canWrite} notify={notify} />
-
-    <section className="panel engineering-device-inventory">
-      <header><div><span className="eyebrow">Inventario asociado</span><h2>Dispositivos del activo</h2></div><span>{assetDevices.length} asociados</span></header>
+    <section className="engineering-tools-v3">
+      <header><div><h2>Herramientas técnicas</h2><p>Validación y configuración del contexto lógico que administra HoitLive Core.</p></div></header>
       <div>
-        {assetDevices.map((device) => <article key={device.id}><span className="engineering-device-icon"><IconRouter size={17} /></span><div><strong>{device.code} · {device.name}</strong><small>{device.model}</small></div><i className={`status-pill status-${["active", "online", "normal"].includes(device.state) ? "normal" : "offline"}`}>{device.state}</i></article>)}
-        {!assetDevices.length && <div className="engineering-no-devices"><IconRouter size={20} /><span><strong>Sin dispositivos asociados</strong><small>{canWrite ? "Crea o asocia un dispositivo desde Organización y activos." : "Un administrador debe asociar el dispositivo."}</small></span></div>}
+        <button onClick={() => onNavigate(capability.view)}><span><CapabilityIcon size={18} /></span><div><strong>{capability.title}</strong><small>{capability.detail}</small></div><IconChevronRight size={15} /></button>
+        <button onClick={() => onNavigate("diagnostics")}><span><IconActivity size={18} /></span><div><strong>Diagnóstico</strong><small>Salud del dispositivo, gateway, ingesta normalizada y calidad de telemetría.</small></div><IconChevronRight size={15} /></button>
+        <button onClick={() => onNavigate("commissioning")}><span><IconSettings size={18} /></span><div><strong>Puesta en marcha</strong><small>Readiness, controles de habilitación y evidencia de terreno.</small></div><IconChevronRight size={15} /></button>
+        <button onClick={() => onNavigate("provisioning")}><span><IconKey size={18} /></span><div><strong>Gateways</strong><small>Identidad, credenciales y asociación lógica con la plataforma.</small></div><IconChevronRight size={15} /></button>
       </div>
+    </section>
+
+    <section className="panel engineering-device-inventory engineering-device-inventory-v3">
+      <header><div><h2>Dispositivos asociados</h2><p>Equipos lógicos vinculados al activo seleccionado.</p></div><span>{assetDevices.length}</span></header>
+      <div>
+        {assetDevices.map((device) => <article key={device.id}><span className="engineering-device-icon"><IconRouter size={16} /></span><div><strong>{device.code} · {device.name}</strong><small>{device.model}</small></div><i className={`engineering-device-state state-${["active","online","normal"].includes(device.state) ? "ready" : "warning"}`}>{operationalState(device.state)}</i></article>)}
+        {!assetDevices.length && <div className="engineering-no-devices"><IconRouter size={19} /><span><strong>Sin dispositivos asociados</strong><small>{canWrite ? "Asocia un dispositivo desde Activos → Infraestructura." : "Un administrador debe asociar un dispositivo al activo."}</small></span></div>}
+      </div>
+    </section>
+
+    <section className="engineering-catalog-section">
+      <header><span><IconListDetails size={18} /></span><div><h2>Modelos de dispositivo</h2><p>Plantillas reutilizables de capacidades y métricas semánticas.</p></div></header>
+      <DeviceModelCatalog canWrite={canWrite} notify={notify} />
     </section>
   </div>;
 }
