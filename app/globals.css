@@ -5088,6 +5088,8 @@ button.dashboard-kpi:hover { transform: translateY(-1px); border-color: #bae6fd;
   height:38px;
   display:grid;
   place-items:center;
+  color:#0369a1;
+  background:#f0f9ff;
   border-radius:10px;
 }
 .noc-status-strip article.normal > span:first-child,
