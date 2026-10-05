@@ -339,7 +339,7 @@ export function ColdChainView({
     {!chambers.length && <section className="panel cold-chain-state"><Snowflake size={24} /><div><strong>No hay cámaras configuradas</strong><p>Cada cámara es un activo independiente y puede tener uno o más sensores de temperatura asociados.</p></div></section>}
 
     <section className="cold-chain-grid">
-      {chambers.map((chamber) => <article className={"cold-room-card cold-room-" + chamber.status} key={chamber.id}>
+      {chambers.map((chamber) => <article className={"cold-room-card cold-room-state-" + chamber.status} key={chamber.id}>
         <header>
           <span className="cold-room-icon"><Snowflake size={21} /></span>
           <div><span>{chamber.code}</span><h2>{chamber.name}</h2><p>{chamber.area || "Sin área definida"}</p></div>
