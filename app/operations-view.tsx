@@ -163,11 +163,11 @@ export function OperationsView({
     </div>
   </section>;
 
-  if (tab === "noc") return <>{tabs}<NocView /></>;
-  if (tab === "shifts") return <>{tabs}<ShiftsView canManageClient={canManageClient} notify={notify} /></>;
-  if (tab === "escalation") return <>{tabs}<EscalationPoliciesView canWrite={canWrite} notify={notify} /></>;
+  if (tab === "noc") return <div className="operations-v4">{tabs}<NocView /></div>;
+  if (tab === "shifts") return <div className="operations-v4">{tabs}<ShiftsView canManageClient={canManageClient} notify={notify} /></div>;
+  if (tab === "escalation") return <div className="operations-v4">{tabs}<EscalationPoliciesView canWrite={canWrite} notify={notify} /></div>;
 
-  return <>
+  return <div className="operations-v4">
     {tabs}
     <section className="operations-status-strip">
       <article className={active ? "warning" : ""}><span><IconTool size={17} /></span><div><small>Mantenimiento activo</small><strong>{active}</strong><span>Ventanas en curso</span></div></article>
@@ -216,5 +216,5 @@ export function OperationsView({
         {!data?.windows.length && <div className="table-empty-state"><IconCalendarTime size={21} /><div><strong>Sin ventanas registradas</strong><p>No hay mantenimientos programados para el sitio activo.</p></div></div>}
       </div></div>}
     </article>
-  </>;
+  </div>;
 }
