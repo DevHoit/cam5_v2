@@ -8799,3 +8799,22 @@ button.dashboard-kpi:hover { transform: translateY(-1px); border-color: #bae6fd;
   .cold-chain-view-v4 .cold-detail-panel{height:100dvh;max-height:100dvh;border:0;border-radius:0}
   .cold-chain-view-v4 .cold-detail-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
+
+
+/* Specialized capability state semantics */
+.electrical-view-v4 .electrical-state-normal,.ats-view-v4 .electrical-state-normal{color:#047857;background:#ecfdf5;border-color:#a7f3d0}
+.electrical-view-v4 .electrical-state-warning,.ats-view-v4 .electrical-state-warning{color:#b45309;background:#fffbeb;border-color:#fde68a}
+.electrical-view-v4 .electrical-state-critical,.ats-view-v4 .electrical-state-critical{color:#b91c1c;background:#fef2f2;border-color:#fecaca}
+.electrical-view-v4 .electrical-state-offline,.ats-view-v4 .electrical-state-offline{color:#71717a;background:#f4f4f5;border-color:#e4e4e7}
+.electrical-view-v4 .electrical-state-maintenance,.ats-view-v4 .electrical-state-maintenance{color:#0369a1;background:#f0f9ff;border-color:#bae6fd}
+.electrical-view-v4 .pm-online,.ats-view-v4 .pm-online{color:#047857}
+.electrical-view-v4 .pm-offline,.ats-view-v4 .pm-offline{color:#71717a}
+
+.cold-chain-view-v4 .cold-room-state-normal>header b{color:#047857;background:#ecfdf5}
+.cold-chain-view-v4 .cold-room-state-warning{border-color:#fde68a}
+.cold-chain-view-v4 .cold-room-state-warning>header b{color:#b45309;background:#fffbeb}
+.cold-chain-view-v4 .cold-room-state-critical{border-color:#fecaca}
+.cold-chain-view-v4 .cold-room-state-critical>header b{color:#b91c1c;background:#fef2f2}
+.cold-chain-view-v4 .cold-room-state-offline>header b{color:#71717a;background:#f4f4f5}
+.cold-chain-view-v4 .cold-room-state-unconfigured>header b{color:#b45309;background:#fffbeb}
+.cold-chain-view-v4 .cold-room-state-maintenance>header b{color:#0369a1;background:#f0f9ff}
