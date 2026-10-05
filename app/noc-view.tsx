@@ -230,6 +230,13 @@ export function NocView() {
             <span className="noc-row-meta-v4">Dispositivo</span>
           </article>)}
 
+          {coverageIssue && <article className="noc-attention-row-v4">
+            <span className="noc-row-icon severity-warning"><IconUsersGroup size={17} /></span>
+            <div className="noc-row-copy-v4"><strong>{noOnCallConfigured ? "Sin guardia on-call configurada" : "Cobertura de guardia incompleta"}</strong><small>{noOnCallConfigured ? "No existe un turno activo para resolver responsables." : `${data.summary.unresolvedOnCall} turno${data.summary.unresolvedOnCall === 1 ? "" : "s"} no tienen responsable resoluble en este momento.`}</small></div>
+            <span className="status-pill status-warning">Atención</span>
+            <span className="noc-row-meta-v4">Guardia</span>
+          </article>}
+
           {!rankedAlarms.length && !connectivityIssues && !coverageIssue && <div className="noc-all-clear-v4"><IconCircleCheck size={24} /><div><strong>Sin incidencias de continuidad</strong><p>El sitio no presenta alarmas activas, fallas de conectividad ni brechas de guardia.</p></div></div>}
         </div>
       </article>
