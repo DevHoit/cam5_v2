@@ -268,7 +268,7 @@ export function GenericTrendsView({
   const invalidSamples = primarySeries?.response.points.reduce((sum, point) => sum + point.invalidSampleCount, 0) ?? 0;
   const quality = totalSamples ? Math.round((totalSamples - invalidSamples) / totalSamples * 10_000) / 100 : null;
   const asset = latest?.assets.find((item) => item.id === assetId) ?? null;
-  const hasHistory = Boolean(primarySeries?.response.points.length);
+  const hasHistory = primaryPoints.length > 0;
 
   if (!assetId) return <section className="temporal-empty-state"><span><IconChartLine size={24} /></span><div><h1>Selecciona un activo</h1><p>El análisis temporal necesita un activo para consultar métricas e historial.</p></div></section>;
 
