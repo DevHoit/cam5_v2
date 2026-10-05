@@ -9,7 +9,6 @@ import {
   IconCircuitCell,
   IconDeviceFloppy,
   IconRefresh,
-  IconRouter,
   IconServer,
   IconSettings,
   IconShieldCheck,
@@ -124,8 +123,7 @@ export function SettingsView({
   useEffect(() => {
     if (!assetId) return;
     let active = true;
-    setLoading(true);
-    setError("");
+    Promise.resolve().then(() => { if (active) { setLoading(true); setError(""); } });
     void requestJson<ConfigurationData>(`/api/v1/configuration?assetId=${encodeURIComponent(assetId)}`)
       .then((result) => {
         if (!active) return;
