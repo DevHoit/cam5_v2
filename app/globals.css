@@ -8818,3 +8818,138 @@ button.dashboard-kpi:hover { transform: translateY(-1px); border-color: #bae6fd;
 .cold-chain-view-v4 .cold-room-state-offline>header b{color:#71717a;background:#f4f4f5}
 .cold-chain-view-v4 .cold-room-state-unconfigured>header b{color:#b45309;background:#fffbeb}
 .cold-chain-view-v4 .cold-room-state-maintenance>header b{color:#0369a1;background:#f0f9ff}
+
+
+/* Assets v5 — readable portal scale */
+.site-operations-header{min-height:88px;padding:14px 16px;gap:18px}
+.site-operations-code{font-size:10px}
+.site-operations-identity h2{font-size:20px}
+.site-operations-summary>span{min-width:84px;padding:9px 11px}
+.site-operations-summary strong{font-size:17px}
+.site-operations-summary small{font-size:11px}
+.site-operations-state{min-height:30px;padding:0 10px;font-size:10px}
+
+.hierarchy-v3 .hierarchy-toolbar-v3{min-height:62px;padding:10px 14px}
+.hierarchy-v3 .module-tabs button{min-height:34px;padding:0 11px;font-size:12px}
+.hierarchy-v3 .hierarchy-search{min-height:42px}
+.hierarchy-v3 .hierarchy-search input{font-size:14px}
+.hierarchy-v3 .hierarchy-toolbar-actions .primary-button{min-height:40px;padding:0 12px;font-size:12px}
+
+.site-assets-workspace,.site-infrastructure-workspace{padding:18px}
+.site-section-heading{min-height:58px;margin-bottom:12px}
+.site-section-heading h3{font-size:17px}
+.site-section-heading p{margin-top:5px;font-size:12px;line-height:1.45}
+.site-section-heading>span{min-width:30px;height:28px;font-size:11px}
+
+.asset-operations-grid{gap:11px}
+.asset-operation-main{min-height:116px;padding:14px 44px 14px 14px;grid-template-columns:40px minmax(0,1fr) auto;gap:5px 11px}
+.asset-operation-icon{width:40px;height:40px;border-radius:10px}
+.asset-operation-copy strong{font-size:14px}
+.asset-operation-copy>span{font-size:11px}
+.asset-operation-status{min-height:26px;padding:0 8px;font-size:10px}
+.asset-operation-meta{font-size:11px}
+.asset-operation-link{font-size:11px}
+.asset-operation-edit{width:32px;height:32px;top:9px;right:9px}
+.site-empty-state strong{font-size:13px}
+.site-empty-state p{font-size:11px;line-height:1.45}
+
+.infrastructure-list{gap:8px}
+.infrastructure-list>article{min-height:76px;padding:10px 11px;grid-template-columns:38px minmax(0,1fr) auto 32px;gap:10px}
+.infrastructure-icon{width:38px;height:38px;border-radius:9px}
+.infrastructure-list article strong{font-size:13px}
+.infrastructure-list article small{font-size:11px}
+.infrastructure-list article>b{font-size:10px}
+.infrastructure-list .resource-edit-button{min-width:32px;min-height:32px;width:32px;height:32px}
+
+.hierarchy-create-v3 .hierarchy-form-heading h3{font-size:16px}
+.hierarchy-create-v3 .hierarchy-form-heading p{font-size:11px}
+.hierarchy-form-note{font-size:11px}
+
+/* Organization v5 — readable portal scale */
+.organization-admin-v4{gap:16px;font-family:var(--font-inter),Inter,system-ui,sans-serif}
+.organization-admin-v4 .admin-commandbar{min-height:62px;padding:0 2px 9px;align-items:flex-end;border-bottom:1px solid #e4e4e7}
+.organization-admin-v4 .admin-commandbar h1{font-size:22px;line-height:1.1;font-weight:700;letter-spacing:-.035em}
+.organization-admin-v4 .admin-commandbar p{margin-top:5px;font-size:12px;line-height:1.4}
+.organization-admin-v4 .admin-command-actions button{min-height:38px;padding:0 13px;font-size:12px}
+
+.organization-admin-v4 .organization-status-strip{grid-template-columns:repeat(4,minmax(0,1fr));border-radius:12px;box-shadow:0 4px 18px rgba(24,24,27,.025)}
+.organization-admin-v4 .organization-status-strip article{min-height:108px;padding:16px 17px;grid-template-columns:38px minmax(0,1fr);gap:11px}
+.organization-admin-v4 .organization-status-strip article>span{width:38px;height:38px;border-radius:10px}
+.organization-admin-v4 .organization-status-strip small{font-size:11px}
+.organization-admin-v4 .organization-status-strip strong{margin:4px 0 5px;font-size:24px}
+.organization-admin-v4 .organization-status-strip p{font-size:11px;line-height:1.35}
+
+.organization-admin-v4 .organization-hierarchy-guide{min-height:82px;padding:15px 17px}
+.organization-admin-v4 .organization-hierarchy-guide strong{font-size:13px}
+.organization-admin-v4 .organization-hierarchy-guide p{font-size:12px;line-height:1.45}
+.organization-admin-v4 .organization-hierarchy-flow b,
+.organization-admin-v4 .organization-hierarchy-flow span{min-height:30px;padding:0 9px;font-size:11px}
+
+.organization-admin-v4 .organization-workspace{grid-template-columns:310px minmax(0,1fr)}
+.organization-admin-v4 .organization-client-panel>header{min-height:78px;padding:14px 16px}
+.organization-admin-v4 .organization-client-panel h2{font-size:17px}
+.organization-admin-v4 .organization-client-panel header p{font-size:12px}
+.organization-admin-v4 .organization-client-panel header>span,
+.organization-admin-v4 .organization-sites-header>span{font-size:11px}
+
+.organization-admin-v4 .organization-client-list{padding:9px;gap:6px}
+.organization-admin-v4 .organization-client-row{min-height:82px;padding:11px;grid-template-columns:38px minmax(0,1fr) auto 16px;gap:10px}
+.organization-admin-v4 .organization-client-row-icon{width:38px;height:38px}
+.organization-admin-v4 .organization-client-row-copy small{font-size:10px}
+.organization-admin-v4 .organization-client-row-copy strong{font-size:13px}
+.organization-admin-v4 .organization-client-row-copy em{font-size:11px}
+.organization-admin-v4 .organization-state{min-height:28px;padding:0 9px;font-size:10px}
+
+.organization-admin-v4 .organization-selected-client{min-height:104px;padding:17px 19px}
+.organization-admin-v4 .organization-selected-client small{font-size:10px}
+.organization-admin-v4 .organization-selected-client h2{font-size:19px}
+.organization-admin-v4 .organization-selected-client p{font-size:12px}
+.organization-admin-v4 .organization-selected-client>button,
+.organization-admin-v4 .organization-site-card footer button,
+.organization-admin-v4 .organization-empty-site-card button{min-height:36px;padding:0 10px;font-size:11px}
+
+.organization-admin-v4 .organization-sites-header{min-height:74px;padding:14px 18px 11px}
+.organization-admin-v4 .organization-sites-header h3{font-size:17px}
+.organization-admin-v4 .organization-sites-header p{font-size:12px;line-height:1.45}
+
+.organization-admin-v4 .organization-site-grid{gap:11px}
+.organization-admin-v4 .organization-site-card{min-height:204px;padding:15px}
+.organization-admin-v4 .organization-site-card>header{grid-template-columns:38px minmax(0,1fr) auto;gap:10px}
+.organization-admin-v4 .organization-site-card>header>span{width:38px;height:38px;border-radius:9px}
+.organization-admin-v4 .organization-site-card>header small{font-size:10px}
+.organization-admin-v4 .organization-site-card>header strong{font-size:13px}
+.organization-admin-v4 .organization-current-site{padding:5px 8px;font-size:10px}
+.organization-admin-v4 .organization-site-card>p{min-height:34px;font-size:11px;line-height:1.5}
+.organization-admin-v4 .organization-site-stats span{min-height:58px}
+.organization-admin-v4 .organization-site-stats b{font-size:15px}
+.organization-admin-v4 .organization-site-stats small{font-size:10px}
+.organization-admin-v4 .organization-empty-site-card strong{font-size:14px}
+.organization-admin-v4 .organization-empty-site-card p,
+.organization-admin-v4 .organization-empty.compact p{font-size:11px}
+.organization-admin-v4 .organization-empty.compact strong{font-size:13px}
+
+/* Organization editor v5 */
+.organization-admin-v4 .admin-editor-dialog{width:min(620px,100%);padding:18px;gap:12px;border-radius:14px}
+.organization-admin-v4 .admin-editor-dialog>header{min-height:56px}
+.organization-admin-v4 .admin-editor-dialog h2{font-size:18px}
+.organization-admin-v4 .admin-editor-dialog header p{font-size:12px;line-height:1.4}
+.organization-admin-v4 .admin-editor-dialog label{gap:6px}
+.organization-admin-v4 .admin-editor-dialog label>span{font-size:12px}
+.organization-admin-v4 .admin-editor-dialog input,
+.organization-admin-v4 .admin-editor-dialog select,
+.organization-admin-v4 .admin-editor-dialog textarea{min-height:42px;padding:0 10px;font-size:14px}
+.organization-admin-v4 .admin-editor-dialog textarea{min-height:84px;padding:9px 10px}
+.organization-admin-v4 .admin-active-toggle{min-height:58px;padding:10px}
+.organization-admin-v4 .admin-active-toggle strong{font-size:12px}
+.organization-admin-v4 .admin-active-toggle small{font-size:11px}
+.organization-admin-v4 .admin-editor-dialog>footer button{min-height:36px;padding:0 11px;font-size:11px}
+
+@media(max-width:1100px){
+  .organization-admin-v4 .organization-status-strip{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .organization-admin-v4 .organization-workspace{grid-template-columns:270px minmax(0,1fr)}
+}
+@media(max-width:760px){
+  .organization-admin-v4 .admin-commandbar{align-items:flex-start;flex-direction:column}
+  .organization-admin-v4 .organization-status-strip{grid-template-columns:1fr}
+  .organization-admin-v4 .organization-workspace{grid-template-columns:1fr}
+}
