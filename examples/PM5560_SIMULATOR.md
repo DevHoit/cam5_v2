@@ -36,4 +36,4 @@ HOIT_SCENARIO=demo python3 examples/pm5560_simulator.py
 
 `demo` alterna condiciones cada 30 segundos. Estas condiciones todavía sirven para validar telemetría y UI; la apertura de alarmas eléctricas se incorpora en el bloque siguiente.
 
-El payload utiliza `schemaVersion: "2.0"`, driver `schneider_pm5560` y las 17 métricas V1 normalizadas: tensiones fase-neutro y fase-fase, corrientes, potencias, factor de potencia, frecuencia, energía y demanda.
+El payload utiliza `schemaVersion: "2.0"` y las 17 métricas V1 normalizadas. El payload identifica al dispositivo sólo por su código; driver, protocolo y mapa físico permanecen en el Gateway Agent: tensiones fase-neutro y fase-fase, corrientes, potencias, factor de potencia, frecuencia, energía y demanda.
