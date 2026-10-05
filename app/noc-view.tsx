@@ -120,16 +120,16 @@ export function NocView() {
   const unhealthyDevices = data.devices.filter((item) => !["online", "normal"].includes(item.state));
 
   return <>
-    <section className="module-summary-grid">
-      <article><span className={`module-summary-icon ${data.summary.critical ? "amber" : "green"}`}><IconBellRinging size={19} /></span><div><small>Alarmas activas</small><strong>{data.summary.activeAlarms}</strong><span>{data.summary.critical} críticas · {data.summary.warning} advertencias</span></div></article>
-      <article><span className={`module-summary-icon ${data.summary.unhealthyGateways || data.summary.unhealthyDevices ? "amber" : "green"}`}><IconServer size={19} /></span><div><small>Salud adquisición</small><strong>{data.summary.unhealthyGateways + data.summary.unhealthyDevices}</strong><span>{data.summary.unhealthyGateways} gateways · {data.summary.unhealthyDevices} dispositivos con atención</span></div></article>
-      <article><span className={`module-summary-icon ${data.summary.unresolvedOnCall ? "amber" : "blue"}`}><IconUsersGroup size={19} /></span><div><small>Cobertura on-call</small><strong>{data.onCall.length - data.summary.unresolvedOnCall}/{data.onCall.length}</strong><span>{data.summary.unresolvedOnCall ? "Requiere revisión" : "Cobertura resuelta"}</span></div></article>
-      <article><span className="module-summary-icon blue"><IconTool size={19} /></span><div><small>Mantenimiento activo</small><strong>{data.summary.activeMaintenance}</strong><span>{data.maintenance.filter((item) => item.status === "scheduled").length} programados</span></div></article>
+    <section className="operations-status-strip noc-status-strip">
+      <article className={data.summary.critical ? "warning" : "healthy"}><span><IconBellRinging size={17} /></span><div><small>Alarmas activas</small><strong>{data.summary.activeAlarms}</strong><span>{data.summary.critical} críticas · {data.summary.warning} advertencias</span></div></article>
+      <article className={data.summary.unhealthyGateways || data.summary.unhealthyDevices ? "warning" : "healthy"}><span><IconServer size={17} /></span><div><small>Conectividad</small><strong>{data.summary.unhealthyGateways + data.summary.unhealthyDevices}</strong><span>{data.summary.unhealthyGateways} gateways · {data.summary.unhealthyDevices} dispositivos con atención</span></div></article>
+      <article className={data.summary.unresolvedOnCall ? "warning" : ""}><span><IconUsersGroup size={17} /></span><div><small>Cobertura on-call</small><strong>{data.onCall.length - data.summary.unresolvedOnCall}/{data.onCall.length}</strong><span>{data.summary.unresolvedOnCall ? "Requiere revisión" : "Cobertura resuelta"}</span></div></article>
+      <article><span><IconTool size={17} /></span><div><small>Mantenimiento activo</small><strong>{data.summary.activeMaintenance}</strong><span>{data.maintenance.filter((item) => item.status === "scheduled").length} programados</span></div></article>
     </section>
 
-    <article className="panel module-panel">
-      <div className="module-toolbar">
-        <div><span className="eyebrow">NOC</span><h2>{data.site.code} · {data.site.name}</h2><p>Vista consolidada del sitio activo. Última actualización: {formatDate(data.generatedAt)}.</p></div>
+    <article className="panel module-panel operations-panel-v3">
+      <div className="operations-panel-head">
+        <div><h2>{data.site.code} · {data.site.name}</h2><p>Atención prioritaria del sitio · actualizado {formatDate(data.generatedAt)}.</p></div>
         <button className="secondary-button" onClick={refresh} disabled={loading}><IconRefresh className={loading ? "spin" : ""} size={16} /> Actualizar</button>
       </div>
 
@@ -148,8 +148,8 @@ export function NocView() {
       </div></div>
     </article>
 
-    <article className="panel module-panel">
-      <div className="module-toolbar"><div><span className="eyebrow">Continuidad</span><h2>Adquisición y guardia</h2></div></div>
+    <article className="panel module-panel operations-panel-v3">
+      <div className="operations-panel-head"><div><h2>Conectividad y guardia</h2><p>Elementos que requieren revisión de continuidad operacional.</p></div></div>
       <div className="module-table-wrap"><div className="module-table">
         <div className="module-table-head"><span>Tipo</span><span>Elemento</span><span>Estado</span><span>Última actividad</span><span>Detalle</span></div>
         {unhealthyGateways.map((gateway) => <div className="module-table-row" key={`gw-${gateway.id}`}>
@@ -165,8 +165,8 @@ export function NocView() {
       </div></div>
     </article>
 
-    <article className="panel module-panel">
-      <div className="module-toolbar"><div><span className="eyebrow">Mantenimiento</span><h2>Ventanas vigentes y próximas</h2></div></div>
+    <article className="panel module-panel operations-panel-v3">
+      <div className="operations-panel-head"><div><h2>Ventanas vigentes y próximas</h2><p>Supresiones activas y trabajos programados.</p></div></div>
       <div className="module-table-wrap"><div className="module-table">
         <div className="module-table-head"><span>Estado</span><span>Alcance</span><span>Inicio</span><span>Término</span><span>Motivo</span></div>
         {data.maintenance.map((item) => <div className="module-table-row" key={item.id}>
