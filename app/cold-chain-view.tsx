@@ -317,10 +317,17 @@ export function ColdChainView({
   const normal = chambers.filter((chamber) => chamber.status === "normal").length;
   const offline = chambers.filter((chamber) => chamber.status === "offline").length;
 
-  return <div className="cold-chain-view">
-    {canWriteAssets && <div className="cold-chain-toolbar">
-      <button className="primary-button" onClick={openCreateChamber}><Plus size={16} /> Nueva cámara</button>
-    </div>}
+  return <div className="cold-chain-view cold-chain-view-v4">
+    <section className="specialized-commandbar cold-chain-commandbar">
+      <div>
+        <span className="eyebrow"><Snowflake size={13} /> Capacidad · cadena de frío</span>
+        <h1>Cadena de frío</h1>
+        <p>Supervisión de cámaras, sensores, excursiones térmicas y disponibilidad de datos del sitio activo.</p>
+      </div>
+      <div className="cold-chain-toolbar">
+        {canWriteAssets && <button className="primary-button" onClick={openCreateChamber}><Plus size={16} /> Nueva cámara</button>}
+      </div>
+    </section>
 
     <section className="cold-chain-summary-grid">
       <article className="cold-chain-summary-card"><Snowflake size={20} /><div><span>Cámaras</span><strong>{chambers.length}</strong><small>En el sitio activo</small></div></article>
