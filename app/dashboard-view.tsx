@@ -104,12 +104,10 @@ export function DashboardView({
   onSwitchSite,
   onSelectAsset,
   onOpenAlerts,
-  onOpenOperations,
 }: {
   onSwitchSite: (siteId: string) => void;
   onSelectAsset: (siteId: string, assetId: string) => void;
   onOpenAlerts: () => void;
-  onOpenOperations: () => void;
 }) {
   const [data, setData] = useState<DashboardResponse | null>(null);
   const [loading, setLoading] = useState(true);
