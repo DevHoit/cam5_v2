@@ -205,7 +205,6 @@ def main() -> int:
                 },
                 "device": {
                     "code": device,
-                    "driver": "dse8660_mkii",
                 },
                 "metrics": values,
             }
