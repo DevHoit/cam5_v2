@@ -8275,3 +8275,43 @@ button.dashboard-kpi:hover { transform: translateY(-1px); border-color: #bae6fd;
 .engineering-device-inventory-v3 article strong{font-size:13px}
 .engineering-device-inventory-v3 article small{font-size:11px}
 .engineering-device-state{padding:5px 8px;font-size:10px}
+
+
+/* Engineering v4 — diagnostics */
+.diagnostic-status-strip,.commissioning-status-strip{margin-bottom:16px;border-radius:12px}
+.diagnostic-status-strip article,.commissioning-status-strip article{min-height:108px;padding:16px 17px;grid-template-columns:38px minmax(0,1fr);gap:11px}
+.diagnostic-status-strip article>span,.commissioning-status-strip article>span{width:38px;height:38px;border-radius:10px}
+.diagnostic-status-strip small,.commissioning-status-strip small{font-size:11px}
+.diagnostic-status-strip strong,.commissioning-status-strip strong{margin:4px 0 5px;font-size:18px}
+.diagnostic-status-strip p,.commissioning-status-strip p{font-size:11px;line-height:1.35}
+.diagnostics-workspace-v3,.commissioning-workspace-v3{border-radius:12px}
+.diagnostics-section-head{min-height:72px;padding:15px 17px}
+.diagnostics-section-head h2{font-size:17px}
+.diagnostics-section-head p{font-size:12px}
+.diagnostics-section-head>span{font-size:11px}
+.diagnostic-chain-v3{padding:14px 16px;gap:10px}
+.diagnostic-chain-v3 article{min-height:124px;padding:13px;grid-template-columns:36px minmax(0,1fr);gap:10px;border-radius:10px}
+.diagnostic-chain-v3 article>span{width:36px;height:36px;border-radius:9px}
+.diagnostic-chain-v3 small{font-size:10px}
+.diagnostic-chain-v3 strong{margin:3px 0;font-size:13px}
+.diagnostic-chain-v3 p{font-size:11px;line-height:1.4}
+.diagnostic-chain-v3 i{padding:5px 7px;font-size:10px}
+.diagnostic-result-v3{min-height:68px;padding:11px 16px;grid-template-columns:36px minmax(0,1fr);gap:10px}
+.diagnostic-result-v3>span{width:36px;height:36px}
+.diagnostic-result-v3 strong{font-size:13px}
+.diagnostic-result-v3 p{font-size:11px}
+.diagnostic-evidence-v3>header{min-height:68px;padding:14px 16px}
+.diagnostic-evidence-v3 h2{font-size:15px}
+.diagnostic-evidence-v3 header p,.diagnostic-evidence-v3 header>span{font-size:11px}
+.diagnostic-batch-list article{min-height:68px;padding:10px 16px;grid-template-columns:210px minmax(0,1fr) auto;gap:12px}
+.diagnostic-batch-list strong{font-size:11px}
+.diagnostic-batch-list small{font-size:10px}
+.batch-state{min-height:26px;padding:0 8px;font-size:10px}
+.diagnostic-empty-batches{min-height:130px}
+.diagnostic-empty-batches strong{font-size:13px}
+.diagnostic-empty-batches p{font-size:11px}
+.engineering-boundary-note,.commissioning-boundary-note{min-height:62px;padding:12px 16px;gap:9px}
+.engineering-boundary-note p,.commissioning-boundary-note p{font-size:11px;line-height:1.5}
+.engineering-tabs-v3{min-height:54px;padding:8px 10px}
+.engineering-tabs-v3 button{min-height:36px;padding:0 11px;font-size:12px}
+.engineering-inline-warning{min-height:46px;padding:9px 12px;font-size:11px}
