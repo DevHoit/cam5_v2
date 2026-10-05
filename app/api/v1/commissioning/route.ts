@@ -21,7 +21,7 @@ import { apiErrorResponse, ApiError, requestMetadata, requireApiSession } from "
 export const dynamic = "force-dynamic";
 
 async function requireCommissioningContext(db: Cam5Database, user: Awaited<ReturnType<typeof requireApiSession>>["user"], assetId: string) {
-  if (!assetId) throw new ApiError(400, "Selecciona un punto de medición.");
+  if (!assetId) throw new ApiError(400, "Selecciona un activo.");
   const [context, scopes] = await Promise.all([
     db.select({
       assetId: assets.id,
@@ -36,18 +36,12 @@ async function requireCommissioningContext(db: Cam5Database, user: Awaited<Retur
       deviceName: devices.name,
       deviceState: devices.state,
       serialNumber: devices.serialNumber,
-      driver: devices.driver,
       firmwareVersion: devices.firmwareVersion,
       dataVersion: devices.dataVersion,
-      protocol: devices.protocol,
-      host: devices.host,
-      port: devices.port,
-      unitId: devices.unitId,
       lastReadAt: devices.lastReadAt,
       modelId: deviceModels.id,
       modelCode: deviceModels.code,
       modelName: deviceModels.name,
-      registerMapVersion: deviceModels.registerMapVersion,
       gatewayId: gateways.id,
       gatewayCode: gateways.code,
       gatewayName: gateways.name,
@@ -62,7 +56,7 @@ async function requireCommissioningContext(db: Cam5Database, user: Awaited<Retur
       .limit(1),
     db.select({ assetId: userAssetScopes.assetId }).from(userAssetScopes).where(eq(userAssetScopes.userId, user.id)),
   ]);
-  if (!context[0]) throw new ApiError(404, "No existe un controlador activo para el punto de medición.");
+  if (!context[0]) throw new ApiError(404, "No existe un dispositivo activo asociado al activo seleccionado.");
   if (scopes.length && !scopes.some((scope) => scope.assetId === assetId)) throw new ApiError(403, "No tienes acceso al punto de medición indicado.");
   return context[0];
 }
@@ -154,7 +148,7 @@ export async function POST(request: NextRequest) {
       const freshnessLimit = Date.now() - 5 * 60_000;
       const gatewayIsFresh = context.gatewayState === "online" && Boolean(context.gatewayLastSeenAt && context.gatewayLastSeenAt.getTime() >= freshnessLimit);
       const controllerIsFresh = Boolean(context.lastReadAt && context.lastReadAt.getTime() >= freshnessLimit);
-      if (!gatewayIsFresh || !controllerIsFresh) throw new ApiError(409, "La habilitación requiere comunicación reciente del gateway y una lectura CAM-5 recibida durante los últimos 5 minutos.");
+      if (!gatewayIsFresh || !controllerIsFresh) throw new ApiError(409, "La habilitación requiere comunicación reciente del gateway y telemetría del dispositivo recibida durante los últimos 5 minutos.");
       const items = await db.select({ status: commissioningItems.status }).from(commissioningItems).where(eq(commissioningItems.deviceId, context.deviceId));
       const applicable = items.filter((item) => item.status !== "not_applicable");
       if (!applicable.length || applicable.some((item) => item.status !== "passed")) throw new ApiError(409, "Todos los controles aplicables deben estar aprobados antes de habilitar el equipo.");
@@ -182,7 +176,7 @@ export async function PATCH(request: NextRequest) {
     if (!["pending", "passed", "failed", "not_applicable"].includes(status)) throw new ApiError(400, "El estado del control no es válido.");
     const [current] = await db.select().from(commissioningItems).where(and(eq(commissioningItems.id, itemId), eq(commissioningItems.deviceId, context.deviceId))).limit(1);
     if (!current) throw new ApiError(404, "El control de puesta en marcha no existe.");
-    if (!["inputs", "clock"].includes(current.itemKey)) throw new ApiError(409, "Este control se actualiza mediante la validación automática.");
+    if (current.itemKey !== "field") throw new ApiError(409, "Este control se actualiza mediante la validación automática.");
     if ((status === "passed" || status === "failed") && note.length < 3) throw new ApiError(400, "Agrega una nota de evidencia antes de aprobar o rechazar el control.");
     const metadata = requestMetadata(request);
     const [updated] = await db.transaction(async (tx) => {
