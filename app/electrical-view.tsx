@@ -290,7 +290,7 @@ export function ElectricalView({
     <section className="electrical-toolbar">
       <div>
         <span className="eyebrow"><Bolt size={13} /> Capacidad · energía eléctrica</span>
-        <h2>Análisis eléctrico</h2>
+        <h1>Análisis eléctrico</h1>
         <p>Variables eléctricas normalizadas del activo. El modelo físico del medidor se mantiene desacoplado de la experiencia operacional.</p>
       </div>
       <div className="electrical-actions">
