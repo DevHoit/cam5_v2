@@ -594,3 +594,20 @@ Saneamiento funcional y visual de Configuración para respetar la frontera Gatew
 - Estados vacíos, loading y diseño adoptan el sistema compacto v3.
 
 Validación final: lint, simuladores, Gateway Agent, tests DB y build PASS.
+
+
+## Reportes + Administración v3 (2026-10-05)
+
+Cierre del lenguaje visual general del SaaS para Reportes, Organización y Usuarios.
+
+- Reportes usa command bar compacta y elimina cabeceras globales redundantes.
+- Se mantienen Crear reporte / Biblioteca / Programaciones como flujos separados.
+- El lenguaje visible prioriza métricas, periodo, integridad del reporte y documentación operacional; se reduce jerga interna como “snapshot”.
+- La biblioteca conserva generación, previsualización y descarga PDF/CSV/XLSX sin cambios funcionales.
+- Organización queda separada de Activos: administra clientes y sitios como entidades, mientras Activos sigue siendo la vista operacional del sitio.
+- Usuarios y roles mantiene creación/edición, alcance por cliente/sitio, estados, revocación y matriz de roles.
+- Se corrige el resumen de usuarios para no presentar todos los perfiles administrativos como “acceso total”.
+- Saneamiento transversal: “canales” se reemplaza por “métricas” en configuración de visualización y “adquisición” por “monitoreo” donde corresponde.
+- Se recupera la barra compacta de contexto de Ingeniería tras detectar una regresión visual.
+
+Validación: lint, simuladores, Gateway Agent, tests DB y build PASS.
