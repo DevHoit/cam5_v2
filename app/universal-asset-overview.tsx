@@ -103,6 +103,31 @@ function capability(assetType: string) {
   return { title: "Vista de condición", detail: "Métricas normalizadas y estado del activo.", view: "cabinet", Icon: IconDeviceDesktopAnalytics };
 }
 
+function assetTypeLabel(assetType: string) {
+  if (assetType === "electrical_point") return "Activo eléctrico";
+  if (assetType === "ats") return "Sistema ATS";
+  if (assetType === "cold_room") return "Cámara de frío";
+  if (assetType === "switchgear_cabinet") return "Celda o tablero";
+  return "Activo monitoreado";
+}
+
+function deviceTypeLabel(deviceType: string) {
+  if (deviceType === "power_meter") return "Medidor eléctrico";
+  if (deviceType === "ats_controller") return "Controlador ATS";
+  if (deviceType === "temperature_sensor") return "Sensor de temperatura";
+  if (deviceType === "condition_monitor") return "Monitor de condición";
+  return deviceType.replaceAll("_", " ");
+}
+
+function deviceStateLabel(state: string) {
+  if (["active", "online", "normal"].includes(state)) return "Operativo";
+  if (state === "commissioning" || state === "pending" || state === "draft") return "En puesta en marcha";
+  if (state === "degraded" || state === "warning") return "Atención";
+  if (state === "maintenance") return "Mantenimiento";
+  if (state === "critical") return "Crítico";
+  return "Sin conexión";
+}
+
 export function UniversalAssetOverview({
   asset,
   alarms,
@@ -142,9 +167,10 @@ export function UniversalAssetOverview({
   const activeAlarmCount = alarmSummary.critical + alarmSummary.warning;
   const overall = alarmSummary.critical ? "critical"
     : alarmSummary.warning ? "warning"
-      : devices.length && activeDevices < devices.length ? "warning"
-        : metrics.length && !validMetrics.length ? "offline"
-          : "normal";
+      : !devices.length ? "offline"
+        : activeDevices < devices.length ? "warning"
+          : metrics.length && !validMetrics.length ? "offline"
+            : "normal";
 
   if (loading && !data) return <div className="universal-asset-overview asset-overview-v3" aria-live="polite" aria-busy="true">
     <section className="asset-overview-header">
@@ -157,8 +183,8 @@ export function UniversalAssetOverview({
 
   return <div className="universal-asset-overview">
     <section className={`asset-overview-header state-${overall}`}>
-      <div className="asset-overview-identity"><span className="asset-overview-code">{asset.code}</span><h1>{asset.name}</h1><p>{asset.area || feature.title}</p></div>
-      <div className="asset-overview-health"><span className={`status-pill status-${overall}`}>{overall === "critical" ? "Condición crítica" : overall === "warning" ? "Atención requerida" : overall === "offline" ? "Datos no disponibles" : "Operativo"}</span><span>{data && latestAt ? `Última telemetría ${formatAge(latestAt, data.serverTime).toLowerCase()}` : "Sin telemetría disponible"}</span></div>
+      <div className="asset-overview-identity"><span className="asset-overview-code">{asset.code}</span><h1>{asset.name}</h1><p>{assetTypeLabel(asset.type)} · {asset.area || "Ubicación sin definir"} · {devices.length ? `${devices.length} dispositivo${devices.length === 1 ? "" : "s"} monitoreando` : "sin dispositivos asociados"}</p></div>
+      <div className="asset-overview-health"><span className={`status-pill status-${overall}`}>{overall === "critical" ? "Condición crítica" : overall === "warning" ? "Atención requerida" : overall === "offline" ? devices.length ? "Datos no disponibles" : "Sin monitoreo" : "Operativo"}</span><span>{data && latestAt ? `Última telemetría ${formatAge(latestAt, data.serverTime).toLowerCase()}` : "Sin telemetría disponible"}</span></div>
       <div className="asset-overview-actions"><button onClick={() => onNavigate(feature.view as "electrical" | "ats" | "cold-chain" | "cabinet")}><FeatureIcon size={15} /> {feature.title}</button><button onClick={() => onNavigate("alarms")}><IconAlertTriangle size={15} /> Alertas {activeAlarmCount ? `· ${activeAlarmCount}` : ""}</button><button aria-label="Actualizar activo" onClick={() => { setLoading(true); setError(""); setReload((value) => value + 1); }}><IconRefresh className={loading ? "spin" : ""} size={15} /></button></div>
     </section>
 
@@ -167,7 +193,7 @@ export function UniversalAssetOverview({
     <section className="universal-asset-kpis">
       <article><span className={activeAlarmCount ? "critical" : "normal"}><IconAlertTriangle size={19} /></span><div><small>Alertas activas</small><strong>{activeAlarmCount}</strong><p>{alarmSummary.critical} críticas · {alarmSummary.warning} advertencias</p></div></article>
       <article><span className={devices.length && activeDevices === devices.length ? "normal" : "warning"}><IconServer size={19} /></span><div><small>Dispositivos</small><strong>{activeDevices}/{devices.length}</strong><p>{devices.length ? "Fuentes de telemetría del activo" : "Sin sensores o equipos asociados"}</p></div></article>
-      <article><span className={!staleMetrics.length && !badMetrics.length ? "normal" : "warning"}><IconCircleCheck size={19} /></span><div><small>Calidad de métricas</small><strong>{validMetrics.length}/{metrics.length}</strong><p>{staleMetrics.length} atrasadas · {badMetrics.length} inválidas</p></div></article>
+      <article><span className={metrics.length && !staleMetrics.length && !badMetrics.length ? "normal" : "warning"}><IconCircleCheck size={19} /></span><div><small>Calidad de métricas</small><strong>{validMetrics.length}/{metrics.length}</strong><p>{metrics.length ? `${staleMetrics.length} atrasadas · ${badMetrics.length} inválidas` : "Sin métricas configuradas"}</p></div></article>
       <article><span className={latestAt ? "info" : "warning"}><IconClock size={19} /></span><div><small>Última lectura</small><strong>{data && latestAt ? formatAge(latestAt, data.serverTime) : "Sin datos"}</strong><p>{latestAt ? new Intl.DateTimeFormat("es-CL", { timeStyle: "medium" }).format(new Date(latestAt)) : "Esperando telemetría"}</p></div></article>
     </section>
 
@@ -176,7 +202,7 @@ export function UniversalAssetOverview({
         <header><div><h2>Métricas del activo</h2><p><strong>{asset.name}</strong> es el activo supervisado. Las métricas siguientes provienen de sus sensores, medidores o controladores asociados.</p></div><button className="secondary-button" onClick={() => onNavigate(feature.view as "electrical" | "ats" | "cold-chain" | "cabinet")}><FeatureIcon size={15} /> {feature.title}</button></header>
         <div className="universal-device-list">
           {devices.map((device) => <section key={device.id} className="universal-device-block">
-            <div className="universal-device-head"><span><IconServer size={16} /></span><div><strong>{device.code} · {device.name}</strong><small>{device.deviceType.replaceAll("_", " ")} · {formatAge(device.lastReadAt, data?.serverTime ?? new Date().toISOString())}</small></div><i className={`status-pill status-${["active", "online", "normal"].includes(device.state) ? "normal" : "offline"}`}>{device.state}</i></div>
+            <div className="universal-device-head"><span><IconServer size={16} /></span><div><strong>{device.code} · {device.name}</strong><small>{deviceTypeLabel(device.deviceType)} · {formatAge(device.lastReadAt, data?.serverTime ?? new Date().toISOString())}</small></div><i className={`status-pill status-${["active", "online", "normal"].includes(device.state) ? "normal" : device.state === "critical" ? "critical" : "offline"}`}>{deviceStateLabel(device.state)}</i></div>
             <div className="universal-metric-grid">{device.metrics.slice(0, 12).map((metric) => <article key={metric.id} className={`metric-quality-${metric.quality}`}>
               <small>{metric.category}</small><strong>{formatValue(metric)}</strong><span>{metric.name}</span><em>{metric.quality === "good" ? "Vigente" : metric.quality === "stale" ? "Atrasada" : "Revisar"}</em>
             </article>)}</div>
