@@ -1067,7 +1067,47 @@ function HistoryView({ assetId, canExport, onOpenTrend }: { assetId: string; can
           setNormalizedHistory(false);
         }
       });
-    if (!assetId) return <section className="temporal-empty-state">
+    return () => { active = false; };
+  }, [assetId]);
+
+  useEffect(() => {
+    if (!assetId) return;
+    let active = true;
+    const timeout = window.setTimeout(async () => {
+      setLoading(true);
+      setError("");
+      try {
+        const params = new URLSearchParams({ tab, from: fromIso, to: toIso, page: String(page), pageSize: tab === "measurements" ? "20" : "8" });
+        params.set("assetId", assetId);
+        if (query.trim()) params.set("q", query.trim());
+        if (tab === "measurements" && channel !== "all") params.set("channel", channel);
+        const data = await portalRequest<PaginationMeta & { items: Array<Record<string, unknown>> }>(`/api/v1/history?${params}`);
+        if (active) setResult(data);
+      } catch (requestError) {
+        if (active) setError(requestError instanceof Error ? requestError.message : "No fue posible consultar el histórico.");
+      } finally {
+        if (active) setLoading(false);
+      }
+    }, 250);
+    return () => { active = false; window.clearTimeout(timeout); };
+  }, [assetId, tab, fromIso, toIso, page, query, channel]);
+
+  const changeTab = (next: HistoryTab) => { setTab(next); setPage(1); };
+  const total = result?.total ?? 0;
+
+  const exportHistory = async () => {
+    try {
+      const params = new URLSearchParams({ tab, from: fromIso, to: toIso, format: "csv", assetId });
+      if (query.trim()) params.set("q", query.trim());
+      if (tab === "measurements" && channel !== "all") params.set("channel", channel);
+      await downloadAuthenticatedCsv(`/api/v1/history?${params}`, `hoitlive-historico-${tab}.csv`);
+      notify("Histórico exportado con los filtros visibles.", "info");
+    } catch (requestError) {
+      notify(requestError instanceof Error ? requestError.message : "No fue posible exportar el histórico.", "warning");
+    }
+  };
+
+  if (!assetId) return <section className="temporal-empty-state">
     <span><History size={24} /></span>
     <div><h1>Selecciona un activo</h1><p>El histórico se consulta dentro del contexto de un activo y sus métricas.</p></div>
   </section>;
