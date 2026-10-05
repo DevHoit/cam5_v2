@@ -1408,32 +1408,72 @@ function OperationalHierarchyView({
         </div>
       </div>
 
-      {showCreate && <form className="hierarchy-create-form hierarchy-create-v3" onSubmit={createResource}>
-        <div className="hierarchy-form-heading"><h3>{resource === "point" ? "Nuevo activo" : resource === "gateway" || resource === "controller" ? "Nueva infraestructura" : "Administrar organización"}</h3><p>{resource === "point" ? "El activo es el equipo, instalación o entorno que quieres supervisar; no es el sensor. Ej.: tablero principal, ATS o cámara de frío." : resource === "controller" ? "El dispositivo es el sensor o equipo que reporta métricas del activo. Ej.: PM5560, DSE8660, sensor BLE o CAM5." : "Registra el elemento dentro del contexto operacional correspondiente."}</p></div>
+      {showCreate && resource === "point" && <form className="asset-create-panel-v4" onSubmit={createResource}>
+        <header className="asset-create-header-v4">
+          <span className="asset-create-icon-v4"><CircuitBoard size={20} /></span>
+          <div>
+            <span className="asset-create-eyebrow-v4">Nuevo activo · ${hierarchy.active.siteName}</span>
+            <h3>¿Qué quieres supervisar?</h3>
+            <p>Registra el equipo, instalación o entorno operacional. Los sensores y medidores se asociarán después como dispositivos.</p>
+          </div>
+          <button type="button" className="asset-create-close-v4" onClick={() => { setShowCreate(false); resetForm(); }} aria-label="Cerrar formulario"><X size={18} /></button>
+        </header>
+
+        <div className="asset-create-body-v4">
+          <section className="asset-create-section-v4">
+            <div className="asset-create-section-heading-v4">
+              <span>1</span>
+              <div><strong>Identificación</strong><small>Nombre y código con los que reconocerás el activo en el portal.</small></div>
+            </div>
+            <div className="asset-create-grid-v4">
+              <label className="asset-field-name-v4"><span>Nombre del activo</span><input autoFocus required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Ej.: Cámara de Frío 01" /></label>
+              <label><span>Código único</span><input required value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value.toUpperCase() })} placeholder="Ej.: CAM-FRIO-01" /><small>Identificador técnico. Conviene que sea corto y estable.</small></label>
+            </div>
+          </section>
+
+          <section className="asset-create-section-v4">
+            <div className="asset-create-section-heading-v4">
+              <span>2</span>
+              <div><strong>Clasificación y ubicación</strong><small>Define qué es el activo y dónde se encuentra dentro del sitio.</small></div>
+            </div>
+            <div className="asset-create-grid-v4">
+              <label><span>Tipo de activo</span><select required value={form.assetType} onChange={(event) => setForm({ ...form, assetType: event.target.value, voltage: assetTypeIsElectrical(event.target.value) ? form.voltage : "" })}>
+                <optgroup label="General"><option value="general_asset">Activo general</option><option value="room_environment">Sala / ambiente</option></optgroup>
+                <optgroup label="Climatización y frío"><option value="cold_room">Cámara de frío</option><option value="hvac">Climatización / HVAC</option></optgroup>
+                <optgroup label="Eléctrico"><option value="electrical_point">Punto o sistema eléctrico</option><option value="switchgear_cabinet">Celda / tablero eléctrico</option><option value="transformer">Transformador</option><option value="ats">ATS / transferencia automática</option><option value="generator">Generador</option><option value="ups">UPS</option></optgroup>
+                <optgroup label="Equipos rotativos"><option value="motor">Motor</option><option value="pump">Bomba</option><option value="compressor">Compresor</option><option value="fan">Ventilador</option></optgroup>
+                <optgroup label="Proceso"><option value="conveyor">Correa transportadora</option><option value="tank">Estanque / depósito</option><option value="process_equipment">Equipo de proceso</option></optgroup>
+              </select></label>
+              <label><span>Área / ubicación <i className="optional-field">Opcional</i></span><input value={form.area} onChange={(event) => setForm({ ...form, area: event.target.value })} placeholder="Ej.: Cocina, subterráneo, sala eléctrica…" /></label>
+              {assetTypeIsElectrical(form.assetType) && <label><span>Tensión nominal (kV) <i className="optional-field">Opcional</i></span><input type="number" min="0" step="0.001" value={form.voltage} onChange={(event) => setForm({ ...form, voltage: event.target.value })} placeholder="Ej.: 0.4, 13.2, 23" /><small>Sólo se utiliza como dato descriptivo del activo eléctrico.</small></label>}
+            </div>
+          </section>
+
+          <div className="asset-create-summary-v4">
+            <span><CircuitBoard size={18} /></span>
+            <div><strong>{form.name.trim() || assetTypeLabel(form.assetType)}</strong><p>{assetTypeLabel(form.assetType)}{form.area.trim() ? ` · ${form.area.trim()}` : ""}</p></div>
+            <small>Los dispositivos de medición se agregan después</small>
+          </div>
+        </div>
+
+        <footer className="asset-create-actions-v4">
+          <button type="button" className="secondary-button" onClick={() => { setShowCreate(false); resetForm(); }} disabled={saving}>Cancelar</button>
+          <button className="primary-button" type="submit" disabled={saving}>{saving ? "Creando activo…" : "Crear activo"}</button>
+        </footer>
+      </form>}
+
+      {showCreate && resource !== "point" && <form className="hierarchy-create-form hierarchy-create-v3" onSubmit={createResource}>
+        <div className="hierarchy-form-heading"><h3>{resource === "gateway" || resource === "controller" ? "Nueva infraestructura" : "Administrar organización"}</h3><p>{resource === "controller" ? "El dispositivo es el sensor o equipo que reporta métricas del activo. Ej.: PM5560, DSE8660, sensor BLE o CAM5." : "Registra el elemento dentro del contexto operacional correspondiente."}</p></div>
         <label><span>Tipo de elemento</span><select value={resource} onChange={(event) => changeResource(event.target.value as Resource)}>
           {(resource === "client" || resource === "site"
             ? availableResources.filter((item) => item.value === "client" || item.value === "site")
-            : tab === "structure"
-              ? availableResources.filter((item) => item.value === "point")
-              : availableResources.filter((item) => item.value === "gateway" || item.value === "controller")
+            : availableResources.filter((item) => item.value === "gateway" || item.value === "controller")
           ).map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
         </select></label>
-        <label><span>Código único</span><input required value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value })} placeholder={resource === "client" ? "CLIENTE-01" : resource === "site" ? "SITIO-01" : resource === "point" ? "ACTIVO-01" : resource === "gateway" ? "GW-01" : "DEV-01"} /></label>
+        <label><span>Código único</span><input required value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value })} placeholder={resource === "client" ? "CLIENTE-01" : resource === "site" ? "SITIO-01" : resource === "gateway" ? "GW-01" : "DEV-01"} /></label>
         <label><span>Nombre</span><input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Nombre operacional" /></label>
         {resource === "client" && <><label><span>Razón social</span><input value={form.legalName} onChange={(event) => setForm({ ...form, legalName: event.target.value })} placeholder="Razón social (opcional)" /></label><label><span>RUT / identificador fiscal</span><input value={form.taxId} onChange={(event) => setForm({ ...form, taxId: event.target.value })} placeholder="Opcional" /></label><label><span>Correo de contacto</span><input type="email" value={form.contactEmail} onChange={(event) => setForm({ ...form, contactEmail: event.target.value })} placeholder="contacto@cliente.cl" /></label></>}
         {resource === "site" && <><label><span>Cliente</span><select required value={form.clientId || hierarchy.active.clientId} onChange={(event) => setForm({ ...form, clientId: event.target.value })}>{hierarchy.clients.filter((client) => client.active).map((client) => <option key={client.id} value={client.id}>{client.name} · {client.code}</option>)}</select></label><label className="field-wide"><span>Descripción</span><input value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="Descripción operacional (opcional)" /></label><label><span>Zona horaria</span><input required value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })} placeholder="America/Santiago" /></label></>}
-        {resource === "point" && <>
-          <label><span>Tipo de activo</span><select required value={form.assetType} onChange={(event) => setForm({ ...form, assetType: event.target.value, voltage: assetTypeIsElectrical(event.target.value) ? form.voltage : "" })}>
-            <optgroup label="General"><option value="general_asset">Activo general</option><option value="room_environment">Sala / ambiente</option></optgroup>
-            <optgroup label="Climatización y frío"><option value="cold_room">Cámara de frío</option><option value="hvac">Climatización / HVAC</option></optgroup>
-            <optgroup label="Eléctrico"><option value="electrical_point">Punto o sistema eléctrico</option><option value="switchgear_cabinet">Celda / tablero eléctrico</option><option value="transformer">Transformador</option><option value="ats">ATS / transferencia automática</option><option value="generator">Generador</option><option value="ups">UPS</option></optgroup>
-            <optgroup label="Equipos rotativos"><option value="motor">Motor</option><option value="pump">Bomba</option><option value="compressor">Compresor</option><option value="fan">Ventilador</option></optgroup>
-            <optgroup label="Proceso"><option value="conveyor">Correa transportadora</option><option value="tank">Estanque / depósito</option><option value="process_equipment">Equipo de proceso</option></optgroup>
-          </select></label>
-          <label><span>Área / ubicación</span><input value={form.area} onChange={(event) => setForm({ ...form, area: event.target.value })} placeholder="Ej.: Sala eléctrica norte, Línea 2…" /></label>
-          {assetTypeIsElectrical(form.assetType) && <label><span>Tensión nominal (kV) <i className="optional-field">Opcional</i></span><input type="number" min="0" step="0.001" value={form.voltage} onChange={(event) => setForm({ ...form, voltage: event.target.value })} placeholder="Ej.: 0.4, 13.2, 23" /></label>}
-          <div className="hierarchy-form-note field-wide"><CircuitBoard size={16} /><span><strong>{assetTypeLabel(form.assetType)}</strong> es el elemento que quieres supervisar. Los sensores, medidores y controladores se agregan después como dispositivos.</span></div>
-        </>}
         {resource === "controller" && <><label><span>Modelo de dispositivo</span><select required value={form.modelId} onChange={(event) => setForm({ ...form, modelId: event.target.value })}><option value="">Seleccionar…</option>{hierarchy.deviceModels.map((model) => <option key={model.id} value={model.id}>{model.manufacturer} · {model.name}</option>)}</select></label><label><span>Activo</span><select required value={form.pointId} onChange={(event) => setForm({ ...form, pointId: event.target.value })}><option value="">Seleccionar…</option>{hierarchy.points.filter((point) => point.active).map((point) => <option key={point.id} value={point.id}>{point.code} · {point.name}</option>)}</select></label><label><span>Gateway</span><select required value={form.gatewayId} onChange={(event) => setForm({ ...form, gatewayId: event.target.value })}><option value="">Seleccionar…</option>{hierarchy.gateways.filter((gateway) => gateway.active).map((gateway) => <option key={gateway.id} value={gateway.id}>{gateway.code} · {gateway.name}</option>)}</select></label></>}
         {resource === "gateway" && <div className="hierarchy-form-note field-wide"><Server size={16} /><span>La configuración física del gateway se gestiona en el propio Gateway Agent. Core registra su identidad lógica.</span></div>}
         <button className="primary-button" type="submit" disabled={saving || (resource === "controller" && (!hierarchy.points.length || !hierarchy.gateways.length || !hierarchy.deviceModels.length || !form.modelId))}>{saving ? "Guardando…" : "Registrar"}</button>
