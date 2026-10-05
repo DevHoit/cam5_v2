@@ -78,6 +78,17 @@ function blankLevel(levelNumber = 1): LevelDraft {
   };
 }
 
+function recipientTypeLabel(type: RecipientType) {
+  if (type === "on_call_group") return "Turno on-call";
+  if (type === "user") return "Usuario";
+  return "Rol";
+}
+
+function levelSummary(level: Level) {
+  const delay = Math.round(level.delaySeconds / 60);
+  return `Nivel ${level.levelNumber} · ${delay === 0 ? "inmediato" : `${delay} min`} · ${recipientTypeLabel(level.recipientType)}`;
+}
+
 export function EscalationPoliciesView({
   canWrite,
   notify,
@@ -201,36 +212,108 @@ export function EscalationPoliciesView({
 
   return <>
     <section className="module-summary-grid">
-      <article><span className="module-summary-icon blue"><IconBellRinging size={19} /></span><div><small>Políticas</small><strong>{data?.policies.length ?? 0}</strong><span>{data?.policies.filter((item) => item.enabled).length ?? 0} habilitadas</span></div></article>
-      <article><span className="module-summary-icon green"><IconShieldCheck size={19} /></span><div><small>Niveles configurados</small><strong>{data?.policies.reduce((total, item) => total + item.levels.length, 0) ?? 0}</strong><span>Escalamiento persistente</span></div></article>
+      <article><span className="module-summary-icon blue"><IconBellRinging size={19} /></span><div><small>Políticas</small><strong>{data?.policies.length ?? 0}</strong><span>{data?.policies.filter((item) => item.enabled).length ?? 0} activas</span></div></article>
+      <article><span className="module-summary-icon green"><IconShieldCheck size={19} /></span><div><small>Niveles configurados</small><strong>{data?.policies.reduce((total, item) => total + item.levels.length, 0) ?? 0}</strong><span>Secuencias de atención</span></div></article>
     </section>
 
     <article className="panel module-panel">
       <div className="module-toolbar">
-        <div><span className="eyebrow">Escalamiento Core</span><h2>Políticas por niveles</h2><p>Define a quién avisar y cuánto esperar antes de pasar al siguiente nivel si la alarma continúa sin ACK.</p></div>
+        <div><h2>Políticas de escalamiento</h2><p>Define quién debe recibir una alerta y cuándo debe pasar al siguiente responsable si continúa sin reconocimiento.</p></div>
         <div className="configuration-actions">
           <button className="secondary-button" onClick={() => { setLoading(true); setError(""); setReload((value) => value + 1); }} disabled={loading}><IconRefresh className={loading ? "spin" : ""} size={16} /> Actualizar</button>
           {canManage && <button className="primary-button" onClick={openCreate}><IconPlus size={16} /> Nueva política</button>}
         </div>
       </div>
 
-      {showForm && <form className="notification-editor" onSubmit={submit}>
-        <div className="notification-editor-head"><div><span className="eyebrow">{editingId ? "Editar política" : "Nueva política"}</span><h2>{editingId ? "Actualizar niveles" : "Definir escalamiento"}</h2></div><button type="button" className="secondary-button" onClick={() => setShowForm(false)}>Cancelar</button></div>
-        <div className="notification-form-grid"><label><span>Nombre</span><input required minLength={2} maxLength={160} value={name} onChange={(event) => setName(event.target.value)} placeholder="Ej.: Críticas eléctricas 24x7" /></label></div>
-        <div className="module-table-wrap"><div className="module-table">
-          <div className="module-table-head"><span>Nivel</span><span>Espera</span><span>Destinatario</span><span>Referencia</span><span>Canales</span><span>Acción</span></div>
-          {levels.map((level, index) => <div className="module-table-row" key={level.levelNumber}>
-            <span><strong>{level.levelNumber}</strong></span>
-            <span><input type="number" min="0" max="10080" step="1" value={level.delayMinutes} onChange={(event) => updateLevel(index, { delayMinutes: event.target.value })} /><small> minutos</small></span>
-            <span><select value={level.recipientType} onChange={(event) => updateLevel(index, { recipientType: event.target.value as RecipientType })}><option value="on_call_group">Turno on-call</option><option value="user">Usuario</option><option value="role">Rol</option></select></span>
-            <span><select required value={level.recipientRef} onChange={(event) => updateLevel(index, { recipientRef: event.target.value })}><option value="">Seleccionar…</option>{recipientOptions(level).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></span>
-            <span><label><input type="checkbox" checked={level.email} onChange={(event) => updateLevel(index, { email: event.target.checked })} /> Email</label><label><input type="checkbox" checked={level.whatsapp} onChange={(event) => updateLevel(index, { whatsapp: event.target.checked })} /> WhatsApp</label></span>
-            <span>{levels.length > 1 && <button type="button" className="icon-danger-button" onClick={() => removeLevel(index)} aria-label="Quitar nivel"><IconTrash size={15} /></button>}</span>
-          </div>)}
-        </div></div>
-        <div className="notification-editor-actions"><button type="button" className="secondary-button" onClick={addLevel} disabled={levels.length >= 10}><IconPlus size={15} /> Agregar nivel</button><button type="submit" className="primary-button" disabled={saving || !name.trim() || levels.some((level) => !level.recipientRef || (!level.email && !level.whatsapp))}><IconCheck size={16} /> {saving ? "Guardando…" : "Guardar política"}</button></div>
-        <p className="permission-note"><IconShieldCheck size={15} /> La repetición dentro de un mismo nivel permanece fijada en 1 hasta cerrar la semántica de <code>repeat_count</code>. El escalamiento entre niveles sí queda operativo.</p>
-      </form>}
+      {showForm && (
+        <form className="ops-form-card escalation-form-v6" onSubmit={submit}>
+          <div className="ops-form-card__header escalation-form-head-v6">
+            <div>
+              <h3>{editingId ? "Editar política de escalamiento" : "Nueva política de escalamiento"}</h3>
+              <p>Configura la secuencia de atención desde el primer aviso hasta los responsables de respaldo.</p>
+            </div>
+            <button type="button" className="secondary-button" onClick={() => setShowForm(false)}>Cancelar</button>
+          </div>
+
+          <div className="ops-form-card__body">
+            <section className="ops-form-section">
+              <div className="ops-form-section__title">
+                <h4>Identificación</h4>
+                <p>Usa un nombre que permita reconocer fácilmente cuándo debe utilizarse esta política.</p>
+              </div>
+              <div className="ops-form-grid">
+                <label className="ops-field ops-field--full">
+                  <span>Nombre de la política</span>
+                  <input required minLength={2} maxLength={160} value={name} onChange={(event) => setName(event.target.value)} placeholder="Ej.: Alarmas críticas 24x7" />
+                </label>
+              </div>
+            </section>
+
+            <section className="ops-form-section">
+              <div className="ops-form-section__title escalation-levels-title-v6">
+                <div>
+                  <h4>Secuencia de escalamiento</h4>
+                  <p>El nivel 1 se notifica primero. Los niveles siguientes se activan si la alarma sigue sin reconocimiento.</p>
+                </div>
+                <button type="button" className="secondary-button" onClick={addLevel} disabled={levels.length >= 10}><IconPlus size={15} /> Agregar nivel</button>
+              </div>
+
+              <div className="escalation-level-list-v6">
+                {levels.map((level, index) => (
+                  <article className="escalation-level-card-v6" key={level.levelNumber}>
+                    <header>
+                      <div className="escalation-level-number-v6">{level.levelNumber}</div>
+                      <div><strong>Nivel {level.levelNumber}</strong><small>{Number(level.delayMinutes) === 0 ? "Notificación inmediata" : `Escala después de ${level.delayMinutes || "0"} minutos`}</small></div>
+                      {levels.length > 1 && <button type="button" className="icon-danger-button" onClick={() => removeLevel(index)} aria-label={`Quitar nivel ${level.levelNumber}`}><IconTrash size={15} /></button>}
+                    </header>
+
+                    <div className="escalation-level-fields-v6">
+                      <label className="ops-field">
+                        <span>Espera antes de escalar</span>
+                        <div className="escalation-delay-field-v6"><input type="number" min="0" max="10080" step="1" value={level.delayMinutes} onChange={(event) => updateLevel(index, { delayMinutes: event.target.value })} /><span>min</span></div>
+                      </label>
+
+                      <label className="ops-field">
+                        <span>Tipo de destinatario</span>
+                        <select value={level.recipientType} onChange={(event) => updateLevel(index, { recipientType: event.target.value as RecipientType })}>
+                          <option value="on_call_group">Turno on-call</option>
+                          <option value="user">Usuario</option>
+                          <option value="role">Rol</option>
+                        </select>
+                      </label>
+
+                      <label className="ops-field escalation-recipient-v6">
+                        <span>Destinatario</span>
+                        <select required value={level.recipientRef} onChange={(event) => updateLevel(index, { recipientRef: event.target.value })}>
+                          <option value="">Seleccionar…</option>
+                          {recipientOptions(level).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                        </select>
+                      </label>
+
+                      <fieldset className="escalation-channels-v6">
+                        <legend>Canales</legend>
+                        <label className={level.email ? "selected" : ""}><input type="checkbox" checked={level.email} onChange={(event) => updateLevel(index, { email: event.target.checked })} /><span>Email</span></label>
+                        <label className={level.whatsapp ? "selected" : ""}><input type="checkbox" checked={level.whatsapp} onChange={(event) => updateLevel(index, { whatsapp: event.target.checked })} /><span>WhatsApp</span></label>
+                      </fieldset>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+
+            <div className="ops-inline-note">
+              <strong>La política sólo avanza mientras la alarma siga sin reconocimiento.</strong>
+              <span>Al reconocer la alarma se detiene la secuencia pendiente. Cada nivel debe tener al menos un canal activo.</span>
+            </div>
+          </div>
+
+          <div className="ops-form-card__footer">
+            <button type="submit" className="primary-button" disabled={saving || !name.trim() || levels.some((level) => !level.recipientRef || (!level.email && !level.whatsapp))}>
+              <IconCheck size={16} /> {saving ? "Guardando…" : editingId ? "Guardar cambios" : "Crear política"}
+            </button>
+          </div>
+        </form>
+      )}
 
       {error && <div className="data-error"><IconAlertTriangle size={18} /><div><strong>No se pudieron cargar las políticas</strong><p>{error}</p></div></div>}
       {loading && <div className="data-loading"><IconRefresh className="spin" size={18} /> Consultando escalamiento…</div>}
@@ -241,10 +324,10 @@ export function EscalationPoliciesView({
           <span><i className={`status-pill status-${policy.enabled ? "normal" : "offline"}`}>{policy.enabled ? "Activa" : "Inactiva"}</i></span>
           <span>{policy.levels.length}</span>
           <span>{policy.attachedRules}</span>
-          <span>{policy.levels.map((level) => `N${level.levelNumber}: ${Math.round(level.delaySeconds / 60)} min · ${level.recipientType}`).join(" → ")}</span>
+          <span className="escalation-sequence-v6">{policy.levels.map((level) => levelSummary(level)).join(" → ")}</span>
           <span className="row-actions">{canManage && <><button className="ghost-button" onClick={() => openEdit(policy)}>Editar</button><button className="ghost-button" onClick={() => void togglePolicy(policy)}>{policy.enabled ? "Desactivar" : "Activar"}</button></>}</span>
         </div>)}
-        {!data?.policies.length && <div className="table-empty-state"><IconBellRinging size={21} /><div><strong>Sin políticas Core</strong><p>Crea una política por niveles para conectar reglas críticas con usuarios, roles o turnos on-call.</p></div></div>}
+        {!data?.policies.length && <div className="table-empty-state"><IconBellRinging size={21} /><div><strong>Sin políticas de escalamiento</strong><p>Crea una secuencia para definir quién recibe las alertas y cuándo deben escalarse.</p></div></div>}
       </div></div>}
     </article>
   </>;
