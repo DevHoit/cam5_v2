@@ -557,3 +557,24 @@ Rediseño y saneamiento del bloque técnico, alineado con Dashboard, Activos, Al
 - Responsive actualizado para desktop/tablet/mobile.
 
 Validación: lint, simuladores, Gateway Agent, tests DB y build PASS.
+
+
+## Reportes + Administración v3 (2026-10-05)
+
+### Reportes
+- Se elimina la cabecera global redundante y se adopta una command bar compacta.
+- Flujo principal organizado en Crear reporte / Biblioteca / Programaciones.
+- Resumen compacto de documentos, programaciones y estado de generación.
+- Constructor de reportes, biblioteca, programación y preview adoptan el mismo sistema de densidad visual del resto del portal.
+- Terminología visible se normaliza a métricas en los resúmenes del reporte.
+- Se mantienen snapshots inmutables, PDF/CSV/XLSX, filtros, preview y programación.
+
+### Administración
+- Se crea una vista independiente Administración → Organización.
+- Cliente/Sitio dejan de administrarse desde Activos; Activos queda como vista operacional del sitio.
+- Organización permite crear/editar clientes y sitios respetando clients.manage / sites.manage.
+- Sólo platform_admin puede crear/administrar clientes; client_admin conserva administración de sitios dentro de su cliente.
+- Usuarios y roles adopta command bar, resumen compacto, editor y matriz de roles coherentes con el nuevo sistema visual.
+- El menú de Ingeniería deja de usar “adquisición” como descripción y pasa a capacidades/dispositivos.
+
+Validación final del bloque: lint, simuladores, Gateway Agent, tests DB y build PASS.
