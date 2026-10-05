@@ -2698,3 +2698,12 @@ button.dashboard-kpi:hover { transform: translateY(-1px); border-color: #bae6fd;
 .dashboard-v3 .dashboard-commandbar h1 { font-size:18px; }
 .dashboard-v3 .dashboard-commandbar-actions { margin-left:auto; }
 .dashboard-v3 .dashboard-client-context { display:none; }
+
+/* Dashboard v3.2 — single-axis operational toolbar */
+.dashboard-v3 .dashboard-commandbar { display:flex; align-items:center; min-height:40px; padding:0 2px 10px; }
+.dashboard-v3 .dashboard-commandbar > div:first-child { display:flex; align-items:center; }
+.dashboard-v3 .dashboard-commandbar-actions { display:flex; align-items:center; gap:14px; margin-left:auto; }
+.dashboard-v3 .dashboard-commandbar-actions > span { display:inline-flex; align-items:center; margin:0; line-height:1; white-space:nowrap; }
+.dashboard-v3 .dashboard-live-status { gap:7px; }
+.dashboard-v3 .dashboard-updated { color:var(--muted); font-size:13px; }
+.dashboard-v3 .dashboard-refresh { width:34px; height:34px; display:inline-flex; align-items:center; justify-content:center; margin:0; }
