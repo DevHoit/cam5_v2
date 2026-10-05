@@ -8458,3 +8458,79 @@ button.dashboard-kpi:hover { transform: translateY(-1px); border-color: #bae6fd;
 .account-state button{min-height:36px;padding:0 11px;font-size:11px}
 @media(max-width:1000px){.account-v4 .account-layout{grid-template-columns:1fr}}
 @media(max-width:760px){.account-v4 .account-summary-grid{grid-template-columns:1fr}.account-v4 .account-form{grid-template-columns:1fr}.account-v4 .account-form footer{grid-column:auto;align-items:stretch;flex-direction:column}.account-v4 .account-form footer button{width:100%}.account-v4 .account-session-list{padding:0 14px}.account-v4 .account-session-list article{padding:12px 0;grid-template-columns:38px minmax(0,1fr)}.account-v4 .account-session-list article>time,.account-v4 .account-session-list article>i,.account-v4 .account-session-list article>button{grid-column:2;justify-self:start;text-align:left}}
+
+
+/* Gateway provisioning v4 — engineering portal scale */
+.gateway-provisioning-v4{display:grid;gap:16px;font-family:var(--font-inter),Inter,system-ui,sans-serif}
+.gateway-provisioning-v4 .engineering-commandbar{margin-bottom:0}
+.gateway-provisioning-v4 .provisioning-summary-grid{margin:0;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.gateway-provisioning-v4 .provisioning-summary-grid>article{min-height:108px;padding:16px 17px;border-radius:12px;box-shadow:0 4px 18px rgba(24,24,27,.025)}
+.gateway-provisioning-v4 .provisioning-summary-grid .module-summary-icon{width:38px;height:38px;border-radius:10px}
+.gateway-provisioning-v4 .provisioning-summary-grid small{font-size:11px}
+.gateway-provisioning-v4 .provisioning-summary-grid strong{margin:4px 0 5px;font-size:24px;line-height:1}
+.gateway-provisioning-v4 .provisioning-summary-grid article div>span{font-size:11px;line-height:1.35}
+.gateway-provisioning-v4 .provisioning-guide,.gateway-provisioning-v4 .provisioning-inventory{margin:0;overflow:hidden;border-radius:12px;box-shadow:0 4px 20px rgba(24,24,27,.03)}
+.gateway-provisioning-v4 .provisioning-guide>header,.gateway-provisioning-v4 .provisioning-inventory>header{min-height:72px;padding:15px 17px;gap:11px}
+.gateway-provisioning-v4 .provisioning-guide>header>span{width:38px;height:38px;border-radius:10px}
+.gateway-provisioning-v4 .provisioning-guide h2,.gateway-provisioning-v4 .provisioning-inventory h2{margin:3px 0;color:#18181b;font-size:17px;line-height:1.2;font-weight:700;letter-spacing:-.02em}
+.gateway-provisioning-v4 .provisioning-guide header p,.gateway-provisioning-v4 .provisioning-inventory header p{font-size:12px;line-height:1.45}
+.gateway-provisioning-v4 .provisioning-guide .eyebrow,.gateway-provisioning-v4 .provisioning-inventory .eyebrow{font-size:10px}
+.gateway-provisioning-v4 .provisioning-guide header>button,.gateway-provisioning-v4 .provisioning-inventory header>button{min-height:36px;padding:0 11px;font-size:11px}
+.gateway-provisioning-v4 .provisioning-steps{padding:14px 16px;gap:10px}
+.gateway-provisioning-v4 .provisioning-steps article{min-height:86px;padding:12px;grid-template-columns:30px minmax(0,1fr);gap:9px;border-radius:10px}
+.gateway-provisioning-v4 .provisioning-steps b{width:28px;height:28px;border-radius:7px;font-size:11px}
+.gateway-provisioning-v4 .provisioning-steps strong{font-size:12px}
+.gateway-provisioning-v4 .provisioning-steps p{margin-top:4px;font-size:11px;line-height:1.4}
+.gateway-provisioning-v4 .provisioning-form{padding:14px 16px;grid-template-columns:minmax(180px,.85fr) minmax(220px,1.25fr) 150px auto;gap:10px}
+.gateway-provisioning-v4 .provisioning-form label>span,.gateway-provisioning-v4 .provisioning-toolbar label>span{font-size:11px}
+.gateway-provisioning-v4 .provisioning-form input,.gateway-provisioning-v4 .provisioning-form select,.gateway-provisioning-v4 .provisioning-toolbar select{min-height:40px;padding:0 10px;border-radius:8px;font-size:12px}
+.gateway-provisioning-v4 .provisioning-form>button{min-height:40px;padding:0 11px;font-size:11px}
+.gateway-provisioning-v4 .provisioning-readonly{min-height:46px;padding:0 16px;font-size:11px}
+.gateway-provisioning-v4 .provisioning-toolbar{padding:12px 14px;grid-template-columns:minmax(260px,1fr) 165px 165px;gap:9px}
+.gateway-provisioning-v4 .provisioning-toolbar .search-field{min-height:40px}
+.gateway-provisioning-v4 .provisioning-toolbar .search-field input{font-size:13px}
+.gateway-provisioning-v4 .provisioning-table{min-width:1180px}
+.gateway-provisioning-v4 .provisioning-table .module-table-head{min-height:44px;padding:0 16px;font-size:10px;letter-spacing:.06em}
+.gateway-provisioning-v4 .provisioning-table .module-table-row{min-height:76px;padding:11px 16px;font-size:12px}
+.gateway-provisioning-v4 .provisioning-table .module-table-row strong{font-size:12px}
+.gateway-provisioning-v4 .provisioning-table small{font-size:11px}
+.gateway-provisioning-v4 .credential-identity code{font-size:10px}
+.gateway-provisioning-v4 .credential-status{font-size:10px}
+.gateway-provisioning-v4 .credential-expiry{font-size:10px}
+.gateway-provisioning-v4 .credential-actions .ghost-button{min-height:32px;padding:0 8px;font-size:10px}
+.gateway-provisioning-v4 .credential-actions .icon-danger-button{width:32px;height:32px}
+.gateway-provisioning-v4 .provisioning-empty{min-height:130px}
+.gateway-provisioning-v4 .provisioning-empty strong{font-size:13px}
+.gateway-provisioning-v4 .provisioning-empty p{font-size:11px}
+.gateway-provisioning-v4 .provisioning-inventory>footer{min-height:46px;padding:0 14px;font-size:11px}
+.gateway-provisioning-v4 .credential-secret-dialog{border-radius:14px}
+.gateway-provisioning-v4 .credential-reveal{padding:18px;grid-template-columns:44px minmax(0,1fr) auto;gap:12px}
+.gateway-provisioning-v4 .credential-reveal-icon{width:44px;height:44px;border-radius:10px}
+.gateway-provisioning-v4 .credential-reveal h2{font-size:18px}
+.gateway-provisioning-v4 .credential-reveal p{font-size:12px}
+.gateway-provisioning-v4 .credential-reveal code{font-size:11px}
+.gateway-provisioning-v4 .credential-reveal small{font-size:10px}
+.gateway-provisioning-v4 .credential-reveal-actions button{min-height:36px;min-width:180px;font-size:11px}
+.gateway-provisioning-v4 .credential-renew-dialog{border-radius:14px}
+.gateway-provisioning-v4 .credential-renew-dialog>header{padding:17px;grid-template-columns:40px minmax(0,1fr);gap:11px}
+.gateway-provisioning-v4 .credential-renew-dialog>header>span{width:40px;height:40px;border-radius:10px}
+.gateway-provisioning-v4 .credential-renew-dialog h2{font-size:18px}
+.gateway-provisioning-v4 .credential-renew-dialog header p{font-size:12px}
+.gateway-provisioning-v4 .credential-renew-dialog dl{padding:15px 17px;gap:8px}
+.gateway-provisioning-v4 .credential-renew-dialog dt{font-size:10px}
+.gateway-provisioning-v4 .credential-renew-dialog dd{font-size:11px}
+.gateway-provisioning-v4 .renewal-period{margin:0 17px}
+.gateway-provisioning-v4 .renewal-period>span{font-size:12px}
+.gateway-provisioning-v4 .renewal-period select{min-height:40px;font-size:12px}
+.gateway-provisioning-v4 .renewal-period small{font-size:10px}
+.gateway-provisioning-v4 .renewal-acceptance{margin:15px 17px;padding:11px}
+.gateway-provisioning-v4 .renewal-acceptance strong{font-size:12px}
+.gateway-provisioning-v4 .renewal-acceptance small{font-size:10px}
+.gateway-provisioning-v4 .credential-renew-dialog>footer{padding:12px 17px}
+.gateway-provisioning-v4 .credential-renew-dialog>footer button{min-height:36px;font-size:11px}
+.provisioning-state{min-height:170px;padding:22px}
+.provisioning-state h2{font-size:17px}
+.provisioning-state p{font-size:12px}
+.provisioning-state button{min-height:36px;padding:0 11px;font-size:11px}
+@media(max-width:1050px){.gateway-provisioning-v4 .provisioning-form{grid-template-columns:repeat(2,minmax(0,1fr))}.gateway-provisioning-v4 .provisioning-form>button{grid-column:2}.gateway-provisioning-v4 .provisioning-toolbar{grid-template-columns:minmax(220px,1fr) 150px 150px}}
+@media(max-width:760px){.gateway-provisioning-v4 .provisioning-summary-grid{grid-template-columns:1fr}.gateway-provisioning-v4 .provisioning-guide>header{align-items:flex-start;flex-wrap:wrap}.gateway-provisioning-v4 .provisioning-guide header>div{flex-basis:calc(100% - 52px)}.gateway-provisioning-v4 .provisioning-guide header>button{width:100%;justify-content:center}.gateway-provisioning-v4 .provisioning-steps{grid-template-columns:1fr}.gateway-provisioning-v4 .provisioning-form{grid-template-columns:1fr}.gateway-provisioning-v4 .provisioning-form>button{grid-column:auto}.gateway-provisioning-v4 .provisioning-toolbar{grid-template-columns:1fr}.gateway-provisioning-v4 .provisioning-inventory>header{align-items:flex-start;flex-direction:column}.gateway-provisioning-v4 .provisioning-inventory header>button{width:100%;justify-content:center}.gateway-provisioning-v4 .credential-reveal{grid-template-columns:40px minmax(0,1fr)}.gateway-provisioning-v4 .credential-reveal-actions{grid-column:1/-1}.gateway-provisioning-v4 .credential-reveal-actions button{width:100%}.gateway-provisioning-v4 .credential-renew-dialog dl{grid-template-columns:1fr}}
