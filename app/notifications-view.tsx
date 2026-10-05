@@ -127,10 +127,12 @@ function eventLabel(eventType: string) {
 
 export function NotificationsView({
   canWrite,
+  siteName,
   notify,
   confirm,
 }: {
   canWrite: boolean;
+  siteName: string;
   notify: (message: string, tone?: NoticeTone) => void;
   confirm: (request: ConfirmRequest) => void;
 }) {
@@ -283,7 +285,11 @@ export function NotificationsView({
     finally { setRetryingId(null); }
   };
 
-  return <>
+  return <div className="notification-v4">
+    <section className="notification-commandbar">
+      <div><h1>Notificaciones</h1><p>{siteName} · canales, reglas de envío y trazabilidad de entregas.</p></div>
+      <div className="notification-command-state"><IconShieldCheck size={15} /><span>Trazabilidad activa</span></div>
+    </section>
     <section className="module-summary-grid notification-summary">
       <article><span className="module-summary-icon green"><IconMail size={19} /></span><div><small>Canales activos</small><strong>{summary?.endpoints.active ?? 0}</strong><span>{summary?.endpoints.verified ?? 0} verificados de {summary?.endpoints.total ?? 0}</span></div></article>
       <article><span className="module-summary-icon blue"><IconBellRinging size={19} /></span><div><small>Reglas habilitadas</small><strong>{summary?.policies.active ?? 0}</strong><span>de {summary?.policies.total ?? 0} configuradas</span></div></article>
@@ -327,8 +333,8 @@ export function NotificationsView({
       {selectedDelivery.errorMessage && <div className="delivery-detail-error"><IconAlertTriangle size={18} /><div><strong>Error informado por el proveedor</strong><p>{selectedDelivery.errorMessage}</p></div></div>}
       <footer><button type="button" className="secondary-button" onClick={() => setSelectedDelivery(null)}>Cerrar</button>{canWrite && selectedDelivery.status === "failed" && <button type="button" className="primary-button" disabled={retryingId === selectedDelivery.id} onClick={() => void retryDelivery(selectedDelivery)}><IconRefresh size={15} />{retryingId === selectedDelivery.id ? "Reintentando…" : "Reintentar entrega"}</button>}</footer>
     </section></div>}
-    <div className="configuration-note notification-security-note"><IconShieldCheck size={17} /><p><strong>Secretos fuera de la base de datos.</strong> Teams usa una variable segura para su webhook; los webhooks pueden firmarse con HMAC y el correo utiliza <code>RESEND_API_KEY</code> y <code>NOTIFICATION_FROM_EMAIL</code> del entorno de despliegue.</p></div>
-  </>;
+    <div className="configuration-note notification-security-note"><IconShieldCheck size={17} /><p><strong>Credenciales protegidas.</strong> Las claves y secretos de integración se mantienen fuera de la base de datos operacional. Los webhooks pueden utilizar firma HMAC y los canales deben verificarse antes de entrar en operación.</p></div>
+  </div>;
 }
 
 function CircleStatus({ summary }: { summary: Summary | null }) {
