@@ -1141,9 +1141,12 @@ function HistoryView({ assetId, assetName, siteName, canExport, canReadAlarms, c
   useEffect(() => {
     let active = true;
     if (!assetId) {
-      setMetricOptions([]);
-      setNormalizedHistory(false);
-      setChannel("all");
+      window.queueMicrotask(() => {
+        if (!active) return;
+        setMetricOptions([]);
+        setNormalizedHistory(false);
+        setChannel("all");
+      });
       return () => { active = false; };
     }
     void portalRequest<{ assets: Array<{ id: string; devices: Array<{ id: string; code: string; name: string; metrics: Array<{ key: string; code: string; name: string; dataType: string }> }> }> }>(`/api/v1/telemetry/metrics/latest?assetId=${encodeURIComponent(assetId)}`)
@@ -1168,13 +1171,16 @@ function HistoryView({ assetId, assetName, siteName, canExport, canReadAlarms, c
   }, [assetId]);
 
   useEffect(() => {
-    if (tab !== "audit" && !assetId) {
-      setResult(null);
-      setError("");
-      setLoading(false);
-      return;
-    }
     let active = true;
+    if (tab !== "audit" && !assetId) {
+      window.queueMicrotask(() => {
+        if (!active) return;
+        setResult(null);
+        setError("");
+        setLoading(false);
+      });
+      return () => { active = false; };
+    }
     const timeout = window.setTimeout(async () => {
       setLoading(true);
       setError("");
