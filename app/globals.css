@@ -11057,3 +11057,46 @@ button.dashboard-kpi:hover { transform: translateY(-1px); border-color: #bae6fd;
   .operational-context select { width:100%; max-width:none; min-height:36px; padding:0 4px; font-size:12px; line-height:normal; border:1px solid #e4e4e7; border-radius:6px; background:#fff; }
   .operational-context .context-icon, .operational-context .context-separator { display:none; }
 }
+
+/* Mobile audit: keep empty content inside the panel and summaries compact. */
+@media (max-width:820px) {
+  .module-table:has(> .table-empty-state) { min-width:0; width:100%; }
+  .module-table:has(> .table-empty-state) > .module-table-head { display:none; }
+  .module-table .table-empty-state { min-height:140px; padding:16px; box-sizing:border-box; }
+  .table-empty-state > div, .history-empty-v3 > div { min-width:0; }
+  .table-empty-state > svg, .history-empty-v3 > svg { flex-shrink:0; }
+  .history-v4 .history-empty-v3 { padding:16px; box-sizing:border-box; }
+  .engineering-context-nav-v5 .engineering-nav-scopes { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); width:100%; overflow:visible; }
+  .engineering-context-nav-v5 .engineering-nav-scopes > span,
+  .engineering-context-nav-v5 .engineering-nav-scopes > i { display:none; }
+  .engineering-context-nav-v5 .engineering-nav-scopes button { min-width:0; justify-content:center; white-space:normal; font-size:11px; }
+  .core-settings-v3 .engineering-commandbar { align-items:flex-start; text-align:left; }
+  .engineering-unconfigured h1 { font-weight:700; }
+}
+@media (max-width:600px) {
+  .alarm-center-v4 .alarm-status-strip,
+  .operations-v4 .operations-status-strip,
+  .noc-status-strip,
+  .admin-status-strip,
+  .reports-v4 .report-status-strip,
+  .core-settings-status,
+  .notification-v4 .notification-summary { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+  :is(.alarm-status-strip,.operations-status-strip,.noc-status-strip,.admin-status-strip,.report-status-strip,.core-settings-status,.notification-summary) > article { min-width:0; min-height:94px; padding:12px; box-sizing:border-box; }
+  :is(.alarm-status-strip,.operations-status-strip,.noc-status-strip,.admin-status-strip,.report-status-strip,.core-settings-status,.notification-summary) > article > span { display:none; }
+  :is(.alarm-status-strip,.operations-status-strip,.noc-status-strip,.admin-status-strip,.report-status-strip,.core-settings-status,.notification-summary) > article > div { width:100%; min-width:0; }
+  :is(.alarm-status-strip,.operations-status-strip,.noc-status-strip,.admin-status-strip,.report-status-strip,.core-settings-status,.notification-summary) > article:last-child:nth-child(odd) { grid-column:1/-1; }
+  .reports-v4 .report-status-strip > article:last-child strong { font-family:inherit; font-size:16px; }
+  .alarm-rule-summary { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+  .alarm-center-v4 .alarm-feed-empty { min-height:140px; }
+  .alarm-center-v4 .alarm-detail-v3,
+  .alarm-center-v4 .alarm-detail-empty { min-height:160px; }
+  .history-v4 .history-tabs-v3,
+  .reports-v4 .report-tabs-v3 .module-tabs,
+  .notification-v4 .notification-toolbar .module-tabs { display:flex; flex-wrap:wrap; width:100%; overflow:visible; }
+  .history-v4 .history-tabs-v3 > button,
+  .reports-v4 .report-tabs-v3 .module-tabs > button,
+  .notification-v4 .notification-toolbar .module-tabs > button { flex:1; min-width:0; padding:8px 4px; font-size:11px; white-space:normal; gap:4px; }
+  .history-tabs-v3 > button > svg,
+  .report-tabs-v3 .module-tabs > button > svg,
+  .notification-toolbar .module-tabs > button > svg { flex-shrink:0; }
+}
