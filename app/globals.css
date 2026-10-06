@@ -11051,7 +11051,7 @@ button.dashboard-kpi:hover { transform: translateY(-1px); border-color: #bae6fd;
   .authenticated-role { width:36px; padding:0; justify-content:center; }
   .authenticated-role strong { display:none; }
   .operational-context { grid-column:1/-1; grid-row:2; width:100%; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
-  .operational-context label, .operational-context label:not(:first-of-type) { display:flex; flex-direction:column; align-items:stretch; gap:2px; white-space:normal; }
+  .topbar .operational-context label { display:flex; flex-direction:column; align-items:stretch; gap:2px; white-space:normal; }
   .operational-context label span { display:block; font-size:11px; line-height:1.3; }
   .operational-context label span::after { content:none; }
   .operational-context select { width:100%; max-width:none; min-height:36px; padding:0 4px; font-size:12px; line-height:normal; border:1px solid #e4e4e7; border-radius:6px; background:#fff; }
