@@ -10858,3 +10858,81 @@ button.dashboard-kpi:hover { transform: translateY(-1px); border-color: #bae6fd;
     width:100%;
   }
 }
+
+
+/* Portal audit v1 — remaining control, density and table consistency */
+.history-v4 .history-filter-select-v5{
+  width:100%;
+  min-width:190px;
+}
+.history-v4 .history-filter-select-v5>select{
+  font-size:12px!important;
+}
+
+.reports-v4 .report-module-v3 .report-filter-bar .status-filter{
+  min-width:0;
+  width:100%;
+}
+.reports-v4 .report-module-v3 .report-filter-bar .status-filter>span{
+  font-size:10px!important;
+}
+.reports-v4 .report-library-section,
+.reports-v4 .report-schedules-section{
+  min-height:220px;
+}
+.reports-v4 .module-empty-state{
+  min-height:150px;
+  padding:22px;
+}
+
+.gateway-provisioning-v4 .provisioning-toolbar{
+  align-items:center;
+}
+.gateway-provisioning-v4 .provisioning-toolbar .provisioning-filter-v5{
+  width:100%;
+}
+.gateway-provisioning-v4 .provisioning-table{
+  width:100%;
+  min-width:0;
+}
+.gateway-provisioning-v4 .provisioning-table .module-table-head,
+.gateway-provisioning-v4 .provisioning-table .module-table-row{
+  grid-template-columns:minmax(210px,1.25fr) minmax(145px,.85fr) 96px 128px 160px minmax(250px,1fr);
+  gap:10px;
+}
+@media(max-width:1180px){
+  .gateway-provisioning-v4 .module-table-wrap{
+    overflow-x:auto;
+  }
+  .gateway-provisioning-v4 .provisioning-table{
+    min-width:1040px;
+  }
+}
+
+/* Active 9px remnants raised to portal minimum */
+.ats-view-v4 .ats-source-grid>article header b,
+.ats-view-v4 .ats-source-grid>article>div span,
+.ats-view-v4 .ats-source-grid>article footer,
+.ats-view-v4 .ats-transfer-core small,
+.ats-view-v4 .ats-transfer-core span,
+.ats-view-v4 .ats-transfer-core b{
+  font-size:10px;
+}
+.engineering-nav-scopes>span{
+  font-size:10px;
+}
+.cabinet-inspector-v5 .selected-sensor-card dt,
+.cabinet-channel-list-v5>header .eyebrow,
+.visibility-zone-filter-v5>span,
+.asset-monitoring-empty-meta-v6 small,
+.account-facts-v5 small,
+.account-scope-v5>div:last-child small,
+.account-session-columns-v5{
+  font-size:10px;
+}
+
+/* Empty states should inform, not dominate the viewport */
+.notification-v4 .notification-empty{
+  min-height:160px;
+  padding:24px;
+}
