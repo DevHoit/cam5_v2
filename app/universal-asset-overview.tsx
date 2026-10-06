@@ -244,21 +244,37 @@ export function UniversalAssetOverview({
     <section className="asset-loading-panel"><span>Consultando métricas y eventos del activo…</span></section>
   </div>;
 
-  return <div className="universal-asset-overview">
-    <section className={`asset-overview-header state-${overall}`}>
-      <div className="asset-overview-identity"><h1>{asset.name}</h1><p>{assetTypeLabel(asset.type)} · {asset.area || "Ubicación sin definir"} · {devices.length ? `${devices.length} dispositivo${devices.length === 1 ? "" : "s"} monitoreando` : "sin dispositivos asociados"}</p></div>
-      <div className="asset-overview-health"><span className={`status-pill status-${overall}`}>{overall === "critical" ? "Condición crítica" : overall === "warning" ? "Atención requerida" : overall === "offline" ? devices.length ? "Datos no disponibles" : "Sin monitoreo" : "Operativo"}</span><span>{data && latestMetricAt ? `Datos actualizados ${formatAge(latestMetricAt, data.serverTime).toLowerCase()}` : "Sin telemetría disponible"}</span></div>
-      <div className="asset-overview-actions"><button onClick={() => onNavigate("alarms")}><IconAlertTriangle size={15} /> Alertas {activeAlarmCount ? `· ${activeAlarmCount}` : ""}</button><button aria-label="Actualizar activo" title="Actualizar datos" onClick={() => { setLoading(true); setError(""); setReload((value) => value + 1); }}><IconRefresh className={loading ? "spin" : ""} size={16} /></button></div>
+  return <div className="universal-asset-overview universal-asset-overview-v6">
+    <section className={`asset-overview-header asset-overview-header-v6 state-${overall}`}>
+      <div className="asset-overview-identity"><h1>{asset.name}</h1><p>{assetTypeLabel(asset.type)} · {asset.area || "Ubicación sin definir"}{devices.length ? ` · ${devices.length} dispositivo${devices.length === 1 ? "" : "s"}` : ""}</p></div>
+      <div className="asset-overview-header-actions-v6">
+        <span className={`status-pill status-${overall}`}>{overall === "critical" ? "Condición crítica" : overall === "warning" ? "Atención requerida" : overall === "offline" ? devices.length ? "Sin telemetría" : "Sin monitoreo" : "Operativo"}</span>
+        {activeAlarmCount > 0 && <button className="asset-alert-action-v6" onClick={() => onNavigate("alarms")}><IconAlertTriangle size={15} /> {activeAlarmCount} alerta{activeAlarmCount === 1 ? "" : "s"}</button>}
+        <button className="asset-refresh-action-v6" aria-label="Actualizar activo" title="Actualizar datos" onClick={() => { setLoading(true); setError(""); setReload((value) => value + 1); }}><IconRefresh className={loading ? "spin" : ""} size={16} /></button>
+      </div>
     </section>
 
     {error && <div className="data-error"><IconAlertTriangle size={18} /><div><strong>No se pudo actualizar el activo</strong><p>{error}</p></div></div>}
 
-    <section className="universal-asset-kpis" aria-label="Estado principal del activo">
+    {!devices.length ? <section className="asset-monitoring-empty-v6">
+      <span className="asset-monitoring-empty-icon-v6"><IconServer size={20} /></span>
+      <div>
+        <small>Monitoreo no configurado</small>
+        <strong>Este activo todavía no tiene una fuente de datos asociada</strong>
+        <p>Asocia un sensor, medidor o controlador para comenzar a recibir telemetría, evaluar condición y generar alertas.</p>
+      </div>
+      <div className="asset-monitoring-empty-meta-v6">
+        <span><b>0</b><small>Dispositivos</small></span>
+        <span><b>0</b><small>Métricas</small></span>
+        <span><b>{activeAlarmCount}</b><small>Alertas activas</small></span>
+      </div>
+      <button onClick={() => onNavigate("engineering")}><IconDeviceDesktopAnalytics size={16} /> Configurar monitoreo <IconArrowRight size={15} /></button>
+    </section> : <section className="universal-asset-kpis universal-asset-kpis-v6" aria-label="Estado principal del activo">
       <article><span className={overall}>{overall === "normal" ? <IconCircleCheck size={20} /> : <IconAlertTriangle size={20} />}</span><div><small>Condición</small><strong className="asset-kpi-text">{conditionLabel(overall)}</strong><p>{overall === "normal" ? "Operación sin eventos ni datos degradados" : overall === "critical" ? "Existe una condición crítica activa" : overall === "warning" ? "Requiere revisión operacional" : "No hay datos vigentes para evaluar"}</p></div></article>
       <article><span className={primaryMetric?.quality === "good" ? "info" : "warning"}><FeatureIcon size={20} /></span><div><small>Variable principal</small><strong>{primaryMetric ? formatValue(primaryMetric) : "—"}</strong><p>{primaryMetric ? primaryMetric.name : "Sin una variable disponible"}</p></div></article>
       <article><span className={activeAlarmCount ? "critical" : "normal"}><IconAlertTriangle size={20} /></span><div><small>Alertas activas</small><strong>{activeAlarmCount}</strong><p>{alarmSummary.critical} críticas · {alarmSummary.warning} advertencias</p></div></article>
       <article><span className={latestMetricAt ? "info" : "warning"}><IconClock size={20} /></span><div><small>Última actualización</small><strong className="asset-kpi-time">{data && latestMetricAt ? formatAge(latestMetricAt, data.serverTime) : "Sin datos"}</strong><p>{latestMetricAt ? new Intl.DateTimeFormat("es-CL", { timeStyle: "medium" }).format(new Date(latestMetricAt)) : "Esperando telemetría"}</p></div></article>
-    </section>
+    </section>}
 
     <section className="universal-asset-layout">
       <article className="panel universal-metrics-panel">
