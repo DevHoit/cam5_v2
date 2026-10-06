@@ -297,7 +297,6 @@ export function GenericTrendsView({
       </div>
     </section>
 
-    {!loading && !error && !options.length && <section className="panel core-settings-empty"><IconChartLine size={22} /><div><strong>Sin variables para analizar</strong><p>Asocia un dispositivo y configura sus métricas desde Ingeniería para consultar tendencias.</p></div></section>}
 
     {comparisons.length > 0 && <div className="generic-comparison-chips">{comparisons.map((id, index) => {
       const option = options.find((item) => item.optionId === id);
@@ -305,7 +304,7 @@ export function GenericTrendsView({
     })}</div>}
 
     {error && <div className="data-error"><IconAlertTriangle size={18} /><div><strong>No se pudo cargar la tendencia</strong><p>{error}</p></div></div>}
-    {!loading && !error && !options.length && <article className="panel generic-trend-empty"><IconChartLine size={24} /><div><h2>Sin métricas numéricas</h2><p>Este activo todavía no tiene métricas numéricas disponibles para graficar.</p></div></article>}
+    {!loading && !error && !options.length && <article className="panel generic-trend-empty"><IconChartLine size={24} /><div><h2>Sin métricas numéricas</h2><p>Asocia un dispositivo y configura sus métricas desde Ingeniería para consultar tendencias.</p></div></article>}
 
     {selected && <section className="generic-trend-kpis" aria-label="Resumen del período">
       <article><span className="trend-kpi-icon info"><IconChartLine size={19} /></span><div><small>Última lectura</small><strong>{valueLabel(last, selected.unit)}</strong><p>{selected.name}</p></div></article>
