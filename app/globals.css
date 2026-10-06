@@ -11036,3 +11036,5 @@ button.dashboard-kpi:hover { transform: translateY(-1px); border-color: #bae6fd;
   .electrical-toolbar { align-items: stretch; }
   .electrical-actions { flex-wrap: wrap; }
 }
+
+.device-model-catalog .hierarchy-create-form .resource-active-toggle { min-height:0; margin:0; }

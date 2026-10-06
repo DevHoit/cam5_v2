@@ -171,7 +171,7 @@ export function DashboardView({
       </article>
       <article>
         <span className="status-icon neutral"><BuildingFactory2 size={18} /></span>
-        <div><small>Sitios monitoreados</small><strong>{data.summary.sites}</strong><p>{data.summary.assets} activos · {data.summary.devices} dispositivos</p></div>
+        <div><small>Sitios monitoreados</small><strong>{data.sites.filter((site) => site.devicesTotal > 0).length}</strong><p>{data.summary.assets} activos · {data.summary.devices} dispositivos</p></div>
       </article>
     </section>
 
@@ -207,7 +207,7 @@ export function DashboardView({
             {data.priorityAssets.map((asset) => <button key={asset.id} onClick={() => onSelectAsset(asset.siteId, asset.id)}>
               <span className={`priority-state ${asset.criticalAlarms ? "critical" : asset.warningAlarms ? "warning" : "offline"}`} />
               <span><strong>{asset.name}</strong><small>{asset.area || assetTypeLabel(asset.assetType)}{asset.latestAlarmAt ? ` · ${relativeTime(asset.latestAlarmAt, data.generatedAt)}` : ""}</small></span>
-              <span className="priority-count">{asset.criticalAlarms ? `${asset.criticalAlarms} crítica${asset.criticalAlarms === 1 ? "" : "s"}` : asset.warningAlarms ? `${asset.warningAlarms} advertencia${asset.warningAlarms === 1 ? "" : "s"}` : asset.state}</span>
+              <span className="priority-count">{asset.criticalAlarms ? `${asset.criticalAlarms} crítica${asset.criticalAlarms === 1 ? "" : "s"}` : asset.warningAlarms ? `${asset.warningAlarms} advertencia${asset.warningAlarms === 1 ? "" : "s"}` : ({ online: "Operativo", normal: "Operativo", offline: "Sin comunicación", warning: "Atención", critical: "Crítico", maintenance: "Mantenimiento", commissioning: "En puesta en marcha" }[asset.state] ?? "Pendiente")}</span>
               <IconArrowRight size={15} />
             </button>)}
             {!data.priorityAssets.length && <div className="dashboard-all-clear compact"><IconCircleCheck size={21} /><div><strong>Sin incidencias que requieran atención</strong><p>La operación no registra activos en condición crítica o de advertencia.</p></div></div>}
