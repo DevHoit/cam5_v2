@@ -399,7 +399,7 @@ const navGroups = [
 const viewTitles: Record<View, { title: string; description: string }> = {
   dashboard: { title: "Dashboard", description: "Visión consolidada de sitios, activos, alertas y continuidad operacional." },
   overview: { title: "Resumen del activo", description: "Condición, métricas y eventos del activo seleccionado." },
-  cabinet: { title: "Vista del activo", description: "Distribución y estado de las métricas instrumentadas del activo." },
+  cabinet: { title: "Mapa de condición", description: "Distribución, estado y lectura de las variables instrumentadas del activo." },
   electrical: { title: "Análisis eléctrico", description: "Variables eléctricas normalizadas del activo y sus medidores asociados." },
   ats: { title: "Transferencia automática", description: "Supervisión normalizada de fuentes, posición de transferencia, carga y alarmas." },
   "cold-chain": { title: "Cadena de frío", description: "Supervisión de una o más cámaras de refrigeración y sus sensores asociados." },
@@ -535,7 +535,7 @@ function ChannelVisibilityDialog({ open, assetId, sensors, onClose, onSaved }: {
       <header><span className="visibility-heading-icon"><AdjustmentsHorizontal size={21} /></span><div><span className="eyebrow">Vista personal</span><h2 id="channel-visibility-title">Configurar visualización</h2><p>Elige qué métricas aparecen en Resumen y Mapa de condición. Las alarmas y el histórico no cambian.</p></div><button className="visibility-close" onClick={onClose} aria-label="Cerrar"><X size={19} /></button></header>
       <div className="visibility-summary"><span><Eye size={17} /><strong>{selected.size}</strong> visibles</span><span><Activity size={17} /><strong>{monitored.length}</strong> monitoreados</span><span><EyeOff size={17} /><strong>{Math.max(0, monitored.length - selected.size)}</strong> ocultos</span></div>
       <div className="visibility-presets"><span>Mostrar sólo</span><button onClick={() => applyPreset("all")}>Todos</button><button onClick={() => applyPreset("temperature")}>Temperaturas</button><button onClick={() => applyPreset("discharge")}>Descargas</button><button onClick={() => applyPreset("environment")}>Ambiente</button></div>
-      <div className="visibility-filters"><label className="search-field"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar métrica…" autoFocus /></label><label className="status-filter"><span>Zona</span><select value={group} onChange={(event) => setGroup(event.target.value)}><option value="all">Todas</option>{groups.map((zone) => <option key={zone} value={zone}>{zone}</option>)}</select></label></div>
+      <div className="visibility-filters visibility-filters-v5"><label className="search-field"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar métrica…" autoFocus /></label><label className="visibility-zone-filter-v5"><span>Zona</span><select value={group} onChange={(event) => setGroup(event.target.value)}><option value="all">Todas</option>{groups.map((zone) => <option key={zone} value={zone}>{zone}</option>)}</select><ChevronDown size={14} /></label></div>
       <div className="visibility-list">
         {visibleRows.map((sensor) => <label className={`visibility-channel ${selected.has(sensor.channelId) ? "selected" : ""}`} key={sensor.channelId}><input type="checkbox" checked={selected.has(sensor.channelId)} onChange={() => toggle(sensor.channelId)} /><span className={`sensor-code sensor-${sensor.state}`}>{sensor.id}</span><span><strong>{sensor.label}</strong><small>{sensor.zone} · {sensor.type}</small></span><span className="visibility-reading">{sensor.value}<small>{sensor.unit}</small></span></label>)}
         {!visibleRows.length && <div className="visibility-empty"><Search size={20} /><strong>No encontramos métricas</strong><span>Cambia la búsqueda o la zona seleccionada.</span></div>}
@@ -718,39 +718,80 @@ function CabinetView({ onOpenTrend }: { onOpenTrend: (id: string) => void }) {
   const totalInputs = telemetry?.inputSummary.total ?? 0;
   const assignedInputs = telemetry?.inputSummary.assigned ?? new Set(activeSensors.map((sensor) => sensor.sourceId).filter((source) => source !== "Sin entrada")).size;
   const disabledChannels = sensors.length - activeSensors.length;
+  const criticalCount = activeSensors.filter((sensor) => sensor.quality === "Válida" && sensor.state === "critical").length;
+  const warningCount = activeSensors.filter((sensor) => sensor.quality === "Válida" && sensor.state === "warning").length;
+  const freshCount = activeSensors.filter((sensor) => sensor.quality === "Válida" && sensor.recordedAt !== null).length;
   const SelectedIcon = selected && (selected.metric === "temperature" || selected.metric === "ambient") ? Thermometer : selected?.metric === "humidity" ? Droplets : Activity;
   const selectedDisplayState: SensorState | "offline" = selected?.quality === "Válida" ? selected.state : "offline";
   const selectedStateLabel = selected?.quality === "Válida" ? selected.state === "critical" ? "Crítico" : selected.state === "warning" ? "Advertencia" : "Normal" : selected?.quality ?? "Sin lectura";
   const statusText = telemetryState.status === "loading" ? "Cargando canales" : telemetryState.status === "error" && !telemetry ? "Estado no verificado" : !activeSensors.length ? "Sin canales activos" : telemetry?.gateway?.state !== "online" ? "Sin comunicación" : !hasMeasurements ? "Esperando lecturas" : sensorStateText(activeSensors);
 
   return (
-    <section className="cabinet-view-grid">
-      <article className="panel cabinet-full-panel">
-        <div className="panel-header"><div><span className="eyebrow">Mapa de condición de la cabina</span><h2>{telemetry?.point ? `${telemetry.point.code} · ${telemetry.point.name}` : "Activo"}</h2><p>{visibleSensors.length} visibles de {activeSensors.length} monitoreadas · {assignedInputs} entradas asignadas{disabledChannels ? ` · ${disabledChannels} sin monitoreo` : ""}</p></div><StatusPill state={overallState}>{statusText}</StatusPill></div>
-        <CabinetDiagram selectedId={selected?.id} onSelect={setSelectedId} />
-        <div className="diagram-legend"><span><i className="dot-normal" />Normal</span><span><i className="dot-warning" />Advertencia</span><span><i className="dot-critical" />Crítico</span><span><i className="dot-disabled" />No configurado</span><small>Selecciona una tarjeta para revisar el canal.</small></div>
-      </article>
-      <article className="panel sensor-panel">
-        {selected ? <div className={`selected-sensor-card selected-${selectedDisplayState}`}>
-          <div className="selected-sensor-head"><span className="selected-sensor-icon"><SelectedIcon size={21} /></span><div><small>Canal seleccionado</small><strong>{selected.id} · {selected.type}</strong></div><StatusPill state={selectedDisplayState}>{selectedStateLabel}</StatusPill></div>
-          <div className="selected-sensor-value">{selected.value}<span>{selected.unit}</span></div>
-          <p>{selected.label} · {selected.zone}</p>
-          <dl><div><dt>Actualización</dt><dd>{selected.trend}</dd></div><div><dt>Umbral</dt><dd>{selected.threshold}</dd></div><div><dt>Calidad</dt><dd>{selected.quality}</dd></div></dl>
-          <button type="button" onClick={() => onOpenTrend(selected.id)}>Abrir tendencia del canal <TrendingUp size={16} /></button>
-        </div> : <div className="selected-sensor-empty"><EyeOff size={25} /><strong>{telemetryState.status === "loading" ? "Cargando canales" : telemetryState.status === "error" ? "Estado no verificado" : "No seleccionaste métricas visibles"}</strong><p>{telemetryState.status === "loading" ? "Esperando la respuesta de la cadena de adquisición y del dispositivo." : telemetryState.status === "error" ? "No fue posible consultar la telemetría. Esto no confirma una desconexión del equipo." : "Usa Configurar visualización para elegir las variables que quieres revisar."}</p></div>}
-        <div className="panel-header compact sensor-list-header"><div><span className="eyebrow">Selección personal</span><h2>Canales visibles</h2></div><span className="data-fresh"><Wifi size={14} /> {telemetryAge(telemetry?.device?.lastReadAt ?? null)}</span></div>
-        <div className="sensor-list">
-          {visibleSensors.map((sensor) => (
-            <button type="button" className={`sensor-row ${!sensor.enabled ? "disabled" : ""} ${selected?.id === sensor.id ? "selected" : ""}`} key={sensor.id} onClick={() => setSelectedId(sensor.id)} disabled={!sensor.enabled}>
-              <span className={`sensor-code sensor-${sensor.state}`}>{sensor.id}</span>
-              <div><strong>{sensor.label}</strong><small>{sensor.zone}</small></div>
-              <div className="sensor-reading"><strong>{sensor.value}<small>{sensor.unit}</small></strong><span>{sensor.trend}</span></div>
-            </button>
-          ))}
-          {!visibleSensors.length && <div className="sensor-list-empty">No hay canales seleccionados para esta vista.</div>}
-        </div>
-      </article>
-    </section>
+    <div className="cabinet-view-v5">
+      <section className="cabinet-status-strip">
+        <article className={overallState === "normal" ? "healthy" : overallState === "critical" ? "critical" : overallState === "warning" ? "warning" : ""}>
+          <span><Activity size={18} /></span>
+          <div><small>Condición</small><strong>{statusText}</strong><p>{criticalCount ? `${criticalCount} crítico${criticalCount === 1 ? "" : "s"}` : warningCount ? `${warningCount} advertencia${warningCount === 1 ? "" : "s"}` : freshCount ? "Sin desviaciones activas" : "Sin condición verificable"}</p></div>
+        </article>
+        <article>
+          <span><Eye size={18} /></span>
+          <div><small>Variables visibles</small><strong>{visibleSensors.length} / {activeSensors.length}</strong><p>{disabledChannels ? `${disabledChannels} canales fuera de monitoreo` : "Todos los canales activos"}</p></div>
+        </article>
+        <article>
+          <span><Database size={18} /></span>
+          <div><small>Entradas asignadas</small><strong>{assignedInputs}{totalInputs ? ` / ${totalInputs}` : ""}</strong><p>{totalInputs ? "Entradas físicas del dispositivo" : "Inventario de entradas no informado"}</p></div>
+        </article>
+        <article className={telemetry?.gateway?.state === "online" ? "healthy" : "warning"}>
+          <span><Wifi size={18} /></span>
+          <div><small>Telemetría</small><strong>{telemetry?.gateway?.state === "online" ? "Disponible" : "Revisar"}</strong><p>{telemetryAge(telemetry?.device?.lastReadAt ?? null)}</p></div>
+        </article>
+      </section>
+
+      <section className="cabinet-workspace-v5">
+        <article className="panel cabinet-map-panel-v5">
+          <header className="cabinet-section-head-v5">
+            <div>
+              <span className="eyebrow">Distribución instrumentada</span>
+              <h2>Variables por zona</h2>
+              <p>{telemetry?.point ? `${telemetry.point.code} · ${telemetry.point.name}` : "Activo seleccionado"} · selecciona una variable para revisar su detalle.</p>
+            </div>
+            <StatusPill state={overallState}>{statusText}</StatusPill>
+          </header>
+          <CabinetDiagram selectedId={selected?.id} onSelect={setSelectedId} />
+          <footer className="cabinet-legend-v5">
+            <div><span><i className="dot-normal" />Normal</span><span><i className="dot-warning" />Advertencia</span><span><i className="dot-critical" />Crítico</span><span><i className="dot-disabled" />No disponible</span></div>
+            <small>{visibleSensors.length} variables visibles en esta vista</small>
+          </footer>
+        </article>
+
+        <aside className="panel cabinet-inspector-v5">
+          <header className="cabinet-section-head-v5 compact">
+            <div><span className="eyebrow">Inspector</span><h2>Detalle del canal</h2><p>Lectura, calidad y referencia operacional.</p></div>
+          </header>
+
+          {selected ? <section className={`selected-sensor-card selected-${selectedDisplayState} selected-sensor-v5`}>
+            <div className="selected-sensor-head"><span className="selected-sensor-icon"><SelectedIcon size={21} /></span><div><small>{selected.id}</small><strong>{selected.label}</strong><p>{selected.type} · {selected.zone}</p></div><StatusPill state={selectedDisplayState}>{selectedStateLabel}</StatusPill></div>
+            <div className="selected-sensor-reading-v5"><strong>{selected.value}</strong><span>{selected.unit}</span></div>
+            <dl><div><dt>Actualización</dt><dd>{selected.trend}</dd></div><div><dt>Umbral</dt><dd>{selected.threshold}</dd></div><div><dt>Calidad</dt><dd>{selected.quality}</dd></div></dl>
+            <button type="button" onClick={() => onOpenTrend(selected.id)}><TrendingUp size={16} /> Abrir tendencia</button>
+          </section> : <div className="selected-sensor-empty selected-sensor-empty-v5"><EyeOff size={25} /><strong>{telemetryState.status === "loading" ? "Cargando canales" : telemetryState.status === "error" ? "Estado no verificado" : "Sin variables visibles"}</strong><p>{telemetryState.status === "loading" ? "Esperando la respuesta de la cadena de adquisición y del dispositivo." : telemetryState.status === "error" ? "No fue posible consultar la telemetría. Esto no confirma una desconexión del equipo." : "Usa Configurar visualización para elegir las variables que quieres revisar."}</p></div>}
+
+          <section className="cabinet-channel-list-v5">
+            <header><div><span className="eyebrow">Vista personal</span><h3>Canales visibles</h3></div><span>{visibleSensors.length}</span></header>
+            <div className="sensor-list">
+              {visibleSensors.map((sensor) => (
+                <button type="button" className={`sensor-row ${selected?.id === sensor.id ? "selected" : ""}`} key={sensor.id} onClick={() => setSelectedId(sensor.id)}>
+                  <span className={`sensor-code sensor-${sensor.state}`}>{sensor.id}</span>
+                  <div><strong>{sensor.label}</strong><small>{sensor.zone}</small></div>
+                  <div className="sensor-reading"><strong>{sensor.value}<small>{sensor.unit}</small></strong><span>{sensor.trend}</span></div>
+                </button>
+              ))}
+              {!visibleSensors.length && <div className="sensor-list-empty">No hay canales seleccionados para esta vista.</div>}
+            </div>
+          </section>
+        </aside>
+      </section>
+    </div>
   );
 }
 
