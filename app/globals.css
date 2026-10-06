@@ -1857,7 +1857,8 @@ button.module-table-row { width: 100%; }
   .login-form-panel { min-height: 100dvh; padding: 24px 20px; place-items: center; }
   .login-card { width: 100%; padding: 0; }
   .login-mobile-brand { margin-bottom: 48px; display: flex; }
-  .login-mobile-brand > span:last-child { color: #0f172a; }
+  .login-mobile-brand > span:last-child, .login-mobile-brand .login-brand-copy strong { color: #0f172a; }
+  .login-mobile-brand .login-brand-copy em { color: #0369a1; }
   .login-mobile-brand .login-brand-mark { width: 42px; height: 42px; color: #0369a1; background: #f0f9ff; border-color: #bae6fd; box-shadow: none; }
   .login-card-header h2 { font-size: 31px; }
   .login-card-header p { margin-bottom: 25px; }
