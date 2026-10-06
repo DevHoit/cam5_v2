@@ -11038,3 +11038,4 @@ button.dashboard-kpi:hover { transform: translateY(-1px); border-color: #bae6fd;
 }
 
 .device-model-catalog .hierarchy-create-form .resource-active-toggle { min-height:0; margin:0; }
+.history-v4 .history-feed-v3:has(.history-empty-v3) { min-height:160px; }
