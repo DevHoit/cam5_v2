@@ -155,10 +155,6 @@ export function AccountView({
   const remoteSessions = data.sessions.filter((session) => !session.current).length;
 
   return <div className="account-v4 account-v5">
-    <section className="account-commandbar-v5">
-      <div><span>Cuenta personal</span><h1>Mi cuenta</h1><p>Administra tu identidad, credenciales y sesiones activas en HoitLive Core.</p></div>
-    </section>
-
     <section className="account-overview-v5">
       <div className="account-identity-v5">
         <span className="account-avatar-v5">{initials}</span>
