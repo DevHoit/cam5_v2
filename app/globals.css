@@ -11042,7 +11042,7 @@ button.dashboard-kpi:hover { transform: translateY(-1px); border-color: #bae6fd;
 .history-v4 .history-feed-v3:has(.history-empty-v3) { min-height:160px; }
 
 /* Keep operational context and account actions available on small screens. */
-@media (max-width:600px) {
+@media (max-width:820px) {
   .topbar { height:auto; flex:0 0 auto; padding:10px 12px; display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; }
   .topbar-left { display:contents; }
   .topbar .menu-button { grid-column:1; grid-row:1; justify-self:start; }
