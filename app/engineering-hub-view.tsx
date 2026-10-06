@@ -78,7 +78,7 @@ export function EngineeringHubView({ asset, devices, canWrite, onNavigate, notif
         <h1>Ingeniería del activo</h1>
         <p>Configura, valida y deja listo para operación el activo seleccionado. Las herramientas están ordenadas por alcance y secuencia de trabajo.</p>
       </div>
-      <span className={`engineering-state state-${["active","online","normal"].includes(asset.state) ? "ready" : asset.state === "critical" ? "critical" : "warning"}`}>{operationalState(asset.state)}</span>
+      <span className={`engineering-state state-${["active","online","normal"].includes(asset.state) ? "ready" : asset.state === "critical" ? "critical" : "warning"}`}>{assetDevices.length ? operationalState(asset.state) : "Sin monitoreo"}</span>
     </section>
 
     <section className="engineering-context-card">

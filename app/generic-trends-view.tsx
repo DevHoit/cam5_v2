@@ -284,7 +284,8 @@ export function GenericTrendsView({
 
     <section className="generic-trend-controls panel">
       <div className="trend-primary-controls-v4">
-        <label className="trend-metric-select"><span>Variable a analizar</span><select value={selected?.optionId ?? ""} onChange={(event) => { setSelectedId(event.target.value); setComparisons([]); }}>
+        <label className="trend-metric-select"><span>Variable a analizar</span><select disabled={!options.length} value={selected?.optionId ?? ""} onChange={(event) => { setSelectedId(event.target.value); setComparisons([]); }}>
+          {!options.length && <option value="">{loading ? "Consultando variables…" : "Sin variables configuradas"}</option>}
           {options.map((option) => <option key={option.optionId} value={option.optionId}>{option.name}{option.deviceName ? ` · ${option.deviceName}` : ""}</option>)}
         </select></label>
         <div className="trend-period-group"><span>Período</span><div className="generic-period-tabs">{PERIODS.map((item) => <button key={item} className={period === item ? "active" : ""} onClick={() => setPeriod(item)}>{item}</button>)}</div></div>
@@ -295,6 +296,8 @@ export function GenericTrendsView({
         <small>Sólo se comparan variables con la misma unidad.</small>
       </div>
     </section>
+
+    {!loading && !error && !options.length && <section className="panel core-settings-empty"><IconChartLine size={22} /><div><strong>Sin variables para analizar</strong><p>Asocia un dispositivo y configura sus métricas desde Ingeniería para consultar tendencias.</p></div></section>}
 
     {comparisons.length > 0 && <div className="generic-comparison-chips">{comparisons.map((id, index) => {
       const option = options.find((item) => item.optionId === id);

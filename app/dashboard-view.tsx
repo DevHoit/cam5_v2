@@ -183,13 +183,13 @@ export function DashboardView({
         <div className="dashboard-site-list">
           {data.sites.map((site) => {
             const attention = site.criticalAlarms + site.warningAlarms;
-            const hasMonitoring = site.assets > 0 || site.gatewaysTotal > 0 || site.devicesTotal > 0;
+            const hasMonitoring = site.devicesTotal > 0;
             const stateLabel = !hasMonitoring ? "Sin monitoreo" : site.criticalAlarms ? "Crítico" : site.warningAlarms ? "Atención" : "Operación normal";
             const stateClass = !hasMonitoring ? "unmonitored" : site.criticalAlarms ? "critical" : site.warningAlarms ? "warning" : "normal";
             return <button key={site.id} className={`dashboard-site-row ${site.id === data.activeSiteId ? "active" : ""}`} onClick={() => onSwitchSite(site.id)} aria-label={`${site.assets || site.devicesTotal || site.gatewaysTotal ? "Ver" : "Configurar"} sitio ${site.name}`}>
               <span className="dashboard-site-icon"><BuildingFactory2 size={18} /></span>
               <span className="dashboard-site-name"><strong>{site.name}</strong><small>{site.code}</small></span>
-              <span className={`dashboard-site-state ${stateClass}`}><b>{stateLabel}</b><small>{hasMonitoring ? `${site.assets} activos · ${site.devicesTotal} dispositivos` : "Sin activos ni dispositivos asociados"}</small></span>
+              <span className={`dashboard-site-state ${stateClass}`}><b>{stateLabel}</b><small>{site.assets ? `${site.assets} activos · ${site.devicesTotal} dispositivos` : "Sin activos ni dispositivos asociados"}</small></span>
               <span className="dashboard-site-connectivity"><strong>{site.gatewaysOnline}/{site.gatewaysTotal}</strong><small>gateways</small></span>
               <span className="dashboard-site-connectivity"><strong>{site.devicesOnline}/{site.devicesTotal}</strong><small>dispositivos</small></span>
               <span className={`dashboard-site-alerts ${site.criticalAlarms ? "critical" : attention ? "warning" : hasMonitoring ? "normal" : "unmonitored"}`}>{site.criticalAlarms ? `${site.criticalAlarms} críticas` : attention ? `${attention} alertas` : hasMonitoring ? "Sin alertas" : "Configurar"}</span>

@@ -218,7 +218,7 @@ export function SettingsView({
     </section>
 
     <section className="core-settings-status">
-      <article><span><IconBuilding size={17} /></span><div><small>Activo</small><strong>{stateLabel(data.asset.state)}</strong><p>{data.asset.code} · {data.asset.area || "Sin área"}</p></div></article>
+      <article><span><IconBuilding size={17} /></span><div><small>Activo</small><strong>{data.devices.length ? stateLabel(data.asset.state) : "Sin monitoreo"}</strong><p>{data.asset.code} · {data.asset.area || "Sin área"}</p></div></article>
       <article className={onlineDevices === data.devices.length && data.devices.length ? "healthy" : "warning"}><span><IconCircuitCell size={17} /></span><div><small>Dispositivos</small><strong>{data.devices.length}</strong><p>{onlineDevices} operativos</p></div></article>
       <article><span><IconActivity size={17} /></span><div><small>Métricas</small><strong>{configuredMetrics}</strong><p>{enabledCapabilities} capacidades habilitadas</p></div></article>
       <article><span><IconServer size={17} /></span><div><small>Gateways disponibles</small><strong>{data.gateways.length}</strong><p>del sitio {data.asset.siteCode}</p></div></article>
@@ -242,7 +242,7 @@ export function SettingsView({
           <label><span>Área / ubicación</span><input value={assetForm.area} disabled={!canWrite} onChange={(event) => setAssetForm({ ...assetForm, area: event.target.value })} placeholder="Ej.: Sala eléctrica norte" /></label>
           <label><span>Sitio</span><input value={`${data.asset.siteCode} · ${data.asset.siteName}`} readOnly /></label>
           <label><span>Zona horaria</span><input value={data.asset.siteTimezone} readOnly /></label>
-          <label><span>Estado</span><input value={stateLabel(data.asset.state)} readOnly /></label>
+          <label><span>Estado</span><input value={data.devices.length ? stateLabel(data.asset.state) : "Sin monitoreo"} readOnly /></label>
         </div>
       </section>}
 
@@ -267,6 +267,7 @@ export function SettingsView({
 
       {tab === "metrics" && <section className="core-settings-section">
         <header><div><h2>Métricas y capacidades</h2><p>Contrato semántico que Core recibe y utiliza para supervisión, alertas, tendencias y reportes.</p></div><span>{configuredMetrics} métricas habilitadas</span></header>
+        {!data.devices.length && <div className="core-settings-empty"><IconActivity size={20} /><div><strong>Sin métricas configuradas</strong><p>Asocia un dispositivo para habilitar las métricas de este activo.</p></div></div>}
         <div className="core-metric-device-list">
           {data.devices.map((device) => {
             const metrics = metricsByDevice.get(device.id) ?? [];

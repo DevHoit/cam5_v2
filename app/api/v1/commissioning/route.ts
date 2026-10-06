@@ -66,7 +66,7 @@ async function loadMetrics(db: Cam5Database, context: Awaited<ReturnType<typeof 
   const [metricRows, capabilityRows, latestRows] = await Promise.all([
     db.select({ total: count() }).from(deviceMetrics).where(and(eq(deviceMetrics.deviceId, context.deviceId), eq(deviceMetrics.enabled, true))),
     db.select({ total: count() }).from(deviceCapabilities).where(and(eq(deviceCapabilities.deviceId, context.deviceId), eq(deviceCapabilities.enabled, true))),
-    db.select({ total: count(), good: sql<number>`count(*) filter (where ${latestMetricReadings.quality} = 'good')`, latestAt: max(latestMetricReadings.recordedAt) }).from(latestMetricReadings).innerJoin(deviceMetrics, eq(deviceMetrics.id, latestMetricReadings.deviceMetricId)).where(and(eq(deviceMetrics.deviceId, context.deviceId), eq(deviceMetrics.enabled, true), sql`${latestMetricReadings.recordedAt} >= ${freshnessBoundary}`)),
+    db.select({ total: count(), good: sql<number>`count(*) filter (where ${latestMetricReadings.quality} = 'good')`, latestAt: max(latestMetricReadings.recordedAt) }).from(latestMetricReadings).innerJoin(deviceMetrics, eq(deviceMetrics.id, latestMetricReadings.deviceMetricId)).where(and(eq(deviceMetrics.deviceId, context.deviceId), eq(deviceMetrics.enabled, true), sql`${latestMetricReadings.recordedAt} >= ${freshnessBoundary.toISOString()}::timestamptz`)),
   ]);
   return {
     metrics: { configured: Number(metricRows[0]?.total ?? 0), recent: Number(latestRows[0]?.total ?? 0), good: Number(latestRows[0]?.good ?? 0), latestAt: latestRows[0]?.latestAt ?? null },

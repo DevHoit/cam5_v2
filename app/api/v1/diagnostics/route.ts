@@ -55,7 +55,7 @@ async function payload(db: Cam5Database, user: DiagnosticUser, assetId: string, 
     db.select({
       total: count(),
       good: sql<number>`count(*) filter (where ${latestMetricReadings.quality} = 'good')::int`,
-      recent: sql<number>`count(*) filter (where ${latestMetricReadings.recordedAt} >= ${freshnessBoundary})::int`,
+      recent: sql<number>`count(*) filter (where ${latestMetricReadings.recordedAt} >= ${freshnessBoundary.toISOString()}::timestamptz)::int`,
     }).from(latestMetricReadings).innerJoin(deviceMetrics, eq(deviceMetrics.id, latestMetricReadings.deviceMetricId))
       .where(and(eq(deviceMetrics.deviceId, context.deviceId), eq(deviceMetrics.enabled, true))),
   ]);
