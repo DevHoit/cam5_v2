@@ -276,7 +276,7 @@ export function UniversalAssetOverview({
       <article><span className={latestMetricAt ? "info" : "warning"}><IconClock size={20} /></span><div><small>Última actualización</small><strong className="asset-kpi-time">{data && latestMetricAt ? formatAge(latestMetricAt, data.serverTime) : "Sin datos"}</strong><p>{latestMetricAt ? new Intl.DateTimeFormat("es-CL", { timeStyle: "medium" }).format(new Date(latestMetricAt)) : "Esperando telemetría"}</p></div></article>
     </section>}
 
-    <section className="universal-asset-layout">
+    {devices.length > 0 && <section className="universal-asset-layout">
       <article className="panel universal-metrics-panel">
         <header><div><h2>Variables monitoreadas</h2><p>Lecturas actuales de los sensores, medidores o controladores asociados a <strong>{asset.name}</strong>.</p></div><button className="secondary-button" onClick={() => onNavigate(feature.view as "electrical" | "ats" | "cold-chain" | "cabinet")}><FeatureIcon size={16} /> Abrir {feature.title.toLowerCase()}</button></header>
         <div className="universal-device-list">
@@ -310,6 +310,6 @@ export function UniversalAssetOverview({
 
         <button className="panel universal-engineering-link" onClick={() => onNavigate("engineering")}><IconDeviceDesktopAnalytics size={20} /><span><strong>Ingeniería del activo</strong><small>Configuración técnica, dispositivos y diagnóstico</small></span><IconArrowRight size={16} /></button>
       </aside>
-    </section>
+    </section>}
   </div>;
 }
