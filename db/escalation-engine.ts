@@ -1,3 +1,4 @@
+import { suppressPendingPersonalEscalations } from "./notification-engine";
 import { and, asc, eq, inArray, lte, sql } from "drizzle-orm";
 import type { Cam5Database } from "./index";
 import {
@@ -106,6 +107,7 @@ export async function enqueueEscalationJob(
   if (!existing) return { created: false as const, job: null };
 
   if (["cancelled", "completed", "failed"].includes(existing.status)) {
+    await suppressPendingPersonalEscalations(db, input.alarmId, new Date(), existing.id);
     const [requeued] = await db.update(escalationJobs).set({
       status: "pending",
       dueAt: input.dueAt,
@@ -136,6 +138,7 @@ export async function cancelEscalationJobsForAlarm(
     eq(escalationJobs.alarmId, alarmId),
     inArray(escalationJobs.status, ["pending", "processing"]),
   )).returning({ id: escalationJobs.id });
+  await suppressPendingPersonalEscalations(db, alarmId, now);
   return rows.length;
 }
 

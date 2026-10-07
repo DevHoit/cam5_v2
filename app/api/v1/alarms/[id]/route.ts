@@ -1,3 +1,4 @@
+import { suppressPendingPersonalEscalations } from "../../../../../db/notification-engine";
 import type { NextRequest } from "next/server";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
@@ -119,12 +120,14 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         if (target.status === "resolved") throw new ApiError(409, "La condición ya está atendida; puedes cerrarla o reabrirla.");
         await tx.update(alarms).set({ status: "acknowledged", acknowledgedAt: new Date(), acknowledgedBy: user.id }).where(eq(alarms.id, id));
         await tx.update(escalationJobs).set({ status: "cancelled", completedAt: new Date(), updatedAt: new Date() }).where(and(eq(escalationJobs.alarmId, id), inArray(escalationJobs.status, ["pending", "processing"])));
+        await suppressPendingPersonalEscalations(tx, id);
         eventType = "acknowledged";
       } else if (action === "resolve") {
         requirePermission("alarms.close");
         if (target.status === "closed") throw new ApiError(409, "La alarma ya está cerrada.");
         await tx.update(alarms).set({ status: "resolved", resolvedAt: new Date(), resolvedBy: user.id }).where(eq(alarms.id, id));
         await tx.update(escalationJobs).set({ status: "cancelled", completedAt: new Date(), updatedAt: new Date() }).where(and(eq(escalationJobs.alarmId, id), inArray(escalationJobs.status, ["pending", "processing"])));
+        await suppressPendingPersonalEscalations(tx, id);
         eventType = "resolved_manually";
       } else if (action === "close") {
         requirePermission("alarms.close");
@@ -132,6 +135,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         if (target.status === "closed") throw new ApiError(409, "La alarma ya está cerrada.");
         await tx.update(alarms).set({ status: "closed", closedAt: new Date(), closedBy: user.id }).where(eq(alarms.id, id));
         await tx.update(escalationJobs).set({ status: "cancelled", completedAt: new Date(), updatedAt: new Date() }).where(and(eq(escalationJobs.alarmId, id), inArray(escalationJobs.status, ["pending", "processing"])));
+        await suppressPendingPersonalEscalations(tx, id);
         await tx.update(alarmRuleStates).set({ activeAlarmId: null, breachCount: 0, recoveryCount: 0, updatedAt: new Date() }).where(eq(alarmRuleStates.activeAlarmId, id));
         await tx.update(operationalConditionStates).set({
           activeAlarmId: null,

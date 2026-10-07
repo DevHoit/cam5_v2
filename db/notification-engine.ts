@@ -7,6 +7,7 @@ import {
   alarms,
   assets,
   channels,
+  escalationJobs,
   notificationDeliveries,
   notificationEndpoints,
   notificationPolicies,
@@ -502,6 +503,25 @@ export function retryDelayMinutes(attempt: number) {
   return Math.min(60, 5 * 2 ** Math.max(0, attempt - 1));
 }
 
+export async function suppressPendingPersonalEscalations(
+  db: Pick<Cam5Database, "update">,
+  alarmId: string,
+  now = new Date(),
+  escalationJobId?: string,
+) {
+  return db.update(notificationDeliveries).set({
+    status: "suppressed",
+    errorMessage: "Escalamiento suprimido porque la alarma fue atendida o su ciclo cambió.",
+    updatedAt: now,
+  }).where(and(
+    eq(notificationDeliveries.alarmId, alarmId),
+    eq(notificationDeliveries.eventType, "escalated"),
+    sql`${notificationDeliveries.payload}->>'escalationJobId' is not null`,
+    escalationJobId ? sql`${notificationDeliveries.payload}->>'escalationJobId' = ${escalationJobId}` : undefined,
+    inArray(notificationDeliveries.status, ["queued", "failed"]),
+  )).returning({ id: notificationDeliveries.id });
+}
+
 export async function processNotificationDelivery(
   db: Cam5Database,
   deliveryId: number,
@@ -511,6 +531,8 @@ export async function processNotificationDelivery(
   const [candidate] = await db.select({
     id: notificationDeliveries.id,
     alarmId: notificationDeliveries.alarmId,
+    eventType: notificationDeliveries.eventType,
+    alarmStatus: alarms.status,
     subject: notificationDeliveries.subject,
     payload: notificationDeliveries.payload,
     recipient: notificationDeliveries.recipient,
@@ -531,6 +553,21 @@ export async function processNotificationDelivery(
     .where(and(eq(notificationDeliveries.id, deliveryId), eq(notificationEndpoints.enabled, true)))
     .limit(1);
   if (!candidate) return { status: "missing" as const, error: "La entrega o su canal ya no están disponibles." };
+  const escalationJobId = candidate.payload.escalationJobId;
+  if (candidate.eventType === "escalated" && typeof escalationJobId === "string") {
+    const validId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(escalationJobId);
+    const [job] = validId ? await db.select({ alarmId: escalationJobs.alarmId, dueAt: escalationJobs.dueAt, status: escalationJobs.status })
+      .from(escalationJobs).where(eq(escalationJobs.id, escalationJobId)).limit(1) : [];
+    const expectedDueAt = candidate.payload.escalationDueAt;
+    const obsolete = candidate.alarmStatus !== "open" || !job || job.alarmId !== candidate.alarmId || job.status !== "completed"
+      || (typeof expectedDueAt === "string" && job.dueAt.toISOString() !== expectedDueAt);
+    if (obsolete) {
+      await db.update(notificationDeliveries).set({
+        status: "suppressed", errorMessage: "Escalamiento suprimido porque la alarma fue atendida o su ciclo cambió.", updatedAt: now,
+      }).where(and(eq(notificationDeliveries.id, candidate.id), inArray(notificationDeliveries.status, ["queued", "failed"])));
+      return { status: "suppressed" as const, error: null };
+    }
+  }
   const maintenanceActive = Boolean(candidate.alarmId && candidate.siteId && candidate.assetId && (
     candidate.assetState === "maintenance"
     || await isMaintenanceActive(db, {

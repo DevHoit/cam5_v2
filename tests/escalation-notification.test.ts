@@ -162,3 +162,97 @@ test("WhatsApp Meta adapter sends an approved template to the explicit E.164 rec
   assert.equal(result.providerMessageId, "wamid.123");
   assert.equal(result.recipient, "+56912345678");
 });
+
+for (const status of ["acknowledged", "resolved", "closed", "suppressed"] as const) {
+  test(`queued personal escalation is suppressed after alarm becomes ${status}`, async () => {
+    const { client, db, alarm, policy, level, now } = await fixture();
+    try {
+      await enqueueEscalationJob(db, { alarmId: alarm.id, policyId: policy.id, levelId: level.id, dueAt: now });
+      await processDueEscalationJobs(db, { now, execute: (context) => queueEscalationNotifications(db, context, now) });
+      await db.update(schema.alarms).set({ status }).where(eq(schema.alarms.id, alarm.id));
+      let calls = 0;
+      const result = await processNotificationQueue(db, {
+        now, includeRepeats: false,
+        environment: { NODE_ENV: "test", RESEND_API_KEY: "re_test", NOTIFICATION_FROM_EMAIL: "alerts@example.test" },
+        fetchImpl: async () => { calls++; return Response.json({ id: "must-not-send" }); },
+      });
+      assert.equal(calls, 0);
+      assert.equal(result.suppressed, 1);
+      const [delivery] = await db.select().from(schema.notificationDeliveries);
+      assert.equal(delivery.status, "suppressed");
+      assert.equal(delivery.attemptCount, 0);
+    } finally { await client.close(); }
+  });
+}
+
+test("reopening a completed escalation creates a new delivery while replay remains deduplicated", async () => {
+  const { client, db, alarm, policy, level, now } = await fixture();
+  try {
+    await enqueueEscalationJob(db, { alarmId: alarm.id, policyId: policy.id, levelId: level.id, dueAt: now });
+    await processDueEscalationJobs(db, { now, execute: (context) => queueEscalationNotifications(db, context, now) });
+    const next = new Date(now.getTime() + 600000);
+    await db.update(schema.alarms).set({ status: "resolved" }).where(eq(schema.alarms.id, alarm.id));
+    await db.update(schema.alarms).set({ status: "open" }).where(eq(schema.alarms.id, alarm.id));
+    await enqueueEscalationJob(db, { alarmId: alarm.id, policyId: policy.id, levelId: level.id, dueAt: next });
+    await processDueEscalationJobs(db, { now: next, execute: async (context) => {
+      await queueEscalationNotifications(db, context, next);
+      await queueEscalationNotifications(db, context, next);
+    } });
+    const deliveries = await db.select().from(schema.notificationDeliveries);
+    assert.equal(deliveries.length, 2);
+    assert.equal(new Set(deliveries.map((item) => item.dedupeKey)).size, 2);
+    assert.equal(deliveries.filter((item) => item.status === "queued").length, 1);
+    assert.equal(deliveries.filter((item) => item.status === "suppressed").length, 1);
+  } finally { await client.close(); }
+});
+
+test("three escalation levels respect five-minute deadlines and an ACK suppresses queued level two", async () => {
+  const { client, db, site, user, endpoint, alarm, policy, level, now } = await fixture();
+  try {
+    const [supervisor, chief] = await db.insert(schema.users).values([
+      { email: "supervisor@example.test", displayName: "Supervisor", status: "active" },
+      { email: "chief@example.test", displayName: "Chief", status: "active" },
+    ]).returning();
+    const [supervisorRole, chiefRole] = await db.insert(schema.roles).values([
+      { key: "test_supervisor", name: "Supervisor" }, { key: "test_chief", name: "Chief" },
+    ]).returning();
+    await db.insert(schema.userRoleAssignments).values([
+      { userId: supervisor.id, roleId: supervisorRole.id, siteId: site.id },
+      { userId: chief.id, roleId: chiefRole.id, siteId: site.id },
+    ]);
+    const [second, third] = await db.insert(schema.escalationLevels).values([
+      { policyId: policy.id, levelNumber: 2, delaySeconds: 300, recipientType: "role", recipientRef: supervisorRole.key, channels: ["email"] },
+      { policyId: policy.id, levelNumber: 3, delaySeconds: 600, recipientType: "role", recipientRef: chiefRole.key, channels: ["email"] },
+    ]).returning();
+    for (const item of [level, second, third]) await enqueueEscalationJob(db, {
+      alarmId: alarm.id, policyId: policy.id, levelId: item.id, dueAt: new Date(now.getTime() + item.delaySeconds * 1000),
+    });
+    const executeAt = (at: Date) => processDueEscalationJobs(db, { now: at, execute: (context) => queueEscalationNotifications(db, context, at) });
+    assert.equal((await executeAt(now)).completed, 1);
+    assert.equal((await executeAt(new Date(now.getTime() + 299000))).processed, 0);
+    const sentTo: string[] = [];
+    const options = {
+      includeRepeats: false,
+      environment: { NODE_ENV: "test" as const, RESEND_API_KEY: "re_test", NOTIFICATION_FROM_EMAIL: "alerts@example.test" },
+      fetchImpl: (async (_input, init) => {
+        sentTo.push(...JSON.parse(String(init?.body)).to);
+        return Response.json({ id: `accepted-${sentTo.length}` });
+      }) as typeof fetch,
+    };
+    assert.equal((await processNotificationQueue(db, { ...options, now })).sent, 1);
+    assert.deepEqual(sentTo, [user.email]);
+    const atFiveMinutes = new Date(now.getTime() + 300000);
+    assert.equal((await executeAt(atFiveMinutes)).completed, 1);
+    await db.update(schema.alarms).set({ status: "acknowledged", acknowledgedAt: atFiveMinutes }).where(eq(schema.alarms.id, alarm.id));
+    assert.equal((await processNotificationQueue(db, { ...options, now: atFiveMinutes })).suppressed, 1);
+    assert.equal((await executeAt(new Date(now.getTime() + 600000))).cancelled, 1);
+    assert.deepEqual(sentTo, [user.email]);
+    await db.update(schema.alarms).set({ status: "resolved" }).where(eq(schema.alarms.id, alarm.id));
+    await db.insert(schema.notificationDeliveries).values({
+      endpointId: endpoint.id, alarmId: alarm.id, eventType: "resolved_automatically", subject: "Recovery", payload: {},
+      scheduledAt: atFiveMinutes, nextAttemptAt: atFiveMinutes,
+    });
+    assert.equal((await processNotificationQueue(db, { ...options, now: atFiveMinutes })).sent, 1);
+    assert.equal(sentTo.length, 2);
+  } finally { await client.close(); }
+});

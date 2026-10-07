@@ -220,6 +220,7 @@ export async function queueEscalationNotifications(
         payload: {
           eventType: "escalated",
           escalationJobId: context.job.id,
+          escalationDueAt: context.job.dueAt.toISOString(),
           escalationLevel: context.level.levelNumber,
           severity: alarmDetail.severity,
           alarmCode: alarmDetail.alarmCode,
@@ -238,7 +239,7 @@ export async function queueEscalationNotifications(
         status: "queued" as const,
         scheduledAt: now,
         nextAttemptAt: now,
-        dedupeKey: `escalation-job:${context.job.id}:user:${user.id}:channel:${channel}`,
+        dedupeKey: `escalation-job:${context.job.id}:due:${context.job.dueAt.toISOString()}:user:${user.id}:channel:${channel}`,
       });
     }
   }
