@@ -1,9 +1,16 @@
 import { spawnSync } from "node:child_process";
 
 const isVercelBuild = process.env.VERCEL === "1";
+const vercelEnvironment = process.env.VERCEL_ENV?.trim();
+const allowNonProductionMigration = process.env.HOIT_ALLOW_NONPROD_MIGRATIONS === "1";
 
 if (!isVercelBuild) {
   console.log("Skipping database migration outside Vercel build.");
+  process.exit(0);
+}
+
+if (vercelEnvironment !== "production" && !allowNonProductionMigration) {
+  console.log(`Skipping database migration for Vercel environment '${vercelEnvironment || "unknown"}'. Production migrations run only on the production deployment.`);
   process.exit(0);
 }
 
