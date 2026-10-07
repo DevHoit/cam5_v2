@@ -4,9 +4,9 @@ import { ensurePlatformAdmin } from "../db/platform-admin";
 
 async function main() {
   loadDatabaseEnvironment();
-  const email = process.argv[2]?.trim() || process.env.CAM5_ADMIN_EMAIL?.trim();
+  const email = process.argv[2]?.trim() || (process.env.HOIT_ADMIN_EMAIL ?? process.env.CAM5_ADMIN_EMAIL)?.trim();
   if (!email) {
-    throw new Error("Indica el correo: npm run admin:promote -- usuario@dominio.cl o configura CAM5_ADMIN_EMAIL.");
+    throw new Error("Indica el correo: npm run admin:promote -- usuario@dominio.cl o configura HOIT_ADMIN_EMAIL.");
   }
   const result = await ensurePlatformAdmin(getDb(), email);
   console.log(result.created
