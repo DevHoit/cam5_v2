@@ -74,7 +74,7 @@ jobs:
           app/api/v1/hierarchy/route.ts
           app/api/v1/users/route.ts
           app/api/v1/users/[id]/route.ts
-          app/api/v1/system/operations/route.ts
+          app/api/v1/system/operations/route.ts app/api/v1/health/route.ts
           app/api/v1/notification-deliveries/route.ts
           app/api/v1/maintenance-windows/route.ts app/api/v1/shifts/route.ts app/api/v1/on-call-assignments/route.ts app/api/v1/noc/route.ts app/api/v1/escalation-policies/route.ts app/api/v1/dashboard/route.ts
           app/api/v1/webhooks/whatsapp/route.ts

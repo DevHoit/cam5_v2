@@ -15,20 +15,20 @@ concurrency:
 jobs:
   evaluate:
     runs-on: ubuntu-latest
+    timeout-minutes: 3
     env:
       HOIT_CORE_URL: https://core.hoitlive.com
-    timeout-minutes: 2
     steps:
-      - name: Evaluar pérdida de comunicación
+      - name: Ejecutar ciclo operacional
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
           test -n "$CRON_SECRET"
           curl --fail-with-body --silent --show-error \
             --retry 2 \
-            --max-time 30 \
+            --max-time 90 \
             --header "Authorization: Bearer $CRON_SECRET" \
-            $HOIT_CORE_URL/api/v1/alarms/evaluate
+            "$HOIT_CORE_URL/api/v1/system/operations"
       - name: Actualizar agregados históricos
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
@@ -38,17 +38,7 @@ jobs:
             --retry 2 \
             --max-time 60 \
             --header "Authorization: Bearer $CRON_SECRET" \
-            $HOIT_CORE_URL/api/v1/trends/aggregate
-      - name: Procesar cola de notificaciones
-        env:
-          CRON_SECRET: ${{ secrets.CRON_SECRET }}
-        run: |
-          test -n "$CRON_SECRET"
-          curl --fail-with-body --silent --show-error \
-            --retry 2 \
-            --max-time 60 \
-            --header "Authorization: Bearer $CRON_SECRET" \
-            $HOIT_CORE_URL/api/v1/notifications/process
+            "$HOIT_CORE_URL/api/v1/trends/aggregate"
       - name: Generar reportes programados
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
@@ -58,4 +48,4 @@ jobs:
             --retry 2 \
             --max-time 60 \
             --header "Authorization: Bearer $CRON_SECRET" \
-            $HOIT_CORE_URL/api/v1/reports/process
+            "$HOIT_CORE_URL/api/v1/reports/process"

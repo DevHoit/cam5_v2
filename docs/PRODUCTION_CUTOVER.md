@@ -65,6 +65,7 @@ Validar como mínimo:
 - Históricos;
 - Centro de Alertas;
 - NOC;
+- `/api/v1/health` (HTTP 200 + database ok);
 - `/api/v1/gateway/config`;
 - `/api/v1/gateway/heartbeat`;
 - `/api/v1/gateway/ingest`.
@@ -78,3 +79,14 @@ Si aparece una regresión severa:
 3. no revertir migraciones automáticamente;
 4. evaluar compatibilidad de esquema antes de cualquier rollback de DB;
 5. conservar logs y payloads que reproduzcan la falla.
+
+
+## Scheduler productivo
+
+El workflow programado ejecuta cada 5 minutos:
+
+1. `/api/v1/system/operations`: pérdida de comunicación, motores especializados, reglas genéricas, escalamiento y cola de notificaciones;
+2. `/api/v1/trends/aggregate`: agregados históricos;
+3. `/api/v1/reports/process`: reportes programados.
+
+Esto evita mantener caminos duplicados para alarmas/notificaciones y garantiza que el escalamiento forme parte del ciclo operacional.
