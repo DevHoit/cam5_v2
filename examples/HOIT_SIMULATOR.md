@@ -50,7 +50,7 @@ export HOIT_GATEWAY_TOKEN="<token>"
 
 El launcher se niega por defecto a enviar datos a los hosts productivos conocidos. Para una prueba deliberada en producción debe utilizarse `--allow-production`.
 
-La recomendación normal es ejecutar el simulador contra un **Vercel Preview** o un ambiente de pruebas.
+La recomendación normal es ejecutar el simulador contra **https://staging.hoitlive.com**, asociado a `feature/hoit-core-v1`, o contra otro ambiente de pruebas. `https://core.hoitlive.com` se considera productivo y requiere `--allow-production`.
 
 ## Uso
 
@@ -65,7 +65,7 @@ npm run simulator -- <argumentos>
 ```bash
 python3 examples/hoit_simulator.py \
   --profile pm5560 \
-  --base-url https://<preview>.vercel.app \
+  --base-url https://staging.hoitlive.com \
   --gateway-code GW-PM01 \
   --devices PM5560-01 \
   --scenario demo
@@ -87,7 +87,7 @@ demo
 ```bash
 python3 examples/hoit_simulator.py \
   --profile dse8660 \
-  --base-url https://<preview>.vercel.app \
+  --base-url https://staging.hoitlive.com \
   --gateway-code GW-DSE \
   --devices DSE8660-01,DSE8660-02 \
   --scenario demo
@@ -109,7 +109,7 @@ demo
 ```bash
 python3 examples/hoit_simulator.py \
   --profile cold-chain \
-  --base-url https://<preview>.vercel.app \
+  --base-url https://staging.hoitlive.com \
   --gateway-code GW-TEMP-01 \
   --devices TEMP-01,TEMP-02 \
   --scenario demo \

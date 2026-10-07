@@ -60,6 +60,7 @@ PROFILES = {
 }
 
 PRODUCTION_HOSTS = {
+    "core.hoitlive.com",
     "cam5v2.vercel.app",
     "hoitlive.com",
     "www.hoitlive.com",
