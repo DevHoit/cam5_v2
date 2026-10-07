@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { and, eq } from "drizzle-orm";
+import { notificationAccepted } from "../../../../../../db/notification-status";
 import { processNotificationDelivery } from "../../../../../../db/notification-engine";
 import { auditLogs, notificationDeliveries, notificationEndpoints, sites } from "../../../../../../db/schema";
 import { apiErrorResponse, ApiError, requestMetadata, requireApiSession } from "../../../_lib/auth";
@@ -32,10 +33,10 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
       dedupeKey: `test:${endpoint.id}:${crypto.randomUUID()}`,
     }).returning({ id: notificationDeliveries.id });
     const result = await processNotificationDelivery(db, delivery.id, { now });
-    if (result.status === "delivered") await db.update(notificationEndpoints).set({ verifiedAt: now, updatedAt: now }).where(eq(notificationEndpoints.id, endpoint.id));
+    if (notificationAccepted(result.status)) await db.update(notificationEndpoints).set({ verifiedAt: now, updatedAt: now }).where(eq(notificationEndpoints.id, endpoint.id));
     const metadata = requestMetadata(request);
-    await db.insert(auditLogs).values({ siteId: user.siteId, actorUserId: user.id, action: "notification_endpoints.test", resourceType: "notification_endpoint", resourceId: endpoint.id, outcome: result.status === "delivered" ? "success" : "failed", ipAddress: metadata.ipAddress, userAgent: metadata.userAgent, metadata: { deliveryId: delivery.id, result: result.status, error: result.error } });
-    return Response.json({ ok: result.status === "delivered", deliveryId: delivery.id, status: result.status, error: result.error }, { headers: { "Cache-Control": "no-store" } });
+    await db.insert(auditLogs).values({ siteId: user.siteId, actorUserId: user.id, action: "notification_endpoints.test", resourceType: "notification_endpoint", resourceId: endpoint.id, outcome: notificationAccepted(result.status) ? "success" : "failed", ipAddress: metadata.ipAddress, userAgent: metadata.userAgent, metadata: { deliveryId: delivery.id, result: result.status, error: result.error } });
+    return Response.json({ ok: notificationAccepted(result.status), deliveryId: delivery.id, status: result.status, error: result.error }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return apiErrorResponse(error);
   }

@@ -20,6 +20,7 @@ import {
   IconWebhook,
   IconX,
 } from "@tabler/icons-react";
+import { notificationStatusLabel as statusLabel, type NotificationStatus } from "../db/notification-status";
 import { Pagination } from "./pagination";
 
 type NoticeTone = "success" | "info" | "warning";
@@ -57,7 +58,7 @@ type DeliveryRecord = {
   subject: string;
   eventType: string;
   recipient: string | null;
-  status: "queued" | "sending" | "delivered" | "failed" | "suppressed";
+  status: NotificationStatus;
   attemptCount: number;
   maxAttempts: number;
   providerMessageId: string | null;
@@ -77,7 +78,7 @@ type DeliveryRecord = {
 type Summary = {
   endpoints: { total: number; active: number; verified: number };
   policies: { total: number; active: number };
-  deliveries: { total24h: number; delivered24h: number; failed24h: number; suppressed24h: number; pending24h: number; successRate: number | null };
+  deliveries: { total24h: number; sent24h: number; delivered24h: number; failed24h: number; suppressed24h: number; pending24h: number; successRate: number | null };
 };
 
 const emptyEndpointForm = { name: "", kind: "email" as EndpointKind, recipients: "", channel: "", url: "", destination: "", secretReference: "", enabled: true };
@@ -105,14 +106,6 @@ function kindLabel(kind: EndpointKind) {
 function destination(endpoint: EndpointRecord) {
   if (endpoint.kind === "email") return endpoint.configuration.recipients?.join(", ") || "Sin destinatarios";
   return endpoint.configuration.channel || endpoint.configuration.destination || endpoint.configuration.url || "Sin destino";
-}
-
-function statusLabel(status: DeliveryRecord["status"]) {
-  if (status === "delivered") return "Entregada";
-  if (status === "failed") return "Fallida";
-  if (status === "sending") return "Enviando";
-  if (status === "suppressed") return "Suprimida";
-  return "Programada";
 }
 
 function eventLabel(eventType: string) {
@@ -241,8 +234,8 @@ export function NotificationsView({
   const testEndpoint = async (endpoint: EndpointRecord) => {
     setTestingId(endpoint.id);
     try {
-      const result = await requestJson<{ ok: boolean; error: string | null }>(`/api/v1/notification-endpoints/${endpoint.id}/test`, { method: "POST" });
-      notify(result.ok ? "Prueba entregada y canal verificado." : result.error || "La prueba falló; revisa la configuración.", result.ok ? "success" : "warning");
+      const result = await requestJson<{ ok: boolean; status: NotificationStatus; error: string | null }>(`/api/v1/notification-endpoints/${endpoint.id}/test`, { method: "POST" });
+      notify(result.ok ? result.status === "sent" ? "Prueba aceptada por el proveedor y canal verificado. Confirma la recepción en tu correo." : "Prueba entregada y canal verificado." : result.error || "La prueba falló; revisa la configuración.", result.ok ? "success" : "warning");
       refresh();
     } catch (testError) { notify(testError instanceof Error ? testError.message : "No fue posible probar el canal.", "warning"); }
     finally { setTestingId(null); }
@@ -277,8 +270,8 @@ export function NotificationsView({
   const retryDelivery = async (delivery: DeliveryRecord) => {
     setRetryingId(delivery.id);
     try {
-      const result = await requestJson<{ ok: boolean; error: string | null }>(`/api/v1/notification-deliveries/${delivery.id}/retry`, { method: "POST" });
-      notify(result.ok ? "Entrega completada en el reintento." : result.error || "El reintento volvió a fallar.", result.ok ? "success" : "warning");
+      const result = await requestJson<{ ok: boolean; status: NotificationStatus; error: string | null }>(`/api/v1/notification-deliveries/${delivery.id}/retry`, { method: "POST" });
+      notify(result.ok ? result.status === "sent" ? "Reintento aceptado por el proveedor; recepción pendiente de confirmar." : "Entrega completada en el reintento." : result.error || "El reintento volvió a fallar.", result.ok ? "success" : "warning");
       setSelectedDelivery((current) => current?.id === delivery.id ? null : current);
       refresh();
     } catch (retryError) { notify(retryError instanceof Error ? retryError.message : "No fue posible reintentar la entrega.", "warning"); }
@@ -293,11 +286,11 @@ export function NotificationsView({
     <section className="module-summary-grid notification-summary">
       <article><span className="module-summary-icon green"><IconMail size={19} /></span><div><small>Canales activos</small><strong>{summary?.endpoints.active ?? 0}</strong><span>{summary?.endpoints.verified ?? 0} verificados de {summary?.endpoints.total ?? 0}</span></div></article>
       <article><span className="module-summary-icon blue"><IconBellRinging size={19} /></span><div><small>Reglas habilitadas</small><strong>{summary?.policies.active ?? 0}</strong><span>de {summary?.policies.total ?? 0} configuradas</span></div></article>
-      <article><span className={`module-summary-icon ${(summary?.deliveries.failed24h ?? 0) > 0 ? "amber" : "green"}`}><CircleStatus summary={summary} /></span><div><small>Entrega últimas 24 h</small><strong>{summary?.deliveries.successRate === null || summary?.deliveries.successRate === undefined ? "—" : `${summary.deliveries.successRate}%`}</strong><span>{summary?.deliveries.delivered24h ?? 0} entregadas · {summary?.deliveries.failed24h ?? 0} fallidas · {summary?.deliveries.suppressed24h ?? 0} suprimidas</span></div></article>
+      <article><span className={`module-summary-icon ${(summary?.deliveries.failed24h ?? 0) > 0 ? "amber" : "green"}`}><CircleStatus summary={summary} /></span><div><small>Envíos aceptados últimas 24 h</small><strong>{summary?.deliveries.successRate === null || summary?.deliveries.successRate === undefined ? "—" : `${summary.deliveries.successRate}%`}</strong><span>{summary?.deliveries.sent24h ?? 0} enviadas · {summary?.deliveries.delivered24h ?? 0} entregadas · {summary?.deliveries.failed24h ?? 0} fallidas · {summary?.deliveries.suppressed24h ?? 0} suprimidas</span></div></article>
     </section>
     <article className={`panel module-panel notification-module ${canWrite ? "" : "role-readonly"}`}>
       <div className="module-toolbar notification-toolbar"><div className="module-tabs" role="tablist" aria-label="Secciones de notificaciones"><button className={tab === "channels" ? "active" : ""} onClick={() => selectTab("channels")}><IconMail size={16} /> Canales</button><button className={tab === "rules" ? "active" : ""} onClick={() => selectTab("rules")}><IconBellRinging size={16} /> Reglas de envío</button><button className={tab === "delivery" ? "active" : ""} onClick={() => selectTab("delivery")}><IconClock size={16} /> Entregas</button></div><span className="notification-tab-context">{tab === "channels" ? `${summary?.endpoints.total ?? 0} canales` : tab === "rules" ? `${summary?.policies.total ?? 0} reglas` : `${summary?.deliveries.total24h ?? 0} entregas en 24 h`}</span></div>
-      <div className="notification-list-toolbar"><label className="search-field"><IconSearch size={17} /><input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder={tab === "delivery" ? "Buscar alarma, asunto o destino…" : "Buscar por nombre…"} /></label>{tab !== "rules" && <label className="status-filter"><span>Canal</span><select value={kind} onChange={(event) => { setKind(event.target.value); setPage(1); }}><option value="all">Todos</option><option value="email">Correo</option><option value="teams">Teams</option><option value="webhook">Webhook</option></select></label>}<label className="status-filter"><span>Estado</span><select value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}>{tab === "delivery" ? <><option value="all">Todos</option><option value="queued">Programadas</option><option value="sending">Enviando</option><option value="delivered">Entregadas</option><option value="failed">Fallidas</option><option value="suppressed">Suprimidas por mantenimiento</option></> : <><option value="all">Todos</option><option value="true">Activos</option><option value="false">Inactivos</option></>}</select></label>{tab === "delivery" && <><label className="notification-date-filter"><span>Desde</span><input type="date" value={from} onChange={(event) => { setFrom(event.target.value); setPage(1); }} /></label><label className="notification-date-filter"><span>Hasta</span><input type="date" value={to} onChange={(event) => { setTo(event.target.value); setPage(1); }} /></label></>}<button className="secondary-button" onClick={refresh}><IconRefresh size={15} /> Actualizar</button>{canWrite && tab !== "delivery" && <button className="primary-button" onClick={tab === "channels" ? openCreateEndpoint : openCreatePolicy}><IconPlus size={16} /> {tab === "channels" ? "Nuevo canal" : "Nueva regla de envío"}</button>}</div>
+      <div className="notification-list-toolbar"><label className="search-field"><IconSearch size={17} /><input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder={tab === "delivery" ? "Buscar alarma, asunto o destino…" : "Buscar por nombre…"} /></label>{tab !== "rules" && <label className="status-filter"><span>Canal</span><select value={kind} onChange={(event) => { setKind(event.target.value); setPage(1); }}><option value="all">Todos</option><option value="email">Correo</option><option value="teams">Teams</option><option value="webhook">Webhook</option></select></label>}<label className="status-filter"><span>Estado</span><select value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}>{tab === "delivery" ? <><option value="all">Todos</option><option value="queued">Programadas</option><option value="sending">Enviando</option><option value="sent">Enviadas al proveedor</option><option value="delivered">Entregadas</option><option value="failed">Fallidas</option><option value="suppressed">Suprimidas por mantenimiento</option></> : <><option value="all">Todos</option><option value="true">Activos</option><option value="false">Inactivos</option></>}</select></label>{tab === "delivery" && <><label className="notification-date-filter"><span>Desde</span><input type="date" value={from} onChange={(event) => { setFrom(event.target.value); setPage(1); }} /></label><label className="notification-date-filter"><span>Hasta</span><input type="date" value={to} onChange={(event) => { setTo(event.target.value); setPage(1); }} /></label></>}<button className="secondary-button" onClick={refresh}><IconRefresh size={15} /> Actualizar</button>{canWrite && tab !== "delivery" && <button className="primary-button" onClick={tab === "channels" ? openCreateEndpoint : openCreatePolicy}><IconPlus size={16} /> {tab === "channels" ? "Nuevo canal" : "Nueva regla de envío"}</button>}</div>
 
       {error && <div className="data-error"><IconAlertTriangle size={18} /><div><strong>No se pudo cargar el módulo</strong><p>{error}</p></div></div>}
       {loading && <div className="data-loading"><IconRefresh className="spin" size={18} /> Consultando notificaciones…</div>}
@@ -322,6 +315,7 @@ export function NotificationsView({
     {selectedDelivery && <div className="delivery-detail-backdrop" role="presentation" onMouseDown={() => setSelectedDelivery(null)}><section className="delivery-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="delivery-detail-title" onMouseDown={(event) => event.stopPropagation()}>
       <header><div><span className="eyebrow">Entrega #{selectedDelivery.id}</span><h2 id="delivery-detail-title">Detalle de la notificación</h2><p>{selectedDelivery.subject}</p></div><button type="button" onClick={() => setSelectedDelivery(null)} aria-label="Cerrar detalle"><IconX size={19} /></button></header>
       <div className="delivery-detail-status"><b className={`delivery-status status-${selectedDelivery.status}`}>{selectedDelivery.status === "delivered" ? <IconCircleCheck size={15} /> : selectedDelivery.status === "failed" ? <IconAlertTriangle size={15} /> : <IconClock size={15} />}{statusLabel(selectedDelivery.status)}</b><span>{eventLabel(selectedDelivery.eventType)}</span></div>
+      {selectedDelivery.status === "sent" && <p className="configuration-note">El proveedor aceptó el mensaje. La recepción en el destino aún no está confirmada.</p>}
       <dl className="delivery-detail-grid">
         <div><dt>Canal</dt><dd>{selectedDelivery.endpointName}<small>{kindLabel(selectedDelivery.endpointKind)}</small></dd></div>
         <div><dt>Destino</dt><dd title={selectedDelivery.recipient || ""}>{selectedDelivery.recipient || "No informado"}</dd></div>

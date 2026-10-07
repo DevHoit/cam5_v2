@@ -5,7 +5,8 @@ import { PGlite } from "@electric-sql/pglite";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import type { Cam5Database } from "../db/index";
-import { processNotificationQueue, queueAlarmNotifications, retryDelayMinutes, sendNotification } from "../db/notification-engine";
+import { processNotificationDelivery, processNotificationQueue, queueAlarmNotifications, retryDelayMinutes, sendNotification } from "../db/notification-engine";
+import { notificationAccepted, notificationStatusLabel } from "../db/notification-status";
 import * as schema from "../db/schema";
 
 async function notificationDatabase() {
@@ -287,4 +288,36 @@ test("suppresses a queued delivery if maintenance starts before dispatch", async
   } finally {
     await client.close();
   }
+});
+
+
+test("a Resend-accepted test succeeds without claiming delivery or becoming eligible for another send", async () => {
+  const { client, db } = await notificationDatabase();
+  try {
+    const [customer] = await db.insert(schema.clients).values({ code: "EMAIL", name: "Email" }).returning();
+    const [site] = await db.insert(schema.sites).values({ clientId: customer.id, code: "MAIL", name: "Mail" }).returning();
+    const [endpoint] = await db.insert(schema.notificationEndpoints).values({ siteId: site.id, name: "Email", kind: "email", configuration: { recipients: ["test@example.test"] } }).returning();
+    const now = new Date("2026-10-07T22:25:22.000Z");
+    const [delivery] = await db.insert(schema.notificationDeliveries).values({ endpointId: endpoint.id, eventType: "test", subject: "Test", payload: { title: "Test" }, scheduledAt: now, nextAttemptAt: now }).returning();
+    let requests = 0;
+    const options = { now, environment: { NODE_ENV: "test", RESEND_API_KEY: "test-key", NOTIFICATION_FROM_EMAIL: "Alerts <alerts@example.test>" } as NodeJS.ProcessEnv, fetchImpl: async () => {
+      requests++;
+      return Response.json({ id: "resend-accepted-1" });
+    } };
+    const engineDb = db as unknown as Cam5Database;
+    const result = await processNotificationDelivery(engineDb, delivery.id, options);
+    assert.equal(result.status, "sent");
+    assert.equal(notificationAccepted(result.status), true);
+    assert.equal(notificationStatusLabel(result.status), "Enviada al proveedor");
+    const [saved] = await db.select().from(schema.notificationDeliveries).where(eq(schema.notificationDeliveries.id, delivery.id));
+    assert.equal(saved.providerMessageId, "resend-accepted-1");
+    assert.equal(saved.deliveredAt, null);
+    assert.equal(saved.sentAt?.toISOString(), now.toISOString());
+    await processNotificationQueue(engineDb, { ...options, includeRepeats: false });
+    assert.equal(requests, 1);
+    assert.equal(notificationAccepted("failed"), false);
+    assert.equal(notificationAccepted("suppressed"), false);
+    assert.equal(notificationAccepted("queued"), false);
+    assert.equal(notificationAccepted("delivered"), true);
+  } finally { await client.close(); }
 });
