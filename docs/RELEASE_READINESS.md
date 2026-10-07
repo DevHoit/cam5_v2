@@ -59,3 +59,8 @@ Seguimientos existentes: #3 (aislamiento Neon), #4 (`TimeoutNegativeWarning` en 
 La corrección conserva los estados de comisionamiento y mantenimiento; actualiza dispositivos activos/offline según métricas buenas y vigentes; descarta métricas vencidas de la evaluación de umbrales; unifica el plazo eléctrico entre alarmas, NOC y resúmenes. El NOC reconoce `active` como saludable y revisa los puntos eléctricos del sitio antes de leer alarmas. Las consultas no despachan mensajes.
 
 Validación local: 22 pruebas pasaron (PM5560 con desconexión/reconexión, repetición sin duplicados, aumento de severidad, datos malos recientes, mantenimiento y aislamiento por sitio; ciclo operacional; acceso y áreas; ingest/heartbeat SPEC; ATS y cadena de frío). TypeScript y ESLint de archivos modificados aprobados. Pendiente verificar el nuevo preview y confirmar un scheduler externo periódico; no se habilitó un ciclo global que pueda contactar destinatarios heredados de la base clonada. Continúan pendientes pruebas móviles y de roles con sesiones reales.
+
+
+### Verificación del preview de conectividad
+
+Preview `323007c3740f51e527d3ee1b134306beb2d53db7`: `/api/v1/health` 200, entorno preview y base ok. En el NOC, PM5560-E2E-02 dejó de figurar operativo tras 15 minutos sin muestras y abrió `Sin telemetría`, crítica. El simulador envió una muestra normal a las 03:57:00.991 UTC (00:57 Santiago), ingest 202 accepted=true y heartbeat 202; el NOC mostró el medidor operativo y su alarma dejó de estar activa. Se corrigió además el contador del frontend para reconocer `active` como saludable, igual que la API. Build Next.js completo, TypeScript y lint aprobados. No se modificó main ni se promovió producción.

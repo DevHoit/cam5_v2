@@ -159,7 +159,7 @@ export function NocView() {
   if (!data) return null;
 
   const unhealthyGateways = data.gateways.filter((item) => item.state !== "online");
-  const unhealthyDevices = data.devices.filter((item) => !["online", "normal"].includes(item.state));
+  const unhealthyDevices = data.devices.filter((item) => !["active", "online", "normal"].includes(item.state));
   const connectivityTotal = data.gateways.length + data.devices.length;
   const connectivityIssues = unhealthyGateways.length + unhealthyDevices.length;
   const connectivityHealthy = Math.max(0, connectivityTotal - connectivityIssues);
