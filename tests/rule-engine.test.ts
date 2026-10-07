@@ -6,6 +6,7 @@ import { drizzle } from "drizzle-orm/pglite";
 import { eq } from "drizzle-orm";
 import {
   evaluateGenericRule,
+  evaluateGenericRulesForTelemetry,
   evaluateRuleExpression,
   ruleMetricKeys,
   validateRuleExpression,
@@ -195,6 +196,62 @@ test("undefined schedule or hysteresis semantics fail closed instead of being ig
       scheduleId: crypto.randomUUID(),
     }).returning();
     assert.equal((await evaluateGenericRule(db, rule, new Date("2026-10-03T18:00:00.000Z"))).unsupported, 1);
+  } finally {
+    await client.close();
+  }
+});
+
+
+test("telemetry-triggered generic rules evaluate only the affected scope and resolve on recovery", async () => {
+  const { client, db, customer, site, asset, device, gateway, metric } = await fixture();
+  try {
+    await db.insert(schema.rules).values({
+      clientId: customer.id,
+      siteId: site.id,
+      name: "Unrelated device rule",
+      scopeType: "device",
+      scopeId: crypto.randomUUID(),
+      severity: "warning",
+      expression: { op: "gt", metric: "environment.temperature", value: -15 },
+      durationSeconds: 0,
+    });
+    await db.insert(schema.rules).values({
+      clientId: customer.id,
+      siteId: site.id,
+      name: "Telemetry rule",
+      scopeType: "device",
+      scopeId: device.id,
+      severity: "critical",
+      expression: { op: "gt", metric: "environment.temperature", value: -15 },
+      durationSeconds: 0,
+    });
+
+    const t0 = new Date("2026-10-03T20:00:00.000Z");
+    await writeLatest(db, { gatewayId: gateway.id, deviceId: device.id, deviceMetricId: metric.id, value: -12, at: t0, key: "telemetry-rule-1" });
+    const firing = await evaluateGenericRulesForTelemetry(db, {
+      siteId: site.id,
+      assetId: asset.id,
+      deviceId: device.id,
+    }, t0);
+    assert.equal(firing.evaluatedRules, 1);
+    assert.equal(firing.opened, 1);
+
+    const [opened] = await db.select().from(schema.alarms);
+    assert.equal(opened.title, "Telemetry rule");
+    assert.equal(opened.deviceId, device.id);
+    assert.equal(opened.genericRuleId !== null, true);
+
+    const t1 = new Date("2026-10-03T20:01:00.000Z");
+    await writeLatest(db, { gatewayId: gateway.id, deviceId: device.id, deviceMetricId: metric.id, value: -18, at: t1, key: "telemetry-rule-2" });
+    const recovered = await evaluateGenericRulesForTelemetry(db, {
+      siteId: site.id,
+      assetId: asset.id,
+      deviceId: device.id,
+    }, t1);
+    assert.equal(recovered.resolved, 1);
+
+    const [resolved] = await db.select().from(schema.alarms).where(eq(schema.alarms.id, opened.id));
+    assert.equal(resolved.status, "resolved");
   } finally {
     await client.close();
   }

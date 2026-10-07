@@ -3,6 +3,7 @@ import type { Cam5Database } from "../../../../../db/index";
 import { evaluateAtsAsset } from "../../../../../db/ats-alarm-engine";
 import { evaluateColdChainAsset } from "../../../../../db/cold-chain-alarm-engine";
 import { evaluateElectricalAsset } from "../../../../../db/electrical-alarm-engine";
+import { evaluateGenericRulesForTelemetry } from "../../../../../db/rule-engine";
 import {
   assets,
   deviceMetrics,
@@ -347,6 +348,15 @@ export async function handleGenericIngest(input: {
   if (!result.duplicate && device.assetType === "ats") {
     await evaluateAtsAsset(db, device.assetId, receivedAt).catch((error: unknown) => {
       console.error("No fue posible evaluar alarmas ATS", error);
+    });
+  }
+  if (!result.duplicate) {
+    await evaluateGenericRulesForTelemetry(db, {
+      siteId: credential.siteId,
+      assetId: device.assetId,
+      deviceId: device.id,
+    }, receivedAt).catch((error: unknown) => {
+      console.error("No fue posible evaluar reglas genéricas", error);
     });
   }
 

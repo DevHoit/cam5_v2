@@ -23,6 +23,11 @@ type BindingRow = {
   deviceCode: string;
   driver: string;
   enabled: boolean;
+  deviceHost: string | null;
+  devicePort: number | null;
+  deviceUnitId: number | null;
+  deviceTimeoutMs: number;
+  deviceRetries: number;
 };
 
 function record(value: unknown): Record<string, unknown> {
@@ -56,6 +61,42 @@ function parityCode(value: string | null) {
   if (value === "odd") return "O";
   if (value === "none") return "N";
   return null;
+}
+
+function configuredInteger(config: Record<string, unknown>, ...keys: string[]) {
+  for (const key of keys) {
+    const value = config[key];
+    if (typeof value === "number" && Number.isInteger(value)) return value;
+  }
+  return null;
+}
+
+function modbusTcpTransport(row: BindingRow) {
+  const config = record(row.config);
+  const host = configuredString(config, "host") ?? row.deviceHost?.trim() ?? null;
+  const port = configuredInteger(config, "port") ?? row.devicePort;
+  const unitId = configuredInteger(config, "unit_id", "unitId") ?? row.address ?? row.deviceUnitId;
+  const timeoutMs = configuredInteger(config, "timeout_ms", "timeoutMs") ?? row.deviceTimeoutMs;
+  const retries = configuredInteger(config, "retries") ?? row.deviceRetries;
+
+  if (!host) throw new ApiError(409, `El dispositivo ${row.deviceCode} no tiene host Modbus TCP configurado.`);
+  if (port === null || port < 1 || port > 65535) {
+    throw new ApiError(409, `El dispositivo ${row.deviceCode} no tiene un puerto Modbus TCP válido configurado.`);
+  }
+  if (unitId === null || unitId < 0 || unitId > 247) {
+    throw new ApiError(409, `El dispositivo ${row.deviceCode} no tiene un Unit ID Modbus TCP válido configurado.`);
+  }
+  if (timeoutMs < 1) throw new ApiError(409, `El timeout de ${row.deviceCode} no es válido.`);
+  if (retries < 0 || retries > 10) throw new ApiError(409, `Los reintentos de ${row.deviceCode} no son válidos.`);
+
+  return {
+    type: "modbus_tcp",
+    host,
+    port,
+    unit_id: unitId,
+    timeout_ms: timeoutMs,
+    retries,
+  };
 }
 
 function rs485Transport(row: BindingRow) {
@@ -106,6 +147,7 @@ function bleTransport(row: BindingRow) {
 }
 
 function transportFor(row: BindingRow) {
+  if (row.interfaceType === "modbus_tcp") return modbusTcpTransport(row);
   if (row.interfaceType === "rs485") return rs485Transport(row);
   if (row.interfaceType === "ble") return bleTransport(row);
   throw new ApiError(409, `La interfaz ${row.interfaceType} de ${row.deviceCode} aún no tiene contrato HOIT V1.`);
@@ -126,6 +168,11 @@ async function bindingRows(db: Cam5Database, gatewayId: string): Promise<Binding
     deviceCode: devices.code,
     driver: devices.driver,
     enabled: devices.active,
+    deviceHost: devices.host,
+    devicePort: devices.port,
+    deviceUnitId: devices.unitId,
+    deviceTimeoutMs: devices.timeoutMs,
+    deviceRetries: devices.retries,
   }).from(gatewayDeviceBindings)
     .innerJoin(devices, eq(devices.id, gatewayDeviceBindings.deviceId))
     .innerJoin(assets, eq(assets.id, devices.assetId))

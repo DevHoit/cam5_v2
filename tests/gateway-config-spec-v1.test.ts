@@ -128,6 +128,81 @@ test("refuses to emit an ambiguous RS-485 contract when the physical Linux port 
   }
 });
 
+test("builds Modbus TCP transport for an IP device without leaking acquisition details into telemetry", async () => {
+  const { client, db, site, asset, gateway } = await fixture();
+  try {
+    const [device] = await db.insert(schema.devices).values({
+      assetId: asset.id,
+      code: "CAM5-01",
+      name: "CAM5-01",
+      deviceType: "condition_monitor",
+      driver: "cam5",
+      protocol: "modbus_tcp",
+      host: "192.168.10.101",
+      port: 502,
+      unitId: 1,
+      timeoutMs: 1500,
+      retries: 3,
+      state: "commissioning",
+    }).returning();
+    await db.insert(schema.gatewayDeviceBindings).values({
+      gatewayId: gateway.id,
+      deviceId: device.id,
+      interfaceType: "modbus_tcp",
+      address: 1,
+      config: { poll_profile: "cam5_default" },
+    });
+
+    const payload = await buildSpecGatewayConfig(db, {
+      gatewayId: gateway.id,
+      gatewayCode: gateway.code,
+      siteId: site.id,
+    });
+    assert.equal(payload.devices[0].driver, "cam5");
+    assert.deepEqual(payload.devices[0].transport, {
+      type: "modbus_tcp",
+      host: "192.168.10.101",
+      port: 502,
+      unit_id: 1,
+      timeout_ms: 1500,
+      retries: 3,
+    });
+    assert.equal(payload.devices[0].poll_profile, "cam5_default");
+  } finally {
+    await client.close();
+  }
+});
+
+test("refuses Modbus TCP config without an explicit host", async () => {
+  const { client, db, site, asset, gateway } = await fixture();
+  try {
+    const [device] = await db.insert(schema.devices).values({
+      assetId: asset.id,
+      code: "CAM5-NO-HOST",
+      name: "CAM5-NO-HOST",
+      deviceType: "condition_monitor",
+      driver: "cam5",
+      protocol: "modbus_tcp",
+      port: 502,
+      unitId: 1,
+      state: "commissioning",
+    }).returning();
+    await db.insert(schema.gatewayDeviceBindings).values({
+      gatewayId: gateway.id,
+      deviceId: device.id,
+      interfaceType: "modbus_tcp",
+      address: 1,
+    });
+
+    await assert.rejects(
+      buildSpecGatewayConfig(db, { gatewayId: gateway.id, gatewayCode: gateway.code, siteId: site.id }),
+      (error: unknown) => error instanceof ApiError && error.status === 409 && /host Modbus TCP/.test(error.message),
+    );
+  } finally {
+    await client.close();
+  }
+});
+
 test("builds BLE transport from the normalized Eddystone identity", async () => {
   const { client, db, site, asset, gateway } = await fixture();
   try {

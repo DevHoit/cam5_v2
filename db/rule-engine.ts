@@ -363,7 +363,12 @@ async function saveState(db: Cam5Database, input: {
   });
 }
 
-export async function evaluateGenericRule(db: Cam5Database, rule: RuleRow, now = new Date()) {
+async function evaluateGenericRuleTargets(
+  db: Cam5Database,
+  rule: RuleRow,
+  targets: RuleTarget[],
+  now: Date,
+) {
   const totals = { evaluated: 0, opened: 0, reopened: 0, resolved: 0, pending: 0, firing: 0, skipped: 0, unsupported: 0 };
   if (!rule.enabled) return totals;
 
@@ -376,7 +381,6 @@ export async function evaluateGenericRule(db: Cam5Database, rule: RuleRow, now =
 
   const expression = validateRuleExpression(rule.expression);
   const keys = ruleMetricKeys(expression);
-  const targets = await resolveTargets(db, rule);
 
   for (const target of targets) {
     const snapshot = await metricValues(db, target, keys);
@@ -449,6 +453,83 @@ export async function evaluateGenericRule(db: Cam5Database, rule: RuleRow, now =
       lastValue: Object.fromEntries(snapshot.values),
       updatedAt: now,
     });
+  }
+
+  return totals;
+}
+
+export async function evaluateGenericRule(db: Cam5Database, rule: RuleRow, now = new Date()) {
+  const targets = await resolveTargets(db, rule);
+  return evaluateGenericRuleTargets(db, rule, targets, now);
+}
+
+export async function evaluateGenericRulesForTelemetry(
+  db: Cam5Database,
+  input: { siteId: string; assetId: string; deviceId: string },
+  now = new Date(),
+) {
+  const totals = {
+    evaluatedRules: 0,
+    evaluatedTargets: 0,
+    opened: 0,
+    reopened: 0,
+    resolved: 0,
+    pending: 0,
+    firing: 0,
+    skipped: 0,
+    unsupported: 0,
+  };
+
+  const [context] = await db.select({
+    clientId: sites.clientId,
+    areaId: assets.areaId,
+  }).from(assets)
+    .innerJoin(sites, eq(sites.id, assets.siteId))
+    .where(and(
+      eq(assets.id, input.assetId),
+      eq(assets.siteId, input.siteId),
+      eq(assets.active, true),
+      eq(sites.active, true),
+    ))
+    .limit(1);
+  if (!context) return totals;
+
+  const deviceRows = await db.select({ id: devices.id }).from(devices)
+    .where(and(eq(devices.assetId, input.assetId), eq(devices.active, true)));
+  const deviceIds = deviceRows.map((device) => device.id);
+  if (!deviceIds.includes(input.deviceId)) return totals;
+
+  const enabledRules = await db.select().from(rules)
+    .where(and(eq(rules.clientId, context.clientId), eq(rules.enabled, true)));
+
+  const matchingRules = enabledRules.filter((rule) => {
+    if (rule.siteId !== null && rule.siteId !== input.siteId) return false;
+    if (rule.scopeType === "tenant") return rule.scopeId === context.clientId;
+    if (rule.scopeType === "site") return rule.scopeId === input.siteId;
+    if (rule.scopeType === "area") return context.areaId !== null && rule.scopeId === context.areaId;
+    if (rule.scopeType === "asset") return rule.scopeId === input.assetId;
+    return rule.scopeType === "device" && rule.scopeId === input.deviceId;
+  });
+
+  totals.evaluatedRules = matchingRules.length;
+  for (const rule of matchingRules) {
+    const deviceScoped = rule.scopeType === "device";
+    const target: RuleTarget = {
+      stateScopeId: deviceScoped ? input.deviceId : input.assetId,
+      siteId: input.siteId,
+      assetId: input.assetId,
+      deviceId: deviceScoped ? input.deviceId : null,
+      deviceIds: deviceScoped ? [input.deviceId] : deviceIds,
+    };
+    const result = await evaluateGenericRuleTargets(db, rule as RuleRow, [target], now);
+    totals.evaluatedTargets += result.evaluated;
+    totals.opened += result.opened;
+    totals.reopened += result.reopened;
+    totals.resolved += result.resolved;
+    totals.pending += result.pending;
+    totals.firing += result.firing;
+    totals.skipped += result.skipped;
+    totals.unsupported += result.unsupported;
   }
 
   return totals;
