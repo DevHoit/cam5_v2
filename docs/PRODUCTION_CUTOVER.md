@@ -42,6 +42,10 @@ Acción previa al E2E y al corte:
 
 Antes de promover a `main`, crear snapshot/backup de la base productiva.
 
+### URL de pruebas vigente
+
+Usar `https://cam5v2-git-feature-hoit-core-v1-hoit1.vercel.app`. `staging.hoitlive.com` no tiene DNS configurado; la asociación en Vercel no demuestra que sea accesible. El Preview tiene Deployment Protection: para consultar salud con la autenticación de Vercel, usar el conector autorizado o `vercel curl` con la URL completa. El preflight HTTP necesita acceso autorizado al destino; no desactivar protección para ejecutar la prueba.
+
 ### Comprobación previa de staging
 
 `npm run release:preflight` realiza exclusivamente una consulta HTTP GET de salud y compara los destinos PostgreSQL proporcionados. No migra, no genera telemetría ni envía notificaciones.
@@ -51,7 +55,7 @@ Proporcionar por un gestor de secretos o entorno local no versionado:
 - `HOIT_STAGING_DATABASE_URL`: conexión de staging;
 - `HOIT_PRODUCTION_DATABASE_URL`: conexión productiva;
 - `HOIT_EXPECTED_REVISION`: SHA completo de la rama candidata;
-- `HOIT_STAGING_URL`: opcional, por defecto `https://staging.hoitlive.com`.
+- `HOIT_STAGING_URL`: opcional, por defecto `https://cam5v2-git-feature-hoit-core-v1-hoit1.vercel.app`.
 
 El comando falla si faltan conexiones, si apuntan al mismo destino, si staging no es Preview, si la base no está sana o si la revisión desplegada no coincide. Trata endpoints Neon pooled/direct como el mismo destino. La salida no contiene contraseñas ni URLs PostgreSQL.
 

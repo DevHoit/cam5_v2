@@ -50,7 +50,9 @@ export HOIT_GATEWAY_TOKEN="<token>"
 
 El launcher se niega por defecto a enviar datos a los hosts productivos conocidos. Para una prueba deliberada en producción debe utilizarse `--allow-production`.
 
-La recomendación normal es ejecutar el simulador contra **https://staging.hoitlive.com**, asociado a `feature/hoit-core-v1`, o contra otro ambiente de pruebas. `https://core.hoitlive.com` se considera productivo y requiere `--allow-production`.
+La recomendación normal es ejecutar el simulador contra **https://cam5v2-git-feature-hoit-core-v1-hoit1.vercel.app**, asociado a `feature/hoit-core-v1`, o contra otro ambiente de pruebas. `https://core.hoitlive.com` se considera productivo y requiere `--allow-production`.
+
+El Preview de la rama tiene Deployment Protection. Un token de gateway autentica a Core, pero no sustituye la autenticación de Vercel. Antes de ejecutar desde el gateway físico, disponer de un entorno de pruebas aislado y accesible por HTTPS. `staging.hoitlive.com` no es utilizable mientras su DNS siga pendiente.
 
 ## Uso
 
@@ -65,7 +67,7 @@ npm run simulator -- <argumentos>
 ```bash
 python3 examples/hoit_simulator.py \
   --profile pm5560 \
-  --base-url https://staging.hoitlive.com \
+  --base-url https://cam5v2-git-feature-hoit-core-v1-hoit1.vercel.app \
   --gateway-code GW-PM01 \
   --devices PM5560-01 \
   --scenario demo
@@ -87,7 +89,7 @@ demo
 ```bash
 python3 examples/hoit_simulator.py \
   --profile dse8660 \
-  --base-url https://staging.hoitlive.com \
+  --base-url https://cam5v2-git-feature-hoit-core-v1-hoit1.vercel.app \
   --gateway-code GW-DSE \
   --devices DSE8660-01,DSE8660-02 \
   --scenario demo
@@ -109,7 +111,7 @@ demo
 ```bash
 python3 examples/hoit_simulator.py \
   --profile cold-chain \
-  --base-url https://staging.hoitlive.com \
+  --base-url https://cam5v2-git-feature-hoit-core-v1-hoit1.vercel.app \
   --gateway-code GW-TEMP-01 \
   --devices TEMP-01,TEMP-02 \
   --scenario demo \

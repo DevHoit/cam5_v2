@@ -45,7 +45,7 @@ export async function checkHealth(baseUrl, expectedRevision, fetcher = fetch) {
 async function main() {
   const checks = {
     isolation: checkIsolation(process.env.HOIT_STAGING_DATABASE_URL, process.env.HOIT_PRODUCTION_DATABASE_URL),
-    health: await checkHealth(process.env.HOIT_STAGING_URL || "https://staging.hoitlive.com", process.env.HOIT_EXPECTED_REVISION),
+    health: await checkHealth(process.env.HOIT_STAGING_URL || "https://cam5v2-git-feature-hoit-core-v1-hoit1.vercel.app", process.env.HOIT_EXPECTED_REVISION),
   };
   const ok = Object.values(checks).every((check) => check.ok);
   console.log(JSON.stringify({ ok, checks }, null, 2));

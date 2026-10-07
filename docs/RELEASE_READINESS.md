@@ -4,7 +4,10 @@ Actualizado: 2026-10-06 (Santiago). Rama: `feature/hoit-core-v1`. PR candidato: 
 
 ## Comprobaciones de esta revisión
 
-- Vercel conserva Node 22.x y los scopes de APP_URL de producción y staging.
+- Vercel conserva Node 22.x. APP_URL de Preview apunta a `https://cam5v2-git-feature-hoit-core-v1-hoit1.vercel.app`; Production conserva `https://core.hoitlive.com`.
+- `staging.hoitlive.com` está asociado como alias en Vercel, pero su DNS no está configurado. No tratarlo como entorno disponible.
+- La salud del preview de rama fue comprobada por el conector autorizado: HTTP 200, database=ok, environment=preview y revisión `d0d48ba9f3de43a500194f68262a67df711e315a`.
+- El CI remoto de `d0d48ba` terminó aprobado y su deployment está READY.
 - La integración `cam5-db` sigue conectada a Production, Preview y Development. La separación de bases **no está completada**.
 - La ingestión V1 ahora revierte el mensaje completo cuando una muestra posterior es inválida, incluyendo lecturas, lotes y efectos de alarmas anteriores del mismo mensaje.
 - Los reenvíos históricos conservan el `lastReadAt` más reciente y no reemplazan lecturas latest con muestras antiguas.
