@@ -1,4 +1,5 @@
 import { and, eq, inArray } from "drizzle-orm";
+import { telemetryIsStale } from "./telemetry-freshness";
 import type { Cam5Database } from "./index";
 import { parseElectricalAlarmConfig } from "./electrical";
 import { processOperationalCondition, type OperationalConditionInput } from "./operational-condition-engine";
@@ -60,6 +61,7 @@ export async function evaluateElectricalAsset(db: Cam5Database, assetId: string,
     deviceId: devices.id,
     deviceCode: devices.code,
     deviceName: devices.name,
+    deviceState: devices.state,
     metricKey: metricDefinitions.key,
     valueNumeric: latestMetricReadings.valueNumeric,
     quality: latestMetricReadings.quality,
@@ -84,13 +86,14 @@ export async function evaluateElectricalAsset(db: Cam5Database, assetId: string,
     id: string;
     code: string;
     name: string;
+    state: string;
     metrics: Map<string, MeterMetric>;
   }>();
 
   for (const row of metricRows) {
     let meter = meters.get(row.deviceId);
     if (!meter) {
-      meter = { id: row.deviceId, code: row.deviceCode, name: row.deviceName, metrics: new Map() };
+      meter = { id: row.deviceId, code: row.deviceCode, name: row.deviceName, state: row.deviceState, metrics: new Map() };
       meters.set(row.deviceId, meter);
     }
     if (!row.metricKey) continue;
@@ -110,8 +113,12 @@ export async function evaluateElectricalAsset(db: Cam5Database, assetId: string,
       ? new Date(Math.max(...readings.map((item) => item.recordedAt!.getTime())))
       : null;
     const ageSeconds = latestAt ? Math.max(0, Math.floor((evaluatedAt.getTime() - latestAt.getTime()) / 1000)) : Number.POSITIVE_INFINITY;
-    const hasGoodMetric = readings.some((item) => item.quality === "good");
-    const communicationLost = !latestAt || ageSeconds > config.staleAfterSeconds || !hasGoodMetric;
+    const hasGoodMetric = readings.some((item) => item.quality === "good" && !telemetryIsStale(item.recordedAt, config.staleAfterSeconds, evaluatedAt));
+    const communicationLost = !hasGoodMetric;
+    if (["active", "offline"].includes(meter.state)) {
+      await db.update(devices).set({ state: communicationLost ? "offline" : "active", updatedAt: evaluatedAt })
+        .where(and(eq(devices.id, meter.id), inArray(devices.state, ["active", "offline"])));
+    }
     if (!communicationLost) freshMeterCount += 1;
 
     conditions.push({
@@ -135,7 +142,7 @@ export async function evaluateElectricalAsset(db: Cam5Database, assetId: string,
 
     for (const key of VOLTAGE_KEYS) {
       const reading = metricValue(meter.metrics, key);
-      const usable = !communicationLost && reading.quality === "good" && reading.value !== null;
+      const usable = !communicationLost && reading.quality === "good" && reading.value !== null && !telemetryIsStale(reading.recordedAt, config.staleAfterSeconds, evaluatedAt);
       const lowKey = `meter:${meter.id}:${key}:low`;
       const lowBoundary = config.voltageMinV === null
         ? null
@@ -185,7 +192,7 @@ export async function evaluateElectricalAsset(db: Cam5Database, assetId: string,
 
     for (const key of CURRENT_KEYS) {
       const reading = metricValue(meter.metrics, key);
-      const usable = !communicationLost && reading.quality === "good" && reading.value !== null;
+      const usable = !communicationLost && reading.quality === "good" && reading.value !== null && !telemetryIsStale(reading.recordedAt, config.staleAfterSeconds, evaluatedAt);
       const conditionKey = `meter:${meter.id}:${key}:high`;
       const boundary = config.currentMaxA === null
         ? null
@@ -211,7 +218,7 @@ export async function evaluateElectricalAsset(db: Cam5Database, assetId: string,
     }
 
     const frequency = metricValue(meter.metrics, "electrical.frequency");
-    const frequencyUsable = !communicationLost && frequency.quality === "good" && frequency.value !== null;
+    const frequencyUsable = !communicationLost && frequency.quality === "good" && frequency.value !== null && !telemetryIsStale(frequency.recordedAt, config.staleAfterSeconds, evaluatedAt);
     for (const direction of ["low", "high"] as const) {
       const threshold = direction === "low" ? config.frequencyMinHz : config.frequencyMaxHz;
       const conditionKey = `meter:${meter.id}:electrical.frequency:${direction}`;
@@ -241,7 +248,7 @@ export async function evaluateElectricalAsset(db: Cam5Database, assetId: string,
     }
 
     const pf = metricValue(meter.metrics, "electrical.power_factor");
-    const pfUsable = !communicationLost && pf.quality === "good" && pf.value !== null;
+    const pfUsable = !communicationLost && pf.quality === "good" && pf.value !== null && !telemetryIsStale(pf.recordedAt, config.staleAfterSeconds, evaluatedAt);
     const pfKey = `meter:${meter.id}:electrical.power_factor:low`;
     const pfBoundary = config.powerFactorMin === null
       ? null

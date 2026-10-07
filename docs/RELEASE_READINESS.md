@@ -53,3 +53,9 @@ Seguimientos existentes: #3 (aislamiento Neon), #4 (`TimeoutNegativeWarning` en 
 - Escalamiento desplegado pendiente: ClienteDemo no tiene políticas ni guardias. No se crearon destinatarios ficticios ni se realizaron entregas reales mail/WhatsApp.
 - Móvil pendiente: la emulación por atajos del navegador no alteró el viewport (1363×936). No se considera prueba móvil ni tablet.
 - Mantener bloqueo de producción hasta resolver desconexión/scheduler, validar escalamiento desplegado, móvil, otras cuentas, hardware y backup.
+
+## Corrección de conectividad eléctrica — 2026-10-07
+
+La corrección conserva los estados de comisionamiento y mantenimiento; actualiza dispositivos activos/offline según métricas buenas y vigentes; descarta métricas vencidas de la evaluación de umbrales; unifica el plazo eléctrico entre alarmas, NOC y resúmenes. El NOC reconoce `active` como saludable y revisa los puntos eléctricos del sitio antes de leer alarmas. Las consultas no despachan mensajes.
+
+Validación local: 22 pruebas pasaron (PM5560 con desconexión/reconexión, repetición sin duplicados, aumento de severidad, datos malos recientes, mantenimiento y aislamiento por sitio; ciclo operacional; acceso y áreas; ingest/heartbeat SPEC; ATS y cadena de frío). TypeScript y ESLint de archivos modificados aprobados. Pendiente verificar el nuevo preview y confirmar un scheduler externo periódico; no se habilitó un ciclo global que pueda contactar destinatarios heredados de la base clonada. Continúan pendientes pruebas móviles y de roles con sesiones reales.

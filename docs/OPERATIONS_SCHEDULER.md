@@ -67,3 +67,9 @@ Para V1 se recomienda un ciclo cada 60 segundos. Los umbrales de `staleAfterSeco
 ## Mantenimiento
 
 El dispatcher vuelve a comprobar el estado del activo inmediatamente antes de una entrega asociada a alarma. Si el activo entró en mantenimiento después de encolar la notificación, la entrega queda con estado terminal `suppressed` y no se contacta al proveedor.
+
+## Respaldo durante la consulta del portal
+
+El NOC, las alarmas y el resumen eléctrico evalúan los puntos eléctricos del sitio autenticado antes de responder. Esto permite detectar un PM5560 conectado mediante `gateway_device_bindings`, aunque su `devices.gateway_id` sea nulo, y actualizar su estado operativo al vencer el plazo configurado. Las lecturas genéricas de métricas y el NOC calculan también la vigencia con ese mismo plazo eléctrico; ya no usan 180 segundos o un plazo derivado del polling para esos puntos.
+
+Este respaldo depende de que alguien consulte el portal. No sustituye el scheduler externo cada 60 segundos para detectar pérdidas y procesar escalamiento sin usuarios conectados. Estas rutas no ejecutan el dispatcher de notificaciones. La existencia y funcionamiento del scheduler externo deben verificarse por separado en cada entorno antes del corte de producción.

@@ -1,3 +1,6 @@
+import { parseElectricalAlarmConfig } from "../../../../../db/electrical";
+import { evaluateElectricalSite } from "../../../../../db/electrical-alarm-engine";
+import { telemetryIsStale } from "../../../../../db/telemetry-freshness";
 import type { NextRequest } from "next/server";
 import { and, eq } from "drizzle-orm";
 import {
@@ -16,12 +19,15 @@ export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest) {
   try {
     const { db, user } = await requireApiSession(request, "condition.read");
+    const now = new Date();
+    await evaluateElectricalSite(db, user.siteId, now);
     const rows = await db.select({
       assetId: assets.id,
       assetCode: assets.code,
       assetName: assets.name,
       area: assets.area,
       assetState: assets.state,
+      assetMetadata: assets.metadata,
       nominalVoltageKv: assets.nominalVoltageKv,
       deviceId: devices.id,
       deviceCode: devices.code,
@@ -66,7 +72,6 @@ export async function GET(request: NextRequest) {
       ))
       .orderBy(assets.code, devices.code, deviceMetrics.displayOrder);
 
-    const now = new Date();
     const points = new Map<string, {
       id: string;
       code: string;
@@ -131,10 +136,8 @@ export async function GET(request: NextRequest) {
       }
 
       if (!row.metricKey) continue;
-      const ageSeconds = row.recordedAt ? Math.max(0, (now.getTime() - row.recordedAt.getTime()) / 1000) : null;
-      const pollIntervalMs = typeof meter.acquisition.pollIntervalMs === "number" ? meter.acquisition.pollIntervalMs : 1000;
-      const staleAfterSeconds = Math.max(30, Math.ceil((pollIntervalMs / 1000) * 6));
-      const stale = ageSeconds === null || ageSeconds > staleAfterSeconds;
+      const staleAfterSeconds = parseElectricalAlarmConfig(row.assetMetadata).staleAfterSeconds;
+      const stale = telemetryIsStale(row.recordedAt, staleAfterSeconds, now);
       const quality = stale && row.quality === "good" ? "stale" : row.quality ?? "stale";
       if (row.recordedAt && (!meter.lastReadingAt || row.recordedAt > new Date(meter.lastReadingAt))) {
         meter.lastReadingAt = row.recordedAt.toISOString();

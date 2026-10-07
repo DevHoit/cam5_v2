@@ -1,3 +1,4 @@
+import { effectiveDeviceState, telemetryIsStale, telemetryTimeoutSeconds } from "../../../../../../db/telemetry-freshness";
 import type { NextRequest } from "next/server";
 import { and, eq } from "drizzle-orm";
 import {
@@ -32,6 +33,7 @@ export async function GET(request: NextRequest) {
       assetCode: assets.code,
       assetName: assets.name,
       assetType: assets.assetType,
+      assetMetadata: assets.metadata,
       assetState: assets.state,
       deviceId: devices.id,
       deviceCode: devices.code,
@@ -110,15 +112,15 @@ export async function GET(request: NextRequest) {
           name: row.deviceName,
           deviceType: row.deviceType,
           driver: row.driver,
-          state: row.deviceState,
+          state: effectiveDeviceState(row.deviceState, row.deviceLastReadAt, telemetryTimeoutSeconds(row.assetType, row.assetMetadata, row.staleAfterSeconds), now),
           lastReadAt: row.deviceLastReadAt?.toISOString() ?? null,
-          staleAfterSeconds: row.staleAfterSeconds ?? 180,
+          staleAfterSeconds: telemetryTimeoutSeconds(row.assetType, row.assetMetadata, row.staleAfterSeconds),
           metrics: [],
         };
         asset.devices.set(row.deviceId, device);
       }
 
-      const stale = !row.recordedAt || now.getTime() - row.recordedAt.getTime() > device.staleAfterSeconds * 1000;
+      const stale = telemetryIsStale(row.recordedAt, device.staleAfterSeconds, now);
       const effectiveQuality = stale && row.quality === "good" ? "stale" : row.quality ?? "stale";
       const value = row.dataType === "boolean"
         ? row.valueBoolean
@@ -156,7 +158,10 @@ export async function GET(request: NextRequest) {
         name: asset.name,
         assetType: asset.assetType,
         state: asset.state,
-        devices: Array.from(asset.devices.values()),
+        devices: Array.from(asset.devices.values()).map((device) => ({
+          ...device,
+          state: device.state === "active" && !device.metrics.some((metric) => metric.quality === "good") ? "offline" : device.state,
+        })),
       })),
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {

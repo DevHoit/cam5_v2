@@ -1,3 +1,5 @@
+import { evaluateElectricalSite } from "../../../../db/electrical-alarm-engine";
+import { effectiveDeviceState, telemetryTimeoutSeconds } from "../../../../db/telemetry-freshness";
 import type { NextRequest } from "next/server";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { listMaintenanceWindowsForSite, maintenanceWindowStatus } from "../../../../db/maintenance-window-service";
@@ -7,6 +9,7 @@ import {
   assets,
   devices,
   gateways,
+  readingProfiles,
   shifts,
   users,
 } from "../../../../db/schema";
@@ -18,6 +21,7 @@ export async function GET(request: NextRequest) {
   try {
     const { db, user } = await requireApiSession(request, "overview.read");
     const now = new Date();
+    await evaluateElectricalSite(db, user.siteId, now);
 
     const [alarmRows, gatewayRows, deviceRows, maintenanceRows, shiftRows, assetRows] = await Promise.all([
       db.select({
@@ -53,10 +57,14 @@ export async function GET(request: NextRequest) {
         name: devices.name,
         state: devices.state,
         lastReadAt: devices.lastReadAt,
+        assetType: assets.assetType,
+        assetMetadata: assets.metadata,
+        profileTimeout: readingProfiles.staleAfterSeconds,
         assetCode: assets.code,
         assetName: assets.name,
       }).from(devices)
         .innerJoin(assets, eq(assets.id, devices.assetId))
+        .leftJoin(readingProfiles, eq(readingProfiles.id, devices.readingProfileId))
         .where(and(eq(assets.siteId, user.siteId), eq(devices.active, true)))
         .orderBy(devices.code),
       listMaintenanceWindowsForSite(db, { clientId: user.clientId, siteId: user.siteId }),
@@ -128,7 +136,11 @@ export async function GET(request: NextRequest) {
     const critical = alarmRows.filter((alarm) => alarm.severity === "critical").length;
     const warning = alarmRows.filter((alarm) => alarm.severity === "warning").length;
     const unhealthyGateways = gatewayRows.filter((gateway) => gateway.state !== "online");
-    const unhealthyDevices = deviceRows.filter((device) => !["online", "normal"].includes(device.state));
+    const currentDevices = deviceRows.map(({ assetType, assetMetadata, profileTimeout, ...device }) => ({
+      ...device,
+      state: effectiveDeviceState(device.state, device.lastReadAt, telemetryTimeoutSeconds(assetType, assetMetadata, profileTimeout), now),
+    }));
+    const unhealthyDevices = currentDevices.filter((device) => !["active", "online", "normal"].includes(device.state));
 
     return Response.json({
       generatedAt: now.toISOString(),
@@ -156,7 +168,7 @@ export async function GET(request: NextRequest) {
         ...gateway,
         lastSeenAt: gateway.lastSeenAt?.toISOString() ?? null,
       })),
-      devices: deviceRows.map((device) => ({
+      devices: currentDevices.map((device) => ({
         ...device,
         lastReadAt: device.lastReadAt?.toISOString() ?? null,
       })),

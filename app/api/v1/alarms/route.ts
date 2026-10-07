@@ -1,3 +1,4 @@
+import { evaluateElectricalSite } from "../../../../db/electrical-alarm-engine";
 import type { NextRequest } from "next/server";
 import { and, count, desc, eq, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
@@ -32,6 +33,7 @@ export async function GET(request: NextRequest) {
     if (severity !== "all" && !VALID_SEVERITIES.includes(severity as typeof VALID_SEVERITIES[number])) throw new ApiError(400, "La severidad indicada no es válida.");
     if (kind !== "all" && !VALID_KINDS.includes(kind as typeof VALID_KINDS[number])) throw new ApiError(400, "El origen indicado no es válido.");
 
+    await evaluateElectricalSite(db, user.siteId);
     await evaluateStaleCommunications(db, user.siteId).catch((error: unknown) => console.error("No fue posible revisar comunicaciones atrasadas", error));
     const scopes = await db.select({ assetId: userAssetScopes.assetId }).from(userAssetScopes).where(eq(userAssetScopes.userId, user.id));
     const allowedAssetIds = scopes.map((scope) => scope.assetId);

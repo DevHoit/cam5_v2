@@ -4,6 +4,8 @@ import test from "node:test";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import { and, eq } from "drizzle-orm";
+import { evaluateElectricalSite } from "../db/electrical-alarm-engine";
+import { effectiveDeviceState, telemetryTimeoutSeconds } from "../db/telemetry-freshness";
 import { handleGenericIngest } from "../app/api/v1/gateway/_lib/ingest-v2";
 import type { Cam5Database } from "../db/index";
 import { PM5560_CORE_METRIC_KEYS, pm5560MetricCode } from "../db/pm5560";
@@ -219,6 +221,72 @@ test("PM5560 normalized telemetry persists all V1 electrical metrics", async () 
     assert.ok(resolvedAlarm.resolvedAt);
     const [recoveredAsset] = await db.select().from(schema.assets).where(eq(schema.assets.id, asset.id));
     assert.equal(recoveredAsset.state, "normal");
+
+    // A specialized meter has no legacy gatewayId: timeout evaluation must use
+    // the electrical domain even while the gateway continues sending heartbeats.
+    assert.equal(device.gatewayId, null);
+    const timeout = telemetryTimeoutSeconds(asset.assetType, asset.metadata, 180);
+    assert.equal(timeout, 30);
+    await db.update(schema.gateways).set({ lastSeenAt: new Date("2026-10-02T18:00:41Z"), state: "online" }).where(eq(schema.gateways.id, gateway.id));
+    await evaluateElectricalSite(db, site.id, new Date("2026-10-02T18:00:40Z"));
+    let [meterState] = await db.select().from(schema.devices).where(eq(schema.devices.id, device.id));
+    assert.equal(meterState.state, "active", "exact timeout boundary remains fresh");
+    assert.equal(effectiveDeviceState(meterState.state, meterState.lastReadAt, timeout, new Date("2026-10-02T18:00:41Z")), "offline", "NOC must derive stale state without waiting for a worker");
+
+    await evaluateElectricalSite(db, site.id, new Date("2026-10-02T18:00:41Z"));
+    await evaluateElectricalSite(db, site.id, new Date("2026-10-02T18:00:42Z"));
+    const communicationAlarms = await db.select().from(schema.alarms).where(and(eq(schema.alarms.assetId, asset.id), eq(schema.alarms.kind, "communication")));
+    assert.equal(communicationAlarms.length, 1, "repeated evaluation must not duplicate alarms");
+    assert.equal(communicationAlarms[0].status, "open");
+    assert.equal(communicationAlarms[0].severity, "warning");
+    [meterState] = await db.select().from(schema.devices).where(eq(schema.devices.id, device.id));
+    assert.equal(meterState.state, "offline");
+
+    await evaluateElectricalSite(db, site.id, new Date("2026-10-02T18:01:40Z"));
+    const [escalatedCommunication] = await db.select().from(schema.alarms).where(eq(schema.alarms.id, communicationAlarms[0].id));
+    assert.equal(escalatedCommunication.severity, "critical");
+
+    // Fresh bad-quality metrics cannot keep an old good sample operational.
+    const [frequencyMetric] = await db.select().from(schema.deviceMetrics)
+      .innerJoin(schema.metricDefinitions, eq(schema.metricDefinitions.id, schema.deviceMetrics.metricDefinitionId))
+      .where(and(eq(schema.deviceMetrics.deviceId, device.id), eq(schema.metricDefinitions.key, "electrical.frequency")));
+    await db.update(schema.latestMetricReadings).set({ quality: "bad", recordedAt: new Date("2026-10-02T18:01:41Z") })
+      .where(eq(schema.latestMetricReadings.deviceMetricId, frequencyMetric.device_metrics.id));
+    await evaluateElectricalSite(db, site.id, new Date("2026-10-02T18:01:42Z"));
+    [meterState] = await db.select().from(schema.devices).where(eq(schema.devices.id, device.id));
+    assert.equal(meterState.state, "offline");
+
+    const reconnectResponse = await handleGenericIngest({
+      db,
+      credential: { gatewayId: gateway.id, gatewayCode: gateway.code, siteId: site.id },
+      rawPayload: {
+        schemaVersion: "2.0", batchKey: "GW-PM01:boot-pm:4:PM5560-01",
+        sentAt: "2026-10-02T18:02:00Z", sampledAt: "2026-10-02T18:02:00Z",
+        timeQuality: "synced", quality: "good", qualityFlags: [],
+        gateway: { code: "GW-PM01", bootId: "boot-pm", sequence: 4 },
+        device: { code: "PM5560-01" }, metrics: values,
+      },
+      receivedAt: new Date("2026-10-02T18:02:00Z"),
+    });
+    assert.equal(reconnectResponse.status, 202);
+    [meterState] = await db.select().from(schema.devices).where(eq(schema.devices.id, device.id));
+    assert.equal(meterState.state, "active");
+    const [reconnectedAlarm] = await db.select().from(schema.alarms).where(eq(schema.alarms.id, communicationAlarms[0].id));
+    assert.equal(reconnectedAlarm.status, "resolved");
+    const [reconnectedAsset] = await db.select().from(schema.assets).where(eq(schema.assets.id, asset.id));
+    assert.equal(reconnectedAsset.state, "normal");
+
+    // Evaluation respects lifecycle states and the selected site.
+    await db.update(schema.devices).set({ state: "maintenance" }).where(eq(schema.devices.id, device.id));
+    await evaluateElectricalSite(db, site.id, new Date("2026-10-02T18:02:31Z"));
+    [meterState] = await db.select().from(schema.devices).where(eq(schema.devices.id, device.id));
+    assert.equal(meterState.state, "maintenance");
+    assert.equal(effectiveDeviceState("commissioning", null, timeout, new Date()), "commissioning");
+    const before = await db.select().from(schema.alarms).where(eq(schema.alarms.assetId, asset.id));
+    await evaluateElectricalSite(db, "00000000-0000-0000-0000-000000000001", new Date("2026-10-02T18:04:00Z"));
+    const after = await db.select().from(schema.alarms).where(eq(schema.alarms.assetId, asset.id));
+    assert.deepEqual(after, before);
+
   } finally {
     await client.close();
   }
