@@ -24,6 +24,7 @@ const migrations = [
   "0018_pm5560_metric_catalog.sql", "0019_nullable_device_gateway_site_guard.sql", "0020_electrical_report_template.sql",
   "0021_dse8660_metric_catalog.sql", "0022_ats_report_template.sql", "0023_access_scope_roles.sql",
   "0024_notification_suppressed_status.sql", "0025_rs485_bus_addressing.sql", "0026_hoit_v1_control_plane.sql",
+  "0027_rule_alarm_semantics.sql",
 ];
 
 function payload() {
@@ -116,7 +117,7 @@ test("rejects protocol details in the HOIT V1 cloud envelope", () => {
   );
 });
 
-test("accepts a multi-device SPEC message idempotently", async () => {
+test("SPEC messages roll back invalid samples and alarms, replay idempotently, and preserve latest timestamps on backfill", async () => {
   const client = new PGlite();
   try {
     for (const filename of migrations) {
@@ -172,9 +173,29 @@ test("accepts a multi-device SPEC message idempotently", async () => {
         code: "TEMP",
         name: "Temperatura",
       });
+      await db.insert(schema.rules).values({
+        clientId: tenant.id, siteId: site.id, name: `${code} temperature rule`,
+        scopeType: "device", scopeId: device.id, severity: "warning",
+        expression: { op: "gt", metric: "environment.temperature", value: -20 },
+        durationSeconds: 0,
+      });
     }
 
     const credential = { gatewayId: gateway.id, gatewayCode: gateway.code, siteId: site.id };
+    const invalidMessage = payload();
+    invalidMessage.samples[1].metrics = { "environment.temperature": "invalid" } as unknown as typeof invalidMessage.samples[1]["metrics"];
+    await assert.rejects(
+      handleSpecIngest({ db, credential, rawPayload: invalidMessage, receivedAt: now }),
+      (error: unknown) => error instanceof ApiError && error.status === 422,
+    );
+    assert.equal((await db.select().from(schema.metricReadings)).length, 0);
+    assert.equal((await db.select().from(schema.latestMetricReadings)).length, 0);
+    assert.equal((await db.select().from(schema.telemetryBatches)).length, 0);
+    assert.equal((await db.select().from(schema.alarms)).length, 0);
+    assert.equal((await db.select().from(schema.alarmEvents)).length, 0);
+    assert.equal((await db.select().from(schema.ruleEvaluationStates)).length, 0);
+    assert.ok((await db.select().from(schema.devices)).every((device) => device.lastReadAt === null));
+
     const first = await handleSpecIngest({ db, credential, rawPayload: payload(), receivedAt: now });
     assert.equal(first.status, 202);
     assert.deepEqual(await first.json(), {
@@ -185,11 +206,25 @@ test("accepts a multi-device SPEC message idempotently", async () => {
 
     const afterFirst = await db.select().from(schema.metricReadings);
     assert.equal(afterFirst.length, 2);
+    assert.equal((await db.select().from(schema.alarms)).length, 2);
 
     const replay = await handleSpecIngest({ db, credential, rawPayload: payload(), receivedAt: now });
     assert.equal(replay.status, 202);
     const afterReplay = await db.select().from(schema.metricReadings);
     assert.equal(afterReplay.length, 2);
+
+    const backfill = payload();
+    backfill.message_id = crypto.randomUUID();
+    backfill.sequence += 1;
+    backfill.samples.forEach((sample) => { sample.sampled_at = "2026-10-03T16:20:00.000Z"; });
+    assert.equal((await handleSpecIngest({ db, credential, rawPayload: backfill, receivedAt: now })).status, 202);
+    assert.equal((await db.select().from(schema.metricReadings)).length, 4);
+    const devicesAfterBackfill = await db.select().from(schema.devices);
+    for (const sample of payload().samples) {
+      const device = devicesAfterBackfill.find((row) => row.code === sample.device_id.toUpperCase());
+      assert.equal(device?.lastReadAt?.toISOString(), sample.sampled_at);
+    }
+    assert.ok((await db.select().from(schema.latestMetricReadings)).every((reading) => reading.recordedAt > new Date("2026-10-03T16:20:00.000Z")));
   } finally {
     await client.close();
   }

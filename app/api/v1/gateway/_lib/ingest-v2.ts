@@ -320,7 +320,7 @@ export async function handleGenericIngest(input: {
 
     await tx.update(devices).set({
       state: "active",
-      lastReadAt: payload.sampledAt,
+      lastReadAt: sql`greatest(${devices.lastReadAt}, ${payload.sampledAt.toISOString()}::timestamptz)`,
       clockOffsetMs: receivedAt.getTime() - payload.sentAt.getTime(),
       updatedAt: receivedAt,
     }).where(eq(devices.id, device.id));

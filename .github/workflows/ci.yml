@@ -126,5 +126,8 @@ jobs:
       - name: Database tests
         run: npm run test:db
 
+      - name: Release preflight regression tests
+        run: node --test tests/production-preflight.test.mjs
+
       - name: Build
         run: npm run build

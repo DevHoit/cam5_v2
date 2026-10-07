@@ -5,12 +5,17 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   const checkedAt = new Date().toISOString();
+  const deployment = {
+    environment: process.env.VERCEL_ENV ?? "local",
+    revision: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
+  };
   try {
     await getDb().execute(sql`select 1 as ok`);
     return Response.json({
       service: "HoitLive Core",
       status: "ok",
       database: "ok",
+      deployment,
       checked_at: checkedAt,
     }, {
       status: 200,
@@ -22,6 +27,7 @@ export async function GET() {
       service: "HoitLive Core",
       status: "degraded",
       database: "unavailable",
+      deployment,
       checked_at: checkedAt,
     }, {
       status: 503,

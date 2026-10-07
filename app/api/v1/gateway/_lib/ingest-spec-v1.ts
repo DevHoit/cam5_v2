@@ -198,14 +198,18 @@ export async function handleSpecIngest(input: {
   const payload = parseSpecIngestPayload(input.rawPayload, input.receivedAt);
   const genericPayloads = specIngestToGenericPayloads(payload);
 
-  for (const genericPayload of genericPayloads) {
-    await handleGenericIngest({
-      db: input.db,
-      credential: input.credential,
-      rawPayload: genericPayload,
-      receivedAt: input.receivedAt,
-    });
-  }
+  // The gateway receives one acknowledgement for the whole message. A failure
+  // in a later sample must not leave earlier samples or alarm side effects saved.
+  await input.db.transaction(async (tx) => {
+    for (const genericPayload of genericPayloads) {
+      await handleGenericIngest({
+        db: tx as unknown as Cam5Database,
+        credential: input.credential,
+        rawPayload: genericPayload,
+        receivedAt: input.receivedAt,
+      });
+    }
+  });
 
   return Response.json({
     accepted: true,

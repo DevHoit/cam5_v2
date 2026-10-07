@@ -244,7 +244,12 @@ async function enqueueEscalations(db: Cam5Database, alarmId: string, policyId: s
 
 async function openOrReopen(db: Cam5Database, rule: RuleRow, target: RuleTarget, values: Map<string, Scalar>, now: Date) {
   const existing = await currentRuleAlarm(db, rule.id, target);
-  const context = { source: "generic_rule", genericRuleId: rule.id, stateScopeId: target.stateScopeId, metrics: Object.fromEntries(values) };
+  const metricKeys = [...values.keys()];
+  const context = {
+    source: "generic_rule", genericRuleId: rule.id, stateScopeId: target.stateScopeId,
+    metrics: Object.fromEntries(values), metricKeys,
+    ...(metricKeys.length === 1 ? { metricKey: metricKeys[0] } : {}),
+  };
 
   if (existing && (existing.status === "open" || existing.status === "acknowledged")) {
     await db.update(alarms).set({ severity: rule.severity, lastObservedAt: now, title: rule.name, detail: rule.description, context })

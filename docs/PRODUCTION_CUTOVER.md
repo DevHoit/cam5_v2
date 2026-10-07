@@ -33,14 +33,31 @@ No se requiere CAM5 físico para este gate: el objetivo es validar Gateway -> Co
 
 ## Base de datos
 
-Actualmente Preview y Production comparten la integración Neon. Esto no bloquea el corte actual porque las migraciones de la rama candidata ya han sido ejercitadas por los previews y son compatibles, pero no es el estado objetivo.
+Actualmente Preview y Production comparten la integración Neon. Aunque Preview ya no migra automáticamente, todavía puede escribir telemetría, alarmas y datos administrativos en la base productiva. El E2E con datos simulados permanece pendiente hasta aislar staging. Un build verde no acredita ese aislamiento.
 
-Acción posterior obligatoria:
+Acción previa al E2E y al corte:
 
 - Production -> Neon PROD;
 - Preview/Development -> Neon DEV/STAGING.
 
 Antes de promover a `main`, crear snapshot/backup de la base productiva.
+
+### Comprobación previa de staging
+
+`npm run release:preflight` realiza exclusivamente una consulta HTTP GET de salud y compara los destinos PostgreSQL proporcionados. No migra, no genera telemetría ni envía notificaciones.
+
+Proporcionar por un gestor de secretos o entorno local no versionado:
+
+- `HOIT_STAGING_DATABASE_URL`: conexión de staging;
+- `HOIT_PRODUCTION_DATABASE_URL`: conexión productiva;
+- `HOIT_EXPECTED_REVISION`: SHA completo de la rama candidata;
+- `HOIT_STAGING_URL`: opcional, por defecto `https://staging.hoitlive.com`.
+
+El comando falla si faltan conexiones, si apuntan al mismo destino, si staging no es Preview, si la base no está sana o si la revisión desplegada no coincide. Trata endpoints Neon pooled/direct como el mismo destino. La salida no contiene contraseñas ni URLs PostgreSQL.
+
+Comparar destinos distintos comprueba la configuración proporcionada; no demuestra por sí solo las credenciales efectivas desplegadas ni sus permisos. Verificar además los scopes de Vercel y los permisos de los usuarios de base. No marcar el gate físico ni el backup como completados por este preflight.
+
+`GET /api/v1/health` expone `deployment.environment` y `deployment.revision` para identificar la versión comprobada, sin exponer la conexión de base.
 
 ## Promoción
 

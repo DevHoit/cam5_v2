@@ -166,6 +166,8 @@ test("generic rules honor duration, open once, and resolve on recovery", async (
     assert.equal(alarms[0].assetId, asset.id);
     assert.equal(alarms[0].deviceId, device.id);
     assert.equal(alarms[0].status, "open");
+    assert.equal(alarms[0].context?.metricKey, "environment.temperature");
+    assert.deepEqual(alarms[0].context?.metricKeys, ["environment.temperature"]);
 
     const repeated = await evaluateGenericRule(db, rule, new Date(t1.getTime() + 10_000));
     assert.equal(repeated.opened, 0);
