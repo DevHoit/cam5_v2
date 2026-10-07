@@ -1,6 +1,12 @@
 import { createHash, randomBytes } from "node:crypto";
 
-export const GATEWAY_TOKEN_PREFIX = "cam5gw_";
+export const GATEWAY_TOKEN_PREFIX = "hoitgw_";
+export const LEGACY_GATEWAY_TOKEN_PREFIXES = ["cam5gw_"] as const;
+
+export function isSupportedGatewayToken(token: string): boolean {
+  return token.startsWith(GATEWAY_TOKEN_PREFIX)
+    || LEGACY_GATEWAY_TOKEN_PREFIXES.some((prefix) => token.startsWith(prefix));
+}
 
 export function createGatewayToken(): string {
   return `${GATEWAY_TOKEN_PREFIX}${randomBytes(32).toString("base64url")}`;

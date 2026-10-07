@@ -36,7 +36,8 @@ No se incluyen mapas de registros no verificados. El PM5560 necesita el mapa ofi
 
 ```bash
 HOIT_API_BASE=https://<portal>/api/v1
-HOIT_GATEWAY_TOKEN=cam5gw_<token>
+HOIT_GATEWAY_TOKEN=hoitgw_<token>
+# Las credenciales históricas cam5gw_ continúan siendo aceptadas durante la transición.
 HOIT_GATEWAY_ID=GW-PM01
 HOIT_STATE_DB=/var/lib/hoit-agent/agent.db
 HOIT_BUFFER_MAX_BYTES=268435456
