@@ -104,3 +104,53 @@ Los intervalos entre inicios fueron 59.899 s y 59.962 s; el worker programa cada
 ### Estado para continuidad
 
 La evaluación periódica aislada quedó desplegada y probada. **No hay un servicio permanente instalado por este avance.** Sigue pendiente definir un host supervisado con credenciales/acceso renovables y verificar continuidad. Tampoco se ha validado despacho/escalamiento real a destinatarios: requiere revisión previa de políticas y destinatarios del laboratorio. Mantener pendientes las pruebas de roles, móvil, hardware físico, respaldo/restauración y gates de producción anteriores.
+
+## Evidencia 2026-10-07: scheduler administrado de Preview instalado y activo
+
+Actualización del 7 de octubre de 2026, posterior al ensayo HTTPS de la sección 17. El usuario indicó que no dispone de un host propio; se implementó la continuidad con Vercel Workflow 5.1.0 dentro del Preview existente.
+
+### Implementación
+
+- Código desplegado: `7504c7800eb2d92260715484889db86bb8533e4f`.
+- Deployment READY: `dpl_BZnVdCKRvgvFMjj6KnNRVhvehgk2`.
+- Nuevo endpoint de control `/api/v1/system/scheduler`: POST inicia, GET consulta y DELETE detiene. Bearer independiente del laboratorio; token rotado sólo en el Preview de `feature/hoit-core-v1`.
+- Sólo funciona en Preview configurado y exclusivamente en `evaluate_only`; producción y desarrollo se rechazan. Cada paso revalida el sitio activo.
+- Migración `0032_preview_operational_scheduler`: control singleton persistido, generación, run, contador, recibo del paso y tiempos/resultado. Aplicada en la base aislada del Preview durante su build.
+- El lock de fila y las escrituras de alarma/recibo comparten transacción. Un paso reentregado no duplica el ciclo; una generación nueva bloquea ejecuciones antiguas.
+- Workflow conserva el estado y se suspende hasta el próximo ciclo. No necesita un equipo del usuario encendido ni el cliente externo que consultó la prueba.
+- Tras los reintentos acotados de un paso fallido, espera 60 s y vuelve a intentar. Cada 300 iteraciones continúa en un run nuevo para acotar el replay.
+- GET informa `healthy`, edad del último ciclo y estado del run; requiere último resultado correcto, run ejecutándose y ciclo de menos de 180 s.
+- No se desactivó Deployment Protection. Las invocaciones internas del workflow usan el runtime administrado; el enlace temporal sólo permitió iniciar/consultar el control durante el ensayo.
+
+### Pruebas y evidencia real
+
+Pasaron 21 pruebas seleccionadas: scheduler, operaciones, política de entornos, reglas, PM5560 y escalamiento local. ESLint de los archivos nuevos/modificados y build de Next.js, incluido TypeScript y compilador Workflow, aprobados.
+
+El primer ensayo de activación terminó con `HTTPError`; no se capturó el detalle suficiente para atribuir su causa. El intento posterior inició correctamente el run y permitió completar la prueba. Los errores/timeout del transporte al recuperar logs no implicaron pérdida del proceso remoto; se recuperó la evidencia al terminar.
+
+| Ciclo inicial | Inicio UTC | Fin UTC | Resultado |
+| --- | --- | --- | --- |
+| 1 | 2026-10-07T15:29:38.235Z | 2026-10-07T15:29:49.258Z | Correcto; saludable |
+| 2 | 2026-10-07T15:30:41.890Z | 2026-10-07T15:30:52.881Z | Correcto; saludable |
+| 3 | 2026-10-07T15:31:44.839Z | 2026-10-07T15:31:55.573Z | Correcto; saludable |
+
+El intervalo programado es 60 s desde el inicio del ciclo. Los intervalos observados entre estos inicios fueron 63.655 s y 62.949 s; la entrega de la cola introduce variación, por lo que no se promete exactitud de reloj.
+
+- Un token inválido recibió HTTP 401.
+- Repetir POST conservó el mismo run/generación, sin duplicarlo.
+- DELETE dejó el contador en 3. Tras esperar 70 s permaneció en 3 y el run terminó como `completed`.
+- El reinicio creó una generación y un run distintos.
+- Se comprobaron dos ciclos correctos tras reiniciar, con estado saludable.
+- Run activo al cierre: `wrun_41M4BFYKRK0GT8JKSFT2KX3VJC`.
+- Último ciclo verificado: inicio `2026-10-07T15:34:17.991Z`, fin `2026-10-07T15:34:28.921Z`.
+- El cliente de prueba envió **cero llamadas para ejecutar ciclos**: sólo health, inicio, consulta y parada del scheduler. Los ciclos los ejecutó Vercel.
+- Se solicitó la detención del recurso temporal de prueba; el workflow administrado se dejó habilitado.
+- Las evaluaciones no ejecutan los procesadores de escalamiento ni notificaciones. No se enviaron mensajes a destinatarios de la base clonada.
+
+### Límites y continuidad
+
+Esta sección reemplaza el pendiente de instalación permanente de la sección 17: ahora existe un scheduler administrado activado. La verificación desplegada cubre cinco ciclos y parada/reinicio; todavía falta observar continuidad prolongada y el relevo real después de 300 iteraciones. No se ha ensayado un corte de la plataforma Vercel.
+
+El run queda ligado al deployment que lo inició. Al cambiar código, detener y reiniciar explícitamente desde el nuevo Preview. Un fallo terminal debe detectarse por estado/edad del ciclo y recuperarse con DELETE/POST; no se configuraron avisos externos de salud del scheduler. El consumo de Workflow, datos, colas y Functions se factura según Vercel y requiere seguimiento.
+
+Siguiente bloque: revisar políticas/destinatarios del laboratorio y verificar escalamiento/notificaciones desplegados con destinos de prueba identificados. Permanecen pendientes roles con sesiones reales, móvil, hardware físico, respaldo/restauración y corte productivo. No se modificó `main` ni se promovió producción.
