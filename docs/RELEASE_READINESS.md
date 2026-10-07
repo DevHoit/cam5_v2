@@ -154,3 +154,42 @@ Esta sección reemplaza el pendiente de instalación permanente de la sección 1
 El run queda ligado al deployment que lo inició. Al cambiar código, detener y reiniciar explícitamente desde el nuevo Preview. Un fallo terminal debe detectarse por estado/edad del ciclo y recuperarse con DELETE/POST; no se configuraron avisos externos de salud del scheduler. El consumo de Workflow, datos, colas y Functions se factura según Vercel y requiere seguimiento.
 
 Siguiente bloque: revisar políticas/destinatarios del laboratorio y verificar escalamiento/notificaciones desplegados con destinos de prueba identificados. Permanecen pendientes roles con sesiones reales, móvil, hardware físico, respaldo/restauración y corte productivo. No se modificó `main` ni se promovió producción.
+
+## Evidencia 2026-10-07: escalamiento: acuse tardío y reapertura corregidos
+
+Avance del 7 de octubre de 2026. El usuario eligió correo como primer canal para el siguiente envío real.
+
+### Fallos reproducidos y corrección
+
+Cinco pruebas de regresión fallaron antes del cambio: cuatro confirmaron que una entrega personal de escalamiento encolada podía enviarse después de que la alarma quedara reconocida, resuelta, cerrada o suprimida; otra confirmó que una reapertura reutilizaba la clave anterior y no generaba una entrega nueva.
+
+- El dispatcher comprueba el estado actual de la alarma y del job antes de enviar una entrega personal de escalamiento. Si la alarma ya no está abierta, falta el job, cambió el ciclo o el job no terminó correctamente, suprime la entrega sin contactar al proveedor.
+- Acuse, resolución y cierre manuales suprimen las entregas personales pendientes dentro de su transacción; se preservan las ya enviadas y otros tipos de notificación.
+- Cancelar jobs también suprime las entregas personales pendientes de esa alarma.
+- Reencolar un job elimina de despacho sus entregas personales pendientes del ciclo anterior, con alcance específico a ese job; no suprime las de otros niveles.
+- La clave de entrega incorpora el vencimiento del job como identidad del ciclo. Una reapertura con nuevo vencimiento genera otra entrega; repetir el mismo paso conserva la deduplicación.
+- El payload lleva la identidad de vencimiento para bloquear una entrega obsoleta al despachar.
+
+Un envío que ya fue aceptado por un proveedor no puede retirarse mediante el acuse. La protección se comprueba antes del envío; no se elimina la posibilidad de una transición simultánea mientras una solicitud externa ya está en curso.
+
+### Verificación
+
+Pasaron 28 pruebas seleccionadas de escalamiento, notificaciones, mantenimiento, operación y scheduler. TypeScript, ESLint, build y diff-check aprobados.
+
+El caso de tres niveles comprobó: técnico inicial; ningún avance antes de 299 s; segundo nivel a 300 s; acuse que suprime esa entrega pendiente; tercer nivel cancelado a 600 s; y aviso de recuperación todavía permitido. Todos los proveedores de estas pruebas fueron simulados y las bases fueron locales/efímeras: no se enviaron mensajes reales.
+
+Código publicado en `feature/hoit-core-v1`: `03d013e7d5af2e5a4d169e148ddb8e940a9d2783`.
+Deployment READY: `dpl_bBbuuoKDkCpK8dzY8EnUXTr49xzc`.
+Health HTTPS comprobado a las `2026-10-07T15:48:28.562Z`: Preview, revisión indicada y base sana. Esto verifica el despliegue; no acredita recepción de correo ni una cadena de escalamiento HTTPS con proveedor real.
+
+El scheduler de laboratorio conserva `evaluate_only`, sin dispatcher. No se habilitó envío global ni se cambió producción o `main`. Su run existente permanece ligado al deployment que lo inició; estas verificaciones no constituyen una nueva prueba de continuidad prolongada.
+
+### Correo real: bloqueo actual y siguiente paso
+
+Se revisaron metadatos de variables sin descifrar valores: no se encontraron credenciales de Resend ni remitente de notificaciones disponibles para Preview. El listado de instalaciones Resend del equipo `hoit1` devolvió vacío.
+
+La guía Marketplace se consultó y se intentó la categorización con Vercel CLI 62.7.0. La CLI no encontró credenciales y comenzó un flujo de login; se interrumpió sin ingresar credenciales. Las herramientas conectadas permiten consultar instalaciones, pero no exponen una operación suficiente para provisionar Resend. No se creó ni se vinculó una cuenta.
+
+Resend figura como integración nativa de Messaging en https://vercel.com/marketplace/resend. Su instalación puede crear una clave y escribir `RESEND_API_KEY` en Vercel; revisar expresamente sus destinos antes de conectar un proyecto. El alcance autorizado de este trabajo sigue siendo únicamente Preview de `feature/hoit-core-v1`: no añadir credenciales productivas ni activar colas heredadas como parte de la prueba.
+
+Para continuar el envío real faltan autenticación/conexión del proveedor, remitente permitido o dominio verificado y un correo de prueba identificado por el usuario. Luego se configurará un canal/política de laboratorio y se verificará envío, aceptación del proveedor, llegada a la casilla, acuse y recuperación. Los estados `sent` del proveedor no se tratarán como prueba automática de llegada al inbox. WhatsApp continúa pendiente y no se habilitó.
