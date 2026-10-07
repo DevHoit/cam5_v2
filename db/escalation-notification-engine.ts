@@ -1,4 +1,5 @@
 import { and, eq, isNull, or, sql } from "drizzle-orm";
+import { publicAppUrl } from "./app-url";
 import type { Cam5Database } from "./index";
 import { resolveOnCallUser } from "./on-call-engine";
 import {
@@ -228,7 +229,7 @@ export async function queueEscalationNotifications(
           asset: `${alarmDetail.assetCode} · ${alarmDetail.assetName}`,
           occurredAt: now.toISOString(),
           recipientName: user.displayName,
-          portalUrl: `${process.env.APP_URL || "https://cam5v2.vercel.app"}/?view=alarms&record=${encodeURIComponent(context.alarm.id)}`,
+          portalUrl: `${publicAppUrl()}/?view=alarms&record=${encodeURIComponent(context.alarm.id)}`,
         },
         recipient,
         recipientUserId: user.id,
