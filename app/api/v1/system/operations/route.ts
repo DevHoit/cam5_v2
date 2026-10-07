@@ -1,12 +1,14 @@
 import { timingSafeEqual } from "node:crypto";
+import { and, eq } from "drizzle-orm";
+import { sites } from "../../../../../db/schema";
+import { operationsPolicy } from "../../../../../db/operations-policy";
 import type { NextRequest } from "next/server";
 import { getDb } from "../../../../../db/index";
 import { runOperationalCycle } from "../../../../../db/operations-cycle";
 
 export const dynamic = "force-dynamic";
 
-function validSchedulerToken(request: NextRequest) {
-  const secret = process.env.CRON_SECRET;
+function validSchedulerToken(request: NextRequest, secret: string) {
   const authorization = request.headers.get("authorization") || "";
   const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
   if (!secret || !token) return false;
@@ -16,15 +18,28 @@ function validSchedulerToken(request: NextRequest) {
 }
 
 async function run(request: NextRequest) {
-  if (!process.env.CRON_SECRET) {
-    return Response.json({ error: "CRON_SECRET no está configurado." }, { status: 503, headers: { "Cache-Control": "no-store" } });
+  let policy: ReturnType<typeof operationsPolicy>;
+  try {
+    policy = operationsPolicy(process.env);
+  } catch (error) {
+    return Response.json({ error: error instanceof Error ? error.message : "Scheduler sin configurar." }, { status: 503, headers: { "Cache-Control": "no-store" } });
   }
-  if (!validSchedulerToken(request)) {
+  if (!validSchedulerToken(request, policy.secret)) {
     return Response.json({ error: "No autorizado." }, { status: 401, headers: { "Cache-Control": "no-store" } });
   }
 
   try {
-    const result = await runOperationalCycle(getDb());
+    const db = getDb();
+    let siteId: string | undefined;
+    if (policy.siteCode) {
+      const matches = await db.select({ id: sites.id }).from(sites)
+        .where(and(eq(sites.code, policy.siteCode), eq(sites.active, true)));
+      if (matches.length !== 1) {
+        return Response.json({ error: "El código de sitio de pruebas debe identificar exactamente un sitio activo." }, { status: 503, headers: { "Cache-Control": "no-store" } });
+      }
+      siteId = matches[0].id;
+    }
+    const result = await runOperationalCycle(db, { mode: policy.mode, siteId });
     return Response.json(result, {
       status: result.ok ? 200 : 207,
       headers: { "Cache-Control": "no-store" },

@@ -48,7 +48,7 @@ jobs:
           db/whatsapp-webhook.ts
           db/on-call-engine.ts
           db/rule-engine.ts
-          db/operations-cycle.ts
+          db/operations-cycle.ts db/operations-policy.ts
           db/auth.ts
           db/dse8660.ts
           db/ats-alarm-engine.ts
@@ -105,7 +105,7 @@ jobs:
           tests/whatsapp-webhook.test.ts
           tests/on-call-engine.test.ts
           tests/rule-engine.test.ts
-          tests/operations-cycle.test.ts
+          tests/operations-cycle.test.ts tests/operations-policy.test.ts
           tests/rs485-topology.test.ts
           tests/v1-integrated-e2e.test.ts
           tests/cold-chain-e2e.test.ts
@@ -116,7 +116,7 @@ jobs:
           tests/database-seed.test.ts
 
       - name: Validate Python simulators
-        run: python3 -m py_compile examples/hoit_simulator.py examples/cold_chain_simulator.py examples/pm5560_simulator.py examples/dse8660_simulator.py
+        run: python3 -m py_compile examples/hoit_simulator.py examples/cold_chain_simulator.py examples/pm5560_simulator.py examples/dse8660_simulator.py scripts/poll-preview-operations.py
 
       - name: Validate HOIT Gateway Agent
         run: |

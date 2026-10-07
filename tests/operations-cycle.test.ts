@@ -66,3 +66,72 @@ test("operational cycle evaluates every active domain and drains notifications i
     await client.close();
   }
 });
+
+test("site evaluation detects offline meters without touching another site or dispatching queued deliveries", async () => {
+  const client = new PGlite();
+  const originalFetch = globalThis.fetch;
+  let providerCalls = 0;
+  globalThis.fetch = async () => { providerCalls += 1; throw new Error("No provider may be contacted in evaluation mode"); };
+  try {
+    for (const filename of migrations) {
+      await client.exec((await readFile(new URL(`../drizzle/${filename}`, import.meta.url), "utf8")).replaceAll("--> statement-breakpoint", ""));
+    }
+    const db = drizzle(client, { schema }) as unknown as Cam5Database;
+    const [customer] = await db.insert(schema.clients).values({ code: "SCOPED", name: "Scoped" }).returning();
+    const [lab, other] = await db.insert(schema.sites).values([
+      { clientId: customer.id, code: "LAB", name: "Lab" },
+      { clientId: customer.id, code: "OTHER", name: "Other" },
+    ]).returning();
+    const [point, otherPoint] = await db.insert(schema.assets).values([
+      { siteId: lab.id, code: "PM-LAB", name: "Lab meter", assetType: "electrical_point", state: "normal" },
+      { siteId: other.id, code: "PM-OTHER", name: "Other meter", assetType: "electrical_point", state: "normal" },
+    ]).returning();
+    await db.insert(schema.devices).values([
+      { assetId: point.id, code: "LAB-METER", name: "Lab meter", deviceType: "power_meter", state: "active" },
+      { assetId: otherPoint.id, code: "OTHER-METER", name: "Other meter", deviceType: "power_meter", state: "active" },
+    ]);
+    const [rule] = await db.insert(schema.rules).values({
+      clientId: customer.id, name: "Tenant-wide voltage", scopeType: "tenant", scopeId: customer.id,
+      severity: "critical", expression: { op: "lt", metric: "electrical.voltage.l1_n", value: 210 },
+    }).returning();
+    const [endpoint] = await db.insert(schema.notificationEndpoints).values({
+      siteId: other.id, name: "Cloned recipient", kind: "webhook", configuration: { url: "https://recipient.example.test/events" },
+    }).returning();
+    const now = new Date("2026-10-07T15:00:00Z");
+    const [delivery] = await db.insert(schema.notificationDeliveries).values({
+      endpointId: endpoint.id, subject: "Pending outside lab", payload: {}, scheduledAt: now, nextAttemptAt: now,
+    }).returning();
+
+    const result = await runOperationalCycle(db, { siteId: lab.id, mode: "evaluate_only", now });
+    assert.equal(result.ok, true);
+    assert.equal(result.mode, "evaluate_only");
+    assert.equal(result.siteId, lab.id);
+    assert.equal(result.dispatchSkipped, true);
+    assert.equal(result.sites, 1);
+    assert.equal(result.evaluations, 5);
+    assert.ok(result.domains.every((domain) => domain.siteId === lab.id));
+    const alarmRows = await db.select().from(schema.alarms);
+    assert.equal(alarmRows.length, 1);
+    assert.equal(alarmRows[0].siteId, lab.id);
+    assert.equal(alarmRows[0].kind, "communication");
+    const meterRows = await db.select().from(schema.devices);
+    assert.equal(meterRows.find((meter) => meter.assetId === point.id)?.state, "offline");
+    assert.equal(meterRows.find((meter) => meter.assetId === otherPoint.id)?.state, "active");
+    const states = await db.select().from(schema.ruleEvaluationStates);
+    assert.equal(states.length, 1);
+    assert.equal(states[0].ruleId, rule.id);
+    assert.equal(states[0].scopeId, point.id, "tenant-wide rules must be restricted before state writes");
+    const [unchanged] = await db.select().from(schema.notificationDeliveries);
+    assert.equal(unchanged.id, delivery.id);
+    assert.equal(unchanged.status, "queued");
+    assert.equal(unchanged.attemptCount, 0);
+    assert.equal(result.escalations.processed, 0);
+    assert.equal(result.notifications.processed, 0);
+    assert.equal(providerCalls, 0);
+    await assert.rejects(() => runOperationalCycle(db, { siteId: lab.id }), /evaluate_only/);
+    await assert.rejects(() => runOperationalCycle(db, { siteId: "00000000-0000-0000-0000-000000000001", mode: "evaluate_only" }), /no existe/);
+  } finally {
+    globalThis.fetch = originalFetch;
+    await client.close();
+  }
+});

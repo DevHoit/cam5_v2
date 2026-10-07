@@ -73,3 +73,23 @@ El dispatcher vuelve a comprobar el estado del activo inmediatamente antes de un
 El NOC, las alarmas y el resumen eléctrico evalúan los puntos eléctricos del sitio autenticado antes de responder. Esto permite detectar un PM5560 conectado mediante `gateway_device_bindings`, aunque su `devices.gateway_id` sea nulo, y actualizar su estado operativo al vencer el plazo configurado. Las lecturas genéricas de métricas y el NOC calculan también la vigencia con ese mismo plazo eléctrico; ya no usan 180 segundos o un plazo derivado del polling para esos puntos.
 
 Este respaldo depende de que alguien consulte el portal. No sustituye el scheduler externo cada 60 segundos para detectar pérdidas y procesar escalamiento sin usuarios conectados. Estas rutas no ejecutan el dispatcher de notificaciones. La existencia y funcionamiento del scheduler externo deben verificarse por separado en cada entorno antes del corte de producción.
+
+
+## Evaluación aislada del Preview de laboratorio
+
+`/api/v1/system/operations` distingue el entorno Vercel. En Preview requiere `HOIT_PREVIEW_OPERATIONS_TOKEN`, independiente de `CRON_SECRET`, y `HOIT_PREVIEW_OPERATIONS_SITE_CODE`. El código debe identificar exactamente un sitio activo; si falta, está inactivo o es ambiguo, el endpoint falla cerrado. El servidor fuerza `mode=evaluate_only`: no permite habilitar despacho mediante parámetros del request. El Bearer productivo no habilita el endpoint de Preview.
+
+El ciclo evalúa sólo ese sitio, incluidas las reglas de alcance tenant: sus targets se filtran antes de modificar estados/alarma. Omite procesamiento de trabajos de escalamiento, repeticiones, recuperación de entregas y dispatcher. La evaluación sí puede abrir/resolver alarmas y encolar trabajos/entregas por las políticas existentes del sitio; no los despacha. No cambiar ese modo por despacho sin revisar políticas y destinatarios de la base clonada.
+
+La respuesta incluye `mode`, `siteId`, `dispatchSkipped`, timestamps, resultados de dominios y contadores. Una invocación correcta demuestra ejecución independiente de las consultas del portal; no prueba que exista un servicio permanente.
+
+### Worker de prueba
+
+`scripts/poll-preview-operations.py` consulta health, comprueba Preview/base sana y realiza ciclos aislados periódicos. Está restringido a la URL de la rama; no acepta Production. Usa cookies de acceso temporal a Deployment Protection cuando se suministra `HOIT_PREVIEW_ACCESS_URL`, sin desactivar protección. Secretos sólo por variables de entorno; no se imprimen ni se pasan por argumentos.
+
+```bash
+# Proporcionar credencial y acceso temporal por el gestor de secretos del worker.
+python3 scripts/poll-preview-operations.py --interval 60 --cycles 3
+```
+
+Por defecto termina tras tres ciclos. `--cycles 0` permite mantenerlo como proceso continuo supervisado, pero este cambio no instala por sí mismo un servicio ni modifica el scheduler productivo. Si expira el acceso temporal, falla la salud o el resultado no acredita un sitio sin despacho, el worker termina con error. Un host permanente deberá gestionar acceso/credenciales y supervisión.

@@ -64,3 +64,10 @@ Validación local: 22 pruebas pasaron (PM5560 con desconexión/reconexión, repe
 ### Verificación del preview de conectividad
 
 Preview `323007c3740f51e527d3ee1b134306beb2d53db7`: `/api/v1/health` 200, entorno preview y base ok. En el NOC, PM5560-E2E-02 dejó de figurar operativo tras 15 minutos sin muestras y abrió `Sin telemetría`, crítica. El simulador envió una muestra normal a las 03:57:00.991 UTC (00:57 Santiago), ingest 202 accepted=true y heartbeat 202; el NOC mostró el medidor operativo y su alarma dejó de estar activa. Se corrigió además el contador del frontend para reconocer `active` como saludable, igual que la API. Build Next.js completo, TypeScript y lint aprobados. No se modificó main ni se promovió producción.
+
+
+## Scheduler de Preview — 2026-10-07
+
+Se incorpora evaluación operacional aislada por sitio, con token propio del Preview y despacho bloqueado por el servidor. El ciclo limita también los targets de reglas de alcance tenant; no procesa escalamiento/entregas globales. Se incorpora worker HTTPS de tres ciclos a intervalos de 60 s, con health y comprobación de modo/alcance. Las alarmas y sus colas pueden cambiar dentro del sitio, sin contactar proveedores. El endpoint productivo conserva CRON_SECRET y su ciclo completo.
+
+Pruebas locales: ciclo completo existente, aislamiento de dos sitios con regla tenant, pérdida de medidor sin binding legado, entregas de otro sitio intactas/cero llamadas al proveedor, rechazo de sitio inexistente, rechazo de despacho con scope parcial y política de autenticación Preview/Production. La instalación de un scheduler permanente continúa pendiente hasta confirmar host, acceso y supervisión; el ensayo periódico acotado no equivale a esa instalación.

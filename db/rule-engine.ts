@@ -540,7 +540,7 @@ export async function evaluateGenericRulesForTelemetry(
   return totals;
 }
 
-export async function evaluateGenericRules(db: Cam5Database, now = new Date()) {
+export async function evaluateGenericRules(db: Cam5Database, now = new Date(), options: { siteId?: string } = {}) {
   const rows = await db.select().from(rules).where(eq(rules.enabled, true));
   const totals = {
     evaluatedRules: rows.length,
@@ -554,7 +554,10 @@ export async function evaluateGenericRules(db: Cam5Database, now = new Date()) {
     unsupported: 0,
   };
   for (const rule of rows) {
-    const result = await evaluateGenericRule(db, rule as RuleRow, now);
+    // Filter resolved targets, including tenant-wide rules, before any writes.
+    const targets = (await resolveTargets(db, rule as RuleRow))
+      .filter((target) => !options.siteId || target.siteId === options.siteId);
+    const result = await evaluateGenericRuleTargets(db, rule as RuleRow, targets, now);
     totals.evaluatedTargets += result.evaluated;
     totals.opened += result.opened;
     totals.reopened += result.reopened;
