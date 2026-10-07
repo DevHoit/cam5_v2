@@ -33,7 +33,9 @@ No se requiere CAM5 físico para este gate: el objetivo es validar Gateway -> Co
 
 ## Base de datos
 
-Actualmente Preview y Production comparten la integración Neon. Aunque Preview ya no migra automáticamente, todavía puede escribir telemetría, alarmas y datos administrativos en la base productiva. El E2E con datos simulados permanece pendiente hasta aislar staging. Un build verde no acredita ese aislamiento.
+El Preview de `feature/hoit-core-v1` usa la rama Neon `hoit-core-staging` mediante variables específicas de rama. Production conserva la conexión original. Development y otros Preview todavía comparten la integración original; no simular en esos entornos hasta separarlos.
+
+`HOIT_ALLOW_NONPROD_MIGRATIONS=1` está limitado al Preview de esta rama aislada. El deployment `dpl_GV9AgFXhyoQnsxuXZsU8VWqVYdzS` aplicó las migraciones y quedó READY con salud HTTP 200. Esto no acredita el E2E físico, las notificaciones externas ni el backup de Production.
 
 Acción previa al E2E y al corte:
 
