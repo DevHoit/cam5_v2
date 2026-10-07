@@ -41,3 +41,15 @@ Seguimientos existentes: #3 (aislamiento Neon), #4 (`TimeoutNegativeWarning` en 
 - Histórico mostró 102 mediciones (6 muestras × 17 métricas), con timestamps y calidad Válida.
 - El selector global de activos requirió recarga para incorporar el punto recién creado; queda pendiente revisar su invalidación después de altas desde el módulo eléctrico.
 - Este avance valida el circuito simulador HTTPS → Core → portal para PM5560 y CRITICAL → RECOVERY + ACK. No valida gateway físico, WARNING, antirrebote con persistencia, escalamiento, entregas mail/WhatsApp, OFFLINE/ONLINE completo, móvil ni permisos por rol. Los gates productivos siguen abiertos.
+
+## Pruebas adicionales — 2026-10-07, 00:36–00:42 Santiago
+
+- Reconexión HTTPS aprobada: al reanudar ingest + heartbeat, Resumen pasó de Sin telemetría a Operativo/Normal y 17/17 métricas vigentes.
+- Desconexión NO aprobada: tras más de 5 minutos sin datos, Resumen reconoció 17 métricas atrasadas, pero mantuvo el dispositivo Operativo y el contador 1/1. NOC mostró el PM5560 como Operativo pese a última lectura hace 5 minutos; no había alarma de comunicación para el medidor especializado.
+- Causa a revisar: el GET de alarmas ejecuta sólo el evaluador legado; éste une devices.gateway_id, mientras el PM5560 especializado usa gateway_device_bindings. El evaluador eléctrico requiere un ciclo operacional independiente. El repositorio sólo declara Cron de agregación de tendencias; no se confirmó un scheduler externo activo. Además, NOC reutiliza estados persistidos sin derivar frescura del dispositivo.
+- Persistencia aprobada en el Preview: se configuró thresholdDelaySeconds=60 exclusivamente en E2E-PM-02. Una muestra de subtensión a 03:38:39 UTC seguida de normal a 03:38:49 UTC no reabrió alarmas. Cinco muestras sostenidas entre 03:39:19 y 03:41:00 UTC reabrieron las tres críticas; la trazabilidad registró recurrencia a las 00:40 Santiago.
+- Recuperación posterior enviada: muestra normal + heartbeat HTTP 202 a 03:41:42 UTC. Simulador detenido al terminar; no supone telemetría continua.
+- 27 pruebas locales aprobadas, sin contacto real con proveedores: operations-cycle (1), escalation-engine (6), access-scope (7), area-scope (2), pm5560-e2e (1), escalation-notification (3), on-call-engine (4), gateway-heartbeat-spec-v1 (3). Validan alcance administrativo, aislamiento, destinatarios, cancelación por ACK y heartbeat; no sustituyen el recorrido autenticado desplegado con otras cuentas.
+- Escalamiento desplegado pendiente: ClienteDemo no tiene políticas ni guardias. No se crearon destinatarios ficticios ni se realizaron entregas reales mail/WhatsApp.
+- Móvil pendiente: la emulación por atajos del navegador no alteró el viewport (1363×936). No se considera prueba móvil ni tablet.
+- Mantener bloqueo de producción hasta resolver desconexión/scheduler, validar escalamiento desplegado, móvil, otras cuentas, hardware y backup.
