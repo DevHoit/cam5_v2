@@ -71,3 +71,36 @@ Preview `323007c3740f51e527d3ee1b134306beb2d53db7`: `/api/v1/health` 200, entorn
 Se incorpora evaluación operacional aislada por sitio, con token propio del Preview y despacho bloqueado por el servidor. El ciclo limita también los targets de reglas de alcance tenant; no procesa escalamiento/entregas globales. Se incorpora worker HTTPS de tres ciclos a intervalos de 60 s, con health y comprobación de modo/alcance. Las alarmas y sus colas pueden cambiar dentro del sitio, sin contactar proveedores. El endpoint productivo conserva CRON_SECRET y su ciclo completo.
 
 Pruebas locales: ciclo completo existente, aislamiento de dos sitios con regla tenant, pérdida de medidor sin binding legado, entregas de otro sitio intactas/cero llamadas al proveedor, rechazo de sitio inexistente, rechazo de despacho con scope parcial y política de autenticación Preview/Production. La instalación de un scheduler permanente continúa pendiente hasta confirmar host, acceso y supervisión; el ensayo periódico acotado no equivale a esa instalación.
+
+## Evidencia 2026-10-07: ciclo periódico aislado de Preview
+
+Verificación realizada el 7 de octubre de 2026, después del cierre inicial de este registro.
+
+### Implementación y alcance
+
+- Commit de código desplegado: `a5e673bde48d134acf5fa33c37a7a61d91e08837` en `feature/hoit-core-v1`.
+- Deployment Preview READY: `dpl_7D4HRCGwFgc534fHbR4mL6qeoft8`.
+- El endpoint de operaciones exige un token independiente y un código de sitio configurados exclusivamente para el Preview de esta rama.
+- El servidor fuerza `evaluate_only` para entornos Vercel no productivos. Configuración faltante o sitio ambiguo/inactivo falla cerrado; no hereda el secreto productivo.
+- Se evalúa sólo `E2E-STAGING`, incluidas reglas de alcance cliente: sus targets se filtran antes de modificar estados y alarmas.
+- Se omiten los procesadores de escalamiento y despacho. La evaluación puede abrir/resolver alarmas y encolar entregas/trabajos según políticas del sitio; esas colas no se despachan durante este modo.
+- Se añadió `scripts/poll-preview-operations.py`: worker HTTPS limitado a la URL de esta rama, intervalo mínimo 60 s, tres ciclos por defecto y validación de health/entorno/alcance en cada ciclo.
+- El acceso temporal a Deployment Protection se usa mediante cookies; la protección permanece habilitada. No se incluyen credenciales en este documento.
+
+### Validación local y desplegada
+
+Diez pruebas seleccionadas pasaron, además de TypeScript, ESLint, compilación del worker y build de Next.js. El caso local con dos sitios verificó desconexión del medidor del laboratorio, aislamiento de una regla de cliente, preservación de entregas del otro sitio y cero llamadas a proveedores.
+
+En HTTPS real, un token inválido recibió HTTP 401. Los tres ciclos válidos acreditaron la revisión indicada, base sana, exactamente un sitio, cinco evaluaciones por ciclo, cero fallos y `dispatchSkipped=true`; el worker comprobó cero trabajos de notificación y escalamiento procesados.
+
+| Ciclo | Inicio UTC | Fin UTC | Evaluaciones | Fallos |
+| --- | --- | --- | --- | --- |
+| 1 | 14:54:43.958 | 14:54:52.393 | 5 | 0 |
+| 2 | 14:55:43.857 | 14:55:52.220 | 5 | 0 |
+| 3 | 14:56:43.819 | 14:56:51.826 | 5 | 0 |
+
+Los intervalos entre inicios fueron 59.899 s y 59.962 s; el worker programa cada 60 s desde su inicio local de ciclo. Se solicitó la detención del recurso temporal tras recuperar la evidencia. No se modificó `main` ni se promovió producción.
+
+### Estado para continuidad
+
+La evaluación periódica aislada quedó desplegada y probada. **No hay un servicio permanente instalado por este avance.** Sigue pendiente definir un host supervisado con credenciales/acceso renovables y verificar continuidad. Tampoco se ha validado despacho/escalamiento real a destinatarios: requiere revisión previa de políticas y destinatarios del laboratorio. Mantener pendientes las pruebas de roles, móvil, hardware físico, respaldo/restauración y gates de producción anteriores.
