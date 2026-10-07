@@ -1256,3 +1256,18 @@ export const auditLogs = pgTable("audit_logs", {
   index("audit_actor_created_idx").on(table.actorUserId, table.createdAt),
   index("audit_resource_idx").on(table.resourceType, table.resourceId),
 ]);
+
+// Singleton control for the managed, laboratory-only Preview evaluator.
+export const previewSchedulers = pgTable("preview_operational_schedulers", {
+  key: text("key").primaryKey(),
+  siteId: uuid("site_id").notNull().references(() => sites.id),
+  generation: uuid("generation").notNull(),
+  enabled: boolean("enabled").default(false).notNull(),
+  runId: text("run_id"),
+  cycleCount: integer("cycle_count").default(0).notNull(),
+  lastExecution: text("last_execution"),
+  lastStartedAt: timestamp("last_started_at", { withTimezone: true }),
+  lastCompletedAt: timestamp("last_completed_at", { withTimezone: true }),
+  lastOk: boolean("last_ok"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});

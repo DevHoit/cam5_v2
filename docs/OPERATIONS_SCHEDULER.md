@@ -93,3 +93,20 @@ python3 scripts/poll-preview-operations.py --interval 60 --cycles 3
 ```
 
 Por defecto termina tras tres ciclos. `--cycles 0` permite mantenerlo como proceso continuo supervisado, pero este cambio no instala por sí mismo un servicio ni modifica el scheduler productivo. Si expira el acceso temporal, falla la salud o el resultado no acredita un sitio sin despacho, el worker termina con error. Un host permanente deberá gestionar acceso/credenciales y supervisión.
+
+
+## Scheduler administrado de laboratorio (Workflow 5)
+
+Ante ausencia de un host Linux, el Preview integra `workflow@5.1.0` con Vercel World: persistencia, colas y autenticación del runtime administradas por Vercel. No depende de una sesión abierta ni de un enlace compartido temporal. Los consumidores internos son invocados por las colas de Vercel; la protección del portal permanece habilitada. Las variables de sistema Vercel deben estar disponibles en build/runtime.
+
+Control Bearer con el token independiente del laboratorio:
+
+- `POST /api/v1/system/scheduler`: reserva un único proceso y lo inicia; repetir no crea otro mientras esté habilitado.
+- `GET /api/v1/system/scheduler`: estado persistido, contador, tiempos, resultado y estado del run.
+- `DELETE /api/v1/system/scheduler`: deshabilita el control; el próximo paso termina. Un ciclo que ya tomó el lock puede completar antes de la parada.
+
+Sólo acepta `VERCEL_ENV=preview` con configuración aislada. Cada paso revalida el sitio activo y ejecuta `evaluate_only`, sin procesadores de escalamiento/notificación. El lock de fila y recibo del paso comparten transacción con las escrituras de alarmas; reentrega del mismo paso no duplica el ciclo. Una generación nueva bloquea ejecuciones antiguas. El worker suspende hasta 60 s desde el inicio del ciclo; si la evaluación demora más, no solapa ciclos. Cada 300 ciclos delega a otro run para mantener acotado el historial de replay.
+
+El run queda ligado al deployment que lo inició. Después de cambios de código, detener y reiniciar explícitamente en el nuevo Preview. Ante un run fallido, consultar estado y ejecutar DELETE/POST para reiniciar con una generación nueva. No se instala ni inicia automáticamente en producción; el flujo productivo existente queda intacto.
+
+Workflow tiene facturación por eventos, datos, colas y Functions. Estimar consumo del ciclo por minuto y vigilar uso en Vercel; no equivale a un servicio gratuito. La activación y sus pruebas desplegadas deben registrarse por separado: compilar e instalar el SDK no demuestra ejecución continua.

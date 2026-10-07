@@ -225,6 +225,13 @@
       "when": 1791060300000,
       "tag": "0031_whatsapp_webhook_audit",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1791386000000,
+      "tag": "0032_preview_operational_scheduler",
+      "breakpoints": true
     }
   ]
 }

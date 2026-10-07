@@ -48,7 +48,7 @@ jobs:
           db/whatsapp-webhook.ts
           db/on-call-engine.ts
           db/rule-engine.ts
-          db/operations-cycle.ts db/operations-policy.ts
+          db/operations-cycle.ts db/operations-policy.ts db/preview-scheduler.ts workflows/preview-operations.ts next.config.ts
           db/auth.ts
           db/dse8660.ts
           db/ats-alarm-engine.ts
@@ -74,7 +74,7 @@ jobs:
           app/api/v1/hierarchy/route.ts
           app/api/v1/users/route.ts
           app/api/v1/users/[id]/route.ts
-          app/api/v1/system/operations/route.ts app/api/v1/health/route.ts
+          app/api/v1/system/operations/route.ts app/api/v1/system/scheduler/route.ts app/api/v1/health/route.ts
           app/api/v1/notification-deliveries/route.ts
           app/api/v1/maintenance-windows/route.ts app/api/v1/shifts/route.ts app/api/v1/on-call-assignments/route.ts app/api/v1/noc/route.ts app/api/v1/escalation-policies/route.ts app/api/v1/dashboard/route.ts
           app/api/v1/webhooks/whatsapp/route.ts
@@ -105,7 +105,7 @@ jobs:
           tests/whatsapp-webhook.test.ts
           tests/on-call-engine.test.ts
           tests/rule-engine.test.ts
-          tests/operations-cycle.test.ts tests/operations-policy.test.ts
+          tests/operations-cycle.test.ts tests/operations-policy.test.ts tests/preview-scheduler.test.ts
           tests/rs485-topology.test.ts
           tests/v1-integrated-e2e.test.ts
           tests/cold-chain-e2e.test.ts
