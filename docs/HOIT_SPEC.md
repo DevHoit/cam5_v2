@@ -1,9 +1,9 @@
 # HOIT Critical Infrastructure Platform
 ## Especificación funcional y técnica — Documento vivo
 
-**Versión:** 0.10  
-**Fecha:** 2026-10-04  
-**Estado:** Backend + Frontend V1 en cierre; integración Gateway postergada a fase final  
+**Versión:** 0.11  
+**Fecha:** 2026-10-07  
+**Estado:** Backend + Frontend V1 listos para E2E de gateway y corte productivo  
 **Origen:** Evolución de la plataforma HOIT/CAM5
 
 ---
@@ -25,7 +25,7 @@ Convenciones:
 
 ---
 
-## 0.1 Estado de implementación — 2026-10-04
+## 0.1 Estado de implementación — 2026-10-07
 
 Esta versión incorpora el estado real del repositorio `DevHoit/cam5_v2`, rama `feature/hoit-core-v1`. El documento continúa siendo la fuente de verdad funcional/técnica; las notas `IMPLEMENTED` y `PARTIAL` indican el grado de materialización del diseño sin reemplazar las decisiones funcionales originales.
 
@@ -34,7 +34,9 @@ Esta versión incorpora el estado real del repositorio `DevHoit/cam5_v2`, rama `
 - jerarquía multi-tenant `Tenant/Client -> Site -> Area -> Asset -> Device/Gateway`, incluyendo guards de base de datos para impedir relaciones cruzadas entre tenants/sites;
 - RBAC con `platform_admin`, `client_admin`, `site_admin`, `engineer`, `operator`, `viewer`;
 - catálogo de métricas y telemetría normalizada para PM5560, DSE8660 y Eddystone TLM;
-- contratos Gateway -> Cloud para config, heartbeat e ingest, manteniendo compatibilidad con contratos CAM5 previos;
+- contratos Gateway -> Cloud para config, heartbeat e ingest, manteniendo compatibilidad controlada con contratos previos;
+- control plane genérico con transportes `modbus_rtu`, `modbus_tcp` y `ble`; Modbus TCP entrega `host`, `port`, `unit_id`, `timeout_ms` y `retries` sin recompilar firmware;
+- ingest genérico conectado al Rule Engine para evaluar reglas aplicables al `tenant/site/area/asset/device` afectado por cada muestra;
 - identidad explícita de buses RS-485 y puerto Linux de cada binding;
 - Rule Engine V1 seguro para comparaciones y composición booleana, con duración y scopes;
 - lifecycle de alarmas, mantenimiento, escalamiento persistente, turnos/on-call y resolución de destinatarios;
@@ -59,7 +61,8 @@ Esta versión incorpora el estado real del repositorio `DevHoit/cam5_v2`, rama `
 - histéresis y calendario del Rule Engine: los campos existen, pero su contrato JSON/semántica aún no está congelado; el motor falla cerrado cuando aparecen;
 - `repeat_count > 1` en escalamiento: falta definir intervalo/semántica de repetición;
 - Meta Business, número real, credenciales y templates aprobados: integración implementada, habilitación productiva externa pendiente;
-- HOIT Gateway Agent Linux: núcleo de control y Store & Forward `IMPLEMENTED`; adquisición física PM5560/DSE/Eddystone y validación prolongada en hardware siguen `PENDING`.
+- HOIT Gateway Agent Linux: núcleo de control y Store & Forward `IMPLEMENTED`; adquisición física PM5560/DSE/Eddystone y validación prolongada en hardware siguen `PENDING`;
+- E2E productivo con gateway físico MDM9607 enviando telemetría simulada a HoitLive Core: `PENDING` antes del merge a `main`.
 
 ---
 
