@@ -27,3 +27,17 @@ Actualizado: 2026-10-07 (Santiago). Rama: `feature/hoit-core-v1`. PR candidato: 
 6. Merge y smoke test productivo sólo después de los gates anteriores.
 
 Seguimientos existentes: #3 (aislamiento Neon), #4 (`TimeoutNegativeWarning` en runtime). Runbook: `docs/PRODUCTION_CUTOVER.md`. `docs/FRONTEND_STATUS.md` conserva el historial del desarrollo visual y no debe interpretarse como aprobación actual de todos los gates.
+
+## E2E HTTPS desplegado — 2026-10-07, 00:29–00:32 Santiago
+
+- Preview comprobado en revisión `bf3e715663a8929758e9857d698a26253ca432b8`: HTTP 200, database=ok, environment=preview.
+- La credencial temporal de 30 días de `GW-E2E-STAGING` autenticó correctamente. No se registra ningún token en este documento.
+- El dispositivo genérico `PM5560-E2E-01` no tenía binding de adquisición y config respondió 409. Se creó por el flujo eléctrico especializado el punto `E2E-PM-02` y el medidor `PM5560-E2E-02`, con binding RS485 de laboratorio. La ruta `/dev/ttyS1` es configuración de prueba y no valida el puerto físico del MDM9607.
+- El simulador existente se ejecutó en una sesión efímera de Vercel, con acceso temporal autorizado a Deployment Protection, sin desactivarla. No se escribió directamente a Neon.
+- Config V1 aprobado; seis lotes de una muestra aceptados HTTP 202: normal (2), subtensión (2), recuperación normal (2). Tres heartbeats aceptados HTTP 202.
+- Se configuró únicamente en `E2E-PM-02`: voltaje L-N mínimo 210 V, máximo 250 V, histéresis 2 V, pérdida de telemetría 120 s, persistencia de umbral 0 s.
+- Subtensión creó tres alarmas críticas L1/L2/L3 (aprox. 180–185 V). ACK de L2 verificado con estado Reconocida y actividad «Evento reconocido».
+- Tras las muestras normales: Resumen mostró Operativo, condición Normal, 0 alertas activas, 1/1 dispositivos operativos y 17/17 métricas vigentes.
+- Histórico mostró 102 mediciones (6 muestras × 17 métricas), con timestamps y calidad Válida.
+- El selector global de activos requirió recarga para incorporar el punto recién creado; queda pendiente revisar su invalidación después de altas desde el módulo eléctrico.
+- Este avance valida el circuito simulador HTTPS → Core → portal para PM5560 y CRITICAL → RECOVERY + ACK. No valida gateway físico, WARNING, antirrebote con persistencia, escalamiento, entregas mail/WhatsApp, OFFLINE/ONLINE completo, móvil ni permisos por rol. Los gates productivos siguen abiertos.
