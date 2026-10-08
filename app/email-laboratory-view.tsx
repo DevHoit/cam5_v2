@@ -31,9 +31,9 @@ export function EmailLaboratoryView() {
       <label>Identificador del ensayo <input value={runId} onChange={(event) => setRunId(event.target.value)} placeholder="Se obtiene al preparar" disabled={busy} /></label>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 20 }}>
         <button className="primary-button" disabled={busy || Boolean(runId)} onClick={() => perform("prepare")}>Preparar sin enviar</button>
-        <button className="secondary-button" disabled={busy || !runId} onClick={() => perform("preflight")}>Revisar alcance</button>
-        <button className="secondary-button" disabled={busy || !runId || Boolean(state?.activated)} onClick={() => perform("activate")}>Activar regla del ensayo</button>
-        <button className="primary-button" disabled={busy || !runId || !state?.activated || !state.alarm} onClick={() => perform("process")}>Procesar sólo este ensayo</button>
+        <button className="secondary-button" disabled={busy || !runId || result?.closed} onClick={() => perform("preflight")}>Revisar alcance</button>
+        <button className="secondary-button" disabled={busy || !runId || result?.closed || Boolean(state?.activated)} onClick={() => perform("activate")}>Activar regla del ensayo</button>
+        <button className="primary-button" disabled={busy || !runId || result?.closed || !state?.activated || !state.alarm} onClick={() => perform("process")}>Procesar sólo este ensayo</button>
         <button className="secondary-button" disabled={busy || !runId || result?.closed} onClick={() => perform("close")}>Cerrar ensayo</button>
       </div>
       {busy && <p role="status">Procesando…</p>}

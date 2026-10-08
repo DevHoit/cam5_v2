@@ -97,7 +97,9 @@ test("fresh alarm sends at 0 and 300 seconds; ACK cancels 600-second job; recove
     assert.deepEqual(await f.db.select().from(s.escalationJobs).where(eq(s.escalationJobs.alarmId, legacyAlarm.id)), legacyJobs);
     assert.deepEqual(await f.db.select().from(s.notificationDeliveries).where(eq(s.notificationDeliveries.alarmId, legacyAlarm.id)), legacyDeliveries);
     await closeLaboratoryEmail(f.db, f.run);
-    assert.equal((await preflightLaboratoryEmail(f.db, f.run, f.at(663))).activated, false);
+    assert.equal((await f.db.select().from(s.rules).where(eq(s.rules.id, f.run.ruleId)))[0].enabled, false);
+    await assert.rejects(preflightLaboratoryEmail(f.db, f.run, f.at(663)), /cerrado/);
+    await assert.rejects(activateLaboratoryEmail(f.db, f.run, f.at(663)), /cerrado/);
   } finally { await f.client.close(); }
 });
 

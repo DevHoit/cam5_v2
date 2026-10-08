@@ -76,6 +76,8 @@ export async function loadLaboratoryEmail(db: Cam5Database, siteId: string, runI
 }
 
 export async function preflightLaboratoryEmail(db: Cam5Database, run: LaboratoryEmailRun, now = new Date()) {
+  const [closure] = await db.select({ id: s.auditLogs.id }).from(s.auditLogs).where(and(eq(s.auditLogs.siteId, run.siteId), eq(s.auditLogs.action, "laboratory.email.close"), eq(s.auditLogs.resourceId, run.id)));
+  check(!closure, "El ensayo está cerrado; prepara uno nuevo.");
   check(now >= new Date(run.createdAt) && now < new Date(run.expiresAt), "La ventana de 30 minutos del ensayo no está vigente.");
   check(LAB_RECIPIENTS.some((email) => email === run.recipient), "Destinatario no autorizado.");
   const [[site], [asset], [device], [rule], [policy], [recovery], [user], endpoints, levels] = await Promise.all([
@@ -122,6 +124,8 @@ export async function activateLaboratoryEmail(db: Cam5Database, run: LaboratoryE
   const readings = await db.select({ latest: s.latestMetricReadings }).from(s.latestMetricReadings).innerJoin(s.deviceMetrics, eq(s.deviceMetrics.id, s.latestMetricReadings.deviceMetricId)).innerJoin(s.metricDefinitions, eq(s.metricDefinitions.id, s.deviceMetrics.metricDefinitionId)).where(and(eq(s.deviceMetrics.deviceId, run.deviceId), eq(s.metricDefinitions.key, metricKey), eq(s.deviceMetrics.enabled, true)));
   check(readings.length === 1 && readings[0].latest.quality === "good" && readings[0].latest.recordedAt <= now && readings[0].latest.recordedAt >= new Date(now.getTime() - 120_000) && readings[0].latest.valueNumeric !== null && Number(readings[0].latest.valueNumeric) >= 210, "Antes de activar se requiere una lectura normal y vigente del PM5560 por ingestión.");
   await db.transaction(async (tx) => {
+    await tx.select({ id: s.rules.id }).from(s.rules).where(eq(s.rules.id, run.ruleId)).for("update");
+    await preflightLaboratoryEmail(tx as unknown as Cam5Database, run, now);
     await tx.update(s.rules).set({ enabled: true }).where(eq(s.rules.id, run.ruleId));
     await tx.update(s.escalationPolicies).set({ enabled: true }).where(eq(s.escalationPolicies.id, run.policyId));
     await tx.update(s.notificationPolicies).set({ active: true }).where(eq(s.notificationPolicies.id, run.recoveryPolicyId));
@@ -151,6 +155,8 @@ export async function processLaboratoryEmail(db: Cam5Database, run: LaboratoryEm
 export async function closeLaboratoryEmail(db: Cam5Database, run: LaboratoryEmailRun) {
   // Cleanup remains available after expiration and even after a failed preflight.
   await db.transaction(async (tx) => {
+    await tx.select({ id: s.rules.id }).from(s.rules).where(eq(s.rules.id, run.ruleId)).for("update");
+    await tx.insert(s.auditLogs).values({ siteId: run.siteId, action: "laboratory.email.close", resourceType: "laboratory_email", resourceId: run.id, metadata: { runId: run.id } });
     await tx.update(s.rules).set({ enabled: false }).where(eq(s.rules.id, run.ruleId));
     await tx.update(s.escalationPolicies).set({ enabled: false }).where(eq(s.escalationPolicies.id, run.policyId));
     await tx.update(s.notificationPolicies).set({ active: false }).where(eq(s.notificationPolicies.id, run.recoveryPolicyId));

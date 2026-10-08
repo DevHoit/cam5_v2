@@ -21,7 +21,7 @@ Mantener ingestión y heartbeat HTTPS cada 20–30 segundos. Antes de **Activar 
 - Hasta 299 s desde la apertura, el nivel 2 sigue pendiente. Desde 300 s, repetir el procesamiento envía el segundo correo. El API siempre usa el reloj del servidor y no adelanta jobs.
 - Reconocer esa alarma en el Centro de alertas. Mantener la condición física hasta el minuto 10 para verificar que el nivel 3 se cancela por ACK.
 - Enviar lecturas normales: resolución automática. Procesar el ensayo envía el correo de recuperación una sola vez.
-- Pulsar **Cerrar ensayo**, incluso ante error o vencimiento: deshabilita sólo sus reglas/políticas, cancela sus jobs pendientes y suprime sus entregas pendientes, sin borrar evidencia.
+- Pulsar **Cerrar ensayo**, incluso ante error o vencimiento: deshabilita sólo sus reglas/políticas, cancela sus jobs pendientes y suprime sus entregas pendientes, sin borrar evidencia. El cierre queda registrado y ese ensayo no se puede reactivar: preparar uno nuevo.
 
 ## Aislamiento y límites
 
