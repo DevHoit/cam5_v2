@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { assertLaboratoryEnvironment, prepareLaboratoryEmail, loadLaboratoryEmail, preflightLaboratoryEmail, activateLaboratoryEmail, processLaboratoryEmail, closeLaboratoryEmail } from "../../../../../db/laboratory-email";
+import { provisionLaboratoryCam5, assertLaboratoryEnvironment, prepareLaboratoryEmail, loadLaboratoryEmail, preflightLaboratoryEmail, activateLaboratoryEmail, processLaboratoryEmail, closeLaboratoryEmail } from "../../../../../db/laboratory-email";
 import { apiErrorResponse, ApiError, requireApiSession } from "../../_lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -13,8 +13,9 @@ async function handle(request: NextRequest) {
     if (!body || typeof body !== "object" || Array.isArray(body)) throw new ApiError(400, "Solicitud inválida.");
     if (request.method === "GET" && !body.runId) return Response.json({ available: true, recipients: ["pruebas@hoitlive.com", "emer.cl+3@gmail.com"], dispatchSkipped: true });
     const action = body.action;
-    if (!["prepare", "preflight", "activate", "process", "close"].includes(action)) throw new ApiError(400, "Acción no permitida.");
+    if (!["provision_cam5", "prepare", "preflight", "activate", "process", "close"].includes(action)) throw new ApiError(400, "Acción no permitida.");
     try {
+      if (action === "provision_cam5") return Response.json(await provisionLaboratoryCam5(db, user.siteId, user.id));
       if (action === "prepare") {
         const recipient = typeof body.recipient === "string" ? body.recipient.trim().toLowerCase() : "pruebas@hoitlive.com";
         const run = await prepareLaboratoryEmail(db, user.siteId, user.id, recipient);

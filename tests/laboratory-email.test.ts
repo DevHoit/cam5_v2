@@ -1,3 +1,8 @@
+import { evaluateStaleCommunications } from "../db/alarm-engine";
+import { randomUUID } from "node:crypto";
+import { CAM5_METRICS, CAM5_LAB } from "../db/cam5";
+import { handleSpecIngest } from "../app/api/v1/gateway/_lib/ingest-spec-v1";
+import { buildSpecGatewayConfig } from "../app/api/v1/gateway/_lib/config-spec-v1";
 import assert from "node:assert/strict";
 import { readFile, readdir } from "node:fs/promises";
 import test from "node:test";
@@ -6,7 +11,7 @@ import { drizzle } from "drizzle-orm/pglite";
 import { eq } from "drizzle-orm";
 import type { Cam5Database } from "../db/index";
 import * as s from "../db/schema";
-import { activateLaboratoryEmail, assertLaboratoryEnvironment, closeLaboratoryEmail, preflightLaboratoryEmail, prepareLaboratoryEmail, processLaboratoryEmail } from "../db/laboratory-email";
+import { provisionLaboratoryCam5, activateLaboratoryEmail, assertLaboratoryEnvironment, closeLaboratoryEmail, preflightLaboratoryEmail, prepareLaboratoryEmail, processLaboratoryEmail } from "../db/laboratory-email";
 import { evaluateGenericRules } from "../db/rule-engine";
 import { cancelEscalationJobsForAlarm, enqueueEscalationJob } from "../db/escalation-engine";
 import { processNotificationDelivery } from "../db/notification-engine";
@@ -19,26 +24,26 @@ async function fixture() {
   const db = drizzle(client, { schema: s }) as unknown as Cam5Database;
   const [customer] = await db.insert(s.clients).values({ code: "LAB", name: "Lab" }).returning();
   const [site] = await db.insert(s.sites).values({ clientId: customer.id, code: "E2E-STAGING", name: "Lab" }).returning();
-  const [asset] = await db.insert(s.assets).values({ siteId: site.id, code: "E2E-PM-02", name: "PM Lab" }).returning();
-  const [gateway] = await db.insert(s.gateways).values({ siteId: site.id, code: "GW-LAB", name: "Gateway lab" }).returning();
-  const [device] = await db.insert(s.devices).values({ assetId: asset.id, code: "PM5560-E2E-02", name: "PM Lab", gatewayId: gateway.id }).returning();
   const [actor] = await db.insert(s.users).values({ email: "admin@example.test", displayName: "Admin", status: "active" }).returning();
   await db.insert(s.roles).values({ key: "viewer", name: "Viewer" }).onConflictDoNothing();
   const [endpoint] = await db.insert(s.notificationEndpoints).values({ siteId: site.id, kind: "email", name: "Lab email", configuration: { recipients: ["pruebas@hoitlive.com"] }, verifiedAt: new Date() }).returning();
-  const [definition] = await db.select().from(s.metricDefinitions).where(eq(s.metricDefinitions.key, "electrical.voltage.l1_n"));
-  const [metric] = await db.insert(s.deviceMetrics).values({ deviceId: device.id, metricDefinitionId: definition.id, code: "L1N", name: "L1-N" }).returning();
+  await provisionLaboratoryCam5(db, site.id, actor.id);
+  const [device] = await db.select().from(s.devices).where(eq(s.devices.code, CAM5_LAB.deviceCode));
+  const [gateway] = await db.select().from(s.gateways).where(eq(s.gateways.code, CAM5_LAB.gatewayCode));
   const now = new Date();
   const run = await prepareLaboratoryEmail(db, site.id, actor.id, "pruebas@hoitlive.com", now);
   let sequence = 0;
-  async function sample(value: number, at: Date) {
+  const credential = { gatewayId: gateway.id, gatewayCode: gateway.code, siteId: site.id };
+  async function sample(value: number, at: Date, quality = "GOOD") {
     sequence++;
-    const [batch] = await db.insert(s.telemetryBatches).values({ gatewayId: gateway.id, deviceId: device.id, batchKey: `lab-${sequence}`, gatewayBootId: "lab", gatewaySequence: sequence, sentAt: at, sampledAt: at, metricCount: 1 }).returning();
-    const [reading] = await db.insert(s.metricReadings).values({ batchId: batch.id, deviceMetricId: metric.id, recordedAt: at, valueNumeric: String(value), quality: "good" }).returning();
-    const latest = { deviceMetricId: metric.id, readingId: reading.id, recordedAt: at, receivedAt: at, valueNumeric: String(value), quality: "good" as const };
-    await db.insert(s.latestMetricReadings).values(latest).onConflictDoUpdate({ target: s.latestMetricReadings.deviceMetricId, set: latest });
+    const metrics = Object.fromEntries(CAM5_METRICS.map((metric) => [metric.key, metric.code === "T01" ? value : metric.unit === "°C" ? 30 : metric.unit === "%RH" ? 50 : 10]));
+    const payload = { schema_version: "1.0", gateway_id: gateway.code, boot_id: "cam5-lab", message_id: randomUUID(), sequence, created_at: at.toISOString(), time_quality: "SYNCED", samples: [{ device_id: device.code, sampled_at: at.toISOString(), quality, metrics }] };
+    const response = await handleSpecIngest({ db, credential, rawPayload: payload, receivedAt: at });
+    assert.equal(response.status, 202);
+    return payload;
   }
   const at = (seconds: number) => new Date(now.getTime() + seconds * 1000);
-  return { client, db, run, site, actor, endpoint, sample, now, at };
+  return { client, db, run, site, actor, endpoint, sample, now, at, credential, device };
 }
 
 test("laboratory dispatcher rejects production, development and other branches", () => {
@@ -71,9 +76,9 @@ test("fresh alarm sends at 0 and 300 seconds; ACK cancels 600-second job; recove
     await f.db.insert(s.notificationDeliveries).values({ endpointId: f.run.endpointId, alarmId: legacyAlarm.id, subject: "Inherited queue", recipient: "unapproved@example.test", payload: {}, scheduledAt: f.at(-300), nextAttemptAt: f.at(-300) });
     const legacyJobs = await f.db.select().from(s.escalationJobs).where(eq(s.escalationJobs.alarmId, legacyAlarm.id));
     const legacyDeliveries = await f.db.select().from(s.notificationDeliveries).where(eq(s.notificationDeliveries.alarmId, legacyAlarm.id));
-    await f.sample(230, f.now); await activateLaboratoryEmail(f.db, f.run, f.now);
-    await f.sample(180, f.at(1)); await evaluateGenericRules(f.db, f.at(1), { siteId: f.site.id });
-    await f.sample(180, f.at(61)); await evaluateGenericRules(f.db, f.at(61), { siteId: f.site.id });
+    await f.sample(50, f.now); await activateLaboratoryEmail(f.db, f.run, f.now);
+    await f.sample(90, f.at(1)); await evaluateGenericRules(f.db, f.at(1), { siteId: f.site.id });
+    await f.sample(90, f.at(61)); await evaluateGenericRules(f.db, f.at(61), { siteId: f.site.id });
     const [alarm] = await f.db.select().from(s.alarms).where(eq(s.alarms.genericRuleId, f.run.ruleId));
     assert.ok(alarm);
     const recipients: string[][] = [];
@@ -81,12 +86,12 @@ test("fresh alarm sends at 0 and 300 seconds; ACK cancels 600-second job; recove
     const process = (seconds: number) => processLaboratoryEmail(f.db, f.run, { now: f.at(seconds), environment, fetchImpl });
     await process(61); assert.equal(recipients.length, 1);
     await process(61); assert.equal(recipients.length, 1);
-    await f.sample(180, f.at(360)); await process(360); assert.equal(recipients.length, 1); // T0 + 299
+    await f.sample(90, f.at(360)); await process(360); assert.equal(recipients.length, 1); // T0 + 299
     await process(361); assert.equal(recipients.length, 2); // T0 + 300
     await f.db.update(s.alarms).set({ status: "acknowledged", acknowledgedAt: f.at(362) }).where(eq(s.alarms.id, alarm.id));
     await cancelEscalationJobsForAlarm(f.db, alarm.id, f.at(362));
-    await f.sample(180, f.at(661)); await process(661); assert.equal(recipients.length, 2);
-    await f.sample(230, f.at(662)); await evaluateGenericRules(f.db, f.at(662), { siteId: f.site.id });
+    await f.sample(90, f.at(661)); await process(661); assert.equal(recipients.length, 2);
+    await f.sample(50, f.at(662)); await evaluateGenericRules(f.db, f.at(662), { siteId: f.site.id });
     await process(662); await process(662); assert.equal(recipients.length, 3);
     assert.deepEqual(recipients, Array.from({ length: 3 }, () => ["pruebas@hoitlive.com"]));
     const jobs = await f.db.select().from(s.escalationJobs).where(eq(s.escalationJobs.alarmId, alarm.id));
@@ -155,5 +160,68 @@ test("authorized Gmail plus-address is preserved exactly when it matches the ver
     const state = await preflightLaboratoryEmail(f.db, run, f.now);
     assert.equal(state.run.recipient, "emer.cl+3@gmail.com");
     await assert.rejects(prepareLaboratoryEmail(f.db, f.site.id, f.actor.id, "emer.cl@gmail.com", f.now), /fuera/);
+  } finally { await f.client.close(); }
+});
+
+
+test("CAM5 normalized contract persists all 36 channels, replay is idempotent, and brief excursions do not alarm", async () => {
+  const f = await fixture();
+  try {
+    const config = await buildSpecGatewayConfig(f.db, f.credential);
+    assert.equal(config.devices[0].driver, "cam5");
+    assert.equal(config.devices[0].transport.type, "virtual");
+    const payload = await f.sample(50, f.now);
+    const original = await f.db.select().from(s.metricReadings);
+    assert.equal(original.length, 36);
+    await handleSpecIngest({ db: f.db, credential: f.credential, rawPayload: payload, receivedAt: f.now });
+    assert.deepEqual(await f.db.select().from(s.metricReadings), original);
+    await activateLaboratoryEmail(f.db, f.run, f.now);
+    await f.sample(90, f.at(1));
+    await f.sample(90, f.at(59));
+    assert.equal((await preflightLaboratoryEmail(f.db, f.run, f.at(59))).alarm, null);
+    await f.sample(50, f.at(60));
+    assert.equal((await preflightLaboratoryEmail(f.db, f.run, f.at(60))).alarm, null);
+    await f.sample(90, f.at(61));
+    await f.sample(90, f.at(121));
+    assert.ok((await preflightLaboratoryEmail(f.db, f.run, f.at(121))).alarm);
+    await f.sample(50, f.at(122), "INVALID");
+    assert.equal((await preflightLaboratoryEmail(f.db, f.run, f.at(122))).telemetryFresh, false);
+    await assert.rejects(processLaboratoryEmail(f.db, f.run, { now: f.at(122), environment }), /telemetría/);
+    await f.sample(50, f.at(123));
+    assert.equal((await preflightLaboratoryEmail(f.db, f.run, f.at(123))).alarm?.status, "resolved");
+  } finally { await f.client.close(); }
+});
+
+test("CAM5 provisioning is idempotent, refuses foreign targets and creates no credentials", async () => {
+  const f = await fixture();
+  try {
+    await provisionLaboratoryCam5(f.db, f.site.id, f.actor.id);
+    assert.equal((await f.db.select().from(s.deviceMetrics).where(eq(s.deviceMetrics.deviceId, f.device.id))).length, 36);
+    assert.equal((await f.db.select().from(s.gatewayApiCredentials)).length, 0);
+    await f.db.update(s.devices).set({ metadata: {} }).where(eq(s.devices.id, f.device.id));
+    await assert.rejects(provisionLaboratoryCam5(f.db, f.site.id, f.actor.id), /no pertenece/);
+    await assert.rejects(preflightLaboratoryEmail(f.db, f.run, f.now), /CAM5/);
+  } finally { await f.client.close(); }
+});
+
+
+test("CAM5 detects communication loss at 121 seconds and recovers without dispatching mail", async () => {
+  const f = await fixture();
+  try {
+    await f.sample(50, f.now);
+    await evaluateStaleCommunications(f.db, f.site.id, f.at(120));
+    assert.equal((await f.db.select().from(s.alarms)).length, 0);
+    await evaluateStaleCommunications(f.db, f.site.id, f.at(121));
+    const [alarm] = await f.db.select().from(s.alarms);
+    assert.equal(alarm.kind, "communication");
+    assert.equal(alarm.status, "open");
+    assert.equal((await preflightLaboratoryEmail(f.db, f.run, f.at(121))).telemetryFresh, false);
+    await f.sample(50, f.at(122));
+    await evaluateStaleCommunications(f.db, f.site.id, f.at(122));
+    const [recovered] = await f.db.select().from(s.alarms).where(eq(s.alarms.id, alarm.id));
+    assert.equal(recovered.status, "resolved");
+    assert.equal((await f.db.select().from(s.notificationDeliveries)).length, 0);
+    await f.db.update(s.gatewayDeviceBindings).set({ enabled: false }).where(eq(s.gatewayDeviceBindings.deviceId, f.device.id));
+    await assert.rejects(preflightLaboratoryEmail(f.db, f.run, f.at(122)), /adquisición/);
   } finally { await f.client.close(); }
 });

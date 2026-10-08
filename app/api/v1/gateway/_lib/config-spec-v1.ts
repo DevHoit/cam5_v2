@@ -147,6 +147,7 @@ function bleTransport(row: BindingRow) {
 }
 
 function transportFor(row: BindingRow) {
+  if (row.interfaceType === "virtual" && row.driver === "cam5" && row.deviceCode === "CAM5-E2E-01" && row.config.laboratory === "cam5") return { type: "virtual", profile: "cam5_laboratory" };
   if (row.interfaceType === "modbus_tcp") return modbusTcpTransport(row);
   if (row.interfaceType === "rs485") return rs485Transport(row);
   if (row.interfaceType === "ble") return bleTransport(row);

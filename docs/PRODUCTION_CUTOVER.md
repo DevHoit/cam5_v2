@@ -15,7 +15,7 @@
 
 ## Gate E2E obligatorio
 
-Desde un gateway MDM9607 real, enviar telemetría simulada por HTTPS y verificar:
+El candidato de lanzamiento se valida con **CAM5**. Desde un gateway MDM9607 real, enviar métricas CAM5 normalizadas por HTTPS y verificar:
 
 1. heartbeat y estado ONLINE;
 2. ingest de métricas normalizadas;
@@ -29,7 +29,9 @@ Desde un gateway MDM9607 real, enviar telemetría simulada por HTTPS y verificar
 10. pérdida de comunicación OFFLINE y recuperación ONLINE;
 11. escalamiento/notificación cuando el entorno externo esté habilitado.
 
-No se requiere CAM5 físico para este gate: el objetivo es validar Gateway -> Core -> Frontend.
+La prueba con datos CAM5 simulados desde el gateway real valida Gateway -> Core -> Frontend. Antes de declarar adquisición CAM5 física operativa, verificar también el controlador real, mapa/escala/calidad y reconexión del bus. PM5560 conserva evidencia genérica, pero no sustituye estos gates CAM5.
+
+Preparación controlada y contrato CAM5: `docs/LABORATORY_EMAIL_E2E.md`. Umbrales del laboratorio no son umbrales productivos.
 
 ## Base de datos
 

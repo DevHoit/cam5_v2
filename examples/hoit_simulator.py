@@ -39,6 +39,10 @@ BOOT_ID = str(uuid.uuid4())
 SOFTWARE_VERSION = "hoit-simulator/1.0"
 
 PROFILES = {
+    "cam5": {
+        "script": "cam5_simulator.py", "gateway": "GW-CAM5-E2E", "devices": "CAM5-E2E-01",
+        "scenarios": "normal|high_temperature|brief|high_humidity|partial_discharge|surface_discharge",
+    },
     "pm5560": {
         "script": "pm5560_simulator.py",
         "gateway": "GW-PM01",
@@ -152,6 +156,10 @@ def build_metrics(
     state: dict[str, Any],
 ) -> tuple[str, list[dict[str, Any]], bool]:
     sampled_at = iso_now()
+
+    if profile == "cam5":
+        phase = module.phase(elapsed)
+        return phase, [{"device_id": device, "sampled_at": sampled_at, "quality": "GOOD", "metrics": module.metrics(elapsed, phase)} for device in devices], False
 
     if profile == "pm5560":
         phase = module.phase(elapsed)
@@ -276,6 +284,9 @@ def main() -> int:
         print("--base-url o HOIT_BASE_URL es obligatorio.", file=sys.stderr)
         return 2
     host = (urllib.parse.urlparse(base_url).hostname or "").lower()
+    if args.profile == "cam5" and (base_url != "https://cam5v2-git-feature-hoit-core-v1-hoit1.vercel.app" or gateway_code != "GW-CAM5-E2E" or devices != ["CAM5-E2E-01"]):
+        print("El perfil CAM5 de laboratorio sólo admite el Preview de feature/hoit-core-v1, GW-CAM5-E2E y CAM5-E2E-01.", file=sys.stderr)
+        return 2
     if host in PRODUCTION_HOSTS and not args.allow_production:
         print(f"El simulador se negó a enviar datos al host productivo {host}. Usa un Preview o agrega --allow-production de forma deliberada.", file=sys.stderr)
         return 2
