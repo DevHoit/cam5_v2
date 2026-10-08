@@ -147,15 +147,18 @@ export async function processDueEscalationJobs(
   input: {
     now?: Date;
     limit?: number;
+    jobIds?: string[];
     execute: EscalationExecutor;
   },
 ) {
   const now = input.now ?? new Date();
   const limit = Math.max(1, Math.min(input.limit ?? 25, 100));
+  if (input.jobIds && !input.jobIds.length) return { processed: 0, completed: 0, cancelled: 0, failed: 0 };
   const candidates = await db.select({ id: escalationJobs.id })
     .from(escalationJobs)
     .where(and(
       eq(escalationJobs.status, "pending"),
+      input.jobIds ? inArray(escalationJobs.id, input.jobIds) : undefined,
       lte(escalationJobs.dueAt, now),
     ))
     .orderBy(asc(escalationJobs.dueAt), asc(escalationJobs.createdAt))

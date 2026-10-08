@@ -525,11 +525,14 @@ export async function suppressPendingPersonalEscalations(
 export async function processNotificationDelivery(
   db: Cam5Database,
   deliveryId: number,
-  options: { now?: Date; fetchImpl?: typeof fetch; environment?: NodeJS.ProcessEnv } = {},
+  options: { now?: Date; fetchImpl?: typeof fetch; environment?: NodeJS.ProcessEnv; laboratoryGuard?: { alarmId: string; endpointId: string; recipient: string; expiresAt: Date } } = {},
 ) {
   const now = options.now ?? new Date();
   const [candidate] = await db.select({
     id: notificationDeliveries.id,
+    endpointId: notificationDeliveries.endpointId,
+    scheduledAt: notificationDeliveries.scheduledAt,
+    nextAttemptAt: notificationDeliveries.nextAttemptAt,
     alarmId: notificationDeliveries.alarmId,
     eventType: notificationDeliveries.eventType,
     alarmStatus: alarms.status,
@@ -553,6 +556,18 @@ export async function processNotificationDelivery(
     .where(and(eq(notificationDeliveries.id, deliveryId), eq(notificationEndpoints.enabled, true)))
     .limit(1);
   if (!candidate) return { status: "missing" as const, error: "La entrega o su canal ya no están disponibles." };
+  const guard = options.laboratoryGuard;
+  if (guard) {
+    const recipients = candidate.recipient?.trim()
+      ? [candidate.recipient.trim().toLowerCase()]
+      : (candidate.configuration.recipients as string[] | undefined)?.map((value) => value.trim().toLowerCase()) ?? [];
+    if (Date.now() >= guard.expiresAt.getTime() || now >= guard.expiresAt
+      || candidate.alarmId !== guard.alarmId || candidate.endpointId !== guard.endpointId
+      || candidate.kind !== "email" || recipients.length !== 1 || recipients[0] !== guard.recipient
+      || candidate.scheduledAt > now || candidate.nextAttemptAt > now || candidate.attemptCount >= candidate.maxAttempts) {
+      throw new Error("La entrega no coincide con el alcance autorizado del laboratorio.");
+    }
+  }
   const escalationJobId = candidate.payload.escalationJobId;
   if (candidate.eventType === "escalated" && typeof escalationJobId === "string") {
     const validId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(escalationJobId);
