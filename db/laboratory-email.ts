@@ -50,14 +50,13 @@ export async function provisionLaboratoryCam5(db: Cam5Database, siteId: string, 
     const bindings = await tx.select().from(s.gatewayDeviceBindings).where(eq(s.gatewayDeviceBindings.deviceId, device.id));
     check(!bindings.length || (bindings.length === 1 && bindings[0].gatewayId === gateway.id && bindings[0].interfaceType === "virtual" && bindings[0].config.laboratory === "cam5" && bindings[0].enabled), "Cambió la adquisición del CAM5 de laboratorio.");
     if (!bindings.length) await tx.insert(s.gatewayDeviceBindings).values({ gatewayId: gateway.id, deviceId: device.id, interfaceType: "virtual", config: { laboratory: "cam5" } });
-    for (const metric of CAM5_METRICS) {
-      await tx.insert(s.metricDefinitions).values(metric).onConflictDoNothing();
-      const [definition] = await tx.select().from(s.metricDefinitions).where(eq(s.metricDefinitions.key, metric.key));
-      check(definition.unit === metric.unit && definition.dataType === "float", "Cambió el contrato de métricas CAM5.");
-      await tx.insert(s.deviceMetrics).values({ deviceId: device.id, metricDefinitionId: definition.id, code: metric.code, name: metric.name }).onConflictDoNothing();
-      const [configured] = await tx.select().from(s.deviceMetrics).where(and(eq(s.deviceMetrics.deviceId, device.id), eq(s.deviceMetrics.metricDefinitionId, definition.id)));
-      check(configured?.enabled && configured.code === metric.code, "Una métrica CAM5 está deshabilitada o cambió.");
-    }
+    // Batch the catalog operations: a full CAM5 bank must fit the Preview request window.
+    await tx.insert(s.metricDefinitions).values(CAM5_METRICS).onConflictDoNothing();
+    const definitions = await tx.select().from(s.metricDefinitions).where(inArray(s.metricDefinitions.key, CAM5_METRICS.map((metric) => metric.key)));
+    check(definitions.length === CAM5_METRICS.length && CAM5_METRICS.every((metric) => definitions.some((definition) => definition.key === metric.key && definition.unit === metric.unit && definition.dataType === "float")), "Cambió el contrato de métricas CAM5.");
+    await tx.insert(s.deviceMetrics).values(CAM5_METRICS.map((metric) => ({ deviceId: device.id, metricDefinitionId: definitions.find((definition) => definition.key === metric.key)!.id, code: metric.code, name: metric.name }))).onConflictDoNothing();
+    const configured = await tx.select().from(s.deviceMetrics).where(eq(s.deviceMetrics.deviceId, device.id));
+    check(configured.length === CAM5_METRICS.length && CAM5_METRICS.every((metric) => configured.some((item) => item.enabled && item.code === metric.code && item.metricDefinitionId === definitions.find((definition) => definition.key === metric.key)!.id)), "Una métrica CAM5 está deshabilitada o cambió.");
     await tx.insert(s.auditLogs).values({ siteId, actorUserId: actorId, action: "laboratory.cam5.provision", resourceType: "device", resourceId: device.id, metadata: { gatewayId: gateway.id, metricCount: CAM5_METRICS.length, virtual: true } });
     return { provisioned: true, deviceCode: device.code, gatewayCode: gateway.code, metricCount: CAM5_METRICS.length, dispatchSkipped: true };
   });
