@@ -62,3 +62,14 @@ Este perfil sólo admite el Preview exacto, GW-CAM5-E2E y CAM5-E2E-01, incluso c
 Escenarios adicionales: `high_humidity`, `partial_discharge`, `surface_discharge`. Son generación de datos, no un ensayo ya aprobado de cada alarma. El emisor antiguo `gateway/examples/cam5_gateway_simulator.py` es legado y su payload crudo no se acepta en Core actual; usar el launcher normalizado anterior.
 
 Pruebas del perfil Python: `python3 -m unittest discover -s tests -p cam5_simulator_test.py`. La suite TypeScript del laboratorio CAM5 recorre el handler de ingestión V1 real sobre PostgreSQL efímero, con Resend simulado; no escribe latest directamente para simular el ingreso.
+
+
+## Acceso desde Mac con Vercel Authentication
+
+Si health redirige a vercel.com/sso-api, la credencial del gateway no resuelve esa protección. El simulador admite ahora VERCEL_OIDC_TOKEN y lo envía como `x-vercel-trusted-oidc-idp-token` exclusivamente al alias Preview autorizado. No sigue redirecciones para evitar reenviar credenciales a SSO/otros hosts. No se desactiva protección ni se requiere como primera opción un secreto de bypass permanente.
+
+En la copia local, actualizar la rama. Con Vercel CLI actualizado y sesión de una cuenta con acceso al equipo hoit1, vincular **el proyecto existente cam5_v2** (no crear otro proyecto) usando `vercel link --scope hoit1 --project cam5_v2`. Esto es vinculación local, no un despliegue. Mantener HOIT_GATEWAY_TOKEN en la sesión de Terminal.
+
+Ejecutar `vercel env run -- python3 examples/hoit_simulator.py --profile cam5 --base-url https://cam5v2-git-feature-hoit-core-v1-hoit1.vercel.app --scenario normal --interval 20`. Env run inyecta credenciales de desarrollo sin escribirlas en un archivo; el token corto del mismo proyecto permite acceso a su Preview según Trusted Sources. No usar destino productivo ni cambiar reglas development→production.
+
+Si el CLI no entrega VERCEL_OIDC_TOKEN o informa un mismatch, detener y revisar sesión/proyecto antes de cambiar controles de acceso. No imprimir tokens ni pegarlos en el chat. Esta modificación y las pruebas de transporte no acreditan un envío HTTPS desde el Mac del usuario ni recepción de email.

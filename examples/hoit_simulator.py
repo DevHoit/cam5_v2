@@ -99,8 +99,17 @@ def cli() -> argparse.Namespace:
     return command.parse_args()
 
 
+class NoCredentialRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        # Never forward gateway or Vercel credentials to an SSO/third-party URL.
+        return None
+
+
 def request_json(base_url: str, token: str, path: str, method: str = "GET", payload: dict[str, Any] | None = None) -> tuple[int, dict[str, Any] | None, str]:
     data = None if payload is None else json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    oidc = os.environ.get("VERCEL_OIDC_TOKEN", "").strip()
+    if oidc and base_url.rstrip("/") != "https://cam5v2-git-feature-hoit-core-v1-hoit1.vercel.app":
+        return 0, None, "El acceso Vercel del simulador está limitado al Preview autorizado."
     request = urllib.request.Request(
         base_url.rstrip("/") + path,
         data=data,
@@ -111,17 +120,23 @@ def request_json(base_url: str, token: str, path: str, method: str = "GET", payl
             "User-Agent": SOFTWARE_VERSION,
         },
     )
+    if oidc:
+        request.add_header("x-vercel-trusted-oidc-idp-token", oidc)
     try:
-        with urllib.request.urlopen(request, timeout=15) as response:
+        with urllib.request.build_opener(NoCredentialRedirect()).open(request, timeout=15) as response:
             text = response.read().decode("utf-8")
             return response.status, json.loads(text) if text else None, text
     except urllib.error.HTTPError as error:
+        if error.code in (301, 302, 303, 307, 308):
+            return error.code, None, "Redirección bloqueada para proteger credenciales. Para Vercel SSO usa vercel env run -- python3 examples/hoit_simulator.py ..."
         text = error.read().decode("utf-8", errors="replace")
         try:
             body = json.loads(text) if text else None
         except json.JSONDecodeError:
             body = None
         return error.code, body, text
+    except json.JSONDecodeError:
+        return 0, None, "La respuesta no es JSON de Core; comprueba el acceso autorizado al Preview."
     except (OSError, urllib.error.URLError, TimeoutError) as error:
         return 0, None, str(error)
 

@@ -4,6 +4,10 @@ from pathlib import Path
 import subprocess
 import sys
 import unittest
+from unittest.mock import patch
+import urllib.error
+import urllib.request
+import io
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('launcher', ROOT / 'examples/hoit_simulator.py')
@@ -42,6 +46,46 @@ class Cam5ProfileTests(unittest.TestCase):
         result = subprocess.run([sys.executable, str(ROOT / 'examples/hoit_simulator.py'), '--profile', 'cam5', '--base-url', 'https://core.hoitlive.com', '--allow-production', '--cycles', '1'], env={**os.environ, 'HOIT_GATEWAY_TOKEN': 'fake-no-network'}, capture_output=True, text=True)
         self.assertEqual(result.returncode, 2)
         self.assertIn('sólo admite el Preview', result.stderr)
+
+
+class ProtectedPreviewTests(unittest.TestCase):
+    def test_vercel_token_is_origin_scoped_and_not_logged(self):
+        with patch.dict(os.environ, {"VERCEL_OIDC_TOKEN": "test-oidc"}), patch.object(launcher.urllib.request, "build_opener") as builder:
+            opener = builder.return_value
+            opener.open.return_value.__enter__.return_value.status = 200
+            opener.open.return_value.__enter__.return_value.read.return_value = b'{"gateway_id":"GW-CAM5-E2E"}'
+            status, body, text = launcher.request_json('https://cam5v2-git-feature-hoit-core-v1-hoit1.vercel.app', 'hoitgw_fake', '/api/v1/gateway/config')
+            self.assertEqual(status, 200)
+            request = opener.open.call_args.args[0]
+            self.assertEqual(request.get_header('X-vercel-trusted-oidc-idp-token'), 'test-oidc')
+            self.assertEqual(request.get_header('Authorization'), 'Bearer hoitgw_fake')
+            self.assertNotIn('test-oidc', text)
+            builder.reset_mock()
+            status, _, text = launcher.request_json('https://core.hoitlive.com', 'hoitgw_fake', '/api/v1/gateway/config')
+            self.assertEqual(status, 0)
+            builder.assert_not_called()
+            self.assertNotIn('test-oidc', text)
+
+    def test_redirect_never_forwards_credentials_or_sso_nonce(self):
+        handler = launcher.NoCredentialRedirect()
+        request = urllib.request.Request('https://cam5v2-git-feature-hoit-core-v1-hoit1.vercel.app/api/v1/gateway/config', headers={'Authorization': 'Bearer test'})
+        self.assertIsNone(handler.redirect_request(request, None, 302, 'Found', {}, 'https://vercel.com/sso-api?nonce=private'))
+        with patch.dict(os.environ, {"VERCEL_OIDC_TOKEN": ""}), patch.object(launcher.urllib.request, "build_opener") as builder:
+            builder.return_value.open.side_effect = urllib.error.HTTPError(request.full_url, 302, 'Found', {'Location': 'https://vercel.com/sso-api?nonce=private'}, io.BytesIO(b'sso'))
+            status, body, text = launcher.request_json('https://cam5v2-git-feature-hoit-core-v1-hoit1.vercel.app', 'hoitgw_fake', '/api/v1/gateway/config')
+            self.assertEqual(status, 302)
+            self.assertIsNone(body)
+            self.assertNotIn('private', text)
+            self.assertIn('vercel env run', text)
+
+    def test_regular_requests_do_not_require_or_add_vercel_tokens(self):
+        with patch.dict(os.environ, {"VERCEL_OIDC_TOKEN": ""}), patch.object(launcher.urllib.request, "build_opener") as builder:
+            builder.return_value.open.return_value.__enter__.return_value.status = 202
+            builder.return_value.open.return_value.__enter__.return_value.read.return_value = b'{"accepted":true}'
+            status, body, _ = launcher.request_json('https://example.test', 'hoitgw_fake', '/api/v1/gateway/ingest', 'POST', {'samples': []})
+            self.assertEqual(status, 202)
+            self.assertTrue(body['accepted'])
+            self.assertIsNone(builder.return_value.open.call_args.args[0].get_header('X-vercel-trusted-oidc-idp-token'))
 
 
 if __name__ == '__main__':
