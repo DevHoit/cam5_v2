@@ -89,10 +89,12 @@ function downloadText(filename: string, content: string, type = "text/plain;char
 
 export function GatewayProvisioningView({
   canWrite,
+  siteName,
   notify,
   confirm,
 }: {
   canWrite: boolean;
+  siteName: string;
   notify: (message: string, tone?: NoticeTone) => void;
   confirm: (request: ConfirmRequest) => void;
 }) {
@@ -106,7 +108,7 @@ export function GatewayProvisioningView({
   const [reload, setReload] = useState(0);
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ gatewayId: "", name: "Agente de adquisición principal", validityDays: "365" });
+  const [form, setForm] = useState({ gatewayId: "", name: "Gateway principal", validityDays: "365" });
   const [secret, setSecret] = useState<SecretResponse | null>(null);
   const [renewalCredential, setRenewalCredential] = useState<Credential | null>(null);
   const [renewalDays, setRenewalDays] = useState("365");
@@ -229,9 +231,10 @@ export function GatewayProvisioningView({
     return [
       "# HoitLive Core · configuración privada del gateway",
       "# Guarda este archivo con permisos de lectura limitados al servicio.",
-      `CAM5_API_BASE=${base}`,
-      `CAM5_GATEWAY_TOKEN=${value.token}`,
-      "CAM5_RUN_ONCE=0",
+      `HOIT_API_BASE=${base}`,
+      `HOIT_GATEWAY_TOKEN=${value.token}`,
+      `HOIT_GATEWAY_ID=${value.credential.gateway.code}`,
+      "HOIT_RUN_ONCE=0",
       "",
     ].join("\n");
   };
@@ -239,9 +242,10 @@ export function GatewayProvisioningView({
   const downloadEnvironment = (value: SecretResponse) => downloadText(`hoitlive-${value.credential.gateway.code.toLowerCase()}.env`, environmentFile(value));
   const downloadTemplate = (gateway: Gateway) => downloadText(`hoitlive-${gateway.code.toLowerCase()}-plantilla.env`, [
     "# HoitLive Core · plantilla de configuración",
-    `CAM5_API_BASE=${window.location.origin}/api/v1`,
-    "CAM5_GATEWAY_TOKEN=PEGAR_TOKEN_GENERADO_EN_EL_PORTAL",
-    "CAM5_RUN_ONCE=1",
+    `HOIT_API_BASE=${window.location.origin}/api/v1`,
+    "HOIT_GATEWAY_TOKEN=PEGAR_TOKEN_GENERADO_EN_EL_PORTAL",
+    `HOIT_GATEWAY_ID=${gateway.code}`,
+    "HOIT_RUN_ONCE=1",
     "",
   ].join("\n"));
   const copyToken = async () => {
@@ -259,7 +263,11 @@ export function GatewayProvisioningView({
   if (error && !data) return <section className="panel provisioning-state provisioning-error"><IconAlertTriangle size={24} /><div><h2>No fue posible cargar el módulo</h2><p>{error}</p><button onClick={() => setReload((current) => current + 1)}>Reintentar</button></div></section>;
   if (!data) return null;
 
-  return <>
+  return <div className="gateway-provisioning-v4">
+    <section className="engineering-commandbar">
+      <div><h1>Gateways</h1><p>{siteName} · identidad, credenciales y conexión segura con HoitLive Core.</p></div>
+      <div className="engineering-command-actions"><span className="engineering-state state-ready"><IconShieldCheck size={14} /> Contexto de sitio</span></div>
+    </section>
     <section className="module-summary-grid provisioning-summary-grid">
       <article><span className="module-summary-icon blue"><IconRouter size={19} /></span><div><small>Gateways del sitio</small><strong>{data.summary.gateways}</strong><span>{data.summary.onlineGateways} en línea</span></div></article>
       <article><span className="module-summary-icon green"><IconKey size={19} /></span><div><small>Credenciales vigentes</small><strong>{data.summary.activeCredentials}</strong><span>{data.summary.usedCredentials} verificadas por uso</span></div></article>
@@ -285,15 +293,15 @@ export function GatewayProvisioningView({
     </div>}
 
     <section className="panel provisioning-guide">
-      <header><span><IconRouter size={22} /></span><div><span className="eyebrow">Puesta en servicio</span><h2>Conectar el gateway a HoitLive Core</h2><p>El portal entrega la identidad; el gateway descarga su configuración y comienza a publicar telemetría.</p></div>{canWrite && <button className="primary-button" onClick={() => setShowForm((current) => !current)}><IconPlus size={16} />{showForm ? "Cancelar" : "Nueva credencial"}</button>}</header>
-      <div className="provisioning-steps"><article><b>1</b><div><strong>Genera una credencial</strong><p>Selecciona el gateway y define la vigencia del token.</p></div></article><article><b>2</b><div><strong>Instala el archivo privado</strong><p>Carga las variables en el servicio local, nunca en GitHub.</p></div></article><article><b>3</b><div><strong>Ejecuta una lectura</strong><p>El primer GET de configuración valida el token; la primera ingestión deja el gateway en línea.</p></div></article></div>
+      <header><span><IconRouter size={22} /></span><div><span className="eyebrow">Puesta en servicio</span><h2>Conectar el gateway a HoitLive Core</h2><p>Core entrega identidad y credenciales. El Gateway Agent conserva su configuración física local y publica telemetría semántica normalizada.</p></div>{canWrite && <button className="primary-button" onClick={() => setShowForm((current) => !current)}><IconPlus size={16} />{showForm ? "Cancelar" : "Nueva credencial"}</button>}</header>
+      <div className="provisioning-steps"><article><b>1</b><div><strong>Genera una credencial</strong><p>Selecciona el gateway y define la vigencia del token.</p></div></article><article><b>2</b><div><strong>Instala el archivo privado</strong><p>Carga las variables en el servicio local, nunca en GitHub.</p></div></article><article><b>3</b><div><strong>Ejecuta una lectura</strong><p>La primera autenticación valida el token; la primera telemetría normalizada deja el gateway en línea.</p></div></article></div>
       {showForm && <form className="provisioning-form" onSubmit={createCredential}><label><span>Gateway</span><select required value={form.gatewayId} onChange={(event) => setForm({ ...form, gatewayId: event.target.value })}><option value="">Seleccionar…</option>{data.gateways.filter((gateway) => gateway.active).map((gateway) => <option key={gateway.id} value={gateway.id}>{gateway.code} · {gateway.name}</option>)}</select></label><label><span>Nombre de la credencial</span><input required minLength={3} maxLength={120} value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label><label><span>Vigencia</span><select value={form.validityDays} onChange={(event) => setForm({ ...form, validityDays: event.target.value })}><option value="30">30 días</option><option value="90">90 días</option><option value="365">1 año</option><option value="730">2 años</option></select></label><button className="primary-button" disabled={saving || !form.gatewayId}>{saving ? <><IconRefresh className="spin" size={16} /> Generando…</> : <><IconKey size={16} /> Generar token</>}</button></form>}
       {!canWrite && <div className="provisioning-readonly"><IconShieldCheck size={16} /> Tu perfil puede revisar el estado, pero no administrar credenciales.</div>}
     </section>
 
     <section className="panel provisioning-inventory">
       <header><div><span className="eyebrow">Inventario seguro</span><h2>Credenciales del sitio</h2></div><button className="secondary-button" onClick={() => setReload((current) => current + 1)} disabled={loading}><IconRefresh className={loading ? "spin" : ""} size={16} /> Verificar ahora</button></header>
-      <div className="provisioning-toolbar"><label className="search-field"><IconSearch size={17} /><input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="Buscar nombre, prefijo o gateway…" /></label><label><span>Gateway</span><select value={gatewayId} onChange={(event) => { setGatewayId(event.target.value); setPage(1); }}><option value="all">Todos</option>{data.gateways.map((gateway) => <option key={gateway.id} value={gateway.id}>{gateway.code}</option>)}</select></label><label><span>Estado</span><select value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}><option value="all">Todos</option><option value="active">En uso</option><option value="unused">Sin usar</option><option value="expired">Expiradas</option><option value="revoked">Revocadas</option></select></label></div>
+      <div className="provisioning-toolbar"><label className="search-field"><IconSearch size={17} /><input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="Buscar nombre, prefijo o gateway…" /></label><label className="status-filter provisioning-filter-v5"><span>Gateway</span><select value={gatewayId} onChange={(event) => { setGatewayId(event.target.value); setPage(1); }}><option value="all">Todos</option>{data.gateways.map((gateway) => <option key={gateway.id} value={gateway.id}>{gateway.code}</option>)}</select></label><label className="status-filter provisioning-filter-v5"><span>Estado</span><select value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }}><option value="all">Todos</option><option value="active">En uso</option><option value="unused">Sin usar</option><option value="expired">Expiradas</option><option value="revoked">Revocadas</option></select></label></div>
       <div className="module-table-wrap"><div className="provisioning-table">
         <div className="module-table-head"><span>Credencial</span><span>Gateway</span><span>Estado</span><span>Último uso</span><span>Vigencia</span><span>Acciones</span></div>
         {data.items.map((credential) => {
@@ -312,5 +320,5 @@ export function GatewayProvisioningView({
       <Pagination page={data.page} totalPages={data.totalPages} total={data.total} pageSize={data.pageSize} onPageChange={setPage} itemLabel="credenciales" />
       <footer><IconShieldCheck size={15} /><span>Renovar conserva el token instalado; rotar crea uno nuevo. Toda renovación, rotación o revocación queda registrada en auditoría.</span></footer>
     </section>
-  </>;
+  </div>;
 }

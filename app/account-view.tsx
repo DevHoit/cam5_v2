@@ -151,44 +151,60 @@ export function AccountView({
   if (error && !data) return <section className="panel account-state account-error"><IconAlertTriangle size={24} /><div><h2>No fue posible cargar tu cuenta</h2><p>{error}</p><button onClick={() => void load()}>Reintentar</button></div></section>;
   if (!data) return null;
 
-  return <>
-    <section className="module-summary-grid account-summary-grid">
-      <article><span className="module-summary-icon blue"><IconUser size={19} /></span><div><small>Perfil activo</small><strong>{data.profile.roleName}</strong><span>{data.profile.email}</span></div></article>
-      <article><span className="module-summary-icon green"><IconShieldCheck size={19} /></span><div><small>Sesiones activas</small><strong>{data.sessions.length}</strong><span>Incluye este dispositivo</span></div></article>
-      <article><span className="module-summary-icon amber"><IconClock size={19} /></span><div><small>Último ingreso</small><strong>{formatDateTime(data.profile.lastLoginAt)}</strong><span>Cuenta creada {formatDateTime(data.profile.createdAt)}</span></div></article>
+  const initials = data.profile.displayName.split(" ").map((part) => part[0]).slice(0, 2).join("").toUpperCase();
+  const remoteSessions = data.sessions.filter((session) => !session.current).length;
+
+  return <div className="account-v4 account-v5">
+    <section className="account-overview-v5">
+      <div className="account-identity-v5">
+        <span className="account-avatar-v5">{initials}</span>
+        <div><small>Usuario autenticado</small><strong>{data.profile.displayName}</strong><p>{data.profile.email}</p></div>
+      </div>
+      <div className="account-facts-v5">
+        <span><small>Perfil</small><strong>{data.profile.roleName}</strong></span>
+        <span><small>Alcance</small><strong>{data.profile.sites.length} {data.profile.sites.length === 1 ? "sitio" : "sitios"}</strong></span>
+        <span><small>Sesiones</small><strong>{data.sessions.length} activa{data.sessions.length === 1 ? "" : "s"}</strong></span>
+        <span><small>Último ingreso</small><strong>{formatDateTime(data.profile.lastLoginAt)}</strong></span>
+      </div>
     </section>
 
-    <div className="account-layout">
-      <section className="panel account-panel">
-        <header><span><IconUser size={21} /></span><div><span className="eyebrow">Datos personales</span><h2>Perfil del portal</h2><p>Estos datos identifican tus acciones dentro de la trazabilidad.</p></div></header>
-        <form className="account-form" onSubmit={saveProfile}>
-          <label><span>Nombre completo</span><input required minLength={3} value={profile.displayName} onChange={(event) => setProfile({ ...profile, displayName: event.target.value })} /></label>
-          <label><span>Correo electrónico</span><input value={data.profile.email} disabled /><small>El correo de acceso lo modifica un administrador.</small></label>
-          <label><span>Perfil en el sitio activo</span><input value={data.profile.roleName} disabled /></label>
-          <label><span>Alcance autorizado</span><input value={`${data.profile.sites.length} ${data.profile.sites.length === 1 ? "sitio" : "sitios"}`} disabled /><small>{data.profile.sites.map((site) => `${site.clientName} · ${site.name}`).join(" · ")}</small></label>
+    <div className="account-layout account-layout-v5">
+      <section className="panel account-panel account-profile-v5">
+        <header><span><IconUser size={21} /></span><div><span className="eyebrow">Identidad</span><h2>Perfil del portal</h2><p>Nombre visible y alcance asociado a tu cuenta.</p></div></header>
+        <form className="account-form account-profile-form-v5" onSubmit={saveProfile}>
+          <label className="account-field-wide-v5"><span>Nombre completo</span><input required minLength={3} value={profile.displayName} onChange={(event) => setProfile({ ...profile, displayName: event.target.value })} /></label>
+          <label><span>Correo electrónico</span><input value={data.profile.email} disabled /><small>Lo modifica un administrador.</small></label>
+          <label><span>Perfil</span><input value={data.profile.roleName} disabled /></label>
+          <section className="account-scope-v5">
+            <div><span>Alcance autorizado</span><small>{data.profile.sites.length} {data.profile.sites.length === 1 ? "sitio asignado" : "sitios asignados"}</small></div>
+            <div>{data.profile.sites.map((site) => <span key={site.id}><strong>{site.name}</strong><small>{site.clientName} · {site.roleName}</small></span>)}</div>
+          </section>
           <footer><span><IconCheck size={15} /> Los cambios quedan auditados</span><button className="primary-button" disabled={savingProfile}>{savingProfile ? <><IconRefresh className="spin" size={16} /> Guardando…</> : "Guardar perfil"}</button></footer>
         </form>
       </section>
 
-      <section className="panel account-panel security-panel">
-        <header><span><IconKey size={21} /></span><div><span className="eyebrow">Credenciales</span><h2>Cambiar contraseña</h2><p>Al guardar se cerrarán todas las demás sesiones activas.</p></div></header>
-        <form className="account-form" onSubmit={changePassword}>
+      <section className="panel account-panel security-panel account-security-v5">
+        <header><span><IconKey size={21} /></span><div><span className="eyebrow">Seguridad</span><h2>Cambiar contraseña</h2><p>La actualización invalida automáticamente las demás sesiones.</p></div></header>
+        <form className="account-form account-security-form-v5" onSubmit={changePassword}>
           <label><span>Contraseña actual</span><input type="password" autoComplete="current-password" required value={passwords.currentPassword} onChange={(event) => setPasswords({ ...passwords, currentPassword: event.target.value })} /></label>
           <label><span>Nueva contraseña</span><input type="password" autoComplete="new-password" required minLength={10} value={passwords.newPassword} onChange={(event) => setPasswords({ ...passwords, newPassword: event.target.value })} /><small>Mínimo 10 caracteres y diferente de la actual.</small></label>
           <label><span>Confirmar nueva contraseña</span><input type="password" autoComplete="new-password" required minLength={10} value={passwords.confirmation} onChange={(event) => setPasswords({ ...passwords, confirmation: event.target.value })} /></label>
+          <div className="account-security-note-v5"><IconShieldCheck size={17} /><span><strong>Protección de sesión</strong><small>{remoteSessions ? `Se cerrarán ${remoteSessions} sesión${remoteSessions === 1 ? "" : "es"} remota${remoteSessions === 1 ? "" : "s"} al cambiar la contraseña.` : "No hay otras sesiones activas que cerrar."}</small></span></div>
           <footer><span><IconShieldCheck size={15} /> Verificación obligatoria</span><button className="primary-button" disabled={savingPassword}>{savingPassword ? <><IconRefresh className="spin" size={16} /> Actualizando…</> : "Cambiar contraseña"}</button></footer>
         </form>
       </section>
     </div>
 
-    <section className="panel account-sessions">
-      <header><span><IconDeviceDesktop size={21} /></span><div><span className="eyebrow">Control de acceso</span><h2>Sesiones activas</h2><p>Revisa dónde está abierta tu cuenta y cierra cualquier acceso que no reconozcas.</p></div></header>
+    <section className="panel account-sessions account-sessions-v5">
+      <header><span><IconDeviceDesktop size={21} /></span><div><span className="eyebrow">Control de acceso</span><h2>Sesiones activas</h2><p>Revisa dónde está abierta tu cuenta y cierra cualquier acceso que no reconozcas.</p></div><b>{data.sessions.length}</b></header>
+      <div className="account-session-columns-v5"><span>Dispositivo</span><span>Última actividad</span><span>Expiración</span><span>Estado</span></div>
       <div className="account-session-list">{data.sessions.map((session) => <article key={session.id} className={session.current ? "current" : ""}>
         <span className="session-device"><IconDeviceDesktop size={20} /></span>
-        <div><strong>{deviceLabel(session.userAgent)}{session.current ? " · Esta sesión" : ""}</strong><small>IP {session.ipAddress || "no disponible"} · Actividad {formatDateTime(session.lastSeenAt)}</small></div>
-        <time>Expira {formatDateTime(session.expiresAt)}</time>
-        {session.current ? <i><IconShieldCheck size={14} /> Protegida</i> : <button className="danger-button" onClick={() => revokeSession(session)}>Cerrar sesión</button>}
+        <div className="account-session-identity-v5"><strong>{deviceLabel(session.userAgent)}</strong><small>IP {session.ipAddress || "no disponible"}</small></div>
+        <time>{formatDateTime(session.lastSeenAt)}</time>
+        <time>{formatDateTime(session.expiresAt)}</time>
+        {session.current ? <i><IconShieldCheck size={14} /> Actual</i> : <button className="danger-button" onClick={() => revokeSession(session)}>Cerrar sesión</button>}
       </article>)}</div>
     </section>
-  </>;
+  </div>;
 }

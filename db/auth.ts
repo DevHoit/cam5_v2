@@ -1,17 +1,15 @@
 import { createHash, randomBytes, scrypt as nodeScrypt, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
-import { and, desc, eq, gt, isNull, or, sql } from "drizzle-orm";
+import { and, eq, gt, isNull } from "drizzle-orm";
 import type { Cam5Database } from "./index";
+import { resolveUserAccessScopes } from "./access-scope";
+import type { PortalRoleKey } from "./access-control";
 import {
   authIdentities,
   authSessions,
-  clients,
   permissions,
   passwordResetTokens,
   rolePermissions,
-  roles,
-  sites,
-  userRoleAssignments,
   users,
 } from "./schema";
 
@@ -27,8 +25,8 @@ export type AuthenticatedPortalUser = {
   email: string;
   displayName: string;
   status: "invited" | "active" | "suspended";
-  roleKey: "administrator" | "engineer" | "operator" | "viewer";
-  roleName: "Administrador" | "Ingeniero" | "Operador" | "Solo lectura";
+  roleKey: PortalRoleKey;
+  roleName: string;
   mustChangePassword: boolean;
   clientId: string;
   clientCode: string;
@@ -43,11 +41,19 @@ export type AuthenticatedPortalUser = {
     clientId: string;
     clientCode: string;
     clientName: string;
-    roleKey: AuthenticatedPortalUser["roleKey"];
-    roleName: AuthenticatedPortalUser["roleName"];
+    roleKey: PortalRoleKey;
+    roleName: string;
+  }>;
+  clientScopes: Array<{
+    id: string;
+    code: string;
+    name: string;
+    roleKey: PortalRoleKey;
+    roleName: string;
   }>;
   permissions: string[];
 };
+
 
 export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
@@ -159,18 +165,8 @@ export async function createPortalSession(
 ) {
   const token = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + SESSION_HOURS * 60 * 60 * 1000);
-  const [initialScope] = await db
-    .select({ siteId: userRoleAssignments.siteId })
-    .from(userRoleAssignments)
-    .innerJoin(sites, eq(sites.id, userRoleAssignments.siteId))
-    .innerJoin(clients, eq(clients.id, sites.clientId))
-    .where(and(
-      eq(userRoleAssignments.userId, userId),
-      eq(sites.active, true),
-      eq(clients.active, true),
-      or(isNull(userRoleAssignments.expiresAt), gt(userRoleAssignments.expiresAt, new Date())),
-    ))
-    .limit(1);
+  const scopes = await resolveUserAccessScopes(db, userId);
+  const initialScope = scopes.sites[0] ?? null;
   await db.insert(authSessions).values({
     userId,
     activeSiteId: initialScope?.siteId ?? null,
@@ -214,24 +210,19 @@ export async function revokePortalSession(db: Cam5Database, token: string): Prom
 
 export async function switchPortalSessionSite(db: Cam5Database, token: string, siteId: string): Promise<AuthenticatedPortalUser | null> {
   const tokenHash = hashSessionToken(token);
-  const [allowed] = await db
-    .select({ sessionId: authSessions.id })
-    .from(authSessions)
-    .innerJoin(userRoleAssignments, eq(userRoleAssignments.userId, authSessions.userId))
-    .innerJoin(sites, eq(sites.id, userRoleAssignments.siteId))
-    .innerJoin(clients, eq(clients.id, sites.clientId))
-    .where(and(
-      eq(authSessions.tokenHash, tokenHash),
-      isNull(authSessions.revokedAt),
-      gt(authSessions.expiresAt, new Date()),
-      eq(userRoleAssignments.siteId, siteId),
-      eq(sites.active, true),
-      eq(clients.active, true),
-      or(isNull(userRoleAssignments.expiresAt), gt(userRoleAssignments.expiresAt, new Date())),
-    ))
-    .limit(1);
-  if (!allowed) return null;
-  await db.update(authSessions).set({ activeSiteId: siteId, lastSeenAt: new Date() }).where(eq(authSessions.id, allowed.sessionId));
+  const [session] = await db.select({
+    id: authSessions.id,
+    userId: authSessions.userId,
+  }).from(authSessions).where(and(
+    eq(authSessions.tokenHash, tokenHash),
+    isNull(authSessions.revokedAt),
+    gt(authSessions.expiresAt, new Date()),
+  )).limit(1);
+  if (!session) return null;
+
+  const scopes = await resolveUserAccessScopes(db, session.userId);
+  if (!scopes.sites.some((scope) => scope.siteId === siteId)) return null;
+  await db.update(authSessions).set({ activeSiteId: siteId, lastSeenAt: new Date() }).where(eq(authSessions.id, session.id));
   return resolvePortalSession(db, token);
 }
 
@@ -260,53 +251,19 @@ export async function resolvePortalSession(db: Cam5Database, token: string): Pro
 
   if (!session) return null;
 
-  const assignmentRows = await db
-    .select({
-      roleId: roles.id,
-      roleKey: roles.key,
-      roleName: roles.name,
-      siteId: sites.id,
-      siteCode: sites.code,
-      siteName: sites.name,
-      clientId: clients.id,
-      clientCode: clients.code,
-      clientName: clients.name,
-    })
-    .from(userRoleAssignments)
-    .innerJoin(roles, eq(roles.id, userRoleAssignments.roleId))
-    .innerJoin(sites, eq(sites.id, userRoleAssignments.siteId))
-    .innerJoin(clients, eq(clients.id, sites.clientId))
-    .where(and(
-      eq(userRoleAssignments.userId, session.userId),
-      eq(sites.active, true),
-      eq(clients.active, true),
-      or(isNull(userRoleAssignments.expiresAt), gt(userRoleAssignments.expiresAt, now)),
-    ))
-    .orderBy(
-      sites.name,
-      desc(sql<number>`case ${roles.key} when 'administrator' then 4 when 'engineer' then 3 when 'operator' then 2 else 1 end`),
-    );
+  const scopes = await resolveUserAccessScopes(db, session.userId, now);
+  if (!scopes.sites.length) return null;
 
-  const bestAssignmentBySite = new Map<string, (typeof assignmentRows)[number]>();
-  for (const assignment of assignmentRows) {
-    if (!bestAssignmentBySite.has(assignment.siteId)) bestAssignmentBySite.set(assignment.siteId, assignment);
-  }
-  const availableSites = [...bestAssignmentBySite.values()];
-  if (!availableSites.length) return null;
-  const selected = availableSites.find((assignment) => assignment.siteId === session.activeSiteId) ?? availableSites[0];
+  const selected = scopes.sites.find((scope) => scope.siteId === session.activeSiteId) ?? scopes.sites[0];
   if (selected.siteId !== session.activeSiteId) {
     await db.update(authSessions).set({ activeSiteId: selected.siteId }).where(eq(authSessions.id, session.sessionId));
   }
 
   const permissionRows = await db
     .select({ code: permissions.code })
-    .from(userRoleAssignments)
-    .innerJoin(rolePermissions, eq(rolePermissions.roleId, userRoleAssignments.roleId))
+    .from(rolePermissions)
     .innerJoin(permissions, eq(permissions.id, rolePermissions.permissionId))
-    .where(and(
-      eq(userRoleAssignments.userId, session.userId),
-      eq(userRoleAssignments.siteId, selected.siteId),
-    ));
+    .where(eq(rolePermissions.roleId, selected.roleId));
 
   await db.update(authSessions).set({ lastSeenAt: now }).where(eq(authSessions.id, session.sessionId));
 
@@ -315,8 +272,8 @@ export async function resolvePortalSession(db: Cam5Database, token: string): Pro
     email: session.email,
     displayName: session.displayName,
     status: session.status,
-    roleKey: selected.roleKey as AuthenticatedPortalUser["roleKey"],
-    roleName: selected.roleName as AuthenticatedPortalUser["roleName"],
+    roleKey: selected.roleKey,
+    roleName: selected.roleName,
     mustChangePassword: session.mustChangePassword ?? false,
     clientId: selected.clientId,
     clientCode: selected.clientCode,
@@ -324,15 +281,22 @@ export async function resolvePortalSession(db: Cam5Database, token: string): Pro
     siteId: selected.siteId,
     siteCode: selected.siteCode,
     siteName: selected.siteName,
-    sites: availableSites.map((scope) => ({
+    sites: scopes.sites.map((scope) => ({
       id: scope.siteId,
       code: scope.siteCode,
       name: scope.siteName,
       clientId: scope.clientId,
       clientCode: scope.clientCode,
       clientName: scope.clientName,
-      roleKey: scope.roleKey as AuthenticatedPortalUser["roleKey"],
-      roleName: scope.roleName as AuthenticatedPortalUser["roleName"],
+      roleKey: scope.roleKey,
+      roleName: scope.roleName,
+    })),
+    clientScopes: scopes.clients.map((scope) => ({
+      id: scope.clientId,
+      code: scope.clientCode,
+      name: scope.clientName,
+      roleKey: scope.roleKey,
+      roleName: scope.roleName,
     })),
     permissions: [...new Set(permissionRows.map((row) => row.code))],
   };

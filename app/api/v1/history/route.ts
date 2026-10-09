@@ -5,6 +5,10 @@ import {
   assets,
   auditLogs,
   channels,
+  deviceMetrics,
+  devices,
+  metricDefinitions,
+  metricReadings,
   readings,
   userAssetScopes,
   users,
@@ -58,10 +62,140 @@ export async function GET(request: NextRequest) {
     const allowedAssetIds = scopes.map((scope) => scope.assetId);
 
     if (tab === "measurements") {
+      const [targetAsset] = assetId
+        ? await db.select({ id: assets.id }).from(assets)
+            .where(and(eq(assets.id, assetId), eq(assets.siteId, user.siteId), eq(assets.active, true)))
+            .limit(1)
+        : [];
+      if (assetId && !targetAsset) throw new ApiError(404, "El activo no existe en el sitio activo.");
+
+      // Prefer the normalized device -> metric model whenever the selected asset
+      // actually exposes enabled metrics. This deliberately avoids branching on
+      // assetType: capabilities may evolve independently from the asset label.
+      const [normalizedMetric] = targetAsset
+        ? await db.select({ id: deviceMetrics.id }).from(deviceMetrics)
+            .innerJoin(devices, eq(devices.id, deviceMetrics.deviceId))
+            .where(and(
+              eq(devices.assetId, targetAsset.id),
+              eq(devices.active, true),
+              eq(deviceMetrics.enabled, true),
+            ))
+            .limit(1)
+        : [];
+      const hasNormalizedMetrics = Boolean(normalizedMetric);
+
+      if (hasNormalizedMetrics) {
+        if (allowedAssetIds.length && assetId && !allowedAssetIds.includes(assetId)) throw new ApiError(403, "No tienes acceso al activo indicado.");
+        const filters: SQL[] = [
+          eq(assets.siteId, user.siteId),
+          eq(assets.id, assetId),
+          eq(assets.active, true),
+          eq(devices.active, true),
+          eq(deviceMetrics.enabled, true),
+          between(metricReadings.recordedAt, from, to),
+        ];
+        if (channel !== "all") {
+          const [deviceId, metricKey] = channel.includes("::") ? channel.split("::", 2) : ["", channel];
+          if (deviceId && metricKey) {
+            filters.push(eq(devices.id, deviceId));
+            filters.push(or(eq(deviceMetrics.code, metricKey), eq(metricDefinitions.key, metricKey))!);
+          } else {
+            filters.push(or(eq(deviceMetrics.code, channel), eq(metricDefinitions.key, channel))!);
+          }
+        }
+        if (q) filters.push(or(
+          ilike(deviceMetrics.code, `%${q}%`),
+          ilike(deviceMetrics.name, `%${q}%`),
+          ilike(metricDefinitions.key, `%${q}%`),
+          ilike(devices.code, `%${q}%`),
+          ilike(devices.name, `%${q}%`),
+        )!);
+        const where = and(...filters);
+        const [items, totals] = await Promise.all([
+          db.select({
+            id: metricReadings.id,
+            recordedAt: metricReadings.recordedAt,
+            receivedAt: metricReadings.receivedAt,
+            code: deviceMetrics.code,
+            name: deviceMetrics.name,
+            deviceId: devices.id,
+            deviceCode: devices.code,
+            deviceName: devices.name,
+            category: metricDefinitions.category,
+            metricKey: metricDefinitions.key,
+            unit: metricDefinitions.unit,
+            dataType: metricDefinitions.dataType,
+            valueNumeric: metricReadings.valueNumeric,
+            valueBoolean: metricReadings.valueBoolean,
+            valueText: metricReadings.valueText,
+            quality: metricReadings.quality,
+            qualityFlags: metricReadings.qualityFlags,
+            sequence: metricReadings.sequence,
+          }).from(metricReadings)
+            .innerJoin(deviceMetrics, eq(deviceMetrics.id, metricReadings.deviceMetricId))
+            .innerJoin(devices, eq(devices.id, deviceMetrics.deviceId))
+            .innerJoin(assets, eq(assets.id, devices.assetId))
+            .innerJoin(metricDefinitions, eq(metricDefinitions.id, deviceMetrics.metricDefinitionId))
+            .where(where)
+            .orderBy(desc(metricReadings.recordedAt), desc(metricReadings.id))
+            .limit(queryLimit)
+            .offset(queryOffset),
+          db.select({ total: count() }).from(metricReadings)
+            .innerJoin(deviceMetrics, eq(deviceMetrics.id, metricReadings.deviceMetricId))
+            .innerJoin(devices, eq(devices.id, deviceMetrics.deviceId))
+            .innerJoin(assets, eq(assets.id, devices.assetId))
+            .innerJoin(metricDefinitions, eq(metricDefinitions.id, deviceMetrics.metricDefinitionId))
+            .where(where),
+        ]);
+        const normalized = items.map((item) => {
+          const value = item.dataType === "boolean"
+            ? item.valueBoolean
+            : item.dataType === "string" || item.dataType === "enum"
+              ? item.valueText
+              : item.valueNumeric === null ? null : Number(item.valueNumeric);
+          return {
+            id: item.id,
+            recordedAt: item.recordedAt,
+            receivedAt: item.receivedAt ?? item.recordedAt,
+            code: item.code,
+            name: item.name,
+            zone: item.deviceName,
+            deviceId: item.deviceId,
+            metricKey: item.metricKey,
+            dataType: item.dataType,
+            unit: item.unit,
+            value,
+            rawValue: null,
+            quality: item.quality,
+            qualityFlags: item.qualityFlags,
+            sequence: item.sequence,
+          };
+        });
+        const total = Number(totals[0]?.total ?? 0);
+        if (exporting) return csvResponse("hoitlive-historico-mediciones.csv", [
+          ["fecha_medicion_utc", "fecha_recepcion_utc", "dispositivo", "metrica", "nombre", "valor", "unidad", "calidad", "banderas", "secuencia"],
+          ...normalized.map((item) => [item.recordedAt.toISOString(), item.receivedAt.toISOString(), item.zone, item.metricKey, item.name, item.value, item.unit, item.quality, item.qualityFlags.join("|"), item.sequence]),
+        ]);
+        return Response.json({
+          items: normalized.map((item) => ({
+            ...item,
+            recordedAt: item.recordedAt.toISOString(),
+            receivedAt: item.receivedAt.toISOString(),
+          })),
+          page,
+          pageSize,
+          total,
+          totalPages: Math.max(1, Math.ceil(total / pageSize)),
+          from: from.toISOString(),
+          to: to.toISOString(),
+          source: "normalized_metrics",
+        }, { headers: { "Cache-Control": "no-store" } });
+      }
+
       const filters: SQL[] = [eq(assets.siteId, user.siteId), eq(channels.enabled, true), between(readings.recordedAt, from, to)];
       if (allowedAssetIds.length) filters.push(inArray(assets.id, allowedAssetIds));
       if (assetId) {
-        if (allowedAssetIds.length && !allowedAssetIds.includes(assetId)) throw new ApiError(403, "No tienes acceso al punto de medición indicado.");
+        if (allowedAssetIds.length && !allowedAssetIds.includes(assetId)) throw new ApiError(403, "No tienes acceso al activo indicado.");
         filters.push(eq(assets.id, assetId));
       }
       if (channel !== "all") filters.push(eq(channels.code, channel));
@@ -115,7 +249,7 @@ export async function GET(request: NextRequest) {
       const filters: SQL[] = [eq(alarms.siteId, user.siteId), between(alarms.openedAt, from, to)];
       if (allowedAssetIds.length) filters.push(inArray(alarms.assetId, allowedAssetIds));
       if (assetId) {
-        if (allowedAssetIds.length && !allowedAssetIds.includes(assetId)) throw new ApiError(403, "No tienes acceso al punto de medición indicado.");
+        if (allowedAssetIds.length && !allowedAssetIds.includes(assetId)) throw new ApiError(403, "No tienes acceso al activo indicado.");
         filters.push(eq(alarms.assetId, assetId));
       }
       if (q) filters.push(or(ilike(alarms.code, `%${q}%`), ilike(alarms.title, `%${q}%`), ilike(alarms.detail, `%${q}%`))!);
@@ -130,10 +264,16 @@ export async function GET(request: NextRequest) {
           title: alarms.title,
           detail: alarms.detail,
           triggerValue: alarms.triggerValue,
+          assetName: assets.name,
+          deviceId: devices.id,
+          deviceCode: devices.code,
+          deviceName: devices.name,
+          context: alarms.context,
           channelCode: channels.code,
           unit: channels.unit,
         }).from(alarms)
           .innerJoin(assets, eq(assets.id, alarms.assetId))
+          .leftJoin(devices, eq(devices.id, alarms.deviceId))
           .leftJoin(channels, eq(channels.id, alarms.channelId))
           .where(where)
           .orderBy(desc(alarms.openedAt))
@@ -143,8 +283,8 @@ export async function GET(request: NextRequest) {
       ]);
       const total = Number(totals[0]?.total ?? 0);
       if (exporting) return csvResponse("hoitlive-historico-alarmas.csv", [
-        ["fecha_apertura_utc", "codigo", "severidad", "estado", "canal", "titulo", "detalle", "valor", "unidad"],
-        ...items.map((item) => [item.openedAt.toISOString(), item.code, item.severity, item.status, item.channelCode, item.title, item.detail, item.triggerValue, item.unit]),
+        ["fecha_apertura_utc", "codigo", "severidad", "estado", "activo", "dispositivo", "origen", "titulo", "detalle", "valor", "unidad"],
+        ...items.map((item) => [item.openedAt.toISOString(), item.code, item.severity, item.status, item.assetName, item.deviceName ?? item.deviceCode, typeof item.context?.metricKey === "string" ? item.context.metricKey : item.channelCode, item.title, item.detail, item.triggerValue, item.unit]),
       ]);
       return Response.json({
         items: items.map((item) => ({ ...item, openedAt: item.openedAt.toISOString() })),

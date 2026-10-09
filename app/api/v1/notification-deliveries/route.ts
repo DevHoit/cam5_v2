@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { and, count, desc, eq, gte, ilike, lte, or, type SQL } from "drizzle-orm";
+import { NOTIFICATION_STATUSES } from "../../../../db/notification-status";
 import { alarms, notificationDeliveries, notificationEndpoints, notificationPolicies } from "../../../../db/schema";
 import { apiErrorResponse, ApiError, parsePage, requireApiSession } from "../_lib/auth";
 import { NOTIFICATION_KINDS } from "../_lib/notifications";
@@ -23,7 +24,7 @@ export async function GET(request: NextRequest) {
     const kind = request.nextUrl.searchParams.get("kind") || "all";
     const from = optionalDate(request.nextUrl.searchParams.get("from"));
     const to = optionalDate(request.nextUrl.searchParams.get("to"), true);
-    if (!["all", "queued", "sending", "delivered", "failed"].includes(status)) throw new ApiError(400, "El filtro de entrega no es válido.");
+    if (!["all", ...NOTIFICATION_STATUSES].includes(status)) throw new ApiError(400, "El filtro de entrega no es válido.");
     if (kind !== "all" && !NOTIFICATION_KINDS.includes(kind as (typeof NOTIFICATION_KINDS)[number])) throw new ApiError(400, "El filtro de canal no es válido.");
     if (from && to && from > to) throw new ApiError(400, "La fecha inicial debe ser anterior a la final.");
     const filters: SQL[] = [eq(notificationEndpoints.siteId, user.siteId)];

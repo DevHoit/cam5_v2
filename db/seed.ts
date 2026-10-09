@@ -4,6 +4,7 @@ import { cam5InputInventory, cam5OperationalChannels, cam5RegisterCatalog, cam5R
 import { PORTAL_PERMISSIONS, PORTAL_ROLES } from "./access-control";
 import { hashPassword } from "./auth";
 import { COMMISSIONING_CHECKLIST } from "./commissioning-engine";
+import { HOIT_METRIC_CATALOG } from "./hoit-metrics";
 import { closeDb, getDb, type Cam5Database } from "./index";
 import { loadDatabaseEnvironment } from "./load-env";
 import {
@@ -16,6 +17,7 @@ import {
   deviceModels,
   devices,
   gateways,
+  metricDefinitions,
   permissions,
   physicalInputs,
   readingProfileRanges,
@@ -26,7 +28,6 @@ import {
   rolePermissions,
   roles,
   sites,
-  userClientAssignments,
   userRoleAssignments,
   users,
 } from "./schema";
@@ -85,6 +86,27 @@ export async function seedCam5Database(
   } = {},
 ) {
   await db.transaction(async (tx) => {
+    for (const metric of HOIT_METRIC_CATALOG) {
+      await tx.insert(metricDefinitions).values({
+        key: metric.key,
+        name: metric.name,
+        category: metric.category,
+        unit: metric.unit,
+        dataType: metric.dataType,
+        aggregation: metric.aggregation,
+      }).onConflictDoUpdate({
+        target: metricDefinitions.key,
+        set: {
+          name: metric.name,
+          category: metric.category,
+          unit: metric.unit,
+          dataType: metric.dataType,
+          aggregation: metric.aggregation,
+          updatedAt: new Date(),
+        },
+      });
+    }
+
     const clientCode = options.clientCode ?? process.env.CAM5_CLIENT_CODE ?? "CLIENTE-PRINCIPAL";
     const clientName = options.clientName ?? process.env.CAM5_CLIENT_NAME ?? "Cliente principal";
     await tx.insert(clients).values({
@@ -345,10 +367,9 @@ export async function seedCam5Database(
       const adminName = configuredAdminName?.trim() || "Administrador CAM5";
       await tx.insert(users).values({ email: adminEmail, displayName: adminName, status: "active" }).onConflictDoNothing();
       const [admin] = await tx.select().from(users).where(sql`lower(${users.email}) = ${adminEmail}`).limit(1);
-      const [adminRole] = await tx.select().from(roles).where(eq(roles.key, "administrator")).limit(1);
-      if (!admin || !adminRole) throw new Error("No fue posible asignar el administrador inicial.");
-      await tx.insert(userClientAssignments).values({ userId: admin.id, clientId: client.id, roleId: adminRole.id }).onConflictDoNothing();
-      await tx.insert(userRoleAssignments).values({ userId: admin.id, roleId: adminRole.id, siteId: site.id }).onConflictDoNothing();
+      const [adminRole] = await tx.select().from(roles).where(eq(roles.key, "platform_admin")).limit(1);
+      if (!admin || !adminRole) throw new Error("No fue posible asignar el administrador HOIT inicial.");
+      await tx.insert(userRoleAssignments).values({ userId: admin.id, roleId: adminRole.id, siteId: null }).onConflictDoNothing();
       if (configuredAdminPassword) {
         const passwordHash = await hashPassword(configuredAdminPassword);
         await tx.insert(authIdentities).values({

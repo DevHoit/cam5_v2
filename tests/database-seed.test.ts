@@ -5,6 +5,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { count, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import { PORTAL_PERMISSIONS, PORTAL_ROLES } from "../db/access-control";
+import { COMMISSIONING_CHECKLIST } from "../db/commissioning-engine";
 import { authenticateLocalUser, createPortalSession, resolvePortalSession, revokePortalSession, switchPortalSessionSite, verifyPassword } from "../db/auth";
 import { resolvePortalAccess } from "../db/authorization";
 import type { Cam5Database } from "../db/index";
@@ -14,7 +15,7 @@ import * as schema from "../db/schema";
 test("seeds the initial CAM5 installation and remains idempotent", async () => {
   const client = new PGlite();
   try {
-    for (const filename of ["0000_cam5_initial_schema.sql", "0001_eager_blockbuster.sql", "0002_sparkling_wallow.sql", "0003_rich_charles_xavier.sql", "0004_windy_gauntlet.sql", "0005_milky_caretaker.sql", "0006_smiling_frightful_four.sql", "0007_big_frightful_four.sql", "0008_sloppy_mister_sinister.sql", "0009_cuddly_infant_terrible.sql", "0010_robust_wallop.sql", "0011_dear_prima.sql"]) {
+    for (const filename of ["0000_cam5_initial_schema.sql", "0001_eager_blockbuster.sql", "0002_sparkling_wallow.sql", "0003_rich_charles_xavier.sql", "0004_windy_gauntlet.sql", "0005_milky_caretaker.sql", "0006_smiling_frightful_four.sql", "0007_big_frightful_four.sql", "0008_sloppy_mister_sinister.sql", "0009_cuddly_infant_terrible.sql", "0010_robust_wallop.sql", "0011_dear_prima.sql", "0012_hoit_core_foundation.sql", "0013_hoit_generic_telemetry.sql", "0014_generic_device_transport.sql", "0015_operational_condition_states.sql", "0016_cold_chain_report_template.sql", "0017_generic_metric_aggregates.sql", "0018_pm5560_metric_catalog.sql", "0019_nullable_device_gateway_site_guard.sql", "0020_electrical_report_template.sql", "0021_dse8660_metric_catalog.sql", "0022_ats_report_template.sql", "0023_access_scope_roles.sql", "0024_notification_suppressed_status.sql", "0025_rs485_bus_addressing.sql", "0026_hoit_v1_control_plane.sql", "0029_notification_recipients.sql", "0030_fix_phone_e164_check.sql"]) {
       const migration = await readFile(new URL(`../drizzle/${filename}`, import.meta.url), "utf8");
       await client.exec(migration.replaceAll("--> statement-breakpoint", ""));
     }
@@ -56,6 +57,7 @@ test("seeds the initial CAM5 installation and remains idempotent", async () => {
     const [adminCount] = await db.select({ value: count() }).from(schema.users).where(eq(schema.users.email, "admin@example.test"));
     const [identityCount] = await db.select({ value: count() }).from(schema.authIdentities);
     const [clientAssignmentCount] = await db.select({ value: count() }).from(schema.userClientAssignments);
+    const [metricDefinitionCount] = await db.select({ value: count() }).from(schema.metricDefinitions);
 
     assert.equal(clientCount.value, 1);
     assert.equal(siteCount.value, 1);
@@ -67,11 +69,12 @@ test("seeds the initial CAM5 installation and remains idempotent", async () => {
     assert.equal(roleCount.value, PORTAL_ROLES.length);
     assert.equal(permissionCount.value, PORTAL_PERMISSIONS.length);
     assert.equal(relayCount.value, 6);
-    assert.equal(checkCount.value, 8);
+    assert.equal(checkCount.value, COMMISSIONING_CHECKLIST.length);
     assert.equal(profileRangeCount.value, 4);
     assert.equal(adminCount.value, 1);
     assert.equal(identityCount.value, 1);
-    assert.equal(clientAssignmentCount.value, 1);
+    assert.equal(clientAssignmentCount.value, 0);
+    assert.ok(metricDefinitionCount.value >= 20);
 
     const [preservedClient] = await db.select().from(schema.clients).where(eq(schema.clients.id, seededClient.id)).limit(1);
     const [preservedSite] = await db.select().from(schema.sites).where(eq(schema.sites.id, seededSite.id)).limit(1);
@@ -99,7 +102,7 @@ test("seeds the initial CAM5 installation and remains idempotent", async () => {
     const session = await createPortalSession(seedDb, authenticatedUserId);
     const resolvedSession = await resolvePortalSession(seedDb, session.token);
     assert.equal(resolvedSession?.email, "admin@example.test");
-    assert.equal(resolvedSession?.roleKey, "administrator");
+    assert.equal(resolvedSession?.roleKey, "platform_admin");
     assert.equal(resolvedSession?.clientName, "Cliente administrado");
     assert.equal(resolvedSession?.siteName, "Sitio administrado");
     assert.equal(resolvedSession?.sites.length, 1);
@@ -107,8 +110,6 @@ test("seeds the initial CAM5 installation and remains idempotent", async () => {
 
     const [secondClient] = await db.insert(schema.clients).values({ code: "CLIENTE-02", name: "Segundo cliente" }).returning();
     const [secondSite] = await db.insert(schema.sites).values({ clientId: secondClient.id, code: "SITE-02", name: "Segundo sitio" }).returning();
-    const [administratorRole] = await db.select().from(schema.roles).where(eq(schema.roles.key, "administrator")).limit(1);
-    await db.insert(schema.userRoleAssignments).values({ userId: authenticatedUserId, roleId: administratorRole.id, siteId: secondSite.id });
     const switchedSession = await switchPortalSessionSite(seedDb, session.token, secondSite.id);
     assert.equal(switchedSession?.clientName, "Segundo cliente");
     assert.equal(switchedSession?.siteName, "Segundo sitio");

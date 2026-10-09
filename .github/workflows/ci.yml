@@ -1,0 +1,133 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - "feature/**"
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.13.0"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Lint HOIT Core changes
+        run: >-
+          npx eslint
+          db/schema.ts
+          db/app-url.ts
+          db/seed.ts
+          db/hoit-metrics.ts
+          db/pm5560.ts
+          db/access-scope.ts
+          db/platform-admin.ts
+          db/notification-engine.ts
+          db/maintenance-engine.ts
+          db/maintenance-window-service.ts
+          db/escalation-engine.ts
+          db/escalation-notification-engine.ts
+          db/whatsapp-webhook.ts
+          db/on-call-engine.ts
+          db/rule-engine.ts
+          db/operations-cycle.ts db/operations-policy.ts db/preview-scheduler.ts workflows/preview-operations.ts next.config.ts
+          db/auth.ts
+          db/dse8660.ts
+          db/ats-alarm-engine.ts
+          db/ats.ts
+          db/operational-condition-engine.ts
+          db/electrical-alarm-engine.ts
+          db/electrical.ts
+          db/cold-chain.ts
+          db/cold-chain-history.ts
+          db/cold-chain-alarm-engine.ts
+          db/report-engine.ts
+          db/report-export.ts
+          app/api/v1/gateway/ingest/route.ts
+          app/api/v1/gateway/_lib/ingest-v2.ts
+          app/api/v1/gateway/_lib/ingest-spec-v1.ts
+          app/api/v1/gateway/_lib/heartbeat-spec-v1.ts
+          app/api/v1/gateway/_lib/config-spec-v1.ts
+          app/api/v1/gateway/config/route.ts
+          app/api/v1/gateway/heartbeat/route.ts
+          app/api/v1/telemetry/metrics
+          app/api/v1/cold-chain
+          app/api/v1/electrical
+          app/api/v1/hierarchy/route.ts
+          app/api/v1/users/route.ts
+          app/api/v1/users/[id]/route.ts
+          app/api/v1/system/operations/route.ts app/api/v1/system/scheduler/route.ts app/api/v1/health/route.ts
+          app/api/v1/notification-deliveries/route.ts
+          app/api/v1/maintenance-windows/route.ts app/api/v1/shifts/route.ts app/api/v1/on-call-assignments/route.ts app/api/v1/noc/route.ts app/api/v1/escalation-policies/route.ts app/api/v1/dashboard/route.ts
+          app/api/v1/webhooks/whatsapp/route.ts
+          app/api/v1/notifications/summary/route.ts
+          app/page.tsx app/dashboard-view.tsx app/engineering-hub-view.tsx app/universal-asset-overview.tsx app/generic-trends-view.tsx app/settings-view.tsx app/notifications-view.tsx app/operations-view.tsx app/shifts-view.tsx app/noc-view.tsx app/escalation-policies-view.tsx
+          scripts/run-operations-cycle.ts
+          scripts/promote-platform-admin.ts
+          app/cold-chain-view.tsx
+          app/cold-chain-detail.tsx
+          app/electrical-view.tsx
+          app/api/v1/ats
+          app/ats-view.tsx
+          app/ats-history.tsx
+          app/electrical-history.tsx
+          app/reports-view.tsx
+          tests/gateway-ingest-v2.test.ts
+          tests/gateway-ingest-spec-v1.test.ts
+          tests/gateway-heartbeat-spec-v1.test.ts
+          tests/gateway-config-spec-v1.test.ts
+          tests/pm5560-e2e.test.ts
+          tests/ats-e2e.test.ts
+          tests/access-scope.test.ts
+          tests/area-scope.test.ts
+          tests/notification-engine.test.ts
+          tests/maintenance-window.test.ts
+          tests/escalation-engine.test.ts
+          tests/escalation-notification.test.ts
+          tests/whatsapp-webhook.test.ts
+          tests/on-call-engine.test.ts
+          tests/rule-engine.test.ts
+          tests/operations-cycle.test.ts tests/operations-policy.test.ts tests/preview-scheduler.test.ts
+          tests/rs485-topology.test.ts
+          tests/v1-integrated-e2e.test.ts
+          tests/cold-chain-e2e.test.ts
+          tests/cold-chain.test.ts
+          tests/cold-chain-history.test.ts
+          tests/report-export.test.ts
+          tests/database-schema.test.mjs
+          tests/database-seed.test.ts
+
+      - name: Validate Python simulators
+        run: python3 -m py_compile examples/hoit_simulator.py examples/cold_chain_simulator.py examples/pm5560_simulator.py examples/dse8660_simulator.py scripts/poll-preview-operations.py
+
+      - name: Validate HOIT Gateway Agent
+        run: |
+          python3 -m compileall -q gateway/hoit_agent
+          python3 -m unittest discover -s gateway/tests -p 'test_*.py'
+
+      - name: Database tests
+        run: npm run test:db
+
+      - name: Release preflight regression tests
+        run: node --test tests/production-preflight.test.mjs
+
+      - name: Build
+        run: npm run build

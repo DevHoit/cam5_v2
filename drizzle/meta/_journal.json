@@ -85,6 +85,153 @@
       "when": 1788986660497,
       "tag": "0011_dear_prima",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1790956800000,
+      "tag": "0012_hoit_core_foundation",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1790956860000,
+      "tag": "0013_hoit_generic_telemetry",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1790956920000,
+      "tag": "0014_generic_device_transport",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1790956980000,
+      "tag": "0015_operational_condition_states",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1790959500000,
+      "tag": "0016_cold_chain_report_template",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1790961000000,
+      "tag": "0017_generic_metric_aggregates",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1790962500000,
+      "tag": "0018_pm5560_metric_catalog",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1790970000000,
+      "tag": "0019_nullable_device_gateway_site_guard",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1790974800000,
+      "tag": "0020_electrical_report_template",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1790976000000,
+      "tag": "0021_dse8660_metric_catalog",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1790978400000,
+      "tag": "0022_ats_report_template",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1790982000000,
+      "tag": "0023_access_scope_roles",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1790984400000,
+      "tag": "0024_notification_suppressed_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1790985600000,
+      "tag": "0025_rs485_bus_addressing",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1791049200000,
+      "tag": "0026_hoit_v1_control_plane",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1791049800000,
+      "tag": "0027_rule_alarm_semantics",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1791053300000,
+      "tag": "0028_area_scope_guards",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1791054000000,
+      "tag": "0029_notification_recipients",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1791059400000,
+      "tag": "0030_fix_phone_e164_check",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1791060300000,
+      "tag": "0031_whatsapp_webhook_audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1791386000000,
+      "tag": "0032_preview_operational_scheduler",
+      "breakpoints": true
     }
   ]
 }

@@ -1,8 +1,9 @@
 import type { NextRequest } from "next/server";
 import { and, asc, eq } from "drizzle-orm";
 import { assets, devices, gateways, readingProfiles } from "../../../../../db/schema";
-import { apiErrorResponse } from "../../_lib/auth";
+import { apiErrorResponse, ApiError } from "../../_lib/auth";
 import { requireGatewayCredential } from "../_lib/auth";
+import { handleSpecHeartbeat } from "../_lib/heartbeat-spec-v1";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +11,17 @@ export async function POST(request: NextRequest) {
   try {
     const { db, credential } = await requireGatewayCredential(request);
     const receivedAt = new Date();
+    const rawBody = await request.text();
+    const parsedBody = rawBody.trim() ? (() => { try { return JSON.parse(rawBody) as unknown; } catch { return null; } })() : null;
+    if (parsedBody && typeof parsedBody === "object" && !Array.isArray(parsedBody)) {
+      const record = parsedBody as Record<string, unknown>;
+      if (record.schema_version === "1.0") {
+        return handleSpecHeartbeat({ db, credential, rawPayload: parsedBody, receivedAt });
+      }
+      if (record.schema_version !== undefined) throw new ApiError(400, "schema_version de heartbeat no soportado.");
+    } else if (rawBody.trim()) {
+      throw new ApiError(400, "El heartbeat debe ser JSON válido.");
+    }
     const [policy] = await db.select({
       heartbeatIntervalSeconds: readingProfiles.heartbeatIntervalSeconds,
     }).from(devices)

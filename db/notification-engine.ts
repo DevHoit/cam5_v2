@@ -1,17 +1,20 @@
 import { createHmac } from "node:crypto";
 import { and, eq, inArray, lte, or, sql } from "drizzle-orm";
 import type { Cam5Database } from "./index";
+import { publicAppUrl } from "./app-url";
+import { isMaintenanceActive } from "./maintenance-engine";
 import {
   alarms,
   assets,
   channels,
+  escalationJobs,
   notificationDeliveries,
   notificationEndpoints,
   notificationPolicies,
   sites,
 } from "./schema";
 
-export type NotificationSeverity = "normal" | "warning" | "critical";
+export type NotificationSeverity = "normal" | "info" | "warning" | "critical";
 export type NotificationAlarmKind = "threshold" | "communication" | "data_quality";
 export type NotificationEventType = "opened" | "escalated" | "reopened_automatically" | "resolved_automatically" | "repeat" | "test" | string;
 
@@ -27,22 +30,28 @@ type EndpointConfiguration = {
   channel?: string;
   url?: string;
   destination?: string;
+  phoneNumberId?: string;
+  apiVersion?: string;
+  languageCode?: string;
+  templateName?: string;
 };
 
 type DeliveryMessage = {
   subject: string;
   payload: Record<string, unknown>;
+  recipient?: string | null;
+  templateName?: string | null;
 };
 
 type EndpointTransport = {
-  kind: "email" | "teams" | "webhook";
+  kind: "email" | "teams" | "webhook" | "whatsapp_meta";
   configuration: Record<string, unknown>;
   secretReference: string | null;
 };
 
 type TransportResult = { providerMessageId: string | null; recipient: string };
 
-const severityRank: Record<NotificationSeverity, number> = { normal: 0, warning: 1, critical: 2 };
+const severityRank: Record<NotificationSeverity, number> = { normal: 0, info: 1, warning: 2, critical: 3 };
 
 function normalizedFilters(value: Record<string, unknown>): PolicyFilters {
   return value as PolicyFilters;
@@ -62,6 +71,7 @@ function policyMatches(filters: PolicyFilters, event: { kind: NotificationAlarmK
 
 function endpointRecipient(kind: EndpointTransport["kind"], configuration: EndpointConfiguration) {
   if (kind === "email") return (configuration.recipients ?? []).join(", ").slice(0, 320) || null;
+  if (kind === "whatsapp_meta") return null;
   return (configuration.destination || configuration.channel || configuration.url || null)?.slice(0, 320) ?? null;
 }
 
@@ -93,8 +103,10 @@ export async function queueAlarmNotifications(
     title: alarms.title,
     detail: alarms.detail,
     assetId: alarms.assetId,
+    deviceId: alarms.deviceId,
     assetCode: assets.code,
     assetName: assets.name,
+    assetState: assets.state,
     channelCode: channels.code,
     channelName: channels.name,
     siteName: sites.name,
@@ -124,6 +136,12 @@ export async function queueAlarmNotifications(
     ));
 
   const occurredAt = input.occurredAt ?? new Date();
+  const maintenanceActive = alarm.assetState === "maintenance" || await isMaintenanceActive(db, {
+    siteId: input.siteId,
+    assetId: alarm.assetId,
+    deviceId: alarm.deviceId,
+    at: occurredAt,
+  });
   const eligible = policies.filter((policy) => (
     severityRank[input.severity] >= severityRank[policy.minimumSeverity]
     && policyMatches(normalizedFilters(policy.filters), { kind: input.kind, assetId: alarm.assetId, eventType: input.eventType })
@@ -153,9 +171,11 @@ export async function queueAlarmNotifications(
         asset: `${alarm.assetCode} · ${alarm.assetName}`,
         channel: alarm.channelCode ? `${alarm.channelCode} · ${alarm.channelName}` : null,
         occurredAt: occurredAt.toISOString(),
-        portalUrl: `${process.env.APP_URL || "https://cam5v2.vercel.app"}/?view=alarms&record=${encodeURIComponent(alarm.id)}`,
+        portalUrl: `${publicAppUrl()}/?view=alarms&record=${encodeURIComponent(alarm.id)}`,
       },
       recipient: endpointRecipient(policy.endpointKind, configuration),
+      status: maintenanceActive ? "suppressed" as const : "queued" as const,
+      errorMessage: maintenanceActive ? "Entrega suprimida por ventana de mantenimiento activa." : null,
       scheduledAt,
       nextAttemptAt: scheduledAt,
       dedupeKey: input.alarmEventId
@@ -172,6 +192,7 @@ export async function queueRepeatingNotifications(db: Cam5Database, now = new Da
     alarmId: alarms.id,
     siteId: alarms.siteId,
     assetId: alarms.assetId,
+    deviceId: alarms.deviceId,
     severity: alarms.severity,
     kind: alarms.kind,
     openedAt: alarms.openedAt,
@@ -187,6 +208,7 @@ export async function queueRepeatingNotifications(db: Cam5Database, now = new Da
     detail: alarms.detail,
     assetCode: assets.code,
     assetName: assets.name,
+    assetState: assets.state,
     siteName: sites.name,
     siteTimezone: sites.timezone,
   }).from(alarms)
@@ -201,8 +223,14 @@ export async function queueRepeatingNotifications(db: Cam5Database, now = new Da
       sql`${notificationPolicies.repeatIntervalMinutes} is not null`,
     ));
 
-  const values = rows.flatMap((row) => {
+  const maintenanceStates = await Promise.all(rows.map((row) => (
+    row.assetState === "maintenance"
+      ? Promise.resolve(true)
+      : isMaintenanceActive(db, { siteId: row.siteId, assetId: row.assetId, deviceId: row.deviceId, at: now })
+  )));
+  const values = rows.flatMap((row, index) => {
     const interval = row.intervalMinutes;
+    if (maintenanceStates[index]) return [];
     if (!interval || now.getTime() < row.openedAt.getTime() + interval * 60_000) return [];
     if (severityRank[row.severity] < severityRank[row.minimumSeverity]) return [];
     if (!policyMatches(normalizedFilters(row.filters), { kind: row.kind as NotificationAlarmKind, assetId: row.assetId, eventType: "repeat" })) return [];
@@ -225,7 +253,7 @@ export async function queueRepeatingNotifications(db: Cam5Database, now = new Da
         timezone: row.siteTimezone,
         asset: `${row.assetCode} · ${row.assetName}`,
         occurredAt: now.toISOString(),
-        portalUrl: `${process.env.APP_URL || "https://cam5v2.vercel.app"}/?view=alarms&record=${encodeURIComponent(row.alarmId)}`,
+        portalUrl: `${publicAppUrl()}/?view=alarms&record=${encodeURIComponent(row.alarmId)}`,
       },
       recipient: endpointRecipient(row.endpointKind, configuration),
       scheduledAt: now,
@@ -396,7 +424,9 @@ export async function sendNotification(
   const text = messageText(message);
 
   if (endpoint.kind === "email") {
-    const recipients = configuration.recipients?.filter((recipient) => recipient.trim()) ?? [];
+    const recipients = message.recipient?.trim()
+      ? [message.recipient.trim().toLowerCase()]
+      : configuration.recipients?.filter((recipient) => recipient.trim()) ?? [];
     if (!recipients.length) throw new Error("El canal de correo no tiene destinatarios.");
     const apiKey = requiredEnvironmentValue("RESEND_API_KEY", environment);
     const from = requiredEnvironmentValue("NOTIFICATION_FROM_EMAIL", environment);
@@ -408,6 +438,40 @@ export async function sendNotification(
     const result = await response.json().catch(() => ({})) as { id?: string; message?: string };
     if (!response.ok) throw new Error(result.message || `El proveedor de correo respondió ${response.status}.`);
     return { providerMessageId: result.id ?? null, recipient: recipients.join(", ").slice(0, 320) };
+  }
+
+  if (endpoint.kind === "whatsapp_meta") {
+    const recipient = message.recipient?.trim();
+    if (!recipient || !/^\+[1-9][0-9]{7,14}$/.test(recipient)) {
+      throw new Error("WhatsApp requiere un destinatario phone_e164 válido.");
+    }
+    if (!endpoint.secretReference) throw new Error("WhatsApp Meta requiere una referencia segura al access token.");
+    const phoneNumberId = configuration.phoneNumberId?.trim();
+    const apiVersion = configuration.apiVersion?.trim();
+    const templateName = message.templateName?.trim() || configuration.templateName?.trim();
+    const languageCode = configuration.languageCode?.trim() || "es_CL";
+    if (!phoneNumberId || !/^[0-9]{5,32}$/.test(phoneNumberId)) throw new Error("WhatsApp Meta requiere phoneNumberId válido.");
+    if (!apiVersion || !/^v[0-9]+\.[0-9]+$/.test(apiVersion)) throw new Error("WhatsApp Meta requiere apiVersion explícita.");
+    if (!templateName) throw new Error("WhatsApp Meta requiere un template aprobado.");
+    const token = requiredEnvironmentValue(endpoint.secretReference, environment);
+    const templateComponents = Array.isArray(message.payload.templateComponents) ? message.payload.templateComponents : undefined;
+    const response = await fetchImpl(`https://graph.facebook.com/${apiVersion}/${phoneNumberId}/messages`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        to: recipient.slice(1),
+        type: "template",
+        template: {
+          name: templateName,
+          language: { code: languageCode },
+          ...(templateComponents ? { components: templateComponents } : {}),
+        },
+      }),
+    });
+    const result = await response.json().catch(() => ({})) as { messages?: Array<{ id?: string }>; error?: { message?: string } };
+    if (!response.ok) throw new Error(result.error?.message || `Meta WhatsApp respondió ${response.status}.`);
+    return { providerMessageId: result.messages?.[0]?.id ?? null, recipient };
   }
 
   if (endpoint.kind === "teams") {
@@ -439,40 +503,137 @@ export function retryDelayMinutes(attempt: number) {
   return Math.min(60, 5 * 2 ** Math.max(0, attempt - 1));
 }
 
+export async function suppressPendingPersonalEscalations(
+  db: Pick<Cam5Database, "update">,
+  alarmId: string,
+  now = new Date(),
+  escalationJobId?: string,
+) {
+  return db.update(notificationDeliveries).set({
+    status: "suppressed",
+    errorMessage: "Escalamiento suprimido porque la alarma fue atendida o su ciclo cambió.",
+    updatedAt: now,
+  }).where(and(
+    eq(notificationDeliveries.alarmId, alarmId),
+    eq(notificationDeliveries.eventType, "escalated"),
+    sql`${notificationDeliveries.payload}->>'escalationJobId' is not null`,
+    escalationJobId ? sql`${notificationDeliveries.payload}->>'escalationJobId' = ${escalationJobId}` : undefined,
+    inArray(notificationDeliveries.status, ["queued", "failed"]),
+  )).returning({ id: notificationDeliveries.id });
+}
+
 export async function processNotificationDelivery(
   db: Cam5Database,
   deliveryId: number,
-  options: { now?: Date; fetchImpl?: typeof fetch; environment?: NodeJS.ProcessEnv } = {},
+  options: { now?: Date; fetchImpl?: typeof fetch; environment?: NodeJS.ProcessEnv; laboratoryGuard?: { alarmId: string; endpointId: string; recipient: string; expiresAt: Date } } = {},
 ) {
   const now = options.now ?? new Date();
   const [candidate] = await db.select({
     id: notificationDeliveries.id,
+    endpointId: notificationDeliveries.endpointId,
+    scheduledAt: notificationDeliveries.scheduledAt,
+    nextAttemptAt: notificationDeliveries.nextAttemptAt,
+    alarmId: notificationDeliveries.alarmId,
+    eventType: notificationDeliveries.eventType,
+    alarmStatus: alarms.status,
     subject: notificationDeliveries.subject,
     payload: notificationDeliveries.payload,
+    recipient: notificationDeliveries.recipient,
+    templateName: notificationDeliveries.templateName,
     attemptCount: notificationDeliveries.attemptCount,
     maxAttempts: notificationDeliveries.maxAttempts,
     kind: notificationEndpoints.kind,
     configuration: notificationEndpoints.configuration,
     secretReference: notificationEndpoints.secretReference,
+    siteId: alarms.siteId,
+    assetId: alarms.assetId,
+    deviceId: alarms.deviceId,
+    assetState: assets.state,
   }).from(notificationDeliveries)
     .innerJoin(notificationEndpoints, eq(notificationEndpoints.id, notificationDeliveries.endpointId))
+    .leftJoin(alarms, eq(alarms.id, notificationDeliveries.alarmId))
+    .leftJoin(assets, eq(assets.id, alarms.assetId))
     .where(and(eq(notificationDeliveries.id, deliveryId), eq(notificationEndpoints.enabled, true)))
     .limit(1);
   if (!candidate) return { status: "missing" as const, error: "La entrega o su canal ya no están disponibles." };
+  const guard = options.laboratoryGuard;
+  if (guard) {
+    const recipients = candidate.recipient?.trim()
+      ? [candidate.recipient.trim().toLowerCase()]
+      : (candidate.configuration.recipients as string[] | undefined)?.map((value) => value.trim().toLowerCase()) ?? [];
+    if (Date.now() >= guard.expiresAt.getTime() || now >= guard.expiresAt
+      || candidate.alarmId !== guard.alarmId || candidate.endpointId !== guard.endpointId
+      || candidate.kind !== "email" || recipients.length !== 1 || recipients[0] !== guard.recipient
+      || candidate.scheduledAt > now || candidate.nextAttemptAt > now || candidate.attemptCount >= candidate.maxAttempts) {
+      throw new Error("La entrega no coincide con el alcance autorizado del laboratorio.");
+    }
+  }
+  const escalationJobId = candidate.payload.escalationJobId;
+  if (candidate.eventType === "escalated" && typeof escalationJobId === "string") {
+    const validId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(escalationJobId);
+    const [job] = validId ? await db.select({ alarmId: escalationJobs.alarmId, dueAt: escalationJobs.dueAt, status: escalationJobs.status })
+      .from(escalationJobs).where(eq(escalationJobs.id, escalationJobId)).limit(1) : [];
+    const expectedDueAt = candidate.payload.escalationDueAt;
+    const obsolete = candidate.alarmStatus !== "open" || !job || job.alarmId !== candidate.alarmId || job.status !== "completed"
+      || (typeof expectedDueAt === "string" && job.dueAt.toISOString() !== expectedDueAt);
+    if (obsolete) {
+      await db.update(notificationDeliveries).set({
+        status: "suppressed", errorMessage: "Escalamiento suprimido porque la alarma fue atendida o su ciclo cambió.", updatedAt: now,
+      }).where(and(eq(notificationDeliveries.id, candidate.id), inArray(notificationDeliveries.status, ["queued", "failed"])));
+      return { status: "suppressed" as const, error: null };
+    }
+  }
+  const maintenanceActive = Boolean(candidate.alarmId && candidate.siteId && candidate.assetId && (
+    candidate.assetState === "maintenance"
+    || await isMaintenanceActive(db, {
+      siteId: candidate.siteId,
+      assetId: candidate.assetId,
+      deviceId: candidate.deviceId,
+      at: now,
+    })
+  ));
+  if (maintenanceActive) {
+    await db.update(notificationDeliveries).set({
+      status: "suppressed",
+      errorMessage: "Entrega suprimida porque existe mantenimiento activo para su alcance.",
+      updatedAt: now,
+    }).where(and(
+      eq(notificationDeliveries.id, candidate.id),
+      inArray(notificationDeliveries.status, ["queued", "failed"]),
+    ));
+    return { status: "suppressed" as const, error: null };
+  }
   const [claimed] = await db.update(notificationDeliveries).set({ status: "sending", lastAttemptAt: now, updatedAt: now })
     .where(and(eq(notificationDeliveries.id, candidate.id), or(eq(notificationDeliveries.status, "queued"), eq(notificationDeliveries.status, "failed"))))
     .returning({ id: notificationDeliveries.id });
   if (!claimed) return { status: "skipped" as const, error: "La entrega ya está siendo procesada o finalizó." };
   const nextAttempt = candidate.attemptCount + 1;
   try {
-    const result = await sendNotification({ kind: candidate.kind, configuration: candidate.configuration, secretReference: candidate.secretReference }, { subject: candidate.subject, payload: candidate.payload }, options);
-    await db.update(notificationDeliveries).set({ status: "delivered", attemptCount: nextAttempt, providerMessageId: result.providerMessageId, recipient: result.recipient.slice(0, 320), errorMessage: null, sentAt: now, updatedAt: now }).where(eq(notificationDeliveries.id, candidate.id));
-    return { status: "delivered" as const, error: null };
+    const result = await sendNotification(
+      { kind: candidate.kind, configuration: candidate.configuration, secretReference: candidate.secretReference },
+      { subject: candidate.subject, payload: candidate.payload, recipient: candidate.recipient, templateName: candidate.templateName },
+      options,
+    );
+    const providerAcceptedOnly = candidate.kind === "email" || candidate.kind === "whatsapp_meta";
+    await db.update(notificationDeliveries).set({
+      status: providerAcceptedOnly ? "sent" : "delivered",
+      attemptCount: nextAttempt,
+      providerMessageId: result.providerMessageId,
+      recipient: result.recipient.slice(0, 320),
+      provider: candidate.kind === "email" ? "resend" : candidate.kind === "whatsapp_meta" ? "meta_whatsapp_cloud" : candidate.kind,
+      errorMessage: null,
+      errorCode: null,
+      sentAt: now,
+      deliveredAt: providerAcceptedOnly ? null : now,
+      failedAt: null,
+      updatedAt: now,
+    }).where(eq(notificationDeliveries.id, candidate.id));
+    return { status: providerAcceptedOnly ? "sent" as const : "delivered" as const, error: null };
   } catch (error) {
     const exhausted = nextAttempt >= candidate.maxAttempts;
     const nextAttemptAt = exhausted ? now : new Date(now.getTime() + retryDelayMinutes(nextAttempt) * 60_000);
     const message = error instanceof Error ? error.message.slice(0, 2000) : "Error de entrega desconocido.";
-    await db.update(notificationDeliveries).set({ status: "failed", attemptCount: nextAttempt, errorMessage: message, nextAttemptAt, updatedAt: now }).where(eq(notificationDeliveries.id, candidate.id));
+    await db.update(notificationDeliveries).set({ status: "failed", attemptCount: nextAttempt, errorMessage: message, failedAt: now, nextAttemptAt, updatedAt: now }).where(eq(notificationDeliveries.id, candidate.id));
     return { status: "failed" as const, error: message };
   }
 }
@@ -509,12 +670,16 @@ export async function processNotificationQueue(
     .orderBy(notificationDeliveries.nextAttemptAt)
     .limit(Math.min(100, Math.max(1, options.limit ?? 25)));
 
+  let sent = 0;
   let delivered = 0;
   let failed = 0;
+  let suppressed = 0;
   for (const candidate of candidates) {
     const result = await processNotificationDelivery(db, candidate.id, { ...options, now });
+    if (result.status === "sent") sent += 1;
     if (result.status === "delivered") delivered += 1;
     if (result.status === "failed") failed += 1;
+    if (result.status === "suppressed") suppressed += 1;
   }
-  return { recovered: recoveredRows.length, repeated, processed: candidates.length, delivered, failed };
+  return { recovered: recoveredRows.length, repeated, processed: candidates.length, sent, delivered, failed, suppressed };
 }

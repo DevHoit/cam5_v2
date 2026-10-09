@@ -1,21 +1,17 @@
 import type { NextRequest } from "next/server";
-import { and, count, eq, max, min, sql } from "drizzle-orm";
+import { and, count, eq, max, sql } from "drizzle-orm";
 import { evaluateCommissioning, type CommissioningValidationInput } from "../../../../db/commissioning-engine";
 import type { Cam5Database } from "../../../../db/index";
 import {
-  alarmRules,
   assets,
   auditLogs,
-  channels,
   commissioningItems,
-  configurationSnapshots,
+  deviceCapabilities,
+  deviceMetrics,
   deviceModels,
   devices,
   gateways,
-  physicalInputs,
-  readings,
-  registerDefinitions,
-  relayConfigurations,
+  latestMetricReadings,
   sites,
   userAssetScopes,
   users,
@@ -25,7 +21,7 @@ import { apiErrorResponse, ApiError, requestMetadata, requireApiSession } from "
 export const dynamic = "force-dynamic";
 
 async function requireCommissioningContext(db: Cam5Database, user: Awaited<ReturnType<typeof requireApiSession>>["user"], assetId: string) {
-  if (!assetId) throw new ApiError(400, "Selecciona un punto de medición.");
+  if (!assetId) throw new ApiError(400, "Selecciona un activo.");
   const [context, scopes] = await Promise.all([
     db.select({
       assetId: assets.id,
@@ -42,15 +38,10 @@ async function requireCommissioningContext(db: Cam5Database, user: Awaited<Retur
       serialNumber: devices.serialNumber,
       firmwareVersion: devices.firmwareVersion,
       dataVersion: devices.dataVersion,
-      protocol: devices.protocol,
-      host: devices.host,
-      port: devices.port,
-      unitId: devices.unitId,
       lastReadAt: devices.lastReadAt,
       modelId: deviceModels.id,
       modelCode: deviceModels.code,
       modelName: deviceModels.name,
-      registerMapVersion: deviceModels.registerMapVersion,
       gatewayId: gateways.id,
       gatewayCode: gateways.code,
       gatewayName: gateways.name,
@@ -65,52 +56,34 @@ async function requireCommissioningContext(db: Cam5Database, user: Awaited<Retur
       .limit(1),
     db.select({ assetId: userAssetScopes.assetId }).from(userAssetScopes).where(eq(userAssetScopes.userId, user.id)),
   ]);
-  if (!context[0]) throw new ApiError(404, "No existe un controlador activo para el punto de medición.");
+  if (!context[0]) throw new ApiError(404, "No existe un dispositivo activo asociado al activo seleccionado.");
   if (scopes.length && !scopes.some((scope) => scope.assetId === assetId)) throw new ApiError(403, "No tienes acceso al punto de medición indicado.");
   return context[0];
 }
 
 async function loadMetrics(db: Cam5Database, context: Awaited<ReturnType<typeof requireCommissioningContext>>) {
-  const [inputRows, registerRows, channelRows, relayRows, snapshotRows, readingRows] = await Promise.all([
-    db.select({ total: count(), enabled: sql<number>`count(*) filter (where ${physicalInputs.enabled} = true)` }).from(physicalInputs).where(eq(physicalInputs.deviceId, context.deviceId)),
-    db.select({ total: count(), minimum: min(registerDefinitions.nativeRegister), maximum: max(registerDefinitions.nativeRegister) }).from(registerDefinitions).where(eq(registerDefinitions.modelId, context.modelId)),
-    db.select({ enabled: sql<number>`count(*) filter (where ${channels.enabled} = true)`, configuredRules: sql<number>`count(${alarmRules.id}) filter (where ${channels.enabled} = true and ${alarmRules.enabled} = true and ${alarmRules.warningThreshold} is not null and ${alarmRules.criticalThreshold} is not null)` }).from(channels).leftJoin(alarmRules, eq(alarmRules.channelId, channels.id)).where(eq(channels.deviceId, context.deviceId)),
-    db.select({ total: count(), enabled: sql<number>`count(*) filter (where ${relayConfigurations.enabled} = true)` }).from(relayConfigurations).where(eq(relayConfigurations.deviceId, context.deviceId)),
-    db.select({ total: count(), latestAt: max(configurationSnapshots.createdAt) }).from(configurationSnapshots).where(eq(configurationSnapshots.deviceId, context.deviceId)),
-    db.select({ total: count(), valid: sql<number>`count(${readings.id}) filter (where ${readings.quality} = 'good')`, firstAt: min(readings.recordedAt), lastAt: max(readings.recordedAt) }).from(readings).innerJoin(channels, eq(channels.id, readings.channelId)).where(eq(channels.deviceId, context.deviceId)),
+  const freshnessBoundary = new Date(Date.now() - 10 * 60 * 1000);
+  const [metricRows, capabilityRows, latestRows] = await Promise.all([
+    db.select({ total: count() }).from(deviceMetrics).where(and(eq(deviceMetrics.deviceId, context.deviceId), eq(deviceMetrics.enabled, true))),
+    db.select({ total: count() }).from(deviceCapabilities).where(and(eq(deviceCapabilities.deviceId, context.deviceId), eq(deviceCapabilities.enabled, true))),
+    db.select({ total: count(), good: sql<number>`count(*) filter (where ${latestMetricReadings.quality} = 'good')`, latestAt: max(latestMetricReadings.recordedAt) }).from(latestMetricReadings).innerJoin(deviceMetrics, eq(deviceMetrics.id, latestMetricReadings.deviceMetricId)).where(and(eq(deviceMetrics.deviceId, context.deviceId), eq(deviceMetrics.enabled, true), sql`${latestMetricReadings.recordedAt} >= ${freshnessBoundary.toISOString()}::timestamptz`)),
   ]);
-  const totalReadings = Number(readingRows[0]?.total ?? 0);
-  const validReadings = Number(readingRows[0]?.valid ?? 0);
-  const firstReadingAt = readingRows[0]?.firstAt ?? null;
-  const lastReadingAt = readingRows[0]?.lastAt ?? null;
-  const stabilityHours = firstReadingAt && lastReadingAt ? Math.max(0, (lastReadingAt.getTime() - firstReadingAt.getTime()) / 3_600_000) : 0;
   return {
-    inputs: { total: Number(inputRows[0]?.total ?? 0), enabled: Number(inputRows[0]?.enabled ?? 0) },
-    registers: { total: Number(registerRows[0]?.total ?? 0), minimum: registerRows[0]?.minimum ?? null, maximum: registerRows[0]?.maximum ?? null },
-    alarms: { enabledChannels: Number(channelRows[0]?.enabled ?? 0), configuredRules: Number(channelRows[0]?.configuredRules ?? 0) },
-    relays: { total: Number(relayRows[0]?.total ?? 0), enabled: Number(relayRows[0]?.enabled ?? 0) },
-    snapshots: { total: Number(snapshotRows[0]?.total ?? 0), latestAt: snapshotRows[0]?.latestAt ?? null },
-    readings: { total: totalReadings, valid: validReadings, qualityPercent: totalReadings ? Math.round(validReadings / totalReadings * 10_000) / 100 : null, firstAt: firstReadingAt, lastAt: lastReadingAt, stabilityHours: Math.round(stabilityHours * 10) / 10 },
+    metrics: { configured: Number(metricRows[0]?.total ?? 0), recent: Number(latestRows[0]?.total ?? 0), good: Number(latestRows[0]?.good ?? 0), latestAt: latestRows[0]?.latestAt ?? null },
+    capabilities: { total: Number(capabilityRows[0]?.total ?? 0) },
+    gatewayOnline: context.gatewayState === "online" || context.gatewayState === "degraded",
   };
 }
 
 function validationInput(context: Awaited<ReturnType<typeof requireCommissioningContext>>, metrics: Awaited<ReturnType<typeof loadMetrics>>): CommissioningValidationInput {
   return {
-    serialNumber: context.serialNumber,
-    firmwareVersion: context.firmwareVersion,
-    dataVersion: context.dataVersion,
-    registerCount: metrics.registers.total,
-    minimumRegister: metrics.registers.minimum,
-    maximumRegister: metrics.registers.maximum,
-    lastReadAt: context.lastReadAt,
-    enabledChannelCount: metrics.alarms.enabledChannels,
-    configuredRuleCount: metrics.alarms.configuredRules,
-    relayCount: metrics.relays.total,
-    snapshotCount: metrics.snapshots.total,
-    readingCount: metrics.readings.total,
-    validReadingCount: metrics.readings.valid,
-    firstReadingAt: metrics.readings.firstAt,
-    lastReadingAt: metrics.readings.lastAt,
+    deviceCode: context.deviceCode,
+    gatewayOnline: metrics.gatewayOnline,
+    configuredMetricCount: metrics.metrics.configured,
+    recentMetricCount: metrics.metrics.recent,
+    goodMetricCount: metrics.metrics.good,
+    latestMetricAt: metrics.metrics.latestAt,
+    capabilityCount: metrics.capabilities.total,
   };
 }
 
@@ -136,10 +109,10 @@ async function responsePayload(db: Cam5Database, context: Awaited<ReturnType<typ
   return {
     asset: { id: context.assetId, code: context.assetCode, name: context.assetName, state: context.assetState },
     site: { id: context.siteId, name: context.siteName, timezone: context.timezone },
-    device: { id: context.deviceId, code: context.deviceCode, name: context.deviceName, state: context.deviceState, serialNumber: context.serialNumber, firmwareVersion: context.firmwareVersion, dataVersion: context.dataVersion, protocol: context.protocol, host: context.host, port: context.port, unitId: context.unitId, lastReadAt: context.lastReadAt?.toISOString() ?? null, modelCode: context.modelCode, modelName: context.modelName, registerMapVersion: context.registerMapVersion },
+    device: { id: context.deviceId, code: context.deviceCode, name: context.deviceName, state: context.deviceState, serialNumber: context.serialNumber, firmwareVersion: context.firmwareVersion, dataVersion: context.dataVersion, lastReadAt: context.lastReadAt?.toISOString() ?? null, modelCode: context.modelCode, modelName: context.modelName },
     gateway: { id: context.gatewayId, code: context.gatewayCode, name: context.gatewayName, state: context.gatewayState, lastSeenAt: context.gatewayLastSeenAt?.toISOString() ?? null },
-    metrics: { ...metrics, snapshots: { ...metrics.snapshots, latestAt: metrics.snapshots.latestAt?.toISOString() ?? null }, readings: { ...metrics.readings, firstAt: metrics.readings.firstAt?.toISOString() ?? null, lastAt: metrics.readings.lastAt?.toISOString() ?? null } },
-    items: itemRows.map((item) => ({ ...item, checkedAt: item.checkedAt?.toISOString() ?? null, checkedByName: item.checkedByName ?? null, automatic: !["inputs", "clock"].includes(item.itemKey) })),
+    metrics: { metrics: { ...metrics.metrics, latestAt: metrics.metrics.latestAt?.toISOString() ?? null }, capabilities: metrics.capabilities, gatewayOnline: metrics.gatewayOnline },
+    items: itemRows.map((item) => ({ ...item, checkedAt: item.checkedAt?.toISOString() ?? null, checkedByName: item.checkedByName ?? null, automatic: item.itemKey !== "field" })),
     summary: { total: itemRows.length, applicable, passed, failed, pending, percentage: applicable ? Math.round(passed / applicable * 100) : 0, ready: applicable > 0 && passed === applicable },
   };
 }
@@ -175,7 +148,7 @@ export async function POST(request: NextRequest) {
       const freshnessLimit = Date.now() - 5 * 60_000;
       const gatewayIsFresh = context.gatewayState === "online" && Boolean(context.gatewayLastSeenAt && context.gatewayLastSeenAt.getTime() >= freshnessLimit);
       const controllerIsFresh = Boolean(context.lastReadAt && context.lastReadAt.getTime() >= freshnessLimit);
-      if (!gatewayIsFresh || !controllerIsFresh) throw new ApiError(409, "La habilitación requiere comunicación reciente del gateway y una lectura CAM-5 recibida durante los últimos 5 minutos.");
+      if (!gatewayIsFresh || !controllerIsFresh) throw new ApiError(409, "La habilitación requiere comunicación reciente del gateway y telemetría del dispositivo recibida durante los últimos 5 minutos.");
       const items = await db.select({ status: commissioningItems.status }).from(commissioningItems).where(eq(commissioningItems.deviceId, context.deviceId));
       const applicable = items.filter((item) => item.status !== "not_applicable");
       if (!applicable.length || applicable.some((item) => item.status !== "passed")) throw new ApiError(409, "Todos los controles aplicables deben estar aprobados antes de habilitar el equipo.");
@@ -203,7 +176,7 @@ export async function PATCH(request: NextRequest) {
     if (!["pending", "passed", "failed", "not_applicable"].includes(status)) throw new ApiError(400, "El estado del control no es válido.");
     const [current] = await db.select().from(commissioningItems).where(and(eq(commissioningItems.id, itemId), eq(commissioningItems.deviceId, context.deviceId))).limit(1);
     if (!current) throw new ApiError(404, "El control de puesta en marcha no existe.");
-    if (!["inputs", "clock"].includes(current.itemKey)) throw new ApiError(409, "Este control se actualiza mediante la validación automática.");
+    if (current.itemKey !== "field") throw new ApiError(409, "Este control se actualiza mediante la validación automática.");
     if ((status === "passed" || status === "failed") && note.length < 3) throw new ApiError(400, "Agrega una nota de evidencia antes de aprobar o rechazar el control.");
     const metadata = requestMetadata(request);
     const [updated] = await db.transaction(async (tx) => {

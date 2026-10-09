@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { and, count, desc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, count, eq, inArray } from "drizzle-orm";
 import { COMMISSIONING_CHECKLIST } from "../../../../db/commissioning-engine";
 import {
   alarms,
@@ -7,16 +7,15 @@ import {
   auditLogs,
   clients,
   commissioningItems,
+  deviceCapabilities,
+  deviceMetrics,
   deviceModels,
   devices,
   gatewayApiCredentials,
   gateways,
   ingestionBatches,
-  readingProfiles,
-  roles,
+  metricDefinitions,
   sites,
-  userClientAssignments,
-  userRoleAssignments,
   workOrders,
 } from "../../../../db/schema";
 import { apiErrorResponse, ApiError, requestMetadata, requireApiSession } from "../_lib/auth";
@@ -54,36 +53,39 @@ function parseResource(body: Record<string, unknown>) {
 export async function GET(request: NextRequest) {
   try {
     const { db, user } = await requireApiSession(request, "assets.read");
-    const now = new Date();
-    const [clientRows, siteMembershipRows] = await Promise.all([
-      db.select({ id: clients.id, code: clients.code, name: clients.name, legalName: clients.legalName, taxId: clients.taxId, contactEmail: clients.contactEmail, active: clients.active, roleKey: roles.key, roleName: roles.name })
-        .from(userClientAssignments)
-        .innerJoin(clients, eq(clients.id, userClientAssignments.clientId))
-        .innerJoin(roles, eq(roles.id, userClientAssignments.roleId))
-        .where(eq(userClientAssignments.userId, user.id))
-        .orderBy(clients.name),
-      db.select({
-        id: sites.id,
-        code: sites.code,
-        name: sites.name,
-        description: sites.description,
-        timezone: sites.timezone,
-        active: sites.active,
-        clientId: clients.id,
-        clientCode: clients.code,
-        clientName: clients.name,
-        roleKey: roles.key,
-        roleName: roles.name,
-      }).from(userRoleAssignments)
-        .innerJoin(roles, eq(roles.id, userRoleAssignments.roleId))
-        .innerJoin(sites, eq(sites.id, userRoleAssignments.siteId))
-        .innerJoin(clients, eq(clients.id, sites.clientId))
-        .where(and(eq(userRoleAssignments.userId, user.id), or(isNull(userRoleAssignments.expiresAt), gt(userRoleAssignments.expiresAt, now))))
-        .orderBy(sites.name, desc(sql<number>`case ${roles.key} when 'administrator' then 4 when 'engineer' then 3 when 'operator' then 2 else 1 end`)),
+    const siteIds = user.sites.map((site) => site.id);
+    const clientIds = [...new Set(user.clientScopes.map((client) => client.id))];
+    const [clientBaseRows, siteBaseRows] = await Promise.all([
+      clientIds.length
+        ? db.select({ id: clients.id, code: clients.code, name: clients.name, legalName: clients.legalName, taxId: clients.taxId, contactEmail: clients.contactEmail, active: clients.active })
+            .from(clients).where(inArray(clients.id, clientIds)).orderBy(clients.name)
+        : Promise.resolve([]),
+      siteIds.length
+        ? db.select({
+            id: sites.id,
+            code: sites.code,
+            name: sites.name,
+            description: sites.description,
+            timezone: sites.timezone,
+            active: sites.active,
+            clientId: clients.id,
+            clientCode: clients.code,
+            clientName: clients.name,
+          }).from(sites)
+            .innerJoin(clients, eq(clients.id, sites.clientId))
+            .where(inArray(sites.id, siteIds))
+            .orderBy(clients.name, sites.name)
+        : Promise.resolve([]),
     ]);
-    const managedSites = siteMembershipRows.filter((site, index, rows) => rows.findIndex((candidate) => candidate.id === site.id) === index);
-    const siteIds = managedSites.map((site) => site.id);
-    const [pointCounts, gatewayCounts, controllerCounts, pointRows, gatewayRows, controllerRows] = await Promise.all([
+    const clientRows = clientBaseRows.map((client) => {
+      const scope = user.clientScopes.find((item) => item.id === client.id);
+      return { ...client, roleKey: scope?.roleKey ?? "viewer", roleName: scope?.roleName ?? "Solo lectura" };
+    });
+    const managedSites = siteBaseRows.map((site) => {
+      const scope = user.sites.find((item) => item.id === site.id);
+      return { ...site, roleKey: scope?.roleKey ?? "viewer", roleName: scope?.roleName ?? "Solo lectura" };
+    });
+    const [pointCounts, gatewayCounts, controllerCounts, pointRows, gatewayRows, controllerRows, modelRows] = await Promise.all([
       db.select({ siteId: assets.siteId, value: count() }).from(assets).where(inArray(assets.siteId, siteIds)).groupBy(assets.siteId),
       db.select({ siteId: gateways.siteId, value: count() }).from(gateways).where(inArray(gateways.siteId, siteIds)).groupBy(gateways.siteId),
       db.select({ siteId: assets.siteId, value: count() }).from(devices).innerJoin(assets, eq(assets.id, devices.assetId)).where(inArray(assets.siteId, siteIds)).groupBy(assets.siteId),
@@ -120,16 +122,19 @@ export async function GET(request: NextRequest) {
         serialNumber: devices.serialNumber,
         state: devices.state,
         active: devices.active,
-        protocol: devices.protocol,
-        host: devices.host,
-        port: devices.port,
-        unitId: devices.unitId,
         lastReadAt: devices.lastReadAt,
       }).from(devices)
         .innerJoin(assets, eq(assets.id, devices.assetId))
         .innerJoin(deviceModels, eq(deviceModels.id, devices.modelId))
         .where(eq(assets.siteId, user.siteId))
         .orderBy(devices.code),
+      db.select({
+        id: deviceModels.id,
+        code: deviceModels.code,
+        manufacturer: deviceModels.manufacturer,
+        name: deviceModels.name,
+        capabilities: deviceModels.capabilities,
+      }).from(deviceModels).orderBy(deviceModels.manufacturer, deviceModels.name),
     ]);
 
     const countFor = (rows: Array<{ siteId: string; value: number | bigint }>, siteId: string) => Number(rows.find((row) => row.siteId === siteId)?.value ?? 0);
@@ -152,6 +157,7 @@ export async function GET(request: NextRequest) {
       points: pointRows.map((point) => ({ ...point, nominalVoltageKv: point.nominalVoltageKv ? Number(point.nominalVoltageKv) : null })),
       gateways: gatewayRows.map((gateway) => ({ ...gateway, lastSeenAt: gateway.lastSeenAt?.toISOString() ?? null })),
       controllers: controllerRows.map((controller) => ({ ...controller, lastReadAt: controller.lastReadAt?.toISOString() ?? null })),
+      deviceModels: modelRows,
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return apiErrorResponse(error);
@@ -172,7 +178,7 @@ export async function POST(request: NextRequest) {
     const created = await db.transaction(async (tx) => {
       let record: Record<string, unknown>;
       if (resource === "client") {
-        requirePermission(user.permissions, "users.manage");
+        requirePermission(user.permissions, "clients.manage");
         const [row] = await tx.insert(clients).values({
           code,
           name,
@@ -180,17 +186,14 @@ export async function POST(request: NextRequest) {
           taxId: optionalText(body, "taxId"),
           contactEmail: optionalText(body, "contactEmail"),
         }).returning();
-        const [role] = await tx.select({ id: roles.id }).from(roles).where(eq(roles.key, user.roleKey)).limit(1);
-        if (!role) throw new ApiError(409, "No fue posible asignar el acceso al cliente.");
-        await tx.insert(userClientAssignments).values({ userId: user.id, clientId: row.id, roleId: role.id, grantedBy: user.id });
         record = row;
       } else if (resource === "site") {
-        requirePermission(user.permissions, "users.manage");
+        requirePermission(user.permissions, "sites.manage");
         const clientId = textField(body, "clientId", "El cliente");
-        const [membership] = await tx.select({ id: userClientAssignments.id }).from(userClientAssignments)
-          .innerJoin(clients, eq(clients.id, userClientAssignments.clientId))
-          .where(and(eq(userClientAssignments.userId, user.id), eq(userClientAssignments.clientId, clientId), eq(clients.active, true))).limit(1);
-        if (!membership) throw new ApiError(403, "No tienes acceso al cliente indicado.");
+        const manageableClientIds = user.clientScopes
+          .filter((scope) => scope.roleKey === "platform_admin" || scope.roleKey === "client_admin")
+          .map((scope) => scope.id);
+        if (!manageableClientIds.includes(clientId)) throw new ApiError(403, "No administras el cliente indicado.");
         const [row] = await tx.insert(sites).values({
           clientId,
           code,
@@ -198,9 +201,6 @@ export async function POST(request: NextRequest) {
           timezone: optionalText(body, "timezone") ?? "America/Santiago",
           description: optionalText(body, "description"),
         }).returning();
-        const [role] = await tx.select({ id: roles.id }).from(roles).where(eq(roles.key, user.roleKey)).limit(1);
-        if (!role) throw new ApiError(409, "No fue posible asignar el acceso al nuevo sitio.");
-        await tx.insert(userRoleAssignments).values({ userId: user.id, roleId: role.id, siteId: row.id, grantedBy: user.id });
         record = row;
       } else if (resource === "point") {
         requirePermission(user.permissions, "assets.write");
@@ -232,31 +232,38 @@ export async function POST(request: NextRequest) {
         record = row;
       } else {
         requirePermission(user.permissions, "settings.write");
-        const pointId = textField(body, "pointId", "El punto de medición");
+        const pointId = textField(body, "pointId", "El activo");
         const gatewayId = textField(body, "gatewayId", "El gateway");
-        const [[point], [gateway], [model], [profile]] = await Promise.all([
+        const modelId = textField(body, "modelId", "El modelo de dispositivo");
+        const [[point], [gateway], [model]] = await Promise.all([
           tx.select({ id: assets.id, siteId: assets.siteId }).from(assets).where(and(eq(assets.id, pointId), eq(assets.active, true))).limit(1),
           tx.select({ id: gateways.id, siteId: gateways.siteId }).from(gateways).where(and(eq(gateways.id, gatewayId), eq(gateways.active, true))).limit(1),
-          tx.select({ id: deviceModels.id }).from(deviceModels).where(eq(deviceModels.code, "CAM5-TPH-XDCW")).limit(1),
-          tx.select({ id: readingProfiles.id }).from(readingProfiles).where(eq(readingProfiles.key, "cam5-balanced-v1")).limit(1),
+          tx.select({ id: deviceModels.id, code: deviceModels.code }).from(deviceModels).where(eq(deviceModels.id, modelId)).limit(1),
         ]);
-        if (!point || !gateway || point.siteId !== gateway.siteId) throw new ApiError(400, "El punto y el gateway deben pertenecer al mismo sitio.");
+        if (!point || !gateway || point.siteId !== gateway.siteId) throw new ApiError(400, "El activo y el gateway deben pertenecer al mismo sitio.");
         assertSiteAccess(siteIds, point.siteId);
-        if (!model) throw new ApiError(409, "El modelo CAM5 no está configurado.");
-        const host = textField(body, "host", "La dirección del controlador");
+        if (!model) throw new ApiError(400, "El modelo de dispositivo seleccionado no existe.");
+        const [fullModel] = await tx.select({ capabilities: deviceModels.capabilities }).from(deviceModels).where(eq(deviceModels.id, model.id)).limit(1);
+        const template = fullModel?.capabilities ?? {};
         const [row] = await tx.insert(devices).values({
           assetId: point.id,
           gatewayId: gateway.id,
           modelId: model.id,
-          readingProfileId: profile?.id ?? null,
+          readingProfileId: null,
+          driver: "normalized_json",
           code,
           name,
-          host,
-          port: typeof body.port === "number" ? body.port : 502,
-          unitId: typeof body.unitId === "number" ? body.unitId : 1,
           state: "commissioning",
         }).returning();
         await tx.insert(commissioningItems).values(COMMISSIONING_CHECKLIST.map(([itemKey, label]) => ({ deviceId: row.id, itemKey, label, status: "pending" as const })));
+        const capabilityKeys = template.capabilityKeys ?? [];
+        if (capabilityKeys.length) await tx.insert(deviceCapabilities).values(capabilityKeys.map((capabilityKey) => ({ deviceId: row.id, capabilityKey })));
+        const metricKeys = template.metricKeys ?? [];
+        if (metricKeys.length) {
+          const definitions = await tx.select({ id: metricDefinitions.id, key: metricDefinitions.key, name: metricDefinitions.name }).from(metricDefinitions).where(inArray(metricDefinitions.key, metricKeys));
+          if (definitions.length !== metricKeys.length) throw new ApiError(409, "El modelo referencia métricas que ya no existen en el catálogo.");
+          await tx.insert(deviceMetrics).values(definitions.map((definition, index) => ({ deviceId: row.id, metricDefinitionId: definition.id, code: definition.key, name: definition.name, displayOrder: index })));
+        }
         record = row;
       }
 
@@ -292,10 +299,8 @@ export async function PATCH(request: NextRequest) {
     const updated = await db.transaction(async (tx) => {
       let record: Record<string, unknown> | undefined;
       if (resource === "client") {
-        requirePermission(user.permissions, "users.manage");
-        const [membership] = await tx.select({ id: userClientAssignments.id }).from(userClientAssignments)
-          .where(and(eq(userClientAssignments.userId, user.id), eq(userClientAssignments.clientId, id))).limit(1);
-        if (!membership) throw new ApiError(403, "No tienes acceso al cliente indicado.");
+        requirePermission(user.permissions, "clients.manage");
+        if (!user.clientScopes.some((scope) => scope.id === id && scope.roleKey === "platform_admin")) throw new ApiError(403, "No administras el cliente indicado.");
         if (body.active === false && id === user.clientId) throw new ApiError(409, "Cambia primero a otro cliente antes de desactivar el contexto activo.");
         [record] = await tx.update(clients).set({
           ...(typeof body.name === "string" ? { name: textField(body, "name", "El nombre") } : {}),
@@ -306,10 +311,9 @@ export async function PATCH(request: NextRequest) {
           updatedAt: new Date(),
         }).where(eq(clients.id, id)).returning();
       } else if (resource === "site") {
-        requirePermission(user.permissions, "users.manage");
-        const [membership] = await tx.select({ id: userRoleAssignments.id }).from(userRoleAssignments)
-          .where(and(eq(userRoleAssignments.userId, user.id), eq(userRoleAssignments.siteId, id), or(isNull(userRoleAssignments.expiresAt), gt(userRoleAssignments.expiresAt, new Date())))).limit(1);
-        if (!membership) throw new ApiError(403, "No tienes acceso al sitio indicado.");
+        requirePermission(user.permissions, "sites.manage");
+        const siteScope = user.sites.find((scope) => scope.id === id);
+        if (!siteScope || (siteScope.roleKey !== "platform_admin" && siteScope.roleKey !== "client_admin")) throw new ApiError(403, "No administras el sitio indicado.");
         if (body.active === false && id === user.siteId) throw new ApiError(409, "Cambia primero a otro sitio antes de desactivar el contexto activo.");
         [record] = await tx.update(sites).set({
           ...(typeof body.name === "string" ? { name: textField(body, "name", "El nombre") } : {}),
@@ -321,11 +325,12 @@ export async function PATCH(request: NextRequest) {
       } else if (resource === "point") {
         requirePermission(user.permissions, "assets.write");
         const [current] = await tx.select({ siteId: assets.siteId }).from(assets).where(eq(assets.id, id)).limit(1);
-        if (!current) throw new ApiError(404, "El punto de medición no existe.");
+        if (!current) throw new ApiError(404, "El activo no existe.");
         assertSiteAccess(siteIds, current.siteId);
         [record] = await tx.update(assets).set({
           ...(typeof body.name === "string" ? { name: textField(body, "name", "El nombre") } : {}),
           ...(typeof body.area === "string" ? { area: optionalText(body, "area") } : {}),
+          ...(typeof body.type === "string" ? { assetType: textField(body, "type", "El tipo de activo") } : {}),
           ...(typeof body.nominalVoltageKv === "number" || body.nominalVoltageKv === null ? { nominalVoltageKv: body.nominalVoltageKv === null ? null : String(body.nominalVoltageKv) } : {}),
           ...(typeof body.active === "boolean" ? { active: body.active, state: body.active ? "offline" : "maintenance" } : {}),
           updatedAt: new Date(),
@@ -345,13 +350,10 @@ export async function PATCH(request: NextRequest) {
       } else {
         requirePermission(user.permissions, "settings.write");
         const [current] = await tx.select({ siteId: assets.siteId }).from(devices).innerJoin(assets, eq(assets.id, devices.assetId)).where(eq(devices.id, id)).limit(1);
-        if (!current) throw new ApiError(404, "El controlador no existe.");
+        if (!current) throw new ApiError(404, "El dispositivo no existe.");
         assertSiteAccess(siteIds, current.siteId);
         [record] = await tx.update(devices).set({
           ...(typeof body.name === "string" ? { name: textField(body, "name", "El nombre") } : {}),
-          ...(typeof body.host === "string" ? { host: textField(body, "host", "La dirección del controlador") } : {}),
-          ...(typeof body.port === "number" ? { port: body.port } : {}),
-          ...(typeof body.unitId === "number" ? { unitId: body.unitId } : {}),
           ...(typeof body.active === "boolean" ? { active: body.active, state: body.active ? "commissioning" : "decommissioned" } : {}),
           updatedAt: new Date(),
         }).where(eq(devices.id, id)).returning();
@@ -388,19 +390,16 @@ export async function DELETE(request: NextRequest) {
     await db.transaction(async (tx) => {
       let record: Record<string, unknown> | undefined;
       if (resource === "client") {
-        requirePermission(user.permissions, "users.manage");
-        const [membership] = await tx.select({ id: userClientAssignments.id }).from(userClientAssignments)
-          .where(and(eq(userClientAssignments.userId, user.id), eq(userClientAssignments.clientId, id))).limit(1);
-        if (!membership) throw new ApiError(403, "No tienes acceso al cliente indicado.");
+        requirePermission(user.permissions, "clients.manage");
+        if (!user.clientScopes.some((scope) => scope.id === id && scope.roleKey === "platform_admin")) throw new ApiError(403, "No administras el cliente indicado.");
         const [dependencies] = await tx.select({ value: count() }).from(sites).where(eq(sites.clientId, id));
         if (Number(dependencies.value)) throw new ApiError(409, "El cliente conserva sitios. Desactívalo o elimina primero sus sitios vacíos.");
         [record] = await tx.delete(clients).where(eq(clients.id, id)).returning();
       } else if (resource === "site") {
-        requirePermission(user.permissions, "users.manage");
+        requirePermission(user.permissions, "sites.manage");
         if (id === user.siteId) throw new ApiError(409, "Cambia primero a otro sitio antes de eliminar el contexto activo.");
-        const [membership] = await tx.select({ id: userRoleAssignments.id }).from(userRoleAssignments)
-          .where(and(eq(userRoleAssignments.userId, user.id), eq(userRoleAssignments.siteId, id), or(isNull(userRoleAssignments.expiresAt), gt(userRoleAssignments.expiresAt, new Date())))).limit(1);
-        if (!membership) throw new ApiError(403, "No tienes acceso al sitio indicado.");
+        const siteScope = user.sites.find((scope) => scope.id === id);
+        if (!siteScope || (siteScope.roleKey !== "platform_admin" && siteScope.roleKey !== "client_admin")) throw new ApiError(403, "No administras el sitio indicado.");
         const [[pointCount], [gatewayCount], [auditCount]] = await Promise.all([
           tx.select({ value: count() }).from(assets).where(eq(assets.siteId, id)),
           tx.select({ value: count() }).from(gateways).where(eq(gateways.siteId, id)),
@@ -418,7 +417,7 @@ export async function DELETE(request: NextRequest) {
           tx.select({ value: count() }).from(alarms).where(eq(alarms.assetId, id)),
           tx.select({ value: count() }).from(workOrders).where(eq(workOrders.assetId, id)),
         ]);
-        if (Number(deviceCount.value) || Number(alarmCount.value) || Number(orderCount.value)) throw new ApiError(409, "El punto conserva controladores, alarmas u órdenes. Desactívalo para preservar su trazabilidad.");
+        if (Number(deviceCount.value) || Number(alarmCount.value) || Number(orderCount.value)) throw new ApiError(409, "El activo conserva dispositivos, alarmas u órdenes. Desactívalo para preservar su trazabilidad.");
         [record] = await tx.delete(assets).where(eq(assets.id, id)).returning();
       } else if (resource === "gateway") {
         requirePermission(user.permissions, "settings.write");
@@ -429,7 +428,7 @@ export async function DELETE(request: NextRequest) {
           tx.select({ value: count() }).from(devices).where(eq(devices.gatewayId, id)),
           tx.select({ value: count() }).from(gatewayApiCredentials).where(eq(gatewayApiCredentials.gatewayId, id)),
         ]);
-        if (Number(deviceCount.value) || Number(credentialCount.value)) throw new ApiError(409, "El gateway conserva controladores o credenciales. Desactívalo para preservar la comunicación y auditoría.");
+        if (Number(deviceCount.value) || Number(credentialCount.value)) throw new ApiError(409, "El gateway conserva dispositivos o credenciales. Desactívalo para preservar la comunicación y auditoría.");
         [record] = await tx.delete(gateways).where(eq(gateways.id, id)).returning();
       } else {
         requirePermission(user.permissions, "settings.write");
@@ -437,7 +436,7 @@ export async function DELETE(request: NextRequest) {
         if (!current) throw new ApiError(404, "El controlador no existe.");
         assertSiteAccess(siteIds, current.siteId);
         const [historyCount] = await tx.select({ value: count() }).from(ingestionBatches).where(eq(ingestionBatches.deviceId, id));
-        if (Number(historyCount.value)) throw new ApiError(409, "El controlador conserva telemetría. Desactívalo para mantener el histórico.");
+        if (Number(historyCount.value)) throw new ApiError(409, "El dispositivo conserva telemetría. Desactívalo para mantener el histórico.");
         [record] = await tx.delete(devices).where(eq(devices.id, id)).returning();
       }
       if (!record) throw new ApiError(404, "El elemento no existe.");
