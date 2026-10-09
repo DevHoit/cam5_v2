@@ -225,3 +225,32 @@ test("CAM5 detects communication loss at 121 seconds and recovers without dispat
     await assert.rejects(preflightLaboratoryEmail(f.db, f.run, f.at(122)), /adquisición/);
   } finally { await f.client.close(); }
 });
+
+test("portal CAM5 rules evaluate through real SPEC ingestion with independent T01/T02 limits", async () => {
+  const { saveMetricRule, listMetricRules } = await import("../db/metric-rules");
+  const f = await fixture();
+  try {
+    const actor = { id: f.actor.id, siteId: f.site.id, permissions: ["alarms.read", "settings.write"] };
+    const catalog = await listMetricRules(f.db, actor, f.run.assetId);
+    assert.equal(catalog.metrics.length, 36);
+    const t01 = catalog.metrics.find((metric) => metric.code === "T01")!;
+    const t02 = catalog.metrics.find((metric) => metric.code === "T02")!;
+    const base = { assetId: f.run.assetId, name: "CAM5 T01 critical", enabled: true, severity: "critical", op: "gte", value: 75, durationSeconds: 60, recoveryThreshold: 70, recoverySeconds: 20, staleAfterSeconds: 120 };
+    const saved = await saveMetricRule(f.db, actor, { ...base, deviceMetricId: t01.id });
+    await saveMetricRule(f.db, actor, { ...base, name: "CAM5 T02 critical", deviceMetricId: t02.id });
+    await f.sample(90, f.at(0));
+    await f.sample(90, f.at(20));
+    await f.sample(90, f.at(40));
+    assert.equal((await f.db.select().from(s.alarms)).length, 0);
+    await f.sample(90, f.at(60));
+    const alarms = await f.db.select().from(s.alarms);
+    assert.equal(alarms.length, 1);
+    assert.equal(alarms[0].genericRuleId, saved.id);
+    assert.equal(alarms[0].context.metricKey, "cam5.temperature.t01");
+    await f.sample(50, f.at(80));
+    assert.equal((await f.db.select().from(s.alarms))[0].status, "open");
+    await f.sample(50, f.at(100));
+    assert.equal((await f.db.select().from(s.alarms))[0].status, "resolved");
+    assert.equal((await f.db.select().from(s.notificationDeliveries)).length, 0);
+  } finally { await f.client.close(); }
+});

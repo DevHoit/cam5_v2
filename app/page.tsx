@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { MetricRulesView } from "./metric-rules-view";
 import { AccountView } from "./account-view";
 import { DashboardView } from "./dashboard-view";
 import { AtsView } from "./ats-view";
@@ -1058,6 +1059,8 @@ function AlarmsView({ assetId, permissions, onSummaryChange, onOpenTrend, onOpen
         </aside>
       </section>
     </> :
+    <><MetricRulesView key={assetId} assetId={assetId} canConfigure={canConfigure} />
+    <details><summary>Reglas de canales anteriores ({ruleResult?.summary.total ?? 0})</summary>
     <article className="panel alarm-rules-panel alarm-rules-v3">
       <div className="alarm-rule-summary">
         <div><span>Reglas</span><strong>{ruleResult?.summary.total ?? 0}</strong></div>
@@ -1069,7 +1072,7 @@ function AlarmsView({ assetId, permissions, onSummaryChange, onOpenTrend, onOpen
       <div className="alarm-rule-table-wrap"><div className="alarm-rule-table"><div className="alarm-rule-head"><span>Métrica / origen</span><span>Estado</span><span>Advertencia</span><span>Crítico</span><span>Histéresis</span><span>Activación</span><span>Recuperación</span><span>Dato atrasado</span><span>Acción</span></div>{ruleLoading ? <TableEmptyState title="Cargando reglas" detail="Consultando umbrales persistentes." /> : ruleResult?.items.map((rule) => { const draft = ruleDrafts[rule.id]; if (!draft) return null; return <div className="alarm-rule-row" key={rule.id}><span className="rule-channel"><strong>{rule.channelCode}</strong><small>{rule.channelName} · {rule.zone ?? rule.assetCode}</small></span><span><label className="rule-switch"><input type="checkbox" checked={draft.enabled} disabled={!canConfigure} onChange={(event) => updateRuleDraft(rule.id, "enabled", event.target.checked)} /><i /><small>{draft.enabled ? "Activa" : "Inactiva"}</small></label></span><span><input type="number" step="0.1" value={draft.warningThreshold} disabled={!canConfigure} onChange={(event) => updateRuleDraft(rule.id, "warningThreshold", Number(event.target.value))} /><small>{rule.unit}</small></span><span><input type="number" step="0.1" value={draft.criticalThreshold} disabled={!canConfigure} onChange={(event) => updateRuleDraft(rule.id, "criticalThreshold", Number(event.target.value))} /><small>{rule.unit}</small></span><span><input type="number" step="0.1" min="0" value={draft.hysteresis} disabled={!canConfigure} onChange={(event) => updateRuleDraft(rule.id, "hysteresis", Number(event.target.value))} /></span><span><input type="number" min="1" max="100" value={draft.activationSamples} disabled={!canConfigure} onChange={(event) => updateRuleDraft(rule.id, "activationSamples", Number(event.target.value))} /><small>muestras</small></span><span><input type="number" min="1" max="100" value={draft.recoverySamples} disabled={!canConfigure} onChange={(event) => updateRuleDraft(rule.id, "recoverySamples", Number(event.target.value))} /><small>muestras</small></span><span><input type="number" min="1" max="86400" value={draft.staleAfterSeconds} disabled={!canConfigure} onChange={(event) => updateRuleDraft(rule.id, "staleAfterSeconds", Number(event.target.value))} /><small>segundos</small></span><span><button className="ghost-button" disabled={!canConfigure || savingRule === rule.id} onClick={() => void saveRule(rule)}>{savingRule === rule.id ? <Refresh className="spin" size={15} /> : <Save size={15} />} Guardar</button></span></div>})}{!ruleLoading && !ruleResult?.items.length && <TableEmptyState title="No hay reglas configuradas" detail="Configura métricas del activo antes de habilitar alarmas." />}</div></div>
       {ruleResult && <Pagination page={ruleResult.page} totalPages={ruleResult.totalPages} total={ruleResult.total} pageSize={ruleResult.pageSize} onPageChange={setRulePage} itemLabel="reglas" />}
       <div className="alarm-rule-note"><ShieldCheck size={18} /><p><strong>Control contra falsos positivos</strong><span>Las reglas pueden exigir muestras consecutivas, aplicar histéresis y conservar estado para evitar eventos espurios.</span></p></div>
-    </article>}
+    </article></details></>}
   </div>;}
 
 

@@ -1,5 +1,6 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import type { Cam5Database } from "./index";
+import { metricRuleBehavior, type MetricRuleBehavior } from "./metric-rule-contract";
 import { cancelEscalationJobsForAlarm, enqueueEscalationJob } from "./escalation-engine";
 import { queueAlarmNotifications } from "./notification-engine";
 import {
@@ -174,10 +175,11 @@ async function resolveTargets(db: Cam5Database, rule: RuleRow): Promise<RuleTarg
   }));
 }
 
-async function metricValues(db: Cam5Database, target: RuleTarget, requiredKeys: string[]) {
+async function metricValues(db: Cam5Database, target: RuleTarget, requiredKeys: string[], behavior: MetricRuleBehavior | null = null, now = new Date()) {
   if (!target.deviceIds.length) return { values: null as Map<string, Scalar> | null, reason: "target_without_devices" };
   const rows = await db.select({
     metricKey: metricDefinitions.key,
+    deviceMetricId: deviceMetrics.id,
     recordedAt: latestMetricReadings.recordedAt,
     quality: latestMetricReadings.quality,
     valueNumeric: latestMetricReadings.valueNumeric,
@@ -200,13 +202,15 @@ async function metricValues(db: Cam5Database, target: RuleTarget, requiredKeys: 
     if (!matches.length) return { values: null, reason: `missing_metric:${key}` };
     if (matches.length > 1) return { values: null, reason: `ambiguous_metric:${key}` };
     const row = matches[0];
+    if (behavior && row.deviceMetricId !== behavior.deviceMetricId) return { values: null, reason: "metric_binding_changed" };
+    if (behavior && (row.recordedAt > now || now.getTime() - row.recordedAt.getTime() > behavior.staleAfterSeconds * 1000)) return { values: null, reason: "stale_or_future_reading" };
     if (row.quality !== "good") return { values: null, reason: `non_good_quality:${key}:${row.quality}` };
     if (row.valueNumeric !== null) values.set(key, Number(row.valueNumeric));
     else if (row.valueBoolean !== null) values.set(key, row.valueBoolean);
     else if (row.valueText !== null) values.set(key, row.valueText);
     else return { values: null, reason: `missing_value:${key}` };
   }
-  return { values, reason: null };
+  return { values, reason: null, observedAt: rows.reduce((earliest, row) => row.recordedAt < earliest ? row.recordedAt : earliest, now) };
 }
 
 function alarmCode(ruleId: string, now: Date) {
@@ -368,7 +372,7 @@ async function saveState(db: Cam5Database, input: {
   });
 }
 
-async function evaluateGenericRuleTargets(
+async function evaluateGenericRuleTargetsUnlocked(
   db: Cam5Database,
   rule: RuleRow,
   targets: RuleTarget[],
@@ -377,18 +381,20 @@ async function evaluateGenericRuleTargets(
   const totals = { evaluated: 0, opened: 0, reopened: 0, resolved: 0, pending: 0, firing: 0, skipped: 0, unsupported: 0 };
   if (!rule.enabled) return totals;
 
-  // HOIT_SPEC v0.4 defines these fields but does not yet define their JSON/schedule semantics.
-  // Fail closed instead of silently inventing a contract.
-  if (rule.hysteresis !== null || rule.scheduleId !== null) {
+  // Only the documented device_metric v1 recovery contract is supported.
+  // Unknown hysteresis formats and schedules continue to fail closed.
+  const behavior = metricRuleBehavior(rule.hysteresis);
+  if ((rule.hysteresis !== null && !behavior) || rule.scheduleId !== null) {
     totals.unsupported = 1;
     return totals;
   }
 
   const expression = validateRuleExpression(rule.expression);
   const keys = ruleMetricKeys(expression);
+  if (behavior && (rule.scopeType !== "device" || !("metric" in expression))) { totals.unsupported = 1; return totals; }
 
   for (const target of targets) {
-    const snapshot = await metricValues(db, target, keys);
+    const snapshot = await metricValues(db, target, keys, behavior, now);
     if (!snapshot.values) {
       totals.skipped += 1;
       await saveState(db, {
@@ -405,11 +411,28 @@ async function evaluateGenericRuleTargets(
     }
 
     totals.evaluated += 1;
-    const observed = evaluateRuleExpression(expression, snapshot.values);
+    let observed = evaluateRuleExpression(expression, snapshot.values);
+    const sampleAt = behavior ? snapshot.observedAt ?? now : now;
+    const stateValues = { ...Object.fromEntries(snapshot.values), ...(behavior ? { $observedAt: sampleAt.toISOString() } : {}) };
     const [state] = await db.select().from(ruleEvaluationStates)
       .where(and(eq(ruleEvaluationStates.ruleId, rule.id), eq(ruleEvaluationStates.scopeId, target.stateScopeId)))
       .limit(1);
 
+    const activeAlarm = behavior ? await currentRuleAlarm(db, rule.id, target) : null;
+    const isActive = activeAlarm?.status === "open" || activeAlarm?.status === "acknowledged";
+    if (behavior && isActive && behavior.recoveryThreshold !== null && "metric" in expression) {
+      const actual = snapshot.values.get(expression.metric);
+      if (typeof actual === "number") observed = expression.op.startsWith("g") ? actual > behavior.recoveryThreshold : actual < behavior.recoveryThreshold;
+    }
+    if (!observed && behavior && isActive && behavior.recoverySeconds > 0) {
+      const previousSample = typeof state?.lastValue?.$observedAt === "string" ? new Date(state.lastValue.$observedAt) : null;
+      const continuous = previousSample && sampleAt.getTime() - previousSample.getTime() <= behavior.staleAfterSeconds * 1000;
+      const recoveryStarted = state?.currentState === "recovering" && continuous ? state.lastFalseAt ?? sampleAt : sampleAt;
+      if (sampleAt.getTime() - recoveryStarted.getTime() < behavior.recoverySeconds * 1000) {
+        await saveState(db, { ruleId: rule.id, scopeId: target.stateScopeId, conditionStartedAt: null, lastTrueAt: state?.lastTrueAt ?? null, lastFalseAt: recoveryStarted, currentState: "recovering", lastValue: stateValues, updatedAt: now });
+        continue;
+      }
+    }
     if (!observed) {
       totals.resolved += await resolve(db, rule, target, now);
       await saveState(db, {
@@ -419,26 +442,27 @@ async function evaluateGenericRuleTargets(
         lastTrueAt: state?.lastTrueAt ?? null,
         lastFalseAt: now,
         currentState: "false",
-        lastValue: Object.fromEntries(snapshot.values),
+        lastValue: stateValues,
         updatedAt: now,
       });
       continue;
     }
 
-    const startedAt = state?.currentState === "pending" || state?.currentState === "firing"
-      ? state.conditionStartedAt ?? now
-      : now;
-    const elapsedSeconds = Math.max(0, Math.floor((now.getTime() - startedAt.getTime()) / 1000));
+    const continuous = !behavior || !!state?.lastTrueAt && sampleAt.getTime() - state.lastTrueAt.getTime() <= behavior.staleAfterSeconds * 1000;
+    const startedAt = continuous && (state?.currentState === "pending" || state?.currentState === "firing")
+      ? state.conditionStartedAt ?? sampleAt
+      : sampleAt;
+    const elapsedSeconds = isActive ? rule.durationSeconds : Math.max(0, Math.floor((sampleAt.getTime() - startedAt.getTime()) / 1000));
     if (elapsedSeconds < rule.durationSeconds) {
       totals.pending += 1;
       await saveState(db, {
         ruleId: rule.id,
         scopeId: target.stateScopeId,
         conditionStartedAt: startedAt,
-        lastTrueAt: now,
+        lastTrueAt: sampleAt,
         lastFalseAt: state?.lastFalseAt ?? null,
         currentState: "pending",
-        lastValue: Object.fromEntries(snapshot.values),
+        lastValue: stateValues,
         updatedAt: now,
       });
       continue;
@@ -452,15 +476,23 @@ async function evaluateGenericRuleTargets(
       ruleId: rule.id,
       scopeId: target.stateScopeId,
       conditionStartedAt: startedAt,
-      lastTrueAt: now,
+      lastTrueAt: sampleAt,
       lastFalseAt: state?.lastFalseAt ?? null,
       currentState: "firing",
-      lastValue: Object.fromEntries(snapshot.values),
+      lastValue: stateValues,
       updatedAt: now,
     });
   }
 
   return totals;
+}
+
+async function evaluateGenericRuleTargets(db: Cam5Database, rule: RuleRow, targets: RuleTarget[], now: Date) {
+  if (!metricRuleBehavior(rule.hysteresis)) return evaluateGenericRuleTargetsUnlocked(db, rule, targets, now);
+  return db.transaction(async (tx) => {
+    const [current] = await tx.select().from(rules).where(eq(rules.id, rule.id)).for("update");
+    return evaluateGenericRuleTargetsUnlocked(tx as unknown as Cam5Database, current as RuleRow, targets, now);
+  });
 }
 
 export async function evaluateGenericRule(db: Cam5Database, rule: RuleRow, now = new Date()) {
