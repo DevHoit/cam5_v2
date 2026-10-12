@@ -1,3 +1,4 @@
+import { sensorInstalled } from "./sensor-contract";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import type { Cam5Database } from "./index";
 import { metricRuleBehavior, type MetricRuleBehavior } from "./metric-rule-contract";
@@ -179,6 +180,8 @@ async function metricValues(db: Cam5Database, target: RuleTarget, requiredKeys: 
   if (!target.deviceIds.length) return { values: null as Map<string, Scalar> | null, reason: "target_without_devices" };
   const rows = await db.select({
     metricKey: metricDefinitions.key,
+    metricMetadata: deviceMetrics.metadata,
+    deviceMetadata: devices.metadata,
     deviceMetricId: deviceMetrics.id,
     recordedAt: latestMetricReadings.recordedAt,
     quality: latestMetricReadings.quality,
@@ -202,6 +205,7 @@ async function metricValues(db: Cam5Database, target: RuleTarget, requiredKeys: 
     if (!matches.length) return { values: null, reason: `missing_metric:${key}` };
     if (matches.length > 1) return { values: null, reason: `ambiguous_metric:${key}` };
     const row = matches[0];
+    if (!sensorInstalled(row.metricMetadata, row.deviceMetadata)) return { values: null, reason: "sensor_not_installed" };
     if (behavior && row.deviceMetricId !== behavior.deviceMetricId) return { values: null, reason: "metric_binding_changed" };
     if (behavior && (row.recordedAt > now || now.getTime() - row.recordedAt.getTime() > behavior.staleAfterSeconds * 1000)) return { values: null, reason: "stale_or_future_reading" };
     if (row.quality !== "good") return { values: null, reason: `non_good_quality:${key}:${row.quality}` };

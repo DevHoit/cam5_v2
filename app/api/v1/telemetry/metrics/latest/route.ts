@@ -1,3 +1,4 @@
+import { sensorInstalled, sensorName } from "../../../../../../db/sensor-contract";
 import { effectiveDeviceState, telemetryIsStale, telemetryTimeoutSeconds } from "../../../../../../db/telemetry-freshness";
 import type { NextRequest } from "next/server";
 import { and, eq } from "drizzle-orm";
@@ -8,6 +9,7 @@ import {
   latestMetricReadings,
   metricDefinitions,
   readingProfiles,
+  userAssetScopes,
 } from "../../../../../../db/schema";
 import { apiErrorResponse, requireApiSession } from "../../../_lib/auth";
 
@@ -41,6 +43,8 @@ export async function GET(request: NextRequest) {
       deviceType: devices.deviceType,
       driver: devices.driver,
       deviceState: devices.state,
+      deviceMetadata: devices.metadata,
+      metricMetadata: deviceMetrics.metadata,
       deviceLastReadAt: devices.lastReadAt,
       staleAfterSeconds: readingProfiles.staleAfterSeconds,
       deviceMetricId: deviceMetrics.id,
@@ -70,6 +74,7 @@ export async function GET(request: NextRequest) {
       .where(and(...conditions))
       .orderBy(assets.code, devices.code, deviceMetrics.displayOrder, metricDefinitions.key);
 
+    const scopes = await db.select().from(userAssetScopes).where(eq(userAssetScopes.userId, user.id));
     const now = new Date();
     const assetsMap = new Map<string, {
       id: string;
@@ -91,6 +96,7 @@ export async function GET(request: NextRequest) {
     }>();
 
     for (const row of rows) {
+      if (scopes.length && !scopes.some((scope) => scope.assetId === row.assetId)) continue;
       let asset = assetsMap.get(row.assetId);
       if (!asset) {
         asset = {
@@ -120,6 +126,7 @@ export async function GET(request: NextRequest) {
         asset.devices.set(row.deviceId, device);
       }
 
+      if (!sensorInstalled(row.metricMetadata, row.deviceMetadata)) continue;
       const stale = telemetryIsStale(row.recordedAt, device.staleAfterSeconds, now);
       const effectiveQuality = stale && row.quality === "good" ? "stale" : row.quality ?? "stale";
       const value = row.dataType === "boolean"
@@ -133,7 +140,7 @@ export async function GET(request: NextRequest) {
       device.metrics.push({
         id: row.deviceMetricId,
         code: row.metricCode,
-        name: row.metricName,
+        name: sensorName(row.metricName, row.metricMetadata),
         key: row.metricKey,
         category: row.category,
         unit: row.unit,

@@ -1,6 +1,8 @@
 "use client";
 
 import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { SensorConfiguration } from "./sensor-configuration";
+import { WideHistoryView } from "./wide-history-view";
 import { MetricRulesView } from "./metric-rules-view";
 import { AccountView } from "./account-view";
 import { DashboardView } from "./dashboard-view";
@@ -1161,7 +1163,7 @@ function HistoryView({ assetId, assetName, siteName, canExport, canReadAlarms, c
           label: `${metric.name} · ${device.name}`,
         }))) ?? [];
         setMetricOptions(options);
-        setNormalizedHistory(options.length > 0);
+        setNormalizedHistory(!!asset?.devices.length);
         setChannel((current) => current === "all" || options.some((option) => option.id === current) ? current : "all");
       })
       .catch(() => {
@@ -1175,7 +1177,7 @@ function HistoryView({ assetId, assetName, siteName, canExport, canReadAlarms, c
 
   useEffect(() => {
     let active = true;
-    if (tab !== "audit" && !assetId) {
+    if ((tab === "measurements" && normalizedHistory) || (tab !== "audit" && !assetId)) {
       window.queueMicrotask(() => {
         if (!active) return;
         setResult(null);
@@ -1201,7 +1203,7 @@ function HistoryView({ assetId, assetName, siteName, canExport, canReadAlarms, c
       }
     }, 250);
     return () => { active = false; window.clearTimeout(timeout); };
-  }, [assetId, tab, fromIso, toIso, page, query, channel]);
+  }, [assetId, tab, fromIso, toIso, page, query, channel, normalizedHistory]);
 
   const changeTab = (next: HistoryTab) => { setTab(next); setPage(1); };
   const total = result?.total ?? 0;
@@ -1223,10 +1225,10 @@ function HistoryView({ assetId, assetName, siteName, canExport, canReadAlarms, c
 
   return <div className="history-v4">
     <section className="temporal-commandbar history-commandbar-v3">
-      <div><h1>Histórico</h1><p>{tab === "audit" ? `Auditoría del sitio · ${siteName || "Sitio activo"}` : `${currentViewLabel} · ${assetName || "Sin activo seleccionado"}`} · {formatHistoryDate(from)} → {formatHistoryDate(to)}</p></div>
+      <div><h1>Histórico</h1><p>{tab === "audit" ? `Auditoría del sitio · ${siteName || "Sitio activo"}` : `${currentViewLabel} · ${assetName || "Sin activo seleccionado"}`}{!(tab === "measurements" && normalizedHistory) && <> · {formatHistoryDate(from)} → {formatHistoryDate(to)}</>}</p></div>
       <div className="history-command-actions">
-        <span><Database size={14} /> {total.toLocaleString("es-CL")} registros</span>
-        {canExport && <button onClick={() => void exportHistory()} disabled={loading || (tab !== "audit" && !assetId)}><Download size={14} /> Exportar CSV</button>}
+        {!(tab === "measurements" && normalizedHistory) && <span><Database size={14} /> {total.toLocaleString("es-CL")} registros</span>}
+        {canExport && !(tab === "measurements" && normalizedHistory) && <button onClick={() => void exportHistory()} disabled={loading || (tab !== "audit" && !assetId)}><Download size={14} /> Exportar CSV</button>}
       </div>
     </section>
 
@@ -1237,21 +1239,22 @@ function HistoryView({ assetId, assetName, siteName, canExport, canReadAlarms, c
           {canReadAlarms && <button className={tab === "alarms" ? "active" : ""} onClick={() => changeTab("alarms")}><BellRing size={15} /> Alarmas</button>}
           {canAudit && <button className={tab === "audit" ? "active" : ""} onClick={() => changeTab("audit")}><ShieldCheck size={15} /> Auditoría del sitio</button>}
         </div>
-        <div className="history-range-summary"><span>{result?.page ?? page}/{result?.totalPages ?? 1}</span><small>Página</small></div>
+        {!(tab === "measurements" && normalizedHistory) && <div className="history-range-summary"><span>{result?.page ?? page}/{result?.totalPages ?? 1}</span><small>Página</small></div>}
       </div>
 
-      <div className={`history-filterbar-v3 ${tab !== "measurements" || !assetId ? "history-filterbar-compact-v4" : ""}`}>
+      {!(tab === "measurements" && normalizedHistory) && <div className={`history-filterbar-v3 ${tab !== "measurements" || !assetId ? "history-filterbar-compact-v4" : ""}`}>
         <label className="search-field"><Search size={16} /><input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder={tab === "audit" ? "Buscar acción o recurso del sitio…" : normalizedHistory ? "Buscar dispositivo o métrica…" : "Buscar métrica o evento…"} /></label>
         {tab === "measurements" && assetId && <label className="status-filter history-filter-select history-filter-select-v5"><span>{normalizedHistory ? "Métrica" : "Variable"}</span><select value={channel} onChange={(event) => { setChannel(event.target.value); setPage(1); }}><option value="all">{normalizedHistory ? "Todas las métricas" : "Todas las variables"}</option>{normalizedHistory ? metricOptions.map((metric) => <option key={metric.id} value={metric.id}>{metric.label}</option>) : activeSensors.map((sensor) => <option key={sensor.id} value={sensor.id}>{sensor.id} · {sensor.label}</option>)}</select><ChevronDown size={12} /></label>}
         <label className="history-date-filter"><span>Desde</span><input type="date" value={from} max={to} onChange={(event) => { setFrom(event.target.value); setPage(1); }} /></label>
         <label className="history-date-filter"><span>Hasta</span><input type="date" value={to} min={from} max={today} onChange={(event) => { setTo(event.target.value); setPage(1); }} /></label>
-      </div>
+      </div>}
 
       {error && <div className="data-error"><AlertTriangle size={18} /><div><strong>No se pudo cargar el histórico</strong><p>{error}</p></div></div>}
       {loading && <div className="history-loading-v3"><Refresh className="spin" size={17} /> Consultando histórico…</div>}
 
       {!loading && !error && tab === "measurements" && !assetId && <div className="history-empty-v3 history-context-empty-v4"><Database size={22} /><div><strong>Selecciona un activo</strong><p>Las mediciones históricas se consultan dentro del contexto de un activo.</p></div></div>}
-      {!loading && !error && tab === "measurements" && assetId && <div className="history-feed-v3">
+      {tab === "measurements" && normalizedHistory && assetId && <WideHistoryView key={assetId} assetId={assetId} canExport={canExport} />}
+      {!loading && !error && tab === "measurements" && !normalizedHistory && assetId && <div className="history-feed-v3">
         {result?.items.map((raw) => {
           const item = raw as { id: number; recordedAt: string; receivedAt: string; code: string; name: string; zone?: string; deviceId?: string; metricKey?: string; dataType?: string; unit: string; value?: number | boolean | string | null; rawValue?: number | null; quality: "good" | "stale" | "bad" | "disabled"; qualityFlags: string[]; sequence?: number | null };
           const qualityLabel = item.quality === "good" ? "Válida" : item.quality === "stale" ? "Atrasada" : item.quality === "bad" ? "Inválida" : "Deshabilitada";
@@ -1298,7 +1301,7 @@ function HistoryView({ assetId, assetName, siteName, canExport, canReadAlarms, c
         {result?.items.length === 0 && <div className="history-empty-v3"><ShieldCheck size={21} /><div><strong>Sin movimientos auditados</strong><p>No existen acciones registradas para este periodo.</p></div></div>}
       </div>}
 
-      {!loading && !error && result && <Pagination page={result.page} totalPages={result.totalPages} total={result.total} pageSize={result.pageSize} onPageChange={setPage} itemLabel={tab === "measurements" ? "mediciones" : tab === "alarms" ? "eventos" : "acciones"} />}
+      {!loading && !error && result && !(tab === "measurements" && normalizedHistory) && <Pagination page={result.page} totalPages={result.totalPages} total={result.total} pageSize={result.pageSize} onPageChange={setPage} itemLabel={tab === "measurements" ? "mediciones" : tab === "alarms" ? "eventos" : "acciones"} />}
       <footer className="history-footer-v3"><span><Database size={13} /> Datos consultados dentro del rango seleccionado</span><small>{tab === "audit" ? "Auditoría a nivel de sitio · acceso según perfil." : "Rango inclusivo · acceso según perfil."}</small></footer>
     </article>
   </div>;
@@ -2370,7 +2373,8 @@ export default function Home() {
               ? <GenericTrendsView assetId={activePoint.id} initialMetricKey={trendSensorId} canExport={sessionUser.permissions.includes("history.export")} notify={notify} />
               : view === "trends" && <TrendsView assetId={activePoint?.id ?? ""} channels={sensors.map((sensor) => ({ id: sensor.id, label: sensor.label, zone: sensor.zone, unit: sensor.unit, state: sensor.state, enabled: sensor.enabled }))} period={period} setPeriod={setPeriod} selectedId={resolvedTrendSensorId} onSelectChannel={selectTrendChannel} onBackToMap={() => navigate("cabinet")} rangeWindow={trendWindow} setRangeWindow={setTrendWindow} canExport={sessionUser.permissions.includes("history.export")} notify={notify} />}
             {view === "alarms" && <AlarmsView assetId={activePoint?.id ?? ""} permissions={sessionUser.permissions} onSummaryChange={setAlarmSummary} onOpenTrend={openAlarmTrend} onOpenAsset={(id) => { setActivePointId(id); navigate("overview"); }} />}
-            {view === "history" && <HistoryView assetId={activePoint?.id ?? ""} assetName={activePoint?.name ?? ""} siteName={sessionUser.siteName} canExport={sessionUser.permissions.includes("history.export")} canReadAlarms={sessionUser.permissions.includes("alarms.read")} canAudit={sessionUser.permissions.includes("audit.read")} onOpenTrend={openTrendRange} />}
+            {view === "history" && <HistoryView key={activePoint?.id ?? ""} assetId={activePoint?.id ?? ""} assetName={activePoint?.name ?? ""} siteName={sessionUser.siteName} canExport={sessionUser.permissions.includes("history.export")} canReadAlarms={sessionUser.permissions.includes("alarms.read")} canAudit={sessionUser.permissions.includes("audit.read")} onOpenTrend={openTrendRange} />}
+            {(view === "settings" || view === "assets") && activePoint && sessionUser.permissions.includes("settings.write") && <SensorConfiguration key={activePoint.id} assetId={activePoint.id} />}
             {view === "assets" && <OperationalHierarchyView hierarchy={hierarchy} loading={hierarchyLoading} permissions={sessionUser.permissions} onReload={loadHierarchy} onSwitchSite={switchSite} onOpenAsset={openDashboardAsset} />}
             {view === "operations" && <OperationsView
               assets={(hierarchy?.points ?? []).map((point) => ({ id: point.id, code: point.code, name: point.name }))}

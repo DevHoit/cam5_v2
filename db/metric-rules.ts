@@ -1,3 +1,4 @@
+import { sensorInstalled, sensorName } from "./sensor-contract";
 import { and, eq, inArray } from "drizzle-orm";
 import type { Cam5Database } from "./index";
 import * as s from "./schema";
@@ -38,9 +39,9 @@ export async function listMetricRules(db: Cam5Database, actor: MetricRuleActor, 
   const ruleRows = await db.select({ rule: s.rules, state: s.ruleEvaluationStates }).from(s.rules)
     .leftJoin(s.ruleEvaluationStates, and(eq(s.ruleEvaluationStates.ruleId, s.rules.id), eq(s.ruleEvaluationStates.scopeId, s.rules.scopeId)))
     .where(and(eq(s.rules.clientId, clientId), eq(s.rules.siteId, actor.siteId), eq(s.rules.scopeType, "device"), inArray(s.rules.scopeId, [...new Set(rows.map((r) => r.device.id))])));
-  return { metrics: rows.map(({ metric, definition, device, latest, profile }) => ({
+  return { metrics: rows.filter(({ metric, device }) => sensorInstalled(metric.metadata, device.metadata)).map(({ metric, definition, device, latest, profile }) => ({
     id: metric.id, deviceId: device.id, deviceCode: device.code, deviceName: device.name,
-    code: metric.code, name: metric.name, key: definition.key, unit: definition.unit, dataType: definition.dataType,
+    code: metric.code, name: sensorName(metric.name, metric.metadata), key: definition.key, unit: definition.unit, dataType: definition.dataType,
     enabled: device.active && metric.enabled,
     value: latest?.valueNumeric !== null && latest?.valueNumeric !== undefined ? Number(latest.valueNumeric) : latest?.valueBoolean ?? latest?.valueText ?? null,
     recordedAt: latest?.recordedAt.toISOString() ?? null, quality: latest?.quality ?? null,
@@ -75,7 +76,7 @@ export async function saveMetricRule(db: Cam5Database, actor: MetricRuleActor, b
   const name = typeof body.name === "string" ? body.name.trim() : "";
   check(name.length >= 3 && name.length <= 180 && !name.startsWith("LAB-MAIL-"), "El nombre debe tener entre 3 y 180 caracteres y no usar el prefijo reservado.");
   check(typeof body.enabled === "boolean", "Indica si la regla está habilitada.");
-  check(!body.enabled || (target.device.active && target.metric.enabled), "Habilita primero el dispositivo y la métrica.");
+  check(!body.enabled || (target.device.active && target.metric.enabled && sensorInstalled(target.metric.metadata, target.device.metadata)), "Habilita primero el dispositivo y la métrica.");
   check(body.severity === "info" || body.severity === "warning" || body.severity === "critical", "Severidad inválida.");
   const numeric = ["float", "integer"].includes(target.definition.dataType);
   check(typeof body.op === "string" && (numeric ? ["gt", "gte", "lt", "lte", "eq", "neq"] : ["eq", "neq"]).includes(body.op), "Operador incompatible con el tipo de métrica.");
@@ -90,6 +91,9 @@ export async function saveMetricRule(db: Cam5Database, actor: MetricRuleActor, b
   const recoverySeconds = integer(body.recoverySeconds, "La recuperación");
   const staleAfterSeconds = integer(body.staleAfterSeconds, "La vigencia del dato", 1);
   return db.transaction(async (tx) => {
+    const [lockedDevice] = await tx.select().from(s.devices).where(eq(s.devices.id, target.device.id)).for("update");
+    const [currentMetric] = await tx.select().from(s.deviceMetrics).where(eq(s.deviceMetrics.id, target.metric.id));
+    check(!body.enabled || (lockedDevice.active && currentMetric.enabled && sensorInstalled(currentMetric.metadata, lockedDevice.metadata)), "Confirma primero que el sensor esté instalado.");
     let previous: typeof s.rules.$inferSelect | undefined;
     if (id) {
       [previous] = await tx.select().from(s.rules).where(and(eq(s.rules.id, id), eq(s.rules.clientId, clientId), eq(s.rules.siteId, actor.siteId), eq(s.rules.scopeType, "device"), eq(s.rules.scopeId, target.device.id))).for("update");

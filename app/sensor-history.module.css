@@ -1,0 +1,27 @@
+.panel { padding: 24px; margin: 16px 0; color: #253c49; }
+.panel h2 { margin: 0 0 10px; font-size: 20px; }
+.panel p { line-height: 1.6; }
+.panel small { display: block; color: #617785; margin: 6px 0; }
+.filters { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin: 20px 0; }
+.panel label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.panel input:not([type=checkbox]), .panel select { border: 1px solid #ccd8df; border-radius: 7px; padding: 9px; background: #fff; color: #253c49; min-width: 0; }
+.panel button { cursor: pointer; border: 1px solid #ccd8df; padding: 8px 12px; border-radius: 6px; }
+.panel button:disabled { opacity: .45; cursor: default; }
+.panel summary { cursor: pointer; padding: 12px 0; font-weight: 600; }
+.device { border-top: 1px solid #dae4e9; margin: 15px 0; padding-bottom: 15px; }
+.sensorGrid { display: grid; grid-template-columns: repeat(auto-fit,minmax(230px,1fr)); gap: 12px; margin-bottom: 15px; }
+.sensor { border: 1px solid #dae4e9; border-radius: 9px; padding: 12px; background: #f8fbfc; }
+.sensor label:first-child, .columnGrid label { flex-direction: row; align-items: center; }
+.columnGrid { display: grid; grid-template-columns: repeat(auto-fit,minmax(270px,1fr)); gap: 8px; margin: 12px 0; }
+.columnGrid > div { display: flex; align-items: center; gap: 6px; }
+.columnGrid label { flex: 1; }
+.scroll { overflow: auto; max-height: 65vh; border: 1px solid #d7e2e8; border-radius: 8px; margin: 16px 0; }
+.table { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 13px; white-space: nowrap; }
+.table th, .table td { padding: 11px 16px; border-bottom: 1px solid #e1e8ed; border-right: 1px solid #e1e8ed; text-align: right; background: white; }
+.table thead th { position: sticky; top: 0; z-index: 2; background: #eaf3f5; }
+.table th:first-child { position: sticky; left: 0; z-index: 1; text-align: left; font-weight: 500; }
+.table thead th:first-child { z-index: 3; }
+.table tr:nth-child(even) td, .table tr:nth-child(even) th { background: #f7fafc; }
+.table td.invalid { background: #fff3d8; }
+.actions { display: flex; gap: 16px; align-items: center; justify-content: flex-end; }
+@media(max-width:600px) { .panel { padding: 12px; } .filters { align-items: stretch; } .filters label { flex: 1 1 140px; } }

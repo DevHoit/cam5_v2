@@ -1,3 +1,5 @@
+import { sensorInstalled, sensorName } from "../../../../../../db/sensor-contract";
+import { sensorAssetScope, SensorError } from "../../../../../../db/sensor-installation";
 import type { NextRequest } from "next/server";
 import { and, asc, eq, gte, lte, sql } from "drizzle-orm";
 import {
@@ -40,6 +42,8 @@ export async function GET(request: NextRequest) {
 
     const [metric] = await db.select({
       deviceMetricId: deviceMetrics.id,
+      metricMetadata: deviceMetrics.metadata,
+      deviceMetadata: devices.metadata,
       deviceCode: devices.code,
       deviceName: devices.name,
       deviceType: devices.deviceType,
@@ -68,6 +72,8 @@ export async function GET(request: NextRequest) {
 
     if (!metric) throw new ApiError(404, "La métrica no existe o no está disponible en el sitio activo.");
 
+    await sensorAssetScope(db, user, metric.assetId);
+    if (!sensorInstalled(metric.metricMetadata, metric.deviceMetadata)) throw new ApiError(404, "El sensor no está instalado.");
     const rangeMs = to.getTime() - from.getTime();
     const numericMetric = metric.dataType === "float" || metric.dataType === "integer";
     const rawMode = !numericMetric || rangeMs <= RAW_RANGE_MS;
@@ -237,7 +243,7 @@ export async function GET(request: NextRequest) {
       },
       metric: {
         key: metric.metricKey,
-        name: metric.metricName,
+        name: sensorName(metric.metricName, metric.metricMetadata),
         unit: metric.unit,
         dataType: metric.dataType,
       },
@@ -256,6 +262,6 @@ export async function GET(request: NextRequest) {
       })),
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    return apiErrorResponse(error);
+    return apiErrorResponse(error instanceof SensorError ? new ApiError(error.status, error.message) : error);
   }
 }
