@@ -1,6 +1,6 @@
 import { createHash, randomBytes, scrypt as nodeScrypt, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
-import { and, eq, gt, isNull } from "drizzle-orm";
+import { and, eq, gt, isNull, lt, or } from "drizzle-orm";
 import type { Cam5Database } from "./index";
 import { resolveUserAccessScopes } from "./access-scope";
 import type { PortalRoleKey } from "./access-control";
@@ -208,7 +208,7 @@ export async function revokePortalSession(db: Cam5Database, token: string): Prom
     .where(and(eq(authSessions.tokenHash, hashSessionToken(token)), isNull(authSessions.revokedAt)));
 }
 
-export async function switchPortalSessionSite(db: Cam5Database, token: string, siteId: string): Promise<AuthenticatedPortalUser | null> {
+export async function switchPortalSessionSite(db: Cam5Database, token: string, siteId: string, authorized?: AuthenticatedPortalUser): Promise<AuthenticatedPortalUser | null> {
   const tokenHash = hashSessionToken(token);
   const [session] = await db.select({
     id: authSessions.id,
@@ -220,8 +220,12 @@ export async function switchPortalSessionSite(db: Cam5Database, token: string, s
   )).limit(1);
   if (!session) return null;
 
-  const scopes = await resolveUserAccessScopes(db, session.userId);
-  if (!scopes.sites.some((scope) => scope.siteId === siteId)) return null;
+  if (authorized) {
+    if (authorized.id !== session.userId || !authorized.sites.some((scope) => scope.id === siteId)) return null;
+  } else {
+    const scopes = await resolveUserAccessScopes(db, session.userId);
+    if (!scopes.sites.some((scope) => scope.siteId === siteId)) return null;
+  }
   await db.update(authSessions).set({ activeSiteId: siteId, lastSeenAt: new Date() }).where(eq(authSessions.id, session.id));
   return resolvePortalSession(db, token);
 }
@@ -231,6 +235,7 @@ export async function resolvePortalSession(db: Cam5Database, token: string): Pro
   const [session] = await db
     .select({
       sessionId: authSessions.id,
+      lastSeenAt: authSessions.lastSeenAt,
       activeSiteId: authSessions.activeSiteId,
       userId: users.id,
       email: users.email,
@@ -265,7 +270,10 @@ export async function resolvePortalSession(db: Cam5Database, token: string): Pro
     .innerJoin(permissions, eq(permissions.id, rolePermissions.permissionId))
     .where(eq(rolePermissions.roleId, selected.roleId));
 
-  await db.update(authSessions).set({ lastSeenAt: now }).where(eq(authSessions.id, session.sessionId));
+  const touchBefore = new Date(now.getTime() - 60_000);
+  if (!session.lastSeenAt || session.lastSeenAt < touchBefore) {
+    await db.update(authSessions).set({ lastSeenAt: now }).where(and(eq(authSessions.id, session.sessionId), or(isNull(authSessions.lastSeenAt), lt(authSessions.lastSeenAt, touchBefore))));
+  }
 
   return {
     id: session.userId,

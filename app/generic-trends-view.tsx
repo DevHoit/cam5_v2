@@ -1,5 +1,7 @@
 "use client";
 
+import { portalFetch } from "./lib/portal-fetch";
+
 import { useEffect, useMemo, useState } from "react";
 import {
   IconAlertTriangle,
@@ -65,7 +67,7 @@ const PERIOD_MS: Record<(typeof PERIODS)[number], number> = {
 const SERIES_COLORS = ["#0284c7", "#4f46e5", "#0891b2", "#64748b"];
 
 async function requestJson<T>(path: string): Promise<T> {
-  const response = await fetch(path, { credentials: "include", cache: "no-store" });
+  const response = await portalFetch(path, { credentials: "include", cache: "no-store" });
   if (!response.ok) {
     const body = await response.json().catch(() => null) as { error?: string } | null;
     throw new Error(body?.error || "No fue posible consultar la tendencia.");
@@ -193,7 +195,7 @@ export function GenericTrendsView({
   }, [assetId, initialMetricKey, refreshKey]);
 
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    const timer = window.setInterval(() => { if (!document.hidden) setNow(Date.now()); }, 30_000);
     return () => window.clearInterval(timer);
   }, []);
 

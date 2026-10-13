@@ -1,5 +1,7 @@
 "use client";
 
+import { portalFetch } from "./lib/portal-fetch";
+
 import { useEffect, useMemo, useState } from "react";
 import {
   IconAlertTriangle,
@@ -71,7 +73,7 @@ type NocResponse = {
 };
 
 async function requestJson<T>(path: string): Promise<T> {
-  const response = await fetch(path, { credentials: "include", headers: { "Content-Type": "application/json" }, cache: "no-store" });
+  const response = await portalFetch(path, { credentials: "include", headers: { "Content-Type": "application/json" }, cache: "no-store" });
   if (!response.ok) {
     const body = await response.json().catch(() => null) as { error?: string } | null;
     throw new Error(body?.error || "No fue posible completar la solicitud.");
@@ -135,7 +137,7 @@ export function NocView() {
   }, [reload]);
 
   useEffect(() => {
-    const timer = window.setInterval(() => setReload((value) => value + 1), 30_000);
+    const timer = window.setInterval(() => { if (!document.hidden) setReload((value) => value + 1); }, 30_000);
     return () => window.clearInterval(timer);
   }, []);
 

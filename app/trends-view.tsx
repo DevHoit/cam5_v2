@@ -1,5 +1,7 @@
 "use client";
 
+import { portalFetch } from "./lib/portal-fetch";
+
 import { useEffect, useMemo, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import {
@@ -43,7 +45,7 @@ const PERIODS = ["1 h", "6 h", "24 h", "7 días", "30 días", "Personalizado"] a
 const PERIOD_MS: Record<string, number> = { "1 h": 3600_000, "6 h": 6 * 3600_000, "24 h": 24 * 3600_000, "7 días": 7 * 86400_000, "30 días": 30 * 86400_000 };
 
 async function requestTrend(path: string) {
-  const response = await fetch(path, { credentials: "include" });
+  const response = await portalFetch(path, { credentials: "include" });
   if (!response.ok) {
     const payload = await response.json().catch(() => null) as { error?: string } | null;
     throw new Error(payload?.error || "No fue posible consultar la tendencia.");
@@ -52,7 +54,7 @@ async function requestTrend(path: string) {
 }
 
 async function downloadCsv(path: string) {
-  const response = await fetch(path, { credentials: "include" });
+  const response = await portalFetch(path, { credentials: "include" });
   if (!response.ok) {
     const payload = await response.json().catch(() => null) as { error?: string } | null;
     throw new Error(payload?.error || "No fue posible exportar la tendencia.");
@@ -152,7 +154,7 @@ export function TrendsView({
 
   useEffect(() => {
     if (period === "Personalizado") return;
-    const polling = window.setInterval(() => setNow(Date.now()), 30_000);
+    const polling = window.setInterval(() => { if (!document.hidden) setNow(Date.now()); }, 30_000);
     return () => window.clearInterval(polling);
   }, [period]);
 

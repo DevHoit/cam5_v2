@@ -1,5 +1,7 @@
 "use client";
 
+import { portalFetch } from "./lib/portal-fetch";
+
 import { useEffect, useMemo, useState } from "react";
 import { IconChartLine as ChartLine, IconRefresh as Refresh, IconX as X } from "@tabler/icons-react";
 
@@ -92,9 +94,9 @@ export function AtsHistoryDialog({
       const from = rangeStart(range);
       try {
         const eventParams = new URLSearchParams({ assetId, from: from.toISOString(), to: to.toISOString() });
-        const eventPromise = fetch("/api/v1/ats/events?" + eventParams, { credentials: "include", cache: "no-store" });
+        const eventPromise = portalFetch("/api/v1/ats/events?" + eventParams, { credentials: "include", cache: "no-store" });
         const historyPromise = metricKey
-          ? fetch("/api/v1/telemetry/metrics/history?" + new URLSearchParams({ deviceId: controller.id, metric: metricKey, from: from.toISOString(), to: to.toISOString() }), { credentials: "include", cache: "no-store" })
+          ? portalFetch("/api/v1/telemetry/metrics/history?" + new URLSearchParams({ deviceId: controller.id, metric: metricKey, from: from.toISOString(), to: to.toISOString() }), { credentials: "include", cache: "no-store" })
           : Promise.resolve(null);
         const [eventResponse, historyResponse] = await Promise.all([eventPromise, historyPromise]);
         if (!eventResponse.ok || (historyResponse && !historyResponse.ok)) throw new Error("No fue posible cargar el histórico ATS.");

@@ -1,4 +1,6 @@
 "use client";
+
+import { portalFetch } from "./lib/portal-fetch";
 import { useEffect, useState } from "react";
 import type { HistoryColumn, WideHistory } from "../db/sensor-contract";
 import styles from "./sensor-history.module.css";
@@ -27,7 +29,7 @@ export function WideHistoryView({ assetId, canExport }: { assetId: string; canEx
     const abort = new AbortController();
     const timer = setTimeout(() => {
       setLoading(true); setError("");
-      fetch(`/api/v1/history/table?${query}`, { signal: abort.signal, cache: "no-store" }).then(async (r) => { const result = await r.json(); if (!r.ok) throw new Error(result.error); return result as WideHistory; })
+      portalFetch(`/api/v1/history/table?${query}`, { signal: abort.signal, cache: "no-store" }).then(async (r) => { const result = await r.json(); if (!r.ok) throw new Error(result.error); return result as WideHistory; })
         .then((result) => { setLoadedQuery(query); setData(result); if (!new URLSearchParams(query).has("columns")) setCatalog((old) => [...old.filter((c) => !result.columns.some((n) => n.id === c.id)), ...result.columns]); })
         .catch((e) => { if (!abort.signal.aborted) { setError(e.message); setData(null); } })
         .finally(() => { if (!abort.signal.aborted) setLoading(false); });
@@ -37,7 +39,7 @@ export function WideHistoryView({ assetId, canExport }: { assetId: string; canEx
   async function download() {
     setExporting(true); setError("");
     try {
-      const r = await fetch(`/api/v1/history/table?${query}&format=csv`, { cache: "no-store" });
+      const r = await portalFetch(`/api/v1/history/table?${query}&format=csv`, { cache: "no-store" });
       if (!r.ok) throw new Error((await r.json()).error);
       const url = URL.createObjectURL(await r.blob()); const a = document.createElement("a"); a.href = url; a.download = "hoitlive-historico.csv"; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (e) { setError(e instanceof Error ? e.message : "No fue posible exportar."); } finally { setExporting(false); }

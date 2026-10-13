@@ -1,4 +1,6 @@
 "use client";
+
+import { portalFetch } from "./lib/portal-fetch";
 import { useEffect, useState } from "react";
 import styles from "./sensor-history.module.css";
 type Sensor = { id: string; deviceId: string; deviceName: string; deviceCode: string; updatedAt: string; code: string; name: string; alias: string; installed: boolean; confirmed: boolean; recordedAt: string | null; unit: string };
@@ -10,7 +12,7 @@ export function SensorConfiguration({ assetId }: { assetId: string }) {
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     const abort = new AbortController();
-    fetch(`/api/v1/sensors?assetId=${encodeURIComponent(assetId)}`, { signal: abort.signal, cache: "no-store" }).then(async (r) => {
+    portalFetch(`/api/v1/sensors?assetId=${encodeURIComponent(assetId)}`, { signal: abort.signal, cache: "no-store" }).then(async (r) => {
       const data = await r.json(); if (!r.ok) throw new Error(data.error); return data;
     }).then((data) => { setSensors(data.sensors); setError(""); }).catch((e) => { if (!abort.signal.aborted) setError(e.message); });
     return () => abort.abort();
@@ -19,7 +21,7 @@ export function SensorConfiguration({ assetId }: { assetId: string }) {
     setBusy(true); setError(""); setNotice("");
     const selected = sensors.filter((s) => s.deviceId === deviceId);
     try {
-      const r = await fetch("/api/v1/sensors", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ assetId, deviceId, updatedAt: selected[0].updatedAt, sensors: selected.map(({ id, installed, alias }) => ({ id, installed, alias })) }) });
+      const r = await portalFetch("/api/v1/sensors", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ assetId, deviceId, updatedAt: selected[0].updatedAt, sensors: selected.map(({ id, installed, alias }) => ({ id, installed, alias })) }) });
       const data = await r.json(); if (!r.ok) throw new Error(data.error);
       setNotice("Sensores guardados. La selección se aplicará al volver a supervisión, tendencias, reglas e histórico."); setRevision((v) => v + 1);
     } catch (e) { setError(e instanceof Error ? e.message : "No se pudo guardar."); } finally { setBusy(false); }

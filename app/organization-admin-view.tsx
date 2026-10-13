@@ -1,5 +1,7 @@
 "use client";
 
+import { portalFetch } from "./lib/portal-fetch";
+
 import { useMemo, useState } from "react";
 import {
   IconBuilding,
@@ -23,7 +25,7 @@ type Editor =
   | { kind: "site"; id?: string; clientId: string; code: string; name: string; description: string; timezone: string; active: boolean };
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, { ...init, credentials: "include", headers: { "Content-Type": "application/json", ...init?.headers } });
+  const response = await portalFetch(path, { ...init, credentials: "include", headers: { "Content-Type": "application/json", ...init?.headers } });
   if (!response.ok) {
     const payload = await response.json().catch(() => null) as { error?: string } | null;
     throw new Error(payload?.error || "No fue posible completar la solicitud.");

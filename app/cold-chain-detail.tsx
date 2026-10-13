@@ -1,5 +1,7 @@
 "use client";
 
+import { portalFetch } from "./lib/portal-fetch";
+
 import { useEffect, useMemo, useState } from "react";
 import {
   IconAlertTriangle as AlertTriangle,
@@ -228,7 +230,7 @@ export function ColdChainDetail({
     let active = true;
     const from = rangeStart(range);
     const to = new Date();
-    fetch("/api/v1/cold-chain/history?chamberId=" + encodeURIComponent(chamberId) + "&from=" + encodeURIComponent(from.toISOString()) + "&to=" + encodeURIComponent(to.toISOString()), {
+    portalFetch("/api/v1/cold-chain/history?chamberId=" + encodeURIComponent(chamberId) + "&from=" + encodeURIComponent(from.toISOString()) + "&to=" + encodeURIComponent(to.toISOString()), {
       credentials: "include",
       cache: "no-store",
     })
@@ -247,7 +249,7 @@ export function ColdChainDetail({
     const load = async () => {
       setAlarmState((current) => ({ status: "loading", data: current.data }));
       try {
-        const response = await fetch("/api/v1/alarms?assetId=" + encodeURIComponent(chamberId) + "&pageSize=50", {
+        const response = await portalFetch("/api/v1/alarms?assetId=" + encodeURIComponent(chamberId) + "&pageSize=50", {
           credentials: "include",
           cache: "no-store",
         });
@@ -265,14 +267,14 @@ export function ColdChainDetail({
   const acknowledgeAlarm = async (alarmId: string) => {
     setAlarmActionId(alarmId);
     try {
-      const response = await fetch("/api/v1/alarms/" + encodeURIComponent(alarmId), {
+      const response = await portalFetch("/api/v1/alarms/" + encodeURIComponent(alarmId), {
         method: "PATCH",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "acknowledge" }),
       });
       if (!response.ok) throw new Error("No fue posible reconocer la alarma.");
-      const refresh = await fetch("/api/v1/alarms?assetId=" + encodeURIComponent(chamberId) + "&pageSize=50", {
+      const refresh = await portalFetch("/api/v1/alarms?assetId=" + encodeURIComponent(chamberId) + "&pageSize=50", {
         credentials: "include",
         cache: "no-store",
       });
@@ -286,7 +288,7 @@ export function ColdChainDetail({
     setOperationBusy(true);
     setOperationError("");
     try {
-      const response = await fetch("/api/v1/cold-chain/configuration", {
+      const response = await portalFetch("/api/v1/cold-chain/configuration", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },

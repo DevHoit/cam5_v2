@@ -19,6 +19,8 @@ export async function requireApiSession(
   const db = getDb();
   const user = await resolvePortalSession(db, token);
   if (!user) throw new ApiError(401, "La sesión expiró o ya no es válida.");
+  const expectedSite = request.headers.get("x-hoit-site");
+  if (expectedSite && expectedSite !== user.siteId) throw new ApiError(409, "El sitio activo cambió en otra pestaña. Actualiza el portal para continuar.");
   if (user.mustChangePassword && !options.allowPasswordChangeRequired) throw new ApiError(428, "Debes cambiar tu contraseña temporal antes de continuar.");
   if (permission && !user.permissions.includes(permission)) throw new ApiError(403, "No tienes permisos para realizar esta acción.");
   return { db, user, token };

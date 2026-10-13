@@ -1,5 +1,8 @@
 "use client";
 
+import { portalFetch, clearPortalCache, setPortalContext } from "./lib/portal-fetch";
+import { pollVisible } from "./lib/visible-poll";
+
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { SensorConfiguration } from "./sensor-configuration";
 import { WideHistoryView } from "./wide-history-view";
@@ -252,7 +255,7 @@ class PortalRequestError extends Error {
 }
 
 async function portalRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, {
+  const response = await portalFetch(path, {
     ...init,
     credentials: "include",
     headers: { "Content-Type": "application/json", ...init?.headers },
@@ -266,7 +269,7 @@ async function portalRequest<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 async function downloadAuthenticatedCsv(path: string, fallbackName: string) {
-  const response = await fetch(path, { credentials: "include" });
+  const response = await portalFetch(path, { credentials: "include" });
   if (!response.ok) {
     const payload = await response.json().catch(() => null) as { error?: string } | null;
     throw new Error(payload?.error || "No fue posible generar la exportación.");
@@ -846,8 +849,8 @@ function AlarmsView({ assetId, permissions, onSummaryChange, onOpenTrend, onOpen
 
   useEffect(() => {
     const timeout = window.setTimeout(() => void loadAlarms(), 250);
-    const polling = window.setInterval(() => void loadAlarms(true), 30_000);
-    return () => { window.clearTimeout(timeout); window.clearInterval(polling); };
+    const stop = pollVisible(() => loadAlarms(true), 30_000, false);
+    return () => { window.clearTimeout(timeout); stop(); };
     // La recarga depende únicamente de los filtros visibles y del punto activo.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assetId, page, query, severity, workflowStatus]);
@@ -1970,6 +1973,8 @@ export default function Home() {
   const [sessionUser, setSessionUser] = useState<PortalSessionUser | null>(null);
   const [hierarchy, setHierarchy] = useState<PortalHierarchy | null>(null);
   const [hierarchyLoading, setHierarchyLoading] = useState(false);
+  const [contextSwitching, setContextSwitching] = useState(false);
+  const contextSwitchLock = useRef(false);
   const [activePointId, setActivePointId] = useState("");
   const [authState, setAuthState] = useState<"checking" | "authenticated" | "anonymous">("checking");
   const [passwordResetToken, setPasswordResetToken] = useState("");
@@ -1998,35 +2003,25 @@ export default function Home() {
       return;
     }
     let active = true;
-    portalRequest<{ user: PortalSessionUser }>("/api/v1/auth/session")
-      .then(async (response) => {
+    portalRequest<{ user: PortalSessionUser; hierarchy: PortalHierarchy | null }>("/api/v1/auth/bootstrap")
+      .then((response) => {
         if (!active) return;
+        setPortalContext({ userId: response.user.id, siteId: response.user.siteId });
         setSessionUser(response.user);
+        setHierarchy(response.hierarchy);
+        setActivePointId(response.hierarchy?.points.find((point) => point.active)?.id ?? "");
         setAuthState("authenticated");
-        if (response.user.mustChangePassword) return;
-        setHierarchyLoading(true);
-        try {
-          const data = await portalRequest<PortalHierarchy>("/api/v1/hierarchy");
-          if (active) {
-            setHierarchy(data);
-            setActivePointId(data.points.find((point) => point.active)?.id ?? "");
-          }
-        } catch {
-          if (active) setHierarchy(null);
-        } finally {
-          if (active) setHierarchyLoading(false);
-        }
       })
       .catch(() => { if (active) setAuthState("anonymous"); });
     return () => { active = false; };
   }, []);
 
   useEffect(() => {
-    if (authState !== "authenticated" || !hierarchy) return;
+    if (authState !== "authenticated" || !hierarchy || !["overview", "cabinet", "trends", "engineering"].includes(view)) return;
     const pointId = activePointId || hierarchy.points[0]?.id;
     if (!pointId) return;
     const selectedAsset = hierarchy.points.find((point) => point.id === pointId);
-    if (selectedAsset && ["electrical_point", "ats", "cold_room"].includes(selectedAsset.type)) return;
+    if (selectedAsset?.type !== "switchgear_cabinet") return;
     let active = true;
     let hasVerifiedTelemetry = false;
     const refresh = async () => {
@@ -2045,10 +2040,9 @@ export default function Home() {
         setSystemMode(hasVerifiedTelemetry ? "stale" : "error");
       }
     };
-    void refresh();
-    const timer = window.setInterval(() => void refresh(), 2_000);
-    return () => { active = false; window.clearInterval(timer); };
-  }, [activePointId, authState, hierarchy, telemetryRefreshKey]);
+    const stop = pollVisible(refresh, 2_000);
+    return () => { active = false; stop(); };
+  }, [activePointId, authState, hierarchy, telemetryRefreshKey, view]);
 
   useEffect(() => {
     if (authState !== "authenticated" || !hierarchy) return;
@@ -2066,9 +2060,8 @@ export default function Home() {
         if (active) setAlarmPreview([]);
       }
     };
-    void refresh();
-    const timer = window.setInterval(() => void refresh(), 30_000);
-    return () => { active = false; window.clearInterval(timer); };
+    const stop = pollVisible(refresh, 30_000);
+    return () => { active = false; stop(); };
   }, [activePointId, authState, hierarchy]);
 
   const loadHierarchy = async () => {
@@ -2174,7 +2167,7 @@ export default function Home() {
   };
   const logout = async () => {
     try { await portalRequest("/api/v1/auth/logout", { method: "POST" }); }
-    finally { setSessionUser(null); setHierarchy(null); setAuthState("anonymous"); }
+    finally { setPortalContext(null); setSessionUser(null); setHierarchy(null); setAuthState("anonymous"); }
   };
 
   const resetContextState = () => {
@@ -2191,17 +2184,23 @@ export default function Home() {
   };
 
   const switchSite = async (siteId: string, preferredAssetId?: string, silent = false) => {
+    if (contextSwitchLock.current) return;
     if (siteId === sessionUser?.siteId) {
       if (preferredAssetId) setActivePointId(preferredAssetId);
       return;
     }
+    contextSwitchLock.current = true;
+    setContextSwitching(true);
     setHierarchyLoading(true);
+    clearPortalCache();
+    resetContextState();
     try {
-      const response = await portalRequest<{ user: PortalSessionUser }>("/api/v1/auth/context", { method: "PATCH", body: JSON.stringify({ siteId }) });
-      resetContextState();
+      const response = await portalRequest<{ user: PortalSessionUser; hierarchy: PortalHierarchy | null }>("/api/v1/auth/context", { method: "PATCH", body: JSON.stringify({ siteId }) });
+      setPortalContext({ userId: response.user.id, siteId: response.user.siteId });
       setSessionUser(response.user);
 
-      const data = await portalRequest<PortalHierarchy>("/api/v1/hierarchy");
+      const data = response.hierarchy;
+      if (!data) return;
       setHierarchy(data);
       const nextAssetId = preferredAssetId && data.points.some((point) => point.id === preferredAssetId && point.active)
         ? preferredAssetId
@@ -2223,12 +2222,15 @@ export default function Home() {
       notify(requestError instanceof Error ? requestError.message : "No fue posible cambiar de sitio.", "warning");
       try {
         const response = await portalRequest<{ user: PortalSessionUser }>("/api/v1/auth/session");
+        setPortalContext({ userId: response.user.id, siteId: response.user.siteId });
         setSessionUser(response.user);
         await loadHierarchy();
       } catch {
         // Mantener el portal en estado seguro; el siguiente refresh recuperará la sesión.
       }
     } finally {
+      contextSwitchLock.current = false;
+      setContextSwitching(false);
       setHierarchyLoading(false);
     }
   };
@@ -2261,6 +2263,7 @@ export default function Home() {
     setPasswordResetToken(""); setSessionUser(null); setAuthState("anonymous");
   }} />;
   if (authState !== "authenticated" || !sessionUser) return <LoginScreen checking={authState === "checking"} notice={loginNotice} onAuthenticated={(user) => {
+    setPortalContext({ userId: user.id, siteId: user.siteId });
     setLoginNotice(null); setHierarchy(null); setSessionUser(user); setAuthState("authenticated"); if (!user.mustChangePassword) void loadHierarchy();
   }} />;
   if (sessionUser.mustChangePassword) return <RequiredPasswordChangeScreen
@@ -2318,12 +2321,12 @@ export default function Home() {
 
       <main className="main-shell">
         <header className="topbar">
-          <div className="topbar-left"><button className="menu-button" aria-label="Abrir navegación" onClick={() => setMenuOpen(true)}><Menu size={22} /></button><span className="mobile-brand"><Zap size={18} fill="currentColor" /></span><div className="operational-context"><span className="context-icon"><Building2 size={16} /></span><label><span>Cliente</span><select value={sessionUser.clientId} onChange={(event) => void switchClient(event.target.value)} aria-label="Cliente activo">{hierarchy?.clients.filter((client) => client.active).map((client) => <option key={client.id} value={client.id}>{client.name}</option>) ?? <option value={sessionUser.clientId}>{sessionUser.clientName}</option>}</select></label>{view !== "dashboard" && <><i className="context-separator" aria-hidden="true" /><label><span>Sitio</span><select value={sessionUser.siteId} onChange={(event) => void switchSite(event.target.value)} aria-label="Sitio activo">{(hierarchy?.sites ?? sessionUser.sites).filter((site) => site.clientId === sessionUser.clientId && (!("active" in site) || site.active)).map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}</select></label>{view !== "operations" && <><i className="context-separator" aria-hidden="true" /><label><span>Activo</span><select value={activePoint?.id ?? ""} onChange={(event) => { setTelemetryState({ status: "loading", data: null }); setSystemMode("loading"); setActivePointId(event.target.value); }} aria-label="Activo seleccionado"><option value="">Sin activo seleccionado</option>{hierarchy?.points.filter((point) => point.active).map((point) => <option key={point.id} value={point.id}>{point.name}</option>)}</select></label></>}</>}</div></div>
+          <div className="topbar-left"><button className="menu-button" aria-label="Abrir navegación" onClick={() => setMenuOpen(true)}><Menu size={22} /></button><span className="mobile-brand"><Zap size={18} fill="currentColor" /></span><div className="operational-context"><span className="context-icon"><Building2 size={16} /></span><label><span>Cliente</span><select value={sessionUser.clientId} onChange={(event) => void switchClient(event.target.value)} disabled={contextSwitching} aria-label="Cliente activo">{hierarchy?.clients.filter((client) => client.active).map((client) => <option key={client.id} value={client.id}>{client.name}</option>) ?? <option value={sessionUser.clientId}>{sessionUser.clientName}</option>}</select></label>{view !== "dashboard" && <><i className="context-separator" aria-hidden="true" /><label><span>Sitio</span><select value={sessionUser.siteId} onChange={(event) => void switchSite(event.target.value)} disabled={contextSwitching} aria-label="Sitio activo">{(hierarchy?.sites ?? sessionUser.sites).filter((site) => site.clientId === sessionUser.clientId && (!("active" in site) || site.active)).map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}</select></label>{view !== "operations" && <><i className="context-separator" aria-hidden="true" /><label><span>Activo</span><select value={activePoint?.id ?? ""} onChange={(event) => { setTelemetryState({ status: "loading", data: null }); setSystemMode("loading"); setActivePointId(event.target.value); }} disabled={contextSwitching} aria-label="Activo seleccionado"><option value="">Sin activo seleccionado</option>{hierarchy?.points.filter((point) => point.active).map((point) => <option key={point.id} value={point.id}>{point.name}</option>)}</select></label></>}</>}</div></div>
           <div className="topbar-right"><button className="authenticated-role" onClick={() => navigate("account")} aria-label="Abrir mi cuenta"><ShieldCheck size={16} /><strong>{sessionUser.roleName}</strong></button><button className="topbar-logout" onClick={logout} aria-label="Cerrar sesión"><LogOut size={18} /></button></div>
         </header>
 
         <div className="content-scroll">
-          <div className="page-content" key={`context:${sessionUser.clientId}:${sessionUser.siteId}`}>
+          {contextSwitching ? <section className="panel" role="status" aria-live="polite" style={{ margin: 24, padding: 24 }}><Refresh className="spin" size={20} /> Cargando el sitio seleccionado…</section> : <div className="page-content" key={`context:${sessionUser.clientId}:${sessionUser.siteId}:${activePointId}`}>
             {view === "cabinet" && activePoint && (!["electrical_point", "ats", "cold_room"].includes(activePoint.type)) && systemMode !== "normal" && <section className={`operational-banner banner-${systemMode}`} role={systemMode === "offline" || systemMode === "error" ? "alert" : "status"} aria-live="polite"><span>{systemMode === "offline" ? <PlugConnected size={19} /> : systemMode === "loading" ? <Refresh className="spin" size={19} /> : systemMode === "error" ? <AlertTriangle size={19} /> : <Clock3 size={19} />}</span><div><strong>{systemMessage.title}</strong><p>{systemMessage.detail}</p></div>{systemMode !== "loading" && <button onClick={() => { setTelemetryState({ status: "loading", data: null }); setSystemMode("loading"); setTelemetryRefreshKey((current) => current + 1); notify("Consultando nuevamente la telemetría.", "info"); }}><Refresh size={15} /> Reintentar</button>}</section>}
             {(["settings", "diagnostics", "commissioning", "provisioning"] as View[]).includes(view) && <nav className="engineering-context-nav engineering-context-nav-v5" aria-label="Herramientas de ingeniería">
               <div className="engineering-nav-breadcrumb">
@@ -2391,7 +2394,7 @@ export default function Home() {
              {view === "users" && <UsersView currentUserId={sessionUser.id} currentRoleKey={sessionUser.roleKey} clientScopes={sessionUser.clientScopes} sites={sessionUser.sites} activeSiteId={sessionUser.siteId} activeClientId={sessionUser.clientId} canManageUsers={sessionUser.permissions.includes("users.manage")} />}
             {view === "notifications" && <NotificationsView canWrite={sessionUser.permissions.includes("notifications.write")} siteName={sessionUser.siteName} />}
             {view === "account" && <AccountView notify={notify} confirm={(request) => setConfirmRequest(request)} onProfileUpdated={(displayName) => setSessionUser((current) => current ? { ...current, displayName } : current)} />}
-          </div>
+          </div>}
         </div>
       </main>
       {activePoint && <ChannelVisibilityDialog open={visibilityOpen} assetId={activePoint.id} sensors={sensors} onClose={() => setVisibilityOpen(false)} onSaved={() => setTelemetryRefreshKey((current) => current + 1)} />}

@@ -1,5 +1,7 @@
 "use client";
 
+import { portalFetch } from "./lib/portal-fetch";
+
 import { useEffect, useState } from "react";
 import {
   IconAlertTriangle,
@@ -73,7 +75,7 @@ type DashboardResponse = {
 };
 
 async function requestJson<T>(path: string): Promise<T> {
-  const response = await fetch(path, {
+  const response = await portalFetch(path, {
     credentials: "include",
     cache: "no-store",
     headers: { "Content-Type": "application/json" },

@@ -1,18 +1,28 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+
+import { portalFetch } from "./lib/portal-fetch";
+import { useEffect, useEffectEvent, useMemo, useState } from "react";
 import { IconDeviceFloppy, IconPlus, IconRefresh, IconTrash } from "@tabler/icons-react";
 
 type Model = { id:string; code:string; manufacturer:string; name:string; definitionVersion:string; capabilities:{ capabilityKeys?:string[]; metricKeys?:string[] } };
 type Metric = { id:string; key:string; name:string; category:string; unit:string; dataType:string };
 type NoticeTone = "success"|"info"|"warning";
-async function req<T>(path:string, init?:RequestInit):Promise<T>{const r=await fetch(path,{...init,credentials:"include",headers:{"Content-Type":"application/json",...init?.headers}});if(!r.ok){const b=await r.json().catch(()=>null) as {error?:string}|null;throw new Error(b?.error||"No fue posible completar la solicitud.");}if(r.status===204)return undefined as T;return r.json() as Promise<T>;}
+async function req<T>(path:string, init?:RequestInit):Promise<T>{const r=await portalFetch(path,{...init,credentials:"include",headers:{"Content-Type":"application/json",...init?.headers}});if(!r.ok){const b=await r.json().catch(()=>null) as {error?:string}|null;throw new Error(b?.error||"No fue posible completar la solicitud.");}if(r.status===204)return undefined as T;return r.json() as Promise<T>;}
 
 export function DeviceModelCatalog({canWrite,notify}:{canWrite:boolean;notify:(message:string,tone?:NoticeTone)=>void}) {
  const [data,setData]=useState<{models:Model[];metrics:Metric[]}|null>(null); const [loading,setLoading]=useState(true); const [editing,setEditing]=useState<string|null>(null);
  const blank={code:"",manufacturer:"",name:"",definitionVersion:"1.0",capabilityKeys:"",metricKeys:[] as string[]};
  const [form,setForm]=useState(blank);
  const load=async()=>{setLoading(true);try{setData(await req("/api/v1/engineering/device-models"));}catch(e){notify(e instanceof Error?e.message:"No fue posible cargar modelos.","warning");}finally{setLoading(false);}};
- useEffect(()=>{void load();},[]);
+ const notifyLoadError = useEffectEvent((error: unknown) => notify(error instanceof Error ? error.message : "No fue posible cargar modelos.", "warning"));
+ useEffect(() => {
+   let active = true;
+   void req<{models:Model[];metrics:Metric[]}>("/api/v1/engineering/device-models")
+     .then((result) => { if (active) setData(result); })
+     .catch((error) => { if (active) notifyLoadError(error); })
+     .finally(() => { if (active) setLoading(false); });
+   return () => { active = false; };
+ }, []);
  const categories=useMemo(()=>{const m=new Map<string,Metric[]>();for(const metric of data?.metrics??[]){m.set(metric.category,[...(m.get(metric.category)??[]),metric]);}return [...m.entries()];},[data]);
  const edit=(model:Model)=>{setEditing(model.id);setForm({code:model.code,manufacturer:model.manufacturer,name:model.name,definitionVersion:model.definitionVersion,capabilityKeys:(model.capabilities.capabilityKeys??[]).join(", "),metricKeys:model.capabilities.metricKeys??[]});};
  const save=async(e:React.FormEvent)=>{e.preventDefault();try{const payload={...(editing?{id:editing}:{code:form.code}),manufacturer:form.manufacturer,name:form.name,definitionVersion:form.definitionVersion,capabilityKeys:form.capabilityKeys.split(",").map(x=>x.trim()).filter(Boolean),metricKeys:form.metricKeys};await req("/api/v1/engineering/device-models",{method:editing?"PATCH":"POST",body:JSON.stringify(payload)});notify(editing?"Modelo actualizado.":"Modelo registrado.");setEditing(null);setForm(blank);await load();}catch(e){notify(e instanceof Error?e.message:"No fue posible guardar el modelo.","warning");}};

@@ -1,5 +1,8 @@
 "use client";
 
+import { pollVisible } from "./lib/visible-poll";
+import { portalFetch } from "./lib/portal-fetch";
+
 import { useEffect, useState } from "react";
 import {
   IconActivity,
@@ -30,7 +33,7 @@ type DiagnosticResponse = {
 };
 
 async function requestDiagnostic<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, { ...init, credentials: "include", headers: { "Content-Type": "application/json", ...init?.headers } });
+  const response = await portalFetch(path, { ...init, credentials: "include", headers: { "Content-Type": "application/json", ...init?.headers } });
   if (!response.ok) {
     const payload = await response.json().catch(() => null) as { error?: string } | null;
     throw new Error(payload?.error || "No fue posible consultar el diagnóstico.");
@@ -80,8 +83,8 @@ export function DiagnosticsView({ assetId, canExecute, notify }: {
       }
     };
     void load();
-    const timer = window.setInterval(() => void load(true), 30000);
-    return () => { active = false; window.clearInterval(timer); };
+    const stop = pollVisible(() => load(true), 30000, false);
+    return () => { active = false; stop(); };
   }, [assetId, page, reload]);
 
   useEffect(() => { Promise.resolve().then(() => setPage(1)); }, [assetId]);

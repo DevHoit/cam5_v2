@@ -1,5 +1,7 @@
 "use client";
 
+import { portalFetch } from "./lib/portal-fetch";
+
 import { useEffect, useMemo, useState } from "react";
 import {
   IconAlertTriangle,
@@ -72,7 +74,7 @@ type ResponseData = {
 };
 
 async function requestJson<T>(path: string): Promise<T> {
-  const response = await fetch(path, { credentials: "include", cache: "no-store" });
+  const response = await portalFetch(path, { credentials: "include", cache: "no-store" });
   if (!response.ok) {
     const body = await response.json().catch(() => null) as { error?: string } | null;
     throw new Error(body?.error || "No fue posible consultar las métricas del activo.");

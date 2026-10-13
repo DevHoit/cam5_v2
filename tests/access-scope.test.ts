@@ -293,3 +293,37 @@ test("management capability helpers match the formal administrative permission m
   assert.equal(roleCanManageSites("site_admin"), true);
   assert.equal(roleCanManageSites("engineer"), false);
 });
+
+test("session heartbeat is throttled but revocation and scope changes remain immediate; bootstrap hierarchy is scoped", async () => {
+  const { createHash } = await import("node:crypto");
+  const { resolvePortalSession, switchPortalSessionSite } = await import("../db/auth");
+  const { portalHierarchy } = await import("../db/portal-hierarchy");
+  const client = new PGlite();
+  try {
+    for (const filename of [...beforeScopeMigration, "0023_access_scope_roles.sql", "0024_notification_suppressed_status.sql", "0025_rs485_bus_addressing.sql", "0026_hoit_v1_control_plane.sql", "0027_rule_alarm_semantics.sql", "0028_area_scope_guards.sql"]) await apply(client, filename);
+    const db = drizzle(client, { schema }) as unknown as Cam5Database;
+    const [customer] = await db.insert(schema.clients).values({ code: "PERF", name: "Performance" }).returning();
+    const [a, b] = await db.insert(schema.sites).values([{ clientId: customer.id, code: "PERF-A", name: "A" }, { clientId: customer.id, code: "PERF-B", name: "B" }]).returning();
+    const [role] = await db.select().from(schema.roles).where(eq(schema.roles.key, "site_admin"));
+    const [user] = await db.insert(schema.users).values({ email: "perf@example.test", displayName: "Performance", status: "active" }).returning();
+    await db.insert(schema.userRoleAssignments).values([{ userId: user.id, roleId: role.id, siteId: a.id }, { userId: user.id, roleId: role.id, siteId: b.id }]);
+    await db.insert(schema.assets).values([{ siteId: a.id, code: "A-ASSET", name: "A asset" }, { siteId: b.id, code: "B-ASSET", name: "B asset" }]);
+    const token = "test-only-performance-session";
+    const [session] = await db.insert(schema.authSessions).values({ userId: user.id, activeSiteId: a.id, tokenHash: createHash("sha256").update(token).digest("hex"), expiresAt: new Date(Date.now() + 3600000), lastSeenAt: new Date(Date.now() - 120000) }).returning();
+    const resolved = await resolvePortalSession(db, token); assert.ok(resolved);
+    const [first] = await db.select().from(schema.authSessions).where(eq(schema.authSessions.id, session.id));
+    await resolvePortalSession(db, token);
+    const [second] = await db.select().from(schema.authSessions).where(eq(schema.authSessions.id, session.id));
+    assert.equal(first.lastSeenAt?.toISOString(), second.lastSeenAt?.toISOString());
+    assert.ok(+first.lastSeenAt! > +session.lastSeenAt!);
+    const initial = await portalHierarchy(db, resolved);
+    assert.deepEqual(initial.points.map((p) => p.code), ["A-ASSET"]);
+    const switched = await switchPortalSessionSite(db, token, b.id, resolved); assert.ok(switched);
+    assert.equal(switched.siteId, b.id);
+    assert.deepEqual((await portalHierarchy(db, switched)).points.map((p) => p.code), ["B-ASSET"]);
+    assert.equal(await switchPortalSessionSite(db, token, a.id, { ...switched, id: crypto.randomUUID() }), null);
+    assert.equal(await switchPortalSessionSite(db, token, crypto.randomUUID(), switched), null);
+    await db.update(schema.authSessions).set({ revokedAt: new Date() }).where(eq(schema.authSessions.id, session.id));
+    assert.equal(await resolvePortalSession(db, token), null, "recent heartbeat never bypasses revocation");
+  } finally { await client.close(); }
+});

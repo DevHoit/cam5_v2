@@ -1,5 +1,7 @@
 "use client";
 
+import { portalFetch } from "./lib/portal-fetch";
+
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { IconAdjustmentsHorizontal, IconPlus, IconRefresh, IconSearch } from "@tabler/icons-react";
 import type { MetricRuleItem, MetricRuleMetric } from "../db/metric-rule-contract";
@@ -13,7 +15,7 @@ type Editor = { metric: MetricRuleMetric; rule?: MetricRuleItem };
 type Form = { name: string; op: string; value: string; severity: string; durationSeconds: string; recoveryThreshold: string; recoverySeconds: string; staleAfterSeconds: string; enabled: boolean };
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, { ...init, headers: { "Content-Type": "application/json" }, cache: "no-store" });
+  const response = await portalFetch(url, { ...init, headers: { "Content-Type": "application/json" }, cache: "no-store" });
   const result = await response.json();
   if (!response.ok) throw new Error(result.error || "No fue posible consultar las reglas.");
   return result as T;

@@ -16,8 +16,10 @@ import { apiErrorResponse, requireApiSession } from "../../../_lib/auth";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
+  const started = performance.now();
   try {
     const { db, user } = await requireApiSession(request, "condition.read");
+    const authorizedAt = performance.now();
     const assetId = request.nextUrl.searchParams.get("assetId");
     const deviceId = request.nextUrl.searchParams.get("deviceId");
 
@@ -170,7 +172,7 @@ export async function GET(request: NextRequest) {
           state: device.state === "active" && !device.metrics.some((metric) => metric.quality === "good") ? "offline" : device.state,
         })),
       })),
-    }, { headers: { "Cache-Control": "no-store" } });
+    }, { headers: { "Cache-Control": "no-store", "Server-Timing": `auth;dur=${(authorizedAt - started).toFixed(1)},data;dur=${(performance.now() - authorizedAt).toFixed(1)}` } });
   } catch (error) {
     return apiErrorResponse(error);
   }

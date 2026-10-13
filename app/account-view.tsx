@@ -1,5 +1,7 @@
 "use client";
 
+import { portalFetch } from "./lib/portal-fetch";
+
 import { useEffect, useState } from "react";
 import {
   IconAlertTriangle,
@@ -37,7 +39,7 @@ type AccountResponse = {
 type ConfirmRequest = { title: string; detail: string; confirmLabel: string; tone?: "default" | "danger"; onConfirm: () => void };
 
 async function accountRequest<T>(init?: RequestInit): Promise<T> {
-  const response = await fetch("/api/v1/account", {
+  const response = await portalFetch("/api/v1/account", {
     ...init,
     credentials: "include",
     headers: { "Content-Type": "application/json", ...init?.headers },

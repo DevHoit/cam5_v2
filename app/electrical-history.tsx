@@ -1,5 +1,7 @@
 "use client";
 
+import { portalFetch } from "./lib/portal-fetch";
+
 import { useEffect, useMemo, useState } from "react";
 import {
   IconChartLine as ChartLine,
@@ -131,7 +133,7 @@ export function ElectricalHistoryDialog({
           from: from.toISOString(),
           to: to.toISOString(),
         });
-        const response = await fetch("/api/v1/telemetry/metrics/history?" + params, { credentials: "include", cache: "no-store" });
+        const response = await portalFetch("/api/v1/telemetry/metrics/history?" + params, { credentials: "include", cache: "no-store" });
         if (!response.ok) throw new Error("No fue posible cargar el histórico.");
         const payload = await response.json() as HistoryResponse;
         if (active) {

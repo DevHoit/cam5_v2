@@ -1,5 +1,8 @@
 "use client";
 
+import { pollVisible } from "./lib/visible-poll";
+import { portalFetch } from "./lib/portal-fetch";
+
 import { useEffect, useState } from "react";
 import { ColdChainDetail } from "./cold-chain-detail";
 import {
@@ -103,7 +106,7 @@ function age(value: string | null) {
 }
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, {
+  const response = await portalFetch(path, {
     ...init,
     credentials: "include",
     cache: "no-store",
@@ -171,9 +174,8 @@ export function ColdChainView({
         if (active) setState((current) => ({ status: "error", data: current.data }));
       }
     };
-    void refresh();
-    const timer = window.setInterval(() => void refresh(), 5000);
-    return () => { active = false; window.clearInterval(timer); };
+    const stop = pollVisible(refresh, 5000);
+    return () => { active = false; stop(); };
   }, [refreshKey]);
 
   useEffect(() => {

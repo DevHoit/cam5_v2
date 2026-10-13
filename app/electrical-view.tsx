@@ -1,5 +1,8 @@
 "use client";
 
+import { pollVisible } from "./lib/visible-poll";
+import { portalFetch } from "./lib/portal-fetch";
+
 import { useEffect, useMemo, useState } from "react";
 import { ElectricalHistoryDialog } from "./electrical-history";
 import {
@@ -73,7 +76,7 @@ function age(iso: string | null) {
 }
 
 async function json<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, { credentials: "include", cache: "no-store", ...init });
+  const response = await portalFetch(url, { credentials: "include", cache: "no-store", ...init });
   const payload = await response.json().catch(() => null) as ({ error?: string } & T) | null;
   if (!response.ok) throw new Error(payload?.error || "No fue posible completar la operación.");
   return payload as T;
@@ -162,9 +165,8 @@ export function ElectricalView({
         if (active) setStatus("error");
       }
     };
-    void load();
-    const timer = window.setInterval(() => void load(), 5_000);
-    return () => { active = false; window.clearInterval(timer); };
+    const stop = pollVisible(load, 5_000);
+    return () => { active = false; stop(); };
   }, []);
 
   const meters = useMemo(() => overview?.points.flatMap((point) => point.meters) ?? [], [overview]);

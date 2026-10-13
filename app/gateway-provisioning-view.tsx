@@ -1,5 +1,7 @@
 "use client";
 
+import { portalFetch } from "./lib/portal-fetch";
+
 import { useEffect, useRef, useState } from "react";
 import {
   IconAlertTriangle,
@@ -37,7 +39,7 @@ type SecretResponse = { credential: Credential; token: string; rotatedCredential
 type RenewalResponse = { credentialId: string; previousExpiresAt: string | null; expiresAt: string; renewedAt: string; tokenChanged: false };
 
 async function requestProvisioning<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, { ...init, credentials: "include", headers: { "Content-Type": "application/json", ...init?.headers } });
+  const response = await portalFetch(path, { ...init, credentials: "include", headers: { "Content-Type": "application/json", ...init?.headers } });
   if (!response.ok) {
     const payload = await response.json().catch(() => null) as { error?: string } | null;
     throw new Error(payload?.error || "No fue posible completar la operación.");

@@ -1,5 +1,7 @@
 "use client";
 
+import { portalFetch } from "./lib/portal-fetch";
+
 import { useEffect, useState } from "react";
 import { ShiftsView } from "./shifts-view";
 import { NocView } from "./noc-view";
@@ -42,7 +44,7 @@ type MaintenanceResponse = {
 type AssetOption = { id: string; code: string; name: string };
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, {
+  const response = await portalFetch(path, {
     ...init,
     credentials: "include",
     headers: { "Content-Type": "application/json", ...init?.headers },
