@@ -3,6 +3,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { assets, devices, gateways, readingProfiles } from "../../../../../db/schema";
 import { apiErrorResponse, ApiError } from "../../_lib/auth";
 import { requireGatewayCredential } from "../_lib/auth";
+import { checkIngestRateLimit } from "../_lib/rate-limit";
 import { handleSpecHeartbeat } from "../_lib/heartbeat-spec-v1";
 
 export const dynamic = "force-dynamic";
@@ -10,6 +11,7 @@ export const dynamic = "force-dynamic";
 export async function POST(request: NextRequest) {
   try {
     const { db, credential } = await requireGatewayCredential(request);
+    checkIngestRateLimit(`heartbeat:${credential.gatewayId}`);
     const receivedAt = new Date();
     const rawBody = await request.text();
     const parsedBody = rawBody.trim() ? (() => { try { return JSON.parse(rawBody) as unknown; } catch { return null; } })() : null;

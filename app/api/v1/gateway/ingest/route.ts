@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { apiErrorResponse, ApiError } from "../../_lib/auth";
 import { requireGatewayCredential } from "../_lib/auth";
+import { checkIngestRateLimit } from "../_lib/rate-limit";
 import { handleSpecIngest } from "../_lib/ingest-spec-v1";
 import { handleGenericIngest } from "../_lib/ingest-v2";
 
@@ -13,6 +14,7 @@ export async function POST(request: NextRequest) {
     if (Number.isFinite(contentLength) && contentLength > MAX_BODY_BYTES) throw new ApiError(413, "El lote supera el máximo de 256 KiB.");
 
     const { db, credential } = await requireGatewayCredential(request);
+    checkIngestRateLimit(`ingest:${credential.gatewayId}`);
     const receivedAt = new Date();
     const rawBody = await request.text();
     if (new TextEncoder().encode(rawBody).byteLength > MAX_BODY_BYTES) throw new ApiError(413, "El lote supera el máximo de 256 KiB.");

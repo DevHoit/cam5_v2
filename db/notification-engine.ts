@@ -2,7 +2,7 @@ import { createHmac } from "node:crypto";
 import { and, eq, inArray, lte, or, sql } from "drizzle-orm";
 import type { Cam5Database } from "./index";
 import { publicAppUrl } from "./app-url";
-import { isMaintenanceActive } from "./maintenance-engine";
+import { batchIsMaintenanceActive, isMaintenanceActive } from "./maintenance-engine";
 import {
   alarms,
   assets,
@@ -223,11 +223,18 @@ export async function queueRepeatingNotifications(db: Cam5Database, now = new Da
       sql`${notificationPolicies.repeatIntervalMinutes} is not null`,
     ));
 
-  const maintenanceStates = await Promise.all(rows.map((row) => (
-    row.assetState === "maintenance"
-      ? Promise.resolve(true)
-      : isMaintenanceActive(db, { siteId: row.siteId, assetId: row.assetId, deviceId: row.deviceId, at: now })
-  )));
+  const targetsToEvaluate = rows
+    .filter((row) => row.assetState !== "maintenance")
+    .map((row) => ({ siteId: row.siteId, assetId: row.assetId, deviceId: row.deviceId }));
+
+  const batchMaintenanceMap = await batchIsMaintenanceActive(db, targetsToEvaluate, now);
+
+  const maintenanceStates = rows.map((row) => {
+    if (row.assetState === "maintenance") return true;
+    const key = `${row.siteId}:${row.assetId ?? ""}:${row.deviceId ?? ""}`;
+    return Boolean(batchMaintenanceMap.get(key));
+  });
+
   const values = rows.flatMap((row, index) => {
     const interval = row.intervalMinutes;
     if (maintenanceStates[index]) return [];

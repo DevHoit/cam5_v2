@@ -4,27 +4,29 @@ import { portalFetch, clearPortalCache, setPortalContext } from "./lib/portal-fe
 import { pollVisible } from "./lib/visible-poll";
 
 import { createContext, useContext, useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { SensorConfiguration } from "./sensor-configuration";
 import { WideHistoryView } from "./wide-history-view";
 import { MetricRulesView } from "./metric-rules-view";
 import { AccountView } from "./account-view";
 import { DashboardView } from "./dashboard-view";
-import { AtsView } from "./ats-view";
-import { CommissioningView } from "./commissioning-view";
-import { ColdChainView } from "./cold-chain-view";
-import { ElectricalView } from "./electrical-view";
-import { EngineeringHubView } from "./engineering-hub-view";
-import { DiagnosticsView as DatabaseDiagnosticsView } from "./diagnostics-view";
-import { GatewayProvisioningView } from "./gateway-provisioning-view";
 import { GenericTrendsView } from "./generic-trends-view";
 import { Pagination, useClientPagination } from "./pagination";
-import { NotificationsView as DatabaseNotificationsView } from "./notifications-view";
-import { OrganizationAdminView } from "./organization-admin-view";
 import { OperationsView } from "./operations-view";
-import { ReportsView as DatabaseReportsView } from "./reports-view";
-import { SettingsView as DatabaseSettingsView } from "./settings-view";
 import { TrendsView } from "./trends-view";
 import { UniversalAssetOverview } from "./universal-asset-overview";
+
+const ElectricalView = dynamic(() => import("./electrical-view").then((mod) => mod.ElectricalView));
+const AtsView = dynamic(() => import("./ats-view").then((mod) => mod.AtsView));
+const ColdChainView = dynamic(() => import("./cold-chain-view").then((mod) => mod.ColdChainView));
+const DatabaseReportsView = dynamic(() => import("./reports-view").then((mod) => mod.ReportsView));
+const DatabaseDiagnosticsView = dynamic(() => import("./diagnostics-view").then((mod) => mod.DiagnosticsView));
+const GatewayProvisioningView = dynamic(() => import("./gateway-provisioning-view").then((mod) => mod.GatewayProvisioningView));
+const OrganizationAdminView = dynamic(() => import("./organization-admin-view").then((mod) => mod.OrganizationAdminView));
+const CommissioningView = dynamic(() => import("./commissioning-view").then((mod) => mod.CommissioningView));
+const EngineeringHubView = dynamic(() => import("./engineering-hub-view").then((mod) => mod.EngineeringHubView));
+const DatabaseSettingsView = dynamic(() => import("./settings-view").then((mod) => mod.SettingsView));
+const DatabaseNotificationsView = dynamic(() => import("./notifications-view").then((mod) => mod.NotificationsView));
 import {
   IconActivity as Activity,
   IconAdjustmentsHorizontal as AdjustmentsHorizontal,
