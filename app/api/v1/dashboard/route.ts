@@ -170,7 +170,11 @@ export async function GET(request: NextRequest) {
       .filter((asset) => asset.score > 0)
       .sort((left, right) => right.score - left.score)
       .slice(0, 8)
-      .map(({ score: _score, ...asset }) => asset);
+      .map((asset) => {
+        const item: Omit<typeof asset, "score"> & { score?: number } = { ...asset };
+        delete item.score;
+        return item;
+      });
 
     return Response.json({
       generatedAt: now.toISOString(),
@@ -188,6 +192,8 @@ export async function GET(request: NextRequest) {
         unhealthyDevices,
         activeMaintenance,
         scheduledMaintenance,
+        onCallCovered,
+        onCallIssues,
       },
       sites: sitesSummary,
       priorityAssets,

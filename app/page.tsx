@@ -28,7 +28,6 @@ import { UniversalAssetOverview } from "./universal-asset-overview";
 import {
   IconActivity as Activity,
   IconAdjustmentsHorizontal as AdjustmentsHorizontal,
-  IconArrowsExchange as Transfer,
   IconAlertTriangle as AlertTriangle,
   IconBellRinging as BellRing,
   IconBolt as Zap,
@@ -47,12 +46,10 @@ import {
   IconEye as Eye,
   IconEyeOff as EyeOff,
   IconFileReport as FileReport,
-  IconHistory as History,
   IconHierarchy3 as Hierarchy,
   IconKey as Key,
   IconLayoutDashboard as LayoutDashboard,
   IconMail as Mail,
-  IconMapPin as MapPin,
   IconMenu2 as Menu,
   IconLogout as LogOut,
   IconPencil as Pencil,
@@ -1315,7 +1312,6 @@ function OperationalHierarchyView({
   loading,
   permissions,
   onReload,
-  onSwitchSite,
   onOpenAsset,
 }: {
   hierarchy: PortalHierarchy | null;
@@ -1476,7 +1472,6 @@ function OperationalHierarchyView({
   if (!hierarchy) return <section className="panel permission-state"><span><AlertTriangle size={26} /></span><div><span className="eyebrow">Estructura no disponible</span><h2>No fue posible consultar la organización</h2><p>Vuelve a intentarlo. Si el problema continúa, revisa el estado del servicio.</p></div></section>;
 
   const activeSite = hierarchy.sites.find((site) => site.id === hierarchy.active.siteId);
-  const activeGateway = hierarchy.gateways.find((gateway) => gateway.active);
   const siteGateways = hierarchy.gateways;
   const siteControllers = hierarchy.controllers;
   const onlineGateways = siteGateways.filter((gateway) => gateway.active && gateway.state === "online").length;

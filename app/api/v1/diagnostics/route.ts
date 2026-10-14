@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { and, asc, count, desc, eq, gte, sql } from "drizzle-orm";
 import type { Cam5Database } from "../../../../db/index";
-import { assets, auditLogs, deviceMetrics, deviceModels, devices, gateways, latestMetricReadings, metricReadings, telemetryBatches, userAssetScopes } from "../../../../db/schema";
+import { assets, auditLogs, deviceMetrics, deviceModels, devices, gateways, latestMetricReadings, telemetryBatches, userAssetScopes } from "../../../../db/schema";
 import { apiErrorResponse, ApiError, parsePage, requestMetadata, requireApiSession } from "../_lib/auth";
 
 export const dynamic = "force-dynamic";
