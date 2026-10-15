@@ -77,3 +77,15 @@ Integración publicada en `feature/hoit-core-v1`, commit `1e7abb1780cf41a618997f
 Preview: https://cam5v2-git-feature-hoit-core-v1-hoit1.vercel.app/
 
 Pendientes antes de producción: resolver las cuatro pruebas históricas obsoletas, completar validación móvil y perfiles de usuario, y validar operación con datos de gateway reales. SSE sigue aplazado.
+
+
+## Actualización: título y rango de tendencias
+
+Se aplicaron las dos correcciones aprobadas posteriormente:
+
+- Título y prueba del HTML generado: `HoitLive Core · Industrial IoT Platform`.
+- El cálculo de la ventana de tendencias se extrajo a `app/lib/trend-range.ts`, utilizado por la navegación real desde histórico y alarmas.
+- La prueba ejecuta el cálculo con hora fija y verifica rangos pasados, final futuro, rango completamente futuro, rango invertido y límite igual a la hora actual. En todos los casos, el final no supera la hora actual y el inicio queda al menos un minuto antes del final.
+- La comprobación del estilo de umbrales conserva su prueba independiente.
+- Compilación con Node 22 y ESLint de los archivos modificados: aprobados.
+- Suite histórica: 9 pruebas aprobadas y 2 fallos pendientes vinculados al archivo retirado `app/cam5-engineering.tsx`. Los fallos de título y rango ya están resueltos.

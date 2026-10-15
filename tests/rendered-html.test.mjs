@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { normalizeTrendRange } from "../app/lib/trend-range.ts";
 
 async function render() {
   const html = await readFile(
@@ -20,7 +21,7 @@ test("server-renders the protected HoitLive Core access gate", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /<title>HoitLive Core \| Monitoreo de condición eléctrica<\/title>/i);
+  assert.match(html, /<title>HoitLive Core · Industrial IoT Platform<\/title>/i);
   assert.match(html, /HoitLive Core/);
   assert.match(html, /Validando tu sesión/);
   assert.match(html, /Estamos comprobando tus credenciales de acceso/);
@@ -39,14 +40,26 @@ test("keeps first-access users outside the portal until a fresh login", async ()
   assert.doesNotMatch(requiredChangeApi, /resolvePortalSession/);
 });
 
-test("keeps history-to-trend ranges out of the future", async () => {
-  const [page, trends] = await Promise.all([
-    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../app/trends-view.tsx", import.meta.url), "utf8"),
-  ]);
+test("keeps history-to-trend ranges out of the future", (t) => {
+  const now = new Date("2026-10-15T12:00:00.000Z").getTime();
+  t.mock.timers.enable({ apis: ["Date"], now });
+  const cases = [
+    ["past", "2026-10-14T10:00:00.000Z", "2026-10-14T11:00:00.000Z", "2026-10-14T10:00:00.000Z", "2026-10-14T11:00:00.000Z"],
+    ["future end", "2026-10-15T10:00:00.000Z", "2026-10-16T11:00:00.000Z", "2026-10-15T10:00:00.000Z", "2026-10-15T12:00:00.000Z"],
+    ["entirely future", "2026-10-16T10:00:00.000Z", "2026-10-16T11:00:00.000Z", "2026-10-15T11:59:00.000Z", "2026-10-15T12:00:00.000Z"],
+    ["inverted", "2026-10-14T12:00:00.000Z", "2026-10-14T11:00:00.000Z", "2026-10-14T10:59:00.000Z", "2026-10-14T11:00:00.000Z"],
+    ["current boundary", "2026-10-15T12:00:00.000Z", "2026-10-15T12:00:00.000Z", "2026-10-15T11:59:00.000Z", "2026-10-15T12:00:00.000Z"],
+  ];
+  for (const [name, from, to, expectedFrom, expectedTo] of cases) {
+    const range = normalizeTrendRange(from, to);
+    assert.deepEqual(range, { from: expectedFrom, to: expectedTo }, name);
+    assert.ok(new Date(range.to).getTime() <= now, `${name}: end exceeds now`);
+    assert.ok(new Date(range.from).getTime() <= new Date(range.to).getTime() - 60_000, `${name}: minimum one-minute window`);
+  }
+});
 
-  assert.match(page, /new Date\(Math\.min\(Date\.now\(\), new Date\(toIso\)\.getTime\(\)\)\)\.toISOString\(\)/);
-  assert.match(page, /const toTime = Math\.min\(Date\.now\(\), new Date\(to\)\.getTime\(\)\)/);
+test("keeps trend thresholds outside chart text", async () => {
+  const trends = await readFile(new URL("../app/trends-view.tsx", import.meta.url), "utf8");
   assert.doesNotMatch(trends, /<text[^>]*>Advertencia|<text[^>]*>Crítico/);
   assert.match(trends, /trend-threshold-label/);
 });

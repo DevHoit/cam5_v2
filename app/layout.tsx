@@ -16,7 +16,7 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "HoitLive Core | Industrial IoT Platform",
+  title: "HoitLive Core · Industrial IoT Platform",
   description:
     "Industrial IoT Platform para supervisión de activos, gateways, telemetría, alarmas y operación.",
 };

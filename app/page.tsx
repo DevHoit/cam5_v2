@@ -2,6 +2,7 @@
 
 import { portalFetch, clearPortalCache, setPortalContext } from "./lib/portal-fetch";
 import { pollVisible } from "./lib/visible-poll";
+import { normalizeTrendRange } from "./lib/trend-range";
 
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
@@ -2191,9 +2192,7 @@ export default function Home() {
   };
   const openChannelTrend = (id: string) => { setTrendWindow(null); setPeriod("24 h"); setTrendSensorId(id); navigate("trends", { channel: id }); };
   const openTrendRange = (id: string, from: string, to: string) => {
-    const fromTime = new Date(from).getTime();
-    const toTime = Math.min(new Date().getTime(), new Date(to).getTime());
-    const range = { from: new Date(Math.min(fromTime, toTime - 60_000)).toISOString(), to: new Date(toTime).toISOString() };
+    const range = normalizeTrendRange(from, to);
     setTrendSensorId(id);
     setTrendWindow(range);
     setPeriod("Personalizado");
