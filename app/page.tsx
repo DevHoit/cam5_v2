@@ -800,10 +800,12 @@ function CabinetView({ onOpenTrend }: { onOpenTrend: (id: string) => void }) {
   );
 }
 
-function AlarmsView({ assetId, permissions, onSummaryChange, onOpenTrend, onOpenAsset }: { assetId: string; permissions: string[]; onSummaryChange: (summary: { critical: number; warning: number }) => void; onOpenTrend: (sourceKey: string, openedAt: string) => void; onOpenAsset: (assetId: string) => void }) {
+function AlarmsView({ assetId, siteAssets, permissions, onSummaryChange, onOpenTrend, onOpenAsset }: { assetId: string; siteAssets?: Array<{ id: string; code: string; name: string }>; permissions: string[]; onSummaryChange: (summary: { critical: number; warning: number }) => void; onOpenTrend: (sourceKey: string, openedAt: string) => void; onOpenAsset: (assetId: string) => void }) {
   const notify = useFeedback();
   const confirm = useConfirm();
   const [tab, setTab] = useState<"events" | "rules">("events");
+  const [prevAssetId, setPrevAssetId] = useState<string>(assetId);
+  const [selectedAssetId, setSelectedAssetId] = useState<string>(assetId);
   const [query, setQuery] = useState("");
   const [severity, setSeverity] = useState<"all" | PortalAlarm["severity"]>("all");
   const [workflowStatus, setWorkflowStatus] = useState<"all" | AlarmWorkflowStatus>("all");
@@ -828,12 +830,17 @@ function AlarmsView({ assetId, permissions, onSummaryChange, onOpenTrend, onOpen
   const canClose = permissions.includes("alarms.close");
   const canConfigure = permissions.includes("settings.write");
 
+  if (assetId !== prevAssetId) {
+    setPrevAssetId(assetId);
+    setSelectedAssetId(assetId);
+  }
+
   const loadAlarms = async (silent = false) => {
-    if (!assetId) return;
     if (!silent) setLoading(true);
     setError("");
     try {
-      const params = new URLSearchParams({ assetId, page: String(page), pageSize: "8", status: workflowStatus, severity });
+      const params = new URLSearchParams({ page: String(page), pageSize: "8", status: workflowStatus, severity });
+      if (selectedAssetId) params.set("assetId", selectedAssetId);
       if (query.trim()) params.set("q", query.trim());
       const data = await portalRequest<PaginationMeta & { items: PortalAlarm[]; summary: { critical: number; warning: number; resolved: number; unassigned: number; mttaMinutes: number }; assignees: Array<{ id: string; name: string }> }>(`/api/v1/alarms?${params}`);
       setResult(data);
@@ -850,9 +857,8 @@ function AlarmsView({ assetId, permissions, onSummaryChange, onOpenTrend, onOpen
     const timeout = window.setTimeout(() => void loadAlarms(), 250);
     const stop = pollVisible(() => loadAlarms(true), 30_000, false);
     return () => { window.clearTimeout(timeout); stop(); };
-    // La recarga depende únicamente de los filtros visibles y del punto activo.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [assetId, page, query, severity, workflowStatus]);
+  }, [selectedAssetId, page, query, severity, workflowStatus]);
 
   useEffect(() => {
     if (!selectedId) return;
@@ -867,10 +873,10 @@ function AlarmsView({ assetId, permissions, onSummaryChange, onOpenTrend, onOpen
   }, [selectedId]);
 
   const loadRules = async () => {
-    if (!assetId) return;
     setRuleLoading(true);
     try {
-      const params = new URLSearchParams({ assetId, page: String(rulePage), pageSize: "10", enabled: ruleEnabled });
+      const params = new URLSearchParams({ page: String(rulePage), pageSize: "10", enabled: ruleEnabled });
+      if (selectedAssetId) params.set("assetId", selectedAssetId);
       if (ruleQuery.trim()) params.set("q", ruleQuery.trim());
       const data = await portalRequest<PaginationMeta & { items: AlarmRuleRecord[]; summary: { total: number; enabled: number; evaluating: number; critical: number } }>(`/api/v1/alarm-rules?${params}`);
       setRuleResult(data);
@@ -895,7 +901,7 @@ function AlarmsView({ assetId, permissions, onSummaryChange, onOpenTrend, onOpen
     const timeout = window.setTimeout(() => void loadRules(), 250);
     return () => window.clearTimeout(timeout);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [assetId, ruleEnabled, rulePage, ruleQuery, tab]);
+  }, [selectedAssetId, ruleEnabled, rulePage, ruleQuery, tab]);
 
   const selected = result?.items.find((alarm) => alarm.id === selectedId) ?? null;
   const alarmMetricKey = (alarm: PortalAlarm) => typeof alarm.context?.metricKey === "string" ? alarm.context.metricKey : null;
@@ -970,11 +976,6 @@ function AlarmsView({ assetId, permissions, onSummaryChange, onOpenTrend, onOpen
     }
   };
 
-  if (!assetId) return <section className="alarm-empty-state">
-    <span><BellRing size={24} /></span>
-    <div><h1>Selecciona un activo</h1><p>El Centro de alertas muestra eventos, responsables y trazabilidad dentro del activo seleccionado.</p></div>
-  </section>;
-
   const activeCount = (result?.summary.critical ?? 0) + (result?.summary.warning ?? 0);
 
   return <div className="alarm-center-v4">
@@ -1001,6 +1002,18 @@ function AlarmsView({ assetId, permissions, onSummaryChange, onOpenTrend, onOpen
         <article className="panel alarm-feed-panel">
           <div className="alarm-filterbar">
             <label className="search-field"><Search size={16} /><input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="Buscar evento, activo, dispositivo o métrica…" /></label>
+            {siteAssets && siteAssets.length > 0 && (
+              <label className="status-filter alarm-status-filter">
+                <span>Activo</span>
+                <select value={selectedAssetId} onChange={(event) => { setSelectedAssetId(event.target.value); setPage(1); }}>
+                  <option value="">Todos los activos del sitio</option>
+                  {siteAssets.map((asset) => (
+                    <option key={asset.id} value={asset.id}>{asset.name}</option>
+                  ))}
+                </select>
+                <ChevronDown size={12} />
+              </label>
+            )}
             <label className="status-filter alarm-status-filter"><span>Estado</span><select value={workflowStatus} onChange={(event) => { setWorkflowStatus(event.target.value as typeof workflowStatus); setPage(1); }}><option value="all">Todos</option><option value="open">Abiertas</option><option value="acknowledged">Reconocidas</option><option value="resolved">Atendidas</option><option value="closed">Cerradas</option></select><ChevronDown size={12} /></label>
             <div className="alarm-quick-filters">
               <button className={workflowStatus === "open" ? "active" : ""} onClick={() => { setWorkflowStatus(workflowStatus === "open" ? "all" : "open"); setPage(1); }}>Sin reconocer</button>
@@ -1066,7 +1079,7 @@ function AlarmsView({ assetId, permissions, onSummaryChange, onOpenTrend, onOpen
         </aside>
       </section>
     </> :
-    <><MetricRulesView key={assetId} assetId={assetId} canConfigure={canConfigure} />
+    <><MetricRulesView key={selectedAssetId || "site-wide"} assetId={selectedAssetId} canConfigure={canConfigure} />
     <details><summary>Reglas de canales anteriores ({ruleResult?.summary.total ?? 0})</summary>
     <article className="panel alarm-rules-panel alarm-rules-v3">
       <div className="alarm-rule-summary">
@@ -2432,7 +2445,7 @@ export default function Home() {
             {view === "trends" && activePoint && activePoint.type !== "switchgear_cabinet"
               ? <GenericTrendsView assetId={activePoint.id} initialMetricKey={trendSensorId} canExport={sessionUser.permissions.includes("history.export")} notify={notify} />
               : view === "trends" && <TrendsView assetId={activePoint?.id ?? ""} channels={sensors.map((sensor) => ({ id: sensor.id, label: sensor.label, zone: sensor.zone, unit: sensor.unit, state: sensor.state, enabled: sensor.enabled }))} period={period} setPeriod={setPeriod} selectedId={resolvedTrendSensorId} onSelectChannel={selectTrendChannel} onBackToMap={() => navigate("cabinet")} rangeWindow={trendWindow} setRangeWindow={setTrendWindow} canExport={sessionUser.permissions.includes("history.export")} notify={notify} />}
-            {view === "alarms" && <AlarmsView assetId={activePoint?.id ?? ""} permissions={sessionUser.permissions} onSummaryChange={setAlarmSummary} onOpenTrend={openAlarmTrend} onOpenAsset={(id) => { setActivePointId(id); navigate("overview"); }} />}
+            {view === "alarms" && <AlarmsView assetId={activePoint?.id ?? ""} siteAssets={hierarchy?.points.filter((point) => point.active)} permissions={sessionUser.permissions} onSummaryChange={setAlarmSummary} onOpenTrend={openAlarmTrend} onOpenAsset={(id) => { setActivePointId(id); navigate("overview"); }} />}
             {view === "history" && <HistoryView key={activePoint?.id ?? ""} assetId={activePoint?.id ?? ""} assetName={activePoint?.name ?? ""} siteName={sessionUser.siteName} canExport={sessionUser.permissions.includes("history.export")} canReadAlarms={sessionUser.permissions.includes("alarms.read")} canAudit={sessionUser.permissions.includes("audit.read")} onOpenTrend={openTrendRange} />}
             {(view === "settings" || view === "assets") && activePoint && sessionUser.permissions.includes("settings.write") && <SensorConfiguration key={activePoint.id} assetId={activePoint.id} />}
             {view === "assets" && <OperationalHierarchyView hierarchy={hierarchy} loading={hierarchyLoading} permissions={sessionUser.permissions} onReload={loadHierarchy} onSwitchSite={switchSite} onOpenAsset={openDashboardAsset} />}
