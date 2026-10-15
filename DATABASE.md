@@ -58,7 +58,7 @@ Una lectura se considera atrasada después de 30 segundos. El perfil guarda dato
 Copiar las variables necesarias a un archivo `.env.local` o configurarlas en el entorno del backend. Los comandos de base cargan automáticamente `.env.local` y, como alternativa, `.env`:
 
 ```text
-DATABASE_URL=postgresql://usuario:clave@servidor:5432/hoit-core-staging
+DATABASE_URL=postgresql://usuario:clave@servidor:5432/cam5
 CAM5_ADMIN_EMAIL=administrador@empresa.cl
 CAM5_ADMIN_NAME=Nombre del administrador
 CAM5_ADMIN_PASSWORD=una-clave-segura-de-al-menos-10-caracteres
