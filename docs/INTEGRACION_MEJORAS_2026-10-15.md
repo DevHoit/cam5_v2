@@ -52,11 +52,28 @@ Comparación de los scripts iniciales en el HTML generado de `/`, con builds loc
 
 | Medida | Base de destino | Integración |
 | --- | ---: | ---: |
-| JavaScript sin comprimir | 1.086.721 bytes | 871.492 bytes |
-| JavaScript comprimido con gzip | 285.902 bytes | 243.084 bytes |
+| JavaScript sin comprimir | 1.086.721 bytes | 871.566 bytes |
+| JavaScript comprimido con gzip | 285.902 bytes | 243.104 bytes |
 
 Reducción aproximada: 19,8% sin comprimir y 15,0% con gzip. Esta medición corresponde a tamaño de descarga, no a una medición de latencia de navegación con sesión.
 
 ## Verificación posterior
 
-El resultado del despliegue y la revisión de acceso al Preview se registrarán al finalizar la integración. La prueba visual de módulos autenticados necesita una sesión iniciada; no se deben presentar las pruebas locales como una revisión visual completa.
+Integración publicada en `feature/hoit-core-v1`, commit `1e7abb1780cf41a618997fbdb246a3bef2de651b`.
+
+- Vercel: despliegue `dpl_71uppiQnsSEnCi9DJdxtRytxadgX`, estado READY, alias de la rama actualizado.
+- Build remoto: «Migraciones HoitLive Core aplicadas correctamente». No se modificaron privilegios de plataforma.
+- Health check: HTTP 200, `status=ok`, `database=ok`, entorno `preview` y revisión exacta `1e7abb1780cf41a618997fbdb246a3bef2de651b`.
+- Endpoint SSE excluido: HTTP 404 confirmado.
+- Sesión iniciada mediante formulario seguro; ninguna credencial se incluyó en el código o este documento.
+- Dashboard: 3 críticas sin reconocer, coincidentes con el resumen y la búsqueda del sitio de laboratorio.
+- Buscador: muestra alertas de tres activos diferentes. Seleccionar la alerta de PM5560 abre su identificador exacto y selecciona Banco de pruebas PM5560.
+- Entrada normal al Centro de alertas: «Todos los activos del sitio» predeterminado y 7 eventos visibles de varios activos.
+- Filtro «Sin reconocer»: 3 eventos abiertos de tres activos distintos.
+- Ctrl+K abre el modal; Escape lo cierra y devuelve el foco al botón anterior.
+- Menú Administración: colapsa y refleja el estado accesible.
+- Se inspeccionó visualmente el Centro de alertas desplegado. Esta revisión cubre los flujos modificados; no reemplaza una revisión completa de todos los módulos, perfiles y tamaños móviles.
+
+Preview: https://cam5v2-git-feature-hoit-core-v1-hoit1.vercel.app/
+
+Pendientes antes de producción: resolver las cuatro pruebas históricas obsoletas, completar validación móvil y perfiles de usuario, y validar operación con datos de gateway reales. SSE sigue aplazado.
