@@ -1002,6 +1002,9 @@ function AlarmsView({ assetId, permissions, onSummaryChange, onOpenTrend, onOpen
           <div className="alarm-filterbar">
             <label className="search-field"><Search size={16} /><input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="Buscar evento, activo, dispositivo o métrica…" /></label>
             <label className="status-filter alarm-status-filter"><span>Estado</span><select value={workflowStatus} onChange={(event) => { setWorkflowStatus(event.target.value as typeof workflowStatus); setPage(1); }}><option value="all">Todos</option><option value="open">Abiertas</option><option value="acknowledged">Reconocidas</option><option value="resolved">Atendidas</option><option value="closed">Cerradas</option></select><ChevronDown size={12} /></label>
+            <div className="alarm-quick-filters">
+              <button className={workflowStatus === "open" ? "active" : ""} onClick={() => { setWorkflowStatus(workflowStatus === "open" ? "all" : "open"); setPage(1); }}>Sin reconocer</button>
+            </div>
             <div className="alarm-severity-filter">{(["all","critical","warning","normal"] as const).map((item) => <button key={item} className={severity === item ? "active" : ""} onClick={() => { setSeverity(item); setPage(1); }}>{item === "all" ? "Todas" : item === "critical" ? "Críticas" : item === "warning" ? "Advertencias" : "Info"}</button>)}</div>
           </div>
 
@@ -1979,8 +1982,31 @@ export default function Home() {
   const [notice, setNotice] = useState<{ id: number; message: string; tone: NoticeTone } | null>(null);
   const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null);
   const [visibilityOpen, setVisibilityOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+
+  const toggleGroupCollapse = (groupLabel: string) => {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupLabel)) next.delete(groupLabel);
+      else next.add(groupLabel);
+      return next;
+    });
+  };
   const noticeTimer = useRef<number | null>(null);
   const noticeSequence = useRef(1);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setSearchOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   const notify = (message: string, tone: NoticeTone = "success") => {
     if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
@@ -2295,34 +2321,68 @@ export default function Home() {
         </div>
 
         <nav className="sidebar-nav" aria-label="Navegación principal">
-          {navGroups.map((group) => (
-            <div className="nav-group" key={group.label}>
-              <div className="nav-group-heading"><span>{group.index}</span><p>{group.label}</p><i /></div>
-              <div className="nav-items">
-                {group.items.filter((item) => canSeeNavItem(item.id, sessionUser)).map((item) => {
-                  const Icon = item.icon;
-                  const badgeCount = item.id === "alarms" ? alarmSummary.critical + alarmSummary.warning : null;
-                  return (
-                    <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)} aria-current={view === item.id ? "page" : undefined}>
-                      <span className="nav-item-icon"><Icon size={19} strokeWidth={1.8} /></span>
-                      <span className="nav-item-copy"><strong>{item.label}</strong><small>{item.description}</small></span>
-                      {badgeCount !== null && badgeCount > 0 ? <b>{badgeCount}</b> : <ChevronRight className="nav-chevron" size={16} />}
-                    </button>
-                  );
-                })}
+          {navGroups.map((group) => {
+            const isCollapsed = collapsedGroups.has(group.label);
+            return (
+              <div className="nav-group" key={group.label}>
+                <button type="button" className="nav-group-heading nav-group-toggle" onClick={() => toggleGroupCollapse(group.label)}>
+                  <span>{group.index}</span>
+                  <p>{group.label}</p>
+                  <i />
+                  <ChevronDown size={14} style={{ transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)", transition: "0.2s ease" }} />
+                </button>
+                {!isCollapsed && <div className="nav-items">
+                  {group.items.filter((item) => canSeeNavItem(item.id, sessionUser)).map((item) => {
+                    const Icon = item.icon;
+                    const badgeCount = item.id === "alarms" ? alarmSummary.critical + alarmSummary.warning : null;
+                    return (
+                      <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)} aria-current={view === item.id ? "page" : undefined}>
+                        <span className="nav-item-icon"><Icon size={19} strokeWidth={1.8} /></span>
+                        <span className="nav-item-copy"><strong>{item.label}</strong><small>{item.description}</small></span>
+                        {badgeCount !== null && badgeCount > 0 ? <b>{badgeCount}</b> : <ChevronRight className="nav-chevron" size={16} />}
+                      </button>
+                    );
+                  })}
+                </div>}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </nav>
       </aside>
 
       <main className="main-shell">
         <header className="topbar">
-          <div className="topbar-left"><button className="menu-button" aria-label="Abrir navegación" onClick={() => setMenuOpen(true)}><Menu size={22} /></button><span className="mobile-brand"><Zap size={18} fill="currentColor" /></span><div className="operational-context"><span className="context-icon"><Building2 size={16} /></span><label><span>Cliente</span><select value={sessionUser.clientId} onChange={(event) => void switchClient(event.target.value)} disabled={contextSwitching} aria-label="Cliente activo">{hierarchy?.clients.filter((client) => client.active).map((client) => <option key={client.id} value={client.id}>{client.name}</option>) ?? <option value={sessionUser.clientId}>{sessionUser.clientName}</option>}</select></label>{view !== "dashboard" && <><i className="context-separator" aria-hidden="true" /><label><span>Sitio</span><select value={sessionUser.siteId} onChange={(event) => void switchSite(event.target.value)} disabled={contextSwitching} aria-label="Sitio activo">{(hierarchy?.sites ?? sessionUser.sites).filter((site) => site.clientId === sessionUser.clientId && (!("active" in site) || site.active)).map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}</select></label>{view !== "operations" && <><i className="context-separator" aria-hidden="true" /><label><span>Activo</span><select value={activePoint?.id ?? ""} onChange={(event) => { setTelemetryState({ status: "loading", data: null }); setSystemMode("loading"); setActivePointId(event.target.value); }} disabled={contextSwitching} aria-label="Activo seleccionado"><option value="">Sin activo seleccionado</option>{hierarchy?.points.filter((point) => point.active).map((point) => <option key={point.id} value={point.id}>{point.name}</option>)}</select></label></>}</>}</div></div>
-          <div className="topbar-right"><button className="authenticated-role" onClick={() => navigate("account")} aria-label="Abrir mi cuenta"><ShieldCheck size={16} /><strong>{sessionUser.roleName}</strong></button><button className="topbar-logout" onClick={logout} aria-label="Cerrar sesión"><LogOut size={18} /></button></div>
+          <div className="topbar-left">
+            <button className="menu-button" aria-label="Abrir navegación" onClick={() => setMenuOpen(true)}><Menu size={22} /></button>
+            <span className="mobile-brand"><Zap size={18} fill="currentColor" /></span>
+            <div className="operational-context">
+              <span className="context-icon"><Building2 size={16} /></span>
+              <label><span>Cliente</span><select value={sessionUser.clientId} onChange={(event) => void switchClient(event.target.value)} disabled={contextSwitching} aria-label="Cliente activo">{hierarchy?.clients.filter((client) => client.active).map((client) => <option key={client.id} value={client.id}>{client.name}</option>) ?? <option value={sessionUser.clientId}>{sessionUser.clientName}</option>}</select></label>
+              {view !== "dashboard" && <><i className="context-separator" aria-hidden="true" /><label><span>Sitio</span><select value={sessionUser.siteId} onChange={(event) => void switchSite(event.target.value)} disabled={contextSwitching} aria-label="Sitio activo">{(hierarchy?.sites ?? sessionUser.sites).filter((site) => site.clientId === sessionUser.clientId && (!("active" in site) || site.active)).map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}</select></label>{view !== "operations" && <><i className="context-separator" aria-hidden="true" /><label><span>Activo</span><select value={activePoint?.id ?? ""} onChange={(event) => { setTelemetryState({ status: "loading", data: null }); setSystemMode("loading"); setActivePointId(event.target.value); }} disabled={contextSwitching} aria-label="Activo seleccionado"><option value="">Sin activo seleccionado</option>{hierarchy?.points.filter((point) => point.active).map((point) => <option key={point.id} value={point.id}>{point.name}</option>)}</select></label></>}</>}
+            </div>
+          </div>
+          <div className="topbar-right">
+            <button className="secondary-button global-search-trigger" onClick={() => setSearchOpen(true)} aria-label="Buscar (Cmd+K)">
+              <Search size={15} />
+              <span>Buscar…</span>
+              <kbd>⌘K</kbd>
+            </button>
+            <button className="authenticated-role" onClick={() => navigate("account")} aria-label="Abrir mi cuenta"><ShieldCheck size={16} /><strong>{sessionUser.roleName}</strong></button>
+            <button className="topbar-logout" onClick={logout} aria-label="Cerrar sesión"><LogOut size={18} /></button>
+          </div>
         </header>
 
         <div className="content-scroll">
+          {alarmSummary.critical > 0 && view !== "alarms" && (
+            <div className="critical-incident-banner" role="alert">
+              <AlertTriangle size={20} />
+              <div>
+                <strong>Atención: {alarmSummary.critical} alarma{alarmSummary.critical === 1 ? "" : "s"} crítica{alarmSummary.critical === 1 ? "" : "s"} activa{alarmSummary.critical === 1 ? "" : "s"}</strong>
+                <span>Requieren revisión y reconocimiento en el Centro de Alertas.</span>
+              </div>
+              <button className="primary-button" onClick={() => navigate("alarms")}>Atender Alertas</button>
+            </div>
+          )}
           {contextSwitching ? <section className="panel" role="status" aria-live="polite" style={{ margin: 24, padding: 24 }}><Refresh className="spin" size={20} /> Cargando el sitio seleccionado…</section> : <div className="page-content" key={`context:${sessionUser.clientId}:${sessionUser.siteId}:${activePointId}`}>
             {view === "cabinet" && activePoint && (!["electrical_point", "ats", "cold_room"].includes(activePoint.type)) && systemMode !== "normal" && <section className={`operational-banner banner-${systemMode}`} role={systemMode === "offline" || systemMode === "error" ? "alert" : "status"} aria-live="polite"><span>{systemMode === "offline" ? <PlugConnected size={19} /> : systemMode === "loading" ? <Refresh className="spin" size={19} /> : systemMode === "error" ? <AlertTriangle size={19} /> : <Clock3 size={19} />}</span><div><strong>{systemMessage.title}</strong><p>{systemMessage.detail}</p></div>{systemMode !== "loading" && <button onClick={() => { setTelemetryState({ status: "loading", data: null }); setSystemMode("loading"); setTelemetryRefreshKey((current) => current + 1); notify("Consultando nuevamente la telemetría.", "info"); }}><Refresh size={15} /> Reintentar</button>}</section>}
             {(["settings", "diagnostics", "commissioning", "provisioning"] as View[]).includes(view) && <nav className="engineering-context-nav engineering-context-nav-v5" aria-label="Herramientas de ingeniería">
@@ -2394,6 +2454,67 @@ export default function Home() {
           </div>}
         </div>
       </main>
+      {searchOpen && <div className="channel-visibility-backdrop" role="presentation" onMouseDown={() => setSearchOpen(false)}>
+        <section className="channel-visibility-sheet global-search-dialog" role="dialog" aria-modal="true" aria-label="Búsqueda global" onMouseDown={(e) => e.stopPropagation()}>
+          <header className="global-search-header">
+            <Search size={20} />
+            <input
+              autoFocus
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Buscar activo, vista o alerta… (Esc para cerrar)"
+            />
+            <button onClick={() => setSearchOpen(false)} aria-label="Cerrar"><X size={18} /></button>
+          </header>
+          <div className="global-search-results">
+            {(() => {
+              const queryLower = searchQuery.toLowerCase().trim();
+              const points = (hierarchy?.points ?? []).filter((p) => p.active && (p.name.toLowerCase().includes(queryLower) || p.code.toLowerCase().includes(queryLower)));
+              const navItems = Object.entries(viewTitles).filter(([vKey, meta]) => canSeeNavItem(vKey as View, sessionUser) && (meta.title.toLowerCase().includes(queryLower) || meta.description.toLowerCase().includes(queryLower)));
+              const criticals = alarmPreview.filter((a) => a.severity === "critical" && (a.title.toLowerCase().includes(queryLower) || a.code.toLowerCase().includes(queryLower)));
+
+              return (
+                <>
+                  {points.length > 0 && <div className="search-group">
+                    <span className="search-group-title">Activos</span>
+                    {points.map((p) => (
+                      <button key={p.id} onClick={() => { setActivePointId(p.id); navigate("overview"); setSearchOpen(false); setSearchQuery(""); }}>
+                        <CircuitBoard size={16} />
+                        <div><strong>{p.name}</strong><small>{p.code} · {p.area || "Sin área"}</small></div>
+                      </button>
+                    ))}
+                  </div>}
+
+                  {criticals.length > 0 && <div className="search-group">
+                    <span className="search-group-title">Alertas Críticas</span>
+                    {criticals.map((a) => (
+                      <button key={a.id} onClick={() => { navigate("alarms"); setSearchOpen(false); setSearchQuery(""); }}>
+                        <AlertTriangle size={16} color="#ef4444" />
+                        <div><strong>{a.title}</strong><small>{a.code} · {a.assetName}</small></div>
+                      </button>
+                    ))}
+                  </div>}
+
+                  {navItems.length > 0 && <div className="search-group">
+                    <span className="search-group-title">Módulos</span>
+                    {navItems.map(([vKey, meta]) => (
+                      <button key={vKey} onClick={() => { navigate(vKey as View); setSearchOpen(false); setSearchQuery(""); }}>
+                        <LayoutDashboard size={16} />
+                        <div><strong>{meta.title}</strong><small>{meta.description}</small></div>
+                      </button>
+                    ))}
+                  </div>}
+
+                  {points.length === 0 && criticals.length === 0 && navItems.length === 0 && (
+                    <div className="visibility-empty"><Search size={20} /><strong>Sin resultados</strong><span>No encontramos nada que coincida con tu búsqueda.</span></div>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+        </section>
+      </div>}
       {activePoint && <ChannelVisibilityDialog open={visibilityOpen} assetId={activePoint.id} sensors={sensors} onClose={() => setVisibilityOpen(false)} onSaved={() => setTelemetryRefreshKey((current) => current + 1)} />}
       {notice && <div className={`portal-notice notice-${notice.tone}`} role="status" aria-live="polite" key={notice.id}><CheckCircle2 size={18} /><span>{notice.message}</span><button onClick={() => setNotice(null)} aria-label="Cerrar notificación"><X size={16} /></button></div>}
       {confirmRequest && <div className="confirm-backdrop" role="presentation" onMouseDown={() => setConfirmRequest(null)}><section className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-title" onMouseDown={(event) => event.stopPropagation()}><span className={`confirm-icon ${confirmRequest.tone === "danger" ? "danger" : ""}`}>{confirmRequest.tone === "danger" ? <AlertTriangle size={22} /> : <ShieldCheck size={22} />}</span><div><span className="eyebrow">Confirmación requerida</span><h2 id="confirm-title">{confirmRequest.title}</h2><p>{confirmRequest.detail}</p></div><div className="confirm-actions"><button className="secondary-button" onClick={() => setConfirmRequest(null)}>Cancelar</button><button className={confirmRequest.tone === "danger" ? "danger-button" : "primary-button"} onClick={() => { const action = confirmRequest.onConfirm; setConfirmRequest(null); action(); }}>{confirmRequest.confirmLabel}</button></div></section></div>}
