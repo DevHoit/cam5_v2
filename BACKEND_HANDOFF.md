@@ -129,7 +129,7 @@ La carga de `config.xml`, restauración, firmware y reinicio deben ejecutarse a 
 ## Variables de entorno
 
 ```text
-DATABASE_URL=postgresql://usuario:clave@host:5432/cam5
+DATABASE_URL=postgresql://usuario:clave@host:5432/hoit-core-staging
 CAM5_ADMIN_EMAIL=administrador@empresa.cl
 CAM5_ADMIN_NAME=Nombre del administrador
 CAM5_ADMIN_PASSWORD=una-clave-segura-de-al-menos-10-caracteres
