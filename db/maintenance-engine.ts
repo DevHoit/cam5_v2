@@ -115,18 +115,19 @@ export async function batchIsMaintenanceActive(
 
   const assetIds = [...new Set(targets.map((t) => t.assetId).filter(Boolean) as string[])];
   const assetRows = assetIds.length
-    ? await db.select({ id: assets.id, areaId: assets.areaId })
+    ? await db.select({ id: assets.id, siteId: assets.siteId, areaId: assets.areaId })
       .from(assets)
       .where(or(...assetIds.map((id) => eq(assets.id, id))))
     : [];
-  const areaByAsset = new Map(assetRows.map((a) => [a.id, a.areaId]));
+  const assetsById = new Map(assetRows.map((a) => [a.id, a]));
 
   for (const t of targets) {
     const clientId = clientBySite.get(t.siteId);
-    const areaId = t.assetId ? areaByAsset.get(t.assetId) : null;
+    const asset = t.assetId ? assetsById.get(t.assetId) : null;
+    const areaId = asset?.areaId;
     const key = `${t.siteId}:${t.assetId ?? ""}:${t.deviceId ?? ""}`;
 
-    if (!clientId) {
+    if (!clientId || (t.assetId && (!asset || asset.siteId !== t.siteId))) {
       result.set(key, false);
       continue;
     }

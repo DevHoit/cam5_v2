@@ -29,6 +29,8 @@ export async function GET(request: NextRequest) {
     const severity = request.nextUrl.searchParams.get("severity") || "all";
     const kind = request.nextUrl.searchParams.get("kind") || "all";
     const assetId = request.nextUrl.searchParams.get("assetId") || "";
+    const alarmId = request.nextUrl.searchParams.get("alarmId") || "";
+    if (alarmId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(alarmId)) throw new ApiError(400, "La alarma indicada no es válida.");
     if (status !== "all" && status !== "active" && !VALID_STATUSES.includes(status as typeof VALID_STATUSES[number])) throw new ApiError(400, "El estado indicado no es válido.");
     if (severity !== "all" && !VALID_SEVERITIES.includes(severity as typeof VALID_SEVERITIES[number])) throw new ApiError(400, "La severidad indicada no es válida.");
     if (kind !== "all" && !VALID_KINDS.includes(kind as typeof VALID_KINDS[number])) throw new ApiError(400, "El origen indicado no es válido.");
@@ -44,6 +46,7 @@ export async function GET(request: NextRequest) {
       baseFilters.push(eq(alarms.assetId, assetId));
     }
     const filters = [...baseFilters];
+    if (alarmId) filters.push(eq(alarms.id, alarmId));
     if (status === "active") filters.push(inArray(alarms.status, ["open", "acknowledged"]));
     else if (VALID_STATUSES.includes(status as typeof VALID_STATUSES[number])) filters.push(eq(alarms.status, status as typeof VALID_STATUSES[number]));
     if (VALID_SEVERITIES.includes(severity as typeof VALID_SEVERITIES[number])) filters.push(eq(alarms.severity, severity as typeof VALID_SEVERITIES[number]));
@@ -102,6 +105,7 @@ export async function GET(request: NextRequest) {
         .offset(offset),
       db.select({ total: count() }).from(alarms)
         .innerJoin(assets, eq(assets.id, alarms.assetId))
+        .leftJoin(devices, eq(devices.id, alarms.deviceId))
         .leftJoin(channels, eq(channels.id, alarms.channelId))
         .where(where),
       db.select({

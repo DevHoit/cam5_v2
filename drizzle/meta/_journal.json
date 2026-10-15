@@ -232,6 +232,13 @@
       "when": 1791386000000,
       "tag": "0032_preview_operational_scheduler",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1792036800000,
+      "tag": "0033_gateway_rate_limits",
+      "breakpoints": true
     }
   ]
 }

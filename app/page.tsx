@@ -16,17 +16,19 @@ import { OperationsView } from "./operations-view";
 import { TrendsView } from "./trends-view";
 import { UniversalAssetOverview } from "./universal-asset-overview";
 
-const ElectricalView = dynamic(() => import("./electrical-view").then((mod) => mod.ElectricalView));
-const AtsView = dynamic(() => import("./ats-view").then((mod) => mod.AtsView));
-const ColdChainView = dynamic(() => import("./cold-chain-view").then((mod) => mod.ColdChainView));
-const DatabaseReportsView = dynamic(() => import("./reports-view").then((mod) => mod.ReportsView));
-const DatabaseDiagnosticsView = dynamic(() => import("./diagnostics-view").then((mod) => mod.DiagnosticsView));
-const GatewayProvisioningView = dynamic(() => import("./gateway-provisioning-view").then((mod) => mod.GatewayProvisioningView));
-const OrganizationAdminView = dynamic(() => import("./organization-admin-view").then((mod) => mod.OrganizationAdminView));
-const CommissioningView = dynamic(() => import("./commissioning-view").then((mod) => mod.CommissioningView));
-const EngineeringHubView = dynamic(() => import("./engineering-hub-view").then((mod) => mod.EngineeringHubView));
-const DatabaseSettingsView = dynamic(() => import("./settings-view").then((mod) => mod.SettingsView));
-const DatabaseNotificationsView = dynamic(() => import("./notifications-view").then((mod) => mod.NotificationsView));
+function ModuleLoading() { return <div className="data-loading" role="status">Cargando módulo…</div>; }
+const GlobalSearch = dynamic(() => import("./global-search").then((mod) => mod.GlobalSearch), { loading: ModuleLoading });
+const ElectricalView = dynamic(() => import("./electrical-view").then((mod) => mod.ElectricalView), { loading: ModuleLoading });
+const AtsView = dynamic(() => import("./ats-view").then((mod) => mod.AtsView), { loading: ModuleLoading });
+const ColdChainView = dynamic(() => import("./cold-chain-view").then((mod) => mod.ColdChainView), { loading: ModuleLoading });
+const DatabaseReportsView = dynamic(() => import("./reports-view").then((mod) => mod.ReportsView), { loading: ModuleLoading });
+const DatabaseDiagnosticsView = dynamic(() => import("./diagnostics-view").then((mod) => mod.DiagnosticsView), { loading: ModuleLoading });
+const GatewayProvisioningView = dynamic(() => import("./gateway-provisioning-view").then((mod) => mod.GatewayProvisioningView), { loading: ModuleLoading });
+const OrganizationAdminView = dynamic(() => import("./organization-admin-view").then((mod) => mod.OrganizationAdminView), { loading: ModuleLoading });
+const CommissioningView = dynamic(() => import("./commissioning-view").then((mod) => mod.CommissioningView), { loading: ModuleLoading });
+const EngineeringHubView = dynamic(() => import("./engineering-hub-view").then((mod) => mod.EngineeringHubView), { loading: ModuleLoading });
+const DatabaseSettingsView = dynamic(() => import("./settings-view").then((mod) => mod.SettingsView), { loading: ModuleLoading });
+const DatabaseNotificationsView = dynamic(() => import("./notifications-view").then((mod) => mod.NotificationsView), { loading: ModuleLoading });
 import {
   IconActivity as Activity,
   IconAdjustmentsHorizontal as AdjustmentsHorizontal,
@@ -800,13 +802,13 @@ function CabinetView({ onOpenTrend }: { onOpenTrend: (id: string) => void }) {
   );
 }
 
-function AlarmsView({ assetId, siteAssets, permissions, onSummaryChange, onOpenTrend, onOpenAsset }: { assetId: string; siteAssets?: Array<{ id: string; code: string; name: string }>; permissions: string[]; onSummaryChange: (summary: { critical: number; warning: number }) => void; onOpenTrend: (sourceKey: string, openedAt: string) => void; onOpenAsset: (assetId: string) => void }) {
+function AlarmsView({ assetId, siteAssets, initialAlarm, permissions, onAlarmChanged, onOpenTrend, onOpenAsset }: { assetId: string; siteAssets?: Array<{ id: string; code: string; name: string }>; initialAlarm?: { id: string; code: string } | null; permissions: string[]; onAlarmChanged: () => void; onOpenTrend: (sourceKey: string, openedAt: string, assetId: string) => void; onOpenAsset: (assetId: string) => void }) {
   const notify = useFeedback();
   const confirm = useConfirm();
   const [tab, setTab] = useState<"events" | "rules">("events");
   const [prevAssetId, setPrevAssetId] = useState<string>(assetId);
-  const [selectedAssetId, setSelectedAssetId] = useState<string>(assetId);
-  const [query, setQuery] = useState("");
+  const [selectedAssetId, setSelectedAssetId] = useState<string>(initialAlarm ? assetId : "");
+  const [query, setQuery] = useState(initialAlarm?.code ?? "");
   const [severity, setSeverity] = useState<"all" | PortalAlarm["severity"]>("all");
   const [workflowStatus, setWorkflowStatus] = useState<"all" | AlarmWorkflowStatus>("all");
   const [page, setPage] = useState(1);
@@ -819,6 +821,7 @@ function AlarmsView({ assetId, siteAssets, permissions, onSummaryChange, onOpenT
   const [noteInput, setNoteInput] = useState("");
   const [busyAction, setBusyAction] = useState("");
   const closeNoteRef = useRef<HTMLInputElement>(null);
+  const alarmRequest = useRef({ version: 0 });
   const [ruleQuery, setRuleQuery] = useState("");
   const [ruleEnabled, setRuleEnabled] = useState<"all" | "true" | "false">("all");
   const [rulePage, setRulePage] = useState(1);
@@ -836,27 +839,30 @@ function AlarmsView({ assetId, siteAssets, permissions, onSummaryChange, onOpenT
   }
 
   const loadAlarms = async (silent = false) => {
+    const requestId = ++alarmRequest.current.version;
     if (!silent) setLoading(true);
     setError("");
     try {
       const params = new URLSearchParams({ page: String(page), pageSize: "8", status: workflowStatus, severity });
       if (selectedAssetId) params.set("assetId", selectedAssetId);
+      if (initialAlarm && query === initialAlarm.code) params.set("alarmId", initialAlarm.id);
       if (query.trim()) params.set("q", query.trim());
       const data = await portalRequest<PaginationMeta & { items: PortalAlarm[]; summary: { critical: number; warning: number; resolved: number; unassigned: number; mttaMinutes: number }; assignees: Array<{ id: string; name: string }> }>(`/api/v1/alarms?${params}`);
+      if (requestId !== alarmRequest.current.version) return;
       setResult(data);
-      onSummaryChange({ critical: data.summary.critical, warning: data.summary.warning });
-      setSelectedId((current) => data.items.some((item) => item.id === current) ? current : data.items[0]?.id ?? "");
+      setSelectedId((current) => data.items.some((item) => item.id === current) ? current : data.items.find((item) => item.id === initialAlarm?.id)?.id ?? data.items[0]?.id ?? "");
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "No fue posible cargar las alarmas.");
+      if (requestId === alarmRequest.current.version) setError(requestError instanceof Error ? requestError.message : "No fue posible cargar las alarmas.");
     } finally {
-      if (!silent) setLoading(false);
+      if (requestId === alarmRequest.current.version) setLoading(false);
     }
   };
 
   useEffect(() => {
+    const requestState = alarmRequest.current;
     const timeout = window.setTimeout(() => void loadAlarms(), 250);
     const stop = pollVisible(() => loadAlarms(true), 30_000, false);
-    return () => { window.clearTimeout(timeout); stop(); };
+    return () => { requestState.version++; window.clearTimeout(timeout); stop(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedAssetId, page, query, severity, workflowStatus]);
 
@@ -877,6 +883,7 @@ function AlarmsView({ assetId, siteAssets, permissions, onSummaryChange, onOpenT
     try {
       const params = new URLSearchParams({ page: String(rulePage), pageSize: "10", enabled: ruleEnabled });
       if (selectedAssetId) params.set("assetId", selectedAssetId);
+      if (initialAlarm && query === initialAlarm.code) params.set("alarmId", initialAlarm.id);
       if (ruleQuery.trim()) params.set("q", ruleQuery.trim());
       const data = await portalRequest<PaginationMeta & { items: AlarmRuleRecord[]; summary: { total: number; enabled: number; evaluating: number; critical: number } }>(`/api/v1/alarm-rules?${params}`);
       setRuleResult(data);
@@ -934,6 +941,7 @@ function AlarmsView({ assetId, siteAssets, permissions, onSummaryChange, onOpenT
       notify(action === "add_note" ? "Nota agregada a la trazabilidad." : `Alarma ${selected.code} actualizada.`);
       setNoteInput("");
       await loadAlarms(true);
+      onAlarmChanged();
       const detail = await portalRequest<{ events: PortalAlarmEvent[] }>(`/api/v1/alarms/${encodeURIComponent(selected.id)}`);
       setEvents(detail.events);
     } catch (requestError) {
@@ -1058,7 +1066,7 @@ function AlarmsView({ assetId, siteAssets, permissions, onSummaryChange, onOpenT
 
             <div className="alarm-detail-actions">
               <button onClick={() => onOpenAsset(selected.assetId)}><Eye size={14} /> Ver activo</button>
-              {alarmSourceKey(selected) && <button onClick={() => onOpenTrend(alarmSourceKey(selected)!, selected.openedAt)}><TrendingUp size={14} /> Tendencia</button>}
+              {alarmSourceKey(selected) && <button onClick={() => onOpenTrend(alarmSourceKey(selected)!, selected.openedAt, selected.assetId)}><TrendingUp size={14} /> Tendencia</button>}
               {selected.status === "open" && canOperate && <button className="primary" disabled={busyAction !== ""} onClick={() => void updateAlarm("acknowledge")}><CheckCircle2 size={14} /> Reconocer</button>}
               {selected.status !== "closed" && selected.status !== "resolved" && canClose && <button disabled={busyAction !== ""} onClick={() => void updateAlarm("resolve")}><ShieldCheck size={14} /> Marcar atendida</button>}
               {(selected.status === "closed" || selected.status === "resolved") && canClose && <button disabled={busyAction !== ""} onClick={() => void updateAlarm("reopen")}>Reabrir</button>}
@@ -1996,7 +2004,9 @@ export default function Home() {
   const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null);
   const [visibilityOpen, setVisibilityOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [alarmTarget, setAlarmTarget] = useState<{ id: string; code: string } | null>(null);
+  const [alarmRefresh, setAlarmRefresh] = useState(0);
+  const [siteAlarmState, setSiteAlarmState] = useState<{ critical: number; warning: number; unacknowledgedCritical: number } | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
   const toggleGroupCollapse = (groupLabel: string) => {
@@ -2081,7 +2091,7 @@ export default function Home() {
   }, [activePointId, authState, hierarchy, telemetryRefreshKey, view]);
 
   useEffect(() => {
-    if (authState !== "authenticated" || !hierarchy) return;
+    if (authState !== "authenticated" || !hierarchy || !sessionUser?.permissions.includes("alarms.read")) return;
     const pointId = activePointId || hierarchy.points.find((point) => point.active)?.id;
     if (!pointId) return;
     let active = true;
@@ -2098,7 +2108,19 @@ export default function Home() {
     };
     const stop = pollVisible(refresh, 30_000);
     return () => { active = false; stop(); };
-  }, [activePointId, authState, hierarchy]);
+  }, [activePointId, authState, hierarchy, alarmRefresh, sessionUser?.permissions]);
+
+  useEffect(() => {
+    if (authState !== "authenticated" || !sessionUser?.permissions.includes("alarms.read")) return;
+    let active = true;
+    const stop = pollVisible(async () => {
+      try {
+        const data = await portalRequest<{ critical: number; warning: number; unacknowledgedCritical: number }>("/api/v1/alarms/summary");
+        if (active) setSiteAlarmState(data);
+      } catch { if (active) setSiteAlarmState(null); }
+    }, 30_000);
+    return () => { active = false; stop(); };
+  }, [authState, sessionUser?.id, sessionUser?.siteId, sessionUser?.permissions, alarmRefresh]);
 
   const loadHierarchy = async () => {
     setHierarchyLoading(true);
@@ -2154,6 +2176,7 @@ export default function Home() {
       notify("Tu perfil no tiene permisos para abrir este módulo.", "warning");
       return;
     }
+    if (next !== "alarms") setAlarmTarget(null);
     setView(next);
     setMenuOpen(false);
     document.querySelector(".content-scroll")?.scrollTo({ top: 0, left: 0 });
@@ -2176,7 +2199,8 @@ export default function Home() {
     setPeriod("Personalizado");
     navigate("trends", { channel: id, ...range });
   };
-  const openAlarmTrend = (id: string, openedAt: string) => {
+  const openAlarmTrend = (id: string, openedAt: string, assetId: string) => {
+    setActivePointId(assetId);
     const eventTime = new Date(openedAt).getTime();
     openTrendRange(id, new Date(eventTime - 12 * 3600_000).toISOString(), new Date(Math.min(new Date().getTime(), eventTime + 12 * 3600_000)).toISOString());
   };
@@ -2191,6 +2215,7 @@ export default function Home() {
     void portalRequest(`/api/v1/alarms/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ action: "acknowledge" }) })
       .then(() => {
         setAlarmPreview((current) => current.map((alarm) => alarm.id === id ? { ...alarm, status: "acknowledged" } : alarm));
+        setAlarmRefresh((n) => n + 1);
         notify("Alarma reconocida y registrada en la trazabilidad.");
       })
       .catch((requestError) => notify(requestError instanceof Error ? requestError.message : "No fue posible reconocer la alarma.", "warning"));
@@ -2212,6 +2237,9 @@ export default function Home() {
     setTelemetryState({ status: "loading", data: null });
     setSystemMode("loading");
     setAlarmPreview([]);
+    setSiteAlarmState(null);
+    setAlarmTarget(null);
+    setSearchOpen(false);
     setAlarmSummary({ critical: 0, warning: 0 });
     setTrendSensorId("");
     setTrendWindow(null);
@@ -2338,7 +2366,7 @@ export default function Home() {
             const isCollapsed = collapsedGroups.has(group.label);
             return (
               <div className="nav-group" key={group.label}>
-                <button type="button" className="nav-group-heading nav-group-toggle" onClick={() => toggleGroupCollapse(group.label)}>
+                <button type="button" className="nav-group-heading nav-group-toggle" aria-expanded={!isCollapsed} onClick={() => toggleGroupCollapse(group.label)}>
                   <span>{group.index}</span>
                   <p>{group.label}</p>
                   <i />
@@ -2347,7 +2375,7 @@ export default function Home() {
                 {!isCollapsed && <div className="nav-items">
                   {group.items.filter((item) => canSeeNavItem(item.id, sessionUser)).map((item) => {
                     const Icon = item.icon;
-                    const badgeCount = item.id === "alarms" ? alarmSummary.critical + alarmSummary.warning : null;
+                    const badgeCount = item.id === "alarms" ? (siteAlarmState?.critical ?? 0) + (siteAlarmState?.warning ?? 0) : null;
                     return (
                       <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)} aria-current={view === item.id ? "page" : undefined}>
                         <span className="nav-item-icon"><Icon size={19} strokeWidth={1.8} /></span>
@@ -2386,14 +2414,14 @@ export default function Home() {
         </header>
 
         <div className="content-scroll">
-          {alarmSummary.critical > 0 && view !== "alarms" && (
+          {(siteAlarmState?.unacknowledgedCritical ?? 0) > 0 && view !== "alarms" && (
             <div className="critical-incident-banner" role="alert">
               <AlertTriangle size={20} />
               <div>
-                <strong>Atención: {alarmSummary.critical} alarma{alarmSummary.critical === 1 ? "" : "s"} crítica{alarmSummary.critical === 1 ? "" : "s"} activa{alarmSummary.critical === 1 ? "" : "s"}</strong>
+                <strong>Atención: {siteAlarmState?.unacknowledgedCritical} alarma{siteAlarmState?.unacknowledgedCritical === 1 ? "" : "s"} crítica{siteAlarmState?.unacknowledgedCritical === 1 ? "" : "s"} sin reconocer en este sitio</strong>
                 <span>Requieren revisión y reconocimiento en el Centro de Alertas.</span>
               </div>
-              <button className="primary-button" onClick={() => navigate("alarms")}>Atender Alertas</button>
+              <button className="primary-button" onClick={() => { setAlarmTarget(null); navigate("alarms"); }}>Atender Alertas</button>
             </div>
           )}
           {contextSwitching ? <section className="panel" role="status" aria-live="polite" style={{ margin: 24, padding: 24 }}><Refresh className="spin" size={20} /> Cargando el sitio seleccionado…</section> : <div className="page-content" key={`context:${sessionUser.clientId}:${sessionUser.siteId}:${activePointId}`}>
@@ -2445,7 +2473,7 @@ export default function Home() {
             {view === "trends" && activePoint && activePoint.type !== "switchgear_cabinet"
               ? <GenericTrendsView assetId={activePoint.id} initialMetricKey={trendSensorId} canExport={sessionUser.permissions.includes("history.export")} notify={notify} />
               : view === "trends" && <TrendsView assetId={activePoint?.id ?? ""} channels={sensors.map((sensor) => ({ id: sensor.id, label: sensor.label, zone: sensor.zone, unit: sensor.unit, state: sensor.state, enabled: sensor.enabled }))} period={period} setPeriod={setPeriod} selectedId={resolvedTrendSensorId} onSelectChannel={selectTrendChannel} onBackToMap={() => navigate("cabinet")} rangeWindow={trendWindow} setRangeWindow={setTrendWindow} canExport={sessionUser.permissions.includes("history.export")} notify={notify} />}
-            {view === "alarms" && <AlarmsView assetId={activePoint?.id ?? ""} siteAssets={hierarchy?.points.filter((point) => point.active)} permissions={sessionUser.permissions} onSummaryChange={setAlarmSummary} onOpenTrend={openAlarmTrend} onOpenAsset={(id) => { setActivePointId(id); navigate("overview"); }} />}
+            {view === "alarms" && <AlarmsView key={alarmTarget?.id ?? "site-alarms"} initialAlarm={alarmTarget} assetId={activePoint?.id ?? ""} siteAssets={hierarchy?.points.filter((point) => point.active)} permissions={sessionUser.permissions} onAlarmChanged={() => setAlarmRefresh((n) => n + 1)} onOpenTrend={openAlarmTrend} onOpenAsset={(id) => { setActivePointId(id); navigate("overview"); }} />}
             {view === "history" && <HistoryView key={activePoint?.id ?? ""} assetId={activePoint?.id ?? ""} assetName={activePoint?.name ?? ""} siteName={sessionUser.siteName} canExport={sessionUser.permissions.includes("history.export")} canReadAlarms={sessionUser.permissions.includes("alarms.read")} canAudit={sessionUser.permissions.includes("audit.read")} onOpenTrend={openTrendRange} />}
             {(view === "settings" || view === "assets") && activePoint && sessionUser.permissions.includes("settings.write") && <SensorConfiguration key={activePoint.id} assetId={activePoint.id} />}
             {view === "assets" && <OperationalHierarchyView hierarchy={hierarchy} loading={hierarchyLoading} permissions={sessionUser.permissions} onReload={loadHierarchy} onSwitchSite={switchSite} onOpenAsset={openDashboardAsset} />}
@@ -2467,67 +2495,15 @@ export default function Home() {
           </div>}
         </div>
       </main>
-      {searchOpen && <div className="channel-visibility-backdrop" role="presentation" onMouseDown={() => setSearchOpen(false)}>
-        <section className="channel-visibility-sheet global-search-dialog" role="dialog" aria-modal="true" aria-label="Búsqueda global" onMouseDown={(e) => e.stopPropagation()}>
-          <header className="global-search-header">
-            <Search size={20} />
-            <input
-              autoFocus
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Buscar activo, vista o alerta… (Esc para cerrar)"
-            />
-            <button onClick={() => setSearchOpen(false)} aria-label="Cerrar"><X size={18} /></button>
-          </header>
-          <div className="global-search-results">
-            {(() => {
-              const queryLower = searchQuery.toLowerCase().trim();
-              const points = (hierarchy?.points ?? []).filter((p) => p.active && (p.name.toLowerCase().includes(queryLower) || p.code.toLowerCase().includes(queryLower)));
-              const navItems = Object.entries(viewTitles).filter(([vKey, meta]) => canSeeNavItem(vKey as View, sessionUser) && (meta.title.toLowerCase().includes(queryLower) || meta.description.toLowerCase().includes(queryLower)));
-              const criticals = alarmPreview.filter((a) => a.severity === "critical" && (a.title.toLowerCase().includes(queryLower) || a.code.toLowerCase().includes(queryLower)));
-
-              return (
-                <>
-                  {points.length > 0 && <div className="search-group">
-                    <span className="search-group-title">Activos</span>
-                    {points.map((p) => (
-                      <button key={p.id} onClick={() => { setActivePointId(p.id); navigate("overview"); setSearchOpen(false); setSearchQuery(""); }}>
-                        <CircuitBoard size={16} />
-                        <div><strong>{p.name}</strong><small>{p.code} · {p.area || "Sin área"}</small></div>
-                      </button>
-                    ))}
-                  </div>}
-
-                  {criticals.length > 0 && <div className="search-group">
-                    <span className="search-group-title">Alertas Críticas</span>
-                    {criticals.map((a) => (
-                      <button key={a.id} onClick={() => { navigate("alarms"); setSearchOpen(false); setSearchQuery(""); }}>
-                        <AlertTriangle size={16} color="#ef4444" />
-                        <div><strong>{a.title}</strong><small>{a.code} · {a.assetName}</small></div>
-                      </button>
-                    ))}
-                  </div>}
-
-                  {navItems.length > 0 && <div className="search-group">
-                    <span className="search-group-title">Módulos</span>
-                    {navItems.map(([vKey, meta]) => (
-                      <button key={vKey} onClick={() => { navigate(vKey as View); setSearchOpen(false); setSearchQuery(""); }}>
-                        <LayoutDashboard size={16} />
-                        <div><strong>{meta.title}</strong><small>{meta.description}</small></div>
-                      </button>
-                    ))}
-                  </div>}
-
-                  {points.length === 0 && criticals.length === 0 && navItems.length === 0 && (
-                    <div className="visibility-empty"><Search size={20} /><strong>Sin resultados</strong><span>No encontramos nada que coincida con tu búsqueda.</span></div>
-                  )}
-                </>
-              );
-            })()}
-          </div>
-        </section>
-      </div>}
+      {searchOpen && <GlobalSearch key={sessionUser.siteId}
+        assets={hierarchy?.points.filter((point) => point.active) ?? []}
+        modules={Object.entries(viewTitles).filter(([id]) => canSeeNavItem(id as View, sessionUser)).map(([id, meta]) => ({ id, ...meta }))}
+        canReadAlarms={sessionUser.permissions.includes("alarms.read")}
+        onClose={() => setSearchOpen(false)}
+        onAsset={(id) => { setActivePointId(id); navigate("overview"); setSearchOpen(false); }}
+        onModule={(id) => { setAlarmTarget(null); navigate(id as View); setSearchOpen(false); }}
+        onAlarm={(alarm) => { setActivePointId(alarm.assetId); setAlarmTarget({ id: alarm.id, code: alarm.code }); navigate("alarms"); setSearchOpen(false); }}
+      />}
       {activePoint && <ChannelVisibilityDialog open={visibilityOpen} assetId={activePoint.id} sensors={sensors} onClose={() => setVisibilityOpen(false)} onSaved={() => setTelemetryRefreshKey((current) => current + 1)} />}
       {notice && <div className={`portal-notice notice-${notice.tone}`} role="status" aria-live="polite" key={notice.id}><CheckCircle2 size={18} /><span>{notice.message}</span><button onClick={() => setNotice(null)} aria-label="Cerrar notificación"><X size={16} /></button></div>}
       {confirmRequest && <div className="confirm-backdrop" role="presentation" onMouseDown={() => setConfirmRequest(null)}><section className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-title" onMouseDown={(event) => event.stopPropagation()}><span className={`confirm-icon ${confirmRequest.tone === "danger" ? "danger" : ""}`}>{confirmRequest.tone === "danger" ? <AlertTriangle size={22} /> : <ShieldCheck size={22} />}</span><div><span className="eyebrow">Confirmación requerida</span><h2 id="confirm-title">{confirmRequest.title}</h2><p>{confirmRequest.detail}</p></div><div className="confirm-actions"><button className="secondary-button" onClick={() => setConfirmRequest(null)}>Cancelar</button><button className={confirmRequest.tone === "danger" ? "danger-button" : "primary-button"} onClick={() => { const action = confirmRequest.onConfirm; setConfirmRequest(null); action(); }}>{confirmRequest.confirmLabel}</button></div></section></div>}

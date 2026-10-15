@@ -140,6 +140,17 @@ export const gateways = pgTable("gateways", {
   index("gateways_site_state_idx").on(table.siteId, table.state),
 ]);
 
+export const gatewayRateLimits = pgTable("gateway_rate_limits", {
+  gatewayId: uuid("gateway_id").notNull().references(() => gateways.id, { onDelete: "cascade" }),
+  operation: text("operation").notNull(),
+  requests: timestamp("requests", { withTimezone: true }).array().notNull().default(sql`'{}'::timestamptz[]`),
+  accepted: boolean("accepted").notNull().default(true),
+}, (table) => [
+  primaryKey({ columns: [table.gatewayId, table.operation] }),
+  check("gateway_rate_limits_operation_check", sql`${table.operation} in ('ingest', 'heartbeat')`),
+  check("gateway_rate_limits_requests_check", sql`cardinality(${table.requests}) <= 120`),
+]);
+
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
   email: varchar("email", { length: 320 }).notNull(),

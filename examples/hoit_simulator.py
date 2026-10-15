@@ -134,11 +134,30 @@ def request_json(base_url: str, token: str, path: str, method: str = "GET", payl
             body = json.loads(text) if text else None
         except json.JSONDecodeError:
             body = None
+        if error.code == 429:
+            try:
+                retry_after = max(1, min(300, int(error.headers.get("Retry-After", "60"))))
+            except (ValueError, TypeError):
+                retry_after = 60
+            body = {**(body if isinstance(body, dict) else {}), "retry_after_seconds": retry_after}
         return error.code, body, text
     except json.JSONDecodeError:
         return 0, None, "La respuesta no es JSON de Core; comprueba el acceso autorizado al Preview."
     except (OSError, urllib.error.URLError, TimeoutError) as error:
         return 0, None, str(error)
+
+
+def send_ingest_with_retry(base_url: str, token: str, payload: dict[str, Any], attempts: int = 5) -> tuple[int, dict[str, Any] | None, str]:
+    """Retry the identical envelope, including message_id, before generating another batch."""
+    for attempt in range(attempts):
+        status, body, text = request_json(base_url, token, "/api/v1/gateway/ingest", "POST", payload)
+        if status != 429 and status != 0 and status < 500:
+            return status, body, text
+        if attempt + 1 == attempts:
+            return status, body, text
+        delay = body.get("retry_after_seconds", 60) if status == 429 and isinstance(body, dict) else min(60, 2 ** (attempt + 1))
+        time.sleep(max(1, min(300, float(delay))))
+    raise ValueError("attempts debe ser positivo")
 
 
 def load_profile_module(profile: str, args: argparse.Namespace, devices: list[str]) -> ModuleType:
@@ -376,7 +395,7 @@ def main() -> int:
             "time_quality": "SYNCED",
             "samples": samples,
         }
-        status, body, text = request_json(base_url, token, "/api/v1/gateway/ingest", "POST", payload)
+        status, body, text = send_ingest_with_retry(base_url, token, payload)
         if 200 <= status < 300:
             last_success_at = samples[0]["sampled_at"] if samples else iso_now()
             accepted = body.get("accepted") if isinstance(body, dict) else None
@@ -384,9 +403,8 @@ def main() -> int:
             print(last_success_at, phase, f"samples={len(samples)}", f"HTTP={status}", f"accepted={accepted}", f"message={echoed or message_id}")
         else:
             print(f"Ingest HTTP {status}: {text[:300]}", file=sys.stderr)
-            if 400 <= status < 500 and status != 429:
-                print("Error contractual/configuración: se detiene para no generar ruido ni reintentos inválidos.", file=sys.stderr)
-                return 1
+            print(f"Se detiene sin avanzar al siguiente lote. Mensaje pendiente: {message_id}. Revisa conectividad/cuota/configuración.", file=sys.stderr)
+            return 1
 
         now = time.monotonic()
         if now >= next_heartbeat:

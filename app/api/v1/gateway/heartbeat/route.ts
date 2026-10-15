@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 export async function POST(request: NextRequest) {
   try {
     const { db, credential } = await requireGatewayCredential(request);
-    checkIngestRateLimit(`heartbeat:${credential.gatewayId}`);
+    await checkIngestRateLimit(db, credential.gatewayId, "heartbeat");
     const receivedAt = new Date();
     const rawBody = await request.text();
     const parsedBody = rawBody.trim() ? (() => { try { return JSON.parse(rawBody) as unknown; } catch { return null; } })() : null;

@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
     if (Number.isFinite(contentLength) && contentLength > MAX_BODY_BYTES) throw new ApiError(413, "El lote supera el máximo de 256 KiB.");
 
     const { db, credential } = await requireGatewayCredential(request);
-    checkIngestRateLimit(`ingest:${credential.gatewayId}`);
+    await checkIngestRateLimit(db, credential.gatewayId, "ingest");
     const receivedAt = new Date();
     const rawBody = await request.text();
     if (new TextEncoder().encode(rawBody).byteLength > MAX_BODY_BYTES) throw new ApiError(413, "El lote supera el máximo de 256 KiB.");
