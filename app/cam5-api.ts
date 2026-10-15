@@ -1,3 +1,5 @@
+import { portalFetch } from "./lib/portal-fetch";
+
 export type ApiQuality = "good" | "stale" | "bad" | "disabled";
 export type ApiSeverity = "normal" | "warning" | "critical";
 export type AlarmStatus = "open" | "acknowledged" | "resolved" | "closed";
@@ -269,7 +271,8 @@ export type ReadingProfile = {
 const API_BASE = process.env.NEXT_PUBLIC_CAM5_API_URL ?? "/api/v1";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
+  const fullPath = path.startsWith("/api/v1") ? path : `${API_BASE}${path}`;
+  const response = await portalFetch(fullPath, {
     ...init,
     headers: { "Content-Type": "application/json", ...init?.headers },
     credentials: "include",

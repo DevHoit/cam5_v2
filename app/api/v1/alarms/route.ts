@@ -1,3 +1,4 @@
+import { evaluateElectricalSite } from "../../../../db/electrical-alarm-engine";
 import type { NextRequest } from "next/server";
 import { and, count, desc, eq, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
@@ -6,6 +7,7 @@ import {
   alarms,
   assets,
   channels,
+  devices,
   userAssetScopes,
   userRoleAssignments,
   users,
@@ -27,10 +29,13 @@ export async function GET(request: NextRequest) {
     const severity = request.nextUrl.searchParams.get("severity") || "all";
     const kind = request.nextUrl.searchParams.get("kind") || "all";
     const assetId = request.nextUrl.searchParams.get("assetId") || "";
+    const alarmId = request.nextUrl.searchParams.get("alarmId") || "";
+    if (alarmId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(alarmId)) throw new ApiError(400, "La alarma indicada no es válida.");
     if (status !== "all" && status !== "active" && !VALID_STATUSES.includes(status as typeof VALID_STATUSES[number])) throw new ApiError(400, "El estado indicado no es válido.");
     if (severity !== "all" && !VALID_SEVERITIES.includes(severity as typeof VALID_SEVERITIES[number])) throw new ApiError(400, "La severidad indicada no es válida.");
     if (kind !== "all" && !VALID_KINDS.includes(kind as typeof VALID_KINDS[number])) throw new ApiError(400, "El origen indicado no es válido.");
 
+    await evaluateElectricalSite(db, user.siteId);
     await evaluateStaleCommunications(db, user.siteId).catch((error: unknown) => console.error("No fue posible revisar comunicaciones atrasadas", error));
     const scopes = await db.select({ assetId: userAssetScopes.assetId }).from(userAssetScopes).where(eq(userAssetScopes.userId, user.id));
     const allowedAssetIds = scopes.map((scope) => scope.assetId);
@@ -41,6 +46,7 @@ export async function GET(request: NextRequest) {
       baseFilters.push(eq(alarms.assetId, assetId));
     }
     const filters = [...baseFilters];
+    if (alarmId) filters.push(eq(alarms.id, alarmId));
     if (status === "active") filters.push(inArray(alarms.status, ["open", "acknowledged"]));
     else if (VALID_STATUSES.includes(status as typeof VALID_STATUSES[number])) filters.push(eq(alarms.status, status as typeof VALID_STATUSES[number]));
     if (VALID_SEVERITIES.includes(severity as typeof VALID_SEVERITIES[number])) filters.push(eq(alarms.severity, severity as typeof VALID_SEVERITIES[number]));
@@ -51,6 +57,8 @@ export async function GET(request: NextRequest) {
       ilike(alarms.detail, `%${q}%`),
       ilike(assets.code, `%${q}%`),
       ilike(assets.name, `%${q}%`),
+      ilike(devices.code, `%${q}%`),
+      ilike(devices.name, `%${q}%`),
       ilike(channels.code, `%${q}%`),
     )!);
     const where = and(...filters);
@@ -78,12 +86,17 @@ export async function GET(request: NextRequest) {
         assetId: assets.id,
         assetCode: assets.code,
         assetName: assets.name,
+        deviceId: alarms.deviceId,
+        deviceCode: devices.code,
+        deviceName: devices.name,
+        context: alarms.context,
         channelId: channels.id,
         channelCode: channels.code,
         channelName: channels.name,
         unit: channels.unit,
       }).from(alarms)
         .innerJoin(assets, eq(assets.id, alarms.assetId))
+        .leftJoin(devices, eq(devices.id, alarms.deviceId))
         .leftJoin(channels, eq(channels.id, alarms.channelId))
         .leftJoin(assignedUser, eq(assignedUser.id, alarms.assignedTo))
         .where(where)
@@ -92,6 +105,7 @@ export async function GET(request: NextRequest) {
         .offset(offset),
       db.select({ total: count() }).from(alarms)
         .innerJoin(assets, eq(assets.id, alarms.assetId))
+        .leftJoin(devices, eq(devices.id, alarms.deviceId))
         .leftJoin(channels, eq(channels.id, alarms.channelId))
         .where(where),
       db.select({

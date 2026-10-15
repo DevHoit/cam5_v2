@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { and, eq, gt, isNull, or } from "drizzle-orm";
-import { hashGatewayToken } from "../../../../../db/gateway-auth";
+import { hashGatewayToken, isSupportedGatewayToken } from "../../../../../db/gateway-auth";
 import { getDb } from "../../../../../db/index";
 import { clients, gatewayApiCredentials, gateways, sites } from "../../../../../db/schema";
 import { ApiError } from "../../_lib/auth";
@@ -8,7 +8,7 @@ import { ApiError } from "../../_lib/auth";
 export async function requireGatewayCredential(request: NextRequest) {
   const authorization = request.headers.get("authorization") ?? "";
   const [scheme, token, ...extra] = authorization.trim().split(/\s+/);
-  if (scheme?.toLowerCase() !== "bearer" || !token || extra.length || !token.startsWith("cam5gw_")) {
+  if (scheme?.toLowerCase() !== "bearer" || !token || extra.length || !isSupportedGatewayToken(token)) {
     throw new ApiError(401, "Credencial de gateway inválida.");
   }
 

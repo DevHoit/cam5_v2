@@ -1,3 +1,9 @@
+> [!WARNING]
+> **Handoff histórico CAM5.** Conservado como referencia de adquisición física, no como contrato Cloud vigente.
+> Para nuevos gateways, HoitLive Core recibe métricas semánticas normalizadas por `/api/v1/gateway/ingest`.
+> La adquisición Modbus TCP/RTU se configura por el control plane y permanece encapsulada dentro del gateway.
+> Fuente de verdad actual: `docs/HOIT_SPEC.md`.
+
 # CAM5 CORE — Especificación del Gateway
 
 **Versión:** 1.0 · **Fecha:** 19 de agosto de 2026

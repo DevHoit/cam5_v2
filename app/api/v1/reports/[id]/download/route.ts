@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { eq } from "drizzle-orm";
 import { reportRuns } from "../../../../../../db/schema";
 import type { ReportSnapshot } from "../../../../../../db/report-engine";
-import { reportCsv, reportPdf } from "../../../../../../db/report-export";
+import { reportCsv, reportPdf, reportXlsx } from "../../../../../../db/report-export";
 import { apiErrorResponse, ApiError, requireApiSession } from "../../../_lib/auth";
 import { requireReportAsset } from "../../_lib";
 
@@ -22,10 +22,15 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
     if (run.status !== "completed") throw new ApiError(409, "El reporte todavía no está disponible para descarga.");
     await requireReportAsset(db, user, run.assetId);
     const snapshot = run.payload as ReportSnapshot;
-    const format = request.nextUrl.searchParams.get("format") === "csv" ? "csv" : "pdf";
+    const requestedFormat = request.nextUrl.searchParams.get("format");
+    const format = requestedFormat === "csv" || requestedFormat === "xlsx" ? requestedFormat : "pdf";
     const base = filename(run.title) || `reporte-${run.id}`;
     if (format === "csv") {
       return new Response(`\uFEFF${reportCsv(snapshot)}`, { headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="${base}.csv"`, "Cache-Control": "no-store" } });
+    }
+    if (format === "xlsx") {
+      const bytes = reportXlsx(snapshot);
+      return new Response(bytes as BodyInit, { headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Content-Disposition": `attachment; filename="${base}.xlsx"`, "Cache-Control": "no-store" } });
     }
     const bytes = await reportPdf(snapshot);
     return new Response(bytes as BodyInit, { headers: { "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename="${base}.pdf"`, "Cache-Control": "no-store" } });

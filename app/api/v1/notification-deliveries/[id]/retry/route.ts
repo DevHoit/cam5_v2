@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { and, eq } from "drizzle-orm";
+import { notificationAccepted } from "../../../../../../db/notification-status";
 import { processNotificationDelivery } from "../../../../../../db/notification-engine";
 import { auditLogs, notificationDeliveries, notificationEndpoints } from "../../../../../../db/schema";
 import { apiErrorResponse, ApiError, requestMetadata, requireApiSession } from "../../../_lib/auth";
@@ -21,8 +22,8 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     await db.update(notificationDeliveries).set({ status: "queued", attemptCount: 0, errorMessage: null, providerMessageId: null, sentAt: null, scheduledAt: now, nextAttemptAt: now, updatedAt: now }).where(eq(notificationDeliveries.id, id));
     const result = await processNotificationDelivery(db, id, { now });
     const metadata = requestMetadata(request);
-    await db.insert(auditLogs).values({ siteId: user.siteId, actorUserId: user.id, action: "notification_deliveries.retry", resourceType: "notification_delivery", resourceId: String(id), outcome: result.status === "delivered" ? "success" : "failed", ipAddress: metadata.ipAddress, userAgent: metadata.userAgent, before: { status: current.status }, after: { status: result.status }, metadata: { error: result.error } });
-    return Response.json({ ok: result.status === "delivered", status: result.status, error: result.error }, { headers: { "Cache-Control": "no-store" } });
+    await db.insert(auditLogs).values({ siteId: user.siteId, actorUserId: user.id, action: "notification_deliveries.retry", resourceType: "notification_delivery", resourceId: String(id), outcome: notificationAccepted(result.status) ? "success" : "failed", ipAddress: metadata.ipAddress, userAgent: metadata.userAgent, before: { status: current.status }, after: { status: result.status }, metadata: { error: result.error } });
+    return Response.json({ ok: notificationAccepted(result.status), status: result.status, error: result.error }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return apiErrorResponse(error);
   }

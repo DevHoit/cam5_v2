@@ -41,7 +41,7 @@ Abrir `http://localhost:3000`.
 
 La capa de persistencia utiliza PostgreSQL y Drizzle ORM. Incluye telemetría, histórico agregado, alarmas, diagnóstico, auditoría, perfiles de adquisición y cuatro perfiles de acceso al portal.
 
-Antes del primer ingreso, configurar `DATABASE_URL`, `CAM5_ADMIN_EMAIL`, `CAM5_ADMIN_NAME` y `CAM5_ADMIN_PASSWORD`. La contraseña debe tener al menos 10 caracteres.
+Antes del primer ingreso, configurar `DATABASE_URL`, `CAM5_ADMIN_EMAIL`, `CAM5_ADMIN_NAME` y `CAM5_ADMIN_PASSWORD`. `CAM5_ADMIN_EMAIL` también identifica la cuenta bootstrap que `db:migrate` asegura como `platform_admin`; esto evita que una migración de roles deje al operador inicial limitado a un sitio. La contraseña debe tener al menos 10 caracteres.
 
 El mantenimiento de la telemetría se ejecuta cada cinco minutos mediante `.github/workflows/alarm-evaluator.yml`. El workflow y Vercel comparten `CRON_SECRET`: revisa comunicaciones en `GET /api/v1/alarms/evaluate`, actualiza agregados/retención en `GET /api/v1/trends/aggregate` y procesa notificaciones en `GET /api/v1/notifications/process`. Con Vercel Pro puede reemplazarse por un cron nativo de un minuto.
 
@@ -50,6 +50,9 @@ Para correo se requieren `RESEND_API_KEY` y `NOTIFICATION_FROM_EMAIL`. Teams gua
 ```bash
 npm run db:migrate
 npm run db:seed
+
+# Recuperación explícita del Administrador HOIT
+npm run admin:promote -- admin@empresa.cl
 ```
 
 La configuración y el modelo completo están documentados en [`DATABASE.md`](./DATABASE.md).

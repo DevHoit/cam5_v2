@@ -4,7 +4,7 @@ import { resolvePortalSession, SESSION_COOKIE_NAME, type AuthenticatedPortalUser
 import type { PortalPermission } from "../../../../db/access-control";
 
 export class ApiError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(public status: number, message: string, public headers: Record<string, string> = {}) {
     super(message);
   }
 }
@@ -19,6 +19,8 @@ export async function requireApiSession(
   const db = getDb();
   const user = await resolvePortalSession(db, token);
   if (!user) throw new ApiError(401, "La sesión expiró o ya no es válida.");
+  const expectedSite = request.headers.get("x-hoit-site");
+  if (expectedSite && expectedSite !== user.siteId) throw new ApiError(409, "El sitio activo cambió en otra pestaña. Actualiza el portal para continuar.");
   if (user.mustChangePassword && !options.allowPasswordChangeRequired) throw new ApiError(428, "Debes cambiar tu contraseña temporal antes de continuar.");
   if (permission && !user.permissions.includes(permission)) throw new ApiError(403, "No tienes permisos para realizar esta acción.");
   return { db, user, token };
@@ -26,7 +28,7 @@ export async function requireApiSession(
 
 export function apiErrorResponse(error: unknown) {
   if (error instanceof ApiError) {
-    return Response.json({ error: error.message }, { status: error.status, headers: { "Cache-Control": "no-store" } });
+    return Response.json({ error: error.message }, { status: error.status, headers: { ...error.headers, "Cache-Control": "no-store" } });
   }
   if (typeof error === "object" && error && "code" in error && error.code === "23505") {
     return Response.json({ error: "Ya existe un elemento con ese código o identificador en el mismo nivel." }, { status: 409, headers: { "Cache-Control": "no-store" } });

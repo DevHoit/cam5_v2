@@ -1,0 +1,23 @@
+.root { background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px; color: #24334a; margin-bottom: 20px; }
+.header, .metric > header, .editor > header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.root h2 { display: flex; align-items: center; gap: 10px; font-size: 20px; margin: 0 0 8px; }
+.root h3 { font-size: 16px; margin: 6px 0; }
+.root p, .root small { font-size: 13px; line-height: 1.6; color: #52647b; }
+.root p { margin: 6px 0; }
+.summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 22px 0; }
+.summary > div { border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px; display: grid; gap: 3px; }
+.summary strong { font-size: 24px; }.summary span { font-size: 13px; color: #52647b; }
+.filters { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 12px; margin-bottom: 18px; }
+.filters label, .formGrid label { display: grid; gap: 7px; font-size: 13px; font-weight: 600; }
+.filters span { display: flex; align-items: center; gap: 6px; }
+.root input:not([type=checkbox]), .root select { width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid #ccd6e2; border-radius: 8px; background: white; color: #24334a; font: inherit; min-height: 42px; }
+.root input:focus, .root select:focus { outline: 2px solid #178581; outline-offset: 2px; }
+.metrics { display: grid; gap: 16px; }.metric { border: 1px solid #dde5ee; border-radius: 12px; overflow: hidden; }
+.metric > header { padding: 16px; background: #f8fafc; }.metric > header > div { min-width: 0; overflow-wrap: anywhere; }
+.rule { display: grid; grid-template-columns: 1.6fr 1fr auto; gap: 16px; align-items: center; padding: 16px; border-top: 1px solid #e2e8f0; }
+.rule > div { display: grid; gap: 5px; min-width: 0; overflow-wrap: anywhere; }.rule strong { font-size: 14px; }.rule span { font-size: 13px; }
+.state, .alarm { width: fit-content; padding: 4px 9px; background: #eaf1f8; color: #304d69; border-radius: 6px; font-size: 12px; }.alarm { background: #fff0ed; color: #ac3328; }
+.root .empty { padding: 12px 16px; }.root .note { margin-top: 20px; }.root .error { color: #a82e27; }.root .notice { color: #16665b; padding: 12px; background: #eef9f5; border-radius: 8px; }
+.editor { border: 1px solid #86b9b4; border-radius: 12px; padding: 20px; margin-bottom: 22px; background: #f8fcfb; }.formGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin: 20px 0; }.checkbox { display: flex; gap: 8px; align-items: center; margin: 16px 0; font-size: 14px; }.editor > button { margin-top: 14px; }
+@media (max-width: 900px) { .filters, .formGrid { grid-template-columns: repeat(2, 1fr); }.rule { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 600px) { .root { padding: 14px; }.header, .metric > header, .editor > header { flex-direction: column; }.summary { gap: 6px; }.summary > div { padding: 10px; }.summary span { font-size: 11px; }.filters, .formGrid, .rule { grid-template-columns: 1fr; }.editor { padding: 14px; } }

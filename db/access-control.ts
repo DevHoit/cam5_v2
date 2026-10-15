@@ -23,7 +23,9 @@ export const PORTAL_PERMISSIONS = [
   { code: "integrations.read", module: "integrations", action: "read", description: "Ver integraciones" },
   { code: "integrations.write", module: "integrations", action: "write", description: "Modificar integraciones" },
   { code: "users.read", module: "users", action: "read", description: "Ver usuarios y perfiles" },
-  { code: "users.manage", module: "users", action: "manage", description: "Administrar usuarios y perfiles" },
+  { code: "users.manage", module: "users", action: "manage", description: "Administrar usuarios dentro del alcance autorizado" },
+  { code: "clients.manage", module: "clients", action: "manage", description: "Crear y administrar clientes de la plataforma" },
+  { code: "sites.manage", module: "sites", action: "manage", description: "Crear y administrar sitios del cliente" },
   { code: "notifications.read", module: "notifications", action: "read", description: "Ver notificaciones" },
   { code: "notifications.write", module: "notifications", action: "write", description: "Configurar notificaciones" },
   { code: "audit.read", module: "audit", action: "read", description: "Consultar auditoría" },
@@ -35,24 +37,48 @@ const READ_ONLY_PERMISSIONS = PORTAL_PERMISSIONS
   .filter((permission) => permission.action === "read")
   .map((permission) => permission.code);
 
+export type PortalRoleKey =
+  | "platform_admin"
+  | "client_admin"
+  | "site_admin"
+  | "engineer"
+  | "operator"
+  | "viewer";
+
 export const PORTAL_ROLES: ReadonlyArray<{
-  key: "administrator" | "engineer" | "operator" | "viewer";
+  key: PortalRoleKey;
   name: string;
   description: string;
   permissions: readonly PortalPermission[];
 }> = [
   {
-    key: "administrator",
-    name: "Administrador",
-    description: "Control total del portal, seguridad, configuración y puesta en marcha.",
+    key: "platform_admin",
+    name: "Administrador HOIT",
+    description: "Administración global de la plataforma, clientes, sitios, seguridad y operación.",
     permissions: PORTAL_PERMISSIONS.map((permission) => permission.code),
+  },
+  {
+    key: "client_admin",
+    name: "Administrador de cliente",
+    description: "Administración de usuarios, sitios y operación para todos los sitios de un cliente.",
+    permissions: PORTAL_PERMISSIONS
+      .filter((permission) => permission.code !== "clients.manage")
+      .map((permission) => permission.code),
+  },
+  {
+    key: "site_admin",
+    name: "Administrador de sitio",
+    description: "Administración completa de uno o varios sitios asignados, sin administrar clientes ni crear sitios.",
+    permissions: PORTAL_PERMISSIONS
+      .filter((permission) => permission.code !== "clients.manage" && permission.code !== "sites.manage")
+      .map((permission) => permission.code),
   },
   {
     key: "engineer",
     name: "Ingeniero",
     description: "Diagnóstico, configuración técnica, tendencias, alarmas y puesta en marcha.",
     permissions: PORTAL_PERMISSIONS
-      .filter((permission) => permission.code !== "users.manage")
+      .filter((permission) => !["users.manage", "clients.manage", "sites.manage"].includes(permission.code))
       .map((permission) => permission.code),
   },
   {

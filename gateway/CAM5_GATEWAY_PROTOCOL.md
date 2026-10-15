@@ -1,3 +1,9 @@
+> [!WARNING]
+> **Documento legado CAM5.** No usar este archivo como contrato Cloud para nuevos gateways.
+> La integración productiva genérica de HoitLive Core usa `/api/v1/gateway/config`, `/api/v1/gateway/ingest` y `/api/v1/gateway/heartbeat`, con telemetría semántica normalizada.
+> Los registros Modbus, direcciones, host, puerto y detalles de adquisición pertenecen al gateway/driver y no deben enviarse como telemetría al Core.
+> Fuente de verdad actual: `docs/HOIT_SPEC.md` y las implementaciones en `app/api/v1/gateway/_lib/*`.
+
 # Contrato de adquisición CAM5 Gateway v1.2
 
 Este contrato es idéntico para una fuente de datos simulada y para un CAM5 físico. El backend no recibe ni necesita una marca que identifique el origen como simulación.

@@ -1,16 +1,22 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createGatewayToken, gatewayCredentialRenewalExpiry, gatewayTokenDisplayPrefix, hashGatewayToken } from "../db/gateway-auth";
+import { createGatewayToken, gatewayCredentialRenewalExpiry, gatewayTokenDisplayPrefix, hashGatewayToken, isSupportedGatewayToken } from "../db/gateway-auth";
 
 test("creates opaque gateway tokens and stores only deterministic hashes", () => {
   const first = createGatewayToken();
   const second = createGatewayToken();
-  assert.match(first, /^cam5gw_[A-Za-z0-9_-]{43}$/);
+  assert.match(first, /^hoitgw_[A-Za-z0-9_-]{43}$/);
   assert.notEqual(first, second);
   assert.equal(hashGatewayToken(first), hashGatewayToken(first));
   assert.notEqual(hashGatewayToken(first), hashGatewayToken(second));
   assert.equal(hashGatewayToken(first).length, 64);
   assert.equal(gatewayTokenDisplayPrefix(first), first.slice(0, 18));
+});
+
+test("accepts new HOIT gateway tokens while preserving legacy CAM5 credentials", () => {
+  assert.equal(isSupportedGatewayToken("hoitgw_example"), true);
+  assert.equal(isSupportedGatewayToken("cam5gw_legacy"), true);
+  assert.equal(isSupportedGatewayToken("other_example"), false);
 });
 
 test("renews gateway validity without changing the installed token", () => {
