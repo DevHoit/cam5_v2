@@ -72,8 +72,6 @@ El proyecto es Next.js nativo.
 - Install Command: `npm install`.
 - Framework Preset: Next.js.
 
-No usar `npm run build:cloudflare` para Vercel, porque genera una salida vinext diferente de `.next`.
-
 ## Conexión del gateway
 
 La autenticación, las cuentas, los usuarios, la jerarquía operacional, la configuración técnica, el histórico, las tendencias, los reportes, el diagnóstico, la última telemetría y el ciclo completo de alarmas utilizan rutas internas `/api/v1` conectadas a PostgreSQL. El navegador no utiliza datos locales ni necesita una URL pública alternativa para la API.

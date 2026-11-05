@@ -32,10 +32,6 @@
   ],
   "exclude": [
     "node_modules",
-    "build/**/*.ts",
-    "examples/**",
-    "handoff/**",
-    "vite.config.ts",
-    "worker/**/*.ts"
+    "handoff/**"
   ]
 }
