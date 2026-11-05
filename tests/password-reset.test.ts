@@ -1,9 +1,6 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { PGlite } from "@electric-sql/pglite";
 import { eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/pglite";
 import { passwordResetEmailHtml, sendPasswordResetEmail } from "../db/auth-email";
 import {
   authenticateLocalUser,
@@ -13,20 +10,14 @@ import {
   hashSessionToken,
   resolvePortalSession,
 } from "../db/auth";
-import type { Cam5Database } from "../db/index";
 import { seedCam5Database } from "../db/seed";
 import * as schema from "../db/schema";
+import { createMigratedTestDatabase } from "./helpers/database";
 
-const migrations = ["0000_cam5_initial_schema.sql", "0001_eager_blockbuster.sql", "0002_sparkling_wallow.sql", "0003_rich_charles_xavier.sql", "0004_windy_gauntlet.sql", "0005_milky_caretaker.sql", "0006_smiling_frightful_four.sql", "0007_big_frightful_four.sql", "0008_sloppy_mister_sinister.sql", "0009_cuddly_infant_terrible.sql", "0010_robust_wallop.sql", "0011_dear_prima.sql"];
 
 test("uses one-time password reset tokens and revokes existing sessions", async () => {
-  const client = new PGlite();
+  const { client, db: database } = await createMigratedTestDatabase();
   try {
-    for (const filename of migrations) {
-      const migration = await readFile(new URL(`../drizzle/${filename}`, import.meta.url), "utf8");
-      await client.exec(migration.replaceAll("--> statement-breakpoint", ""));
-    }
-    const database = drizzle(client, { schema }) as unknown as Cam5Database;
     await seedCam5Database(database, { adminEmail: "admin@example.test", adminName: "Administrador", adminPassword: "Temporal-2026", log: false });
     const [user] = await database.select().from(schema.users).where(eq(schema.users.email, "admin@example.test")).limit(1);
     await database.update(schema.authIdentities).set({ mustChangePassword: true }).where(eq(schema.authIdentities.userId, user.id));
