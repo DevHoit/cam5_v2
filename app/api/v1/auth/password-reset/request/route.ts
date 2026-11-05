@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { eq } from "drizzle-orm";
+import { appBaseUrl } from "../../../../../../db/app-url";
 import { sendPasswordResetEmail } from "../../../../../../db/auth-email";
 import { createPasswordResetToken, hashSessionToken, normalizeEmail } from "../../../../../../db/auth";
 import { getDb } from "../../../../../../db/index";
@@ -19,7 +20,7 @@ export async function POST(request: NextRequest) {
       const db = getDb();
       const reset = await createPasswordResetToken(db, email, metadata.ipAddress);
       if (reset) {
-        const appUrl = (process.env.APP_URL || "https://cam5v2.vercel.app").replace(/\/+$/, "");
+        const appUrl = appBaseUrl();
         const resetUrl = `${appUrl}/?action=reset-password#token=${encodeURIComponent(reset.token)}`;
         try {
           const delivery = await sendPasswordResetEmail({ to: reset.email, displayName: reset.displayName, resetUrl });

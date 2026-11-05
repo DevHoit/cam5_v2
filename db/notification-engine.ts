@@ -1,6 +1,7 @@
 import { createHmac } from "node:crypto";
 import { and, eq, inArray, lte, or, sql } from "drizzle-orm";
 import type { Cam5Database } from "./index";
+import { appBaseUrl } from "./app-url";
 import {
   alarms,
   assets,
@@ -153,7 +154,7 @@ export async function queueAlarmNotifications(
         asset: `${alarm.assetCode} · ${alarm.assetName}`,
         channel: alarm.channelCode ? `${alarm.channelCode} · ${alarm.channelName}` : null,
         occurredAt: occurredAt.toISOString(),
-        portalUrl: `${process.env.APP_URL || "https://cam5v2.vercel.app"}/?view=alarms&record=${encodeURIComponent(alarm.id)}`,
+        portalUrl: `${appBaseUrl()}/?view=alarms&record=${encodeURIComponent(alarm.id)}`,
       },
       recipient: endpointRecipient(policy.endpointKind, configuration),
       scheduledAt,
@@ -225,7 +226,7 @@ export async function queueRepeatingNotifications(db: Cam5Database, now = new Da
         timezone: row.siteTimezone,
         asset: `${row.assetCode} · ${row.assetName}`,
         occurredAt: now.toISOString(),
-        portalUrl: `${process.env.APP_URL || "https://cam5v2.vercel.app"}/?view=alarms&record=${encodeURIComponent(row.alarmId)}`,
+        portalUrl: `${appBaseUrl()}/?view=alarms&record=${encodeURIComponent(row.alarmId)}`,
       },
       recipient: endpointRecipient(row.endpointKind, configuration),
       scheduledAt: now,

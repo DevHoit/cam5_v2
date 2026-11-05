@@ -16,6 +16,9 @@ jobs:
   evaluate:
     runs-on: ubuntu-latest
     timeout-minutes: 2
+    env:
+      # Configurar en Settings → Secrets and variables → Actions → Variables (p. ej. https://core.hoitlive.com).
+      CAM5_BASE_URL: ${{ vars.CAM5_BASE_URL || 'https://cam5v2.vercel.app' }}
     steps:
       - name: Evaluar pérdida de comunicación
         env:
@@ -26,7 +29,7 @@ jobs:
             --retry 2 \
             --max-time 30 \
             --header "Authorization: Bearer $CRON_SECRET" \
-            https://cam5v2.vercel.app/api/v1/alarms/evaluate
+            "${CAM5_BASE_URL%/}/api/v1/alarms/evaluate"
       - name: Actualizar agregados históricos
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
@@ -36,7 +39,7 @@ jobs:
             --retry 2 \
             --max-time 60 \
             --header "Authorization: Bearer $CRON_SECRET" \
-            https://cam5v2.vercel.app/api/v1/trends/aggregate
+            "${CAM5_BASE_URL%/}/api/v1/trends/aggregate"
       - name: Procesar cola de notificaciones
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
@@ -46,7 +49,7 @@ jobs:
             --retry 2 \
             --max-time 60 \
             --header "Authorization: Bearer $CRON_SECRET" \
-            https://cam5v2.vercel.app/api/v1/notifications/process
+            "${CAM5_BASE_URL%/}/api/v1/notifications/process"
       - name: Generar reportes programados
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
@@ -56,4 +59,4 @@ jobs:
             --retry 2 \
             --max-time 60 \
             --header "Authorization: Bearer $CRON_SECRET" \
-            https://cam5v2.vercel.app/api/v1/reports/process
+            "${CAM5_BASE_URL%/}/api/v1/reports/process"

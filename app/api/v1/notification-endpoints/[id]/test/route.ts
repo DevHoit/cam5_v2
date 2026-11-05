@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { appBaseUrl } from "../../../../../../db/app-url";
 import { and, eq } from "drizzle-orm";
 import { processNotificationDelivery } from "../../../../../../db/notification-engine";
 import { auditLogs, notificationDeliveries, notificationEndpoints, sites } from "../../../../../../db/schema";
@@ -25,7 +26,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
       endpointId: endpoint.id,
       eventType: "test",
       subject: "Prueba de notificaciones · HoitLive Core",
-      payload: { eventType: "test", severity: "normal", title: "Canal configurado correctamente", detail: "Este mensaje verifica la conexión del canal de notificaciones.", site: user.siteName, timezone: endpoint.timezone, occurredAt: now.toISOString(), portalUrl: process.env.APP_URL || "https://cam5v2.vercel.app" },
+      payload: { eventType: "test", severity: "normal", title: "Canal configurado correctamente", detail: "Este mensaje verifica la conexión del canal de notificaciones.", site: user.siteName, timezone: endpoint.timezone, occurredAt: now.toISOString(), portalUrl: appBaseUrl() },
       queuedAt: now,
       scheduledAt: now,
       nextAttemptAt: now,
