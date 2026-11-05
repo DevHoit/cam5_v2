@@ -1,3 +1,4 @@
+import { isIP } from "node:net";
 import { ApiError } from "./auth";
 
 export const NOTIFICATION_KINDS = ["email", "teams", "webhook"] as const;
@@ -19,13 +20,38 @@ function optionalSecretReference(value: unknown) {
 
 function httpsUrl(value: unknown, label: string) {
   if (typeof value !== "string") throw new ApiError(400, `${label} no es válida.`);
+  let url: URL;
   try {
-    const url = new URL(value.trim());
+    url = new URL(value.trim());
     if (url.protocol !== "https:") throw new Error();
-    return url.toString();
   } catch {
     throw new ApiError(400, `${label} debe ser una URL HTTPS válida.`);
   }
+  if (isInternalHostname(url.hostname)) throw new ApiError(400, `${label} no puede apuntar a una dirección interna o privada.`);
+  return url.toString();
+}
+
+/** Rechaza destinos locales o de red privada escritos directamente en la URL. */
+export function isInternalHostname(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
+  if (!host || host === "localhost" || /\.(localhost|local|internal|lan|home\.arpa)$/.test(host)) return true;
+  if (isIP(host) === 4) {
+    const [a, b] = host.split(".").map(Number);
+    return a === 0 || a === 10 || a === 127 || (a === 100 && b >= 64 && b <= 127) || (a === 169 && b === 254)
+      || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || a >= 224;
+  }
+  if (isIP(host) === 6) {
+    if (host === "::" || host === "::1") return true;
+    // URL normaliza ::ffff:127.0.0.1 a ::ffff:7f00:1.
+    const mapped = host.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+    if (mapped) {
+      const high = Number.parseInt(mapped[1], 16);
+      const low = Number.parseInt(mapped[2], 16);
+      return isInternalHostname(`${high >> 8}.${high & 255}.${low >> 8}.${low & 255}`);
+    }
+    return /^(fc|fd|fe[89ab])/.test(host);
+  }
+  return false;
 }
 
 export function parseEndpointBody(body: Record<string, unknown>, current?: { kind: NotificationKind; configuration: Record<string, unknown>; secretReference: string | null; name: string; enabled: boolean }) {

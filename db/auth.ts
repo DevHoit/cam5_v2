@@ -27,6 +27,8 @@ export const LOGIN_LOCKOUT_MINUTES = 15;
 const DUMMY_PASSWORD_HASH = `scrypt$${"0".repeat(32)}$${"0".repeat(PASSWORD_KEY_LENGTH * 2)}`;
 
 export const SESSION_COOKIE_NAME = "cam5_session";
+/** Intervalo mínimo entre actualizaciones de "última actividad" de sesiones y credenciales. */
+export const ACTIVITY_WRITE_INTERVAL_MS = 60_000;
 
 export type AuthenticatedPortalUser = {
   id: string;
@@ -284,6 +286,7 @@ export async function resolvePortalSession(db: Cam5Database, token: string): Pro
     .select({
       sessionId: authSessions.id,
       activeSiteId: authSessions.activeSiteId,
+      lastSeenAt: authSessions.lastSeenAt,
       userId: users.id,
       email: users.email,
       displayName: users.displayName,
@@ -352,7 +355,10 @@ export async function resolvePortalSession(db: Cam5Database, token: string): Pro
       or(isNull(userRoleAssignments.expiresAt), gt(userRoleAssignments.expiresAt, now)),
     ));
 
-  await db.update(authSessions).set({ lastSeenAt: now }).where(eq(authSessions.id, session.sessionId));
+  // Basta con una precisión de un minuto: evita escribir en cada llamada a la API.
+  if (!session.lastSeenAt || now.getTime() - session.lastSeenAt.getTime() >= ACTIVITY_WRITE_INTERVAL_MS) {
+    await db.update(authSessions).set({ lastSeenAt: now }).where(eq(authSessions.id, session.sessionId));
+  }
 
   return {
     id: session.userId,

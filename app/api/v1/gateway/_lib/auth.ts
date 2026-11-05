@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { and, eq, gt, isNull, or } from "drizzle-orm";
+import { ACTIVITY_WRITE_INTERVAL_MS } from "../../../../../db/auth";
 import { hashGatewayToken } from "../../../../../db/gateway-auth";
 import { getDb } from "../../../../../db/index";
 import { clients, gatewayApiCredentials, gateways, sites } from "../../../../../db/schema";
@@ -16,6 +17,7 @@ export async function requireGatewayCredential(request: NextRequest) {
   const now = new Date();
   const [credential] = await db.select({
     id: gatewayApiCredentials.id,
+    lastUsedAt: gatewayApiCredentials.lastUsedAt,
     gatewayId: gateways.id,
     gatewayCode: gateways.code,
     gatewayName: gateways.name,
@@ -35,6 +37,8 @@ export async function requireGatewayCredential(request: NextRequest) {
     .limit(1);
 
   if (!credential) throw new ApiError(401, "Credencial de gateway inválida.");
-  await db.update(gatewayApiCredentials).set({ lastUsedAt: now }).where(eq(gatewayApiCredentials.id, credential.id));
+  if (!credential.lastUsedAt || now.getTime() - credential.lastUsedAt.getTime() >= ACTIVITY_WRITE_INTERVAL_MS) {
+    await db.update(gatewayApiCredentials).set({ lastUsedAt: now }).where(eq(gatewayApiCredentials.id, credential.id));
+  }
   return { db, credential };
 }
