@@ -306,6 +306,7 @@ export async function resolvePortalSession(db: Cam5Database, token: string): Pro
     .where(and(
       eq(userRoleAssignments.userId, session.userId),
       eq(userRoleAssignments.siteId, selected.siteId),
+      or(isNull(userRoleAssignments.expiresAt), gt(userRoleAssignments.expiresAt, now)),
     ));
 
   await db.update(authSessions).set({ lastSeenAt: now }).where(eq(authSessions.id, session.sessionId));
