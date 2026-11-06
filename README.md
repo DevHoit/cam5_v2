@@ -43,7 +43,7 @@ La capa de persistencia utiliza PostgreSQL y Drizzle ORM. Incluye telemetría, h
 
 Antes del primer ingreso, configurar `DATABASE_URL`, `CAM5_ADMIN_EMAIL`, `CAM5_ADMIN_NAME` y `CAM5_ADMIN_PASSWORD`. La contraseña debe tener al menos 10 caracteres.
 
-El mantenimiento de la telemetría se ejecuta cada cinco minutos mediante `.github/workflows/alarm-evaluator.yml`. El workflow y Vercel comparten `CRON_SECRET`: revisa comunicaciones en `GET /api/v1/alarms/evaluate`, actualiza agregados/retención en `GET /api/v1/trends/aggregate` y procesa notificaciones en `GET /api/v1/notifications/process`. Con Vercel Pro puede reemplazarse por un cron nativo de un minuto.
+El mantenimiento de la telemetría se ejecuta cada cinco minutos mediante `.github/workflows/alarm-evaluator.yml`. El workflow y Vercel comparten `CRON_SECRET`: revisa comunicaciones en `GET /api/v1/alarms/evaluate`, actualiza agregados/retención en `GET /api/v1/trends/aggregate`, procesa notificaciones en `GET /api/v1/notifications/process` y genera reportes en `GET /api/v1/reports/process`. La URL base se toma de la variable de repositorio `CAM5_BASE_URL` (por ejemplo `https://core.hoitlive.com`). Con Vercel Pro puede reemplazarse por un cron nativo de un minuto.
 
 Para correo se requieren `RESEND_API_KEY` y `NOTIFICATION_FROM_EMAIL`. Teams guarda solo el nombre de la variable que contiene su webhook; los webhooks HTTPS pueden usar una variable secreta opcional para firmar cada carga con HMAC-SHA256.
 
@@ -54,13 +54,16 @@ npm run db:seed
 
 La configuración y el modelo completo están documentados en [`DATABASE.md`](./DATABASE.md).
 
-Validaciones:
+Validaciones (también se ejecutan en cada push a `main` y en cada PR mediante `.github/workflows/ci.yml`):
 
 ```bash
-npm run build
 npm run lint
+npx tsc --noEmit
 npm run test:db
+npm test
 ```
+
+Usar `npm ci` para instalar exactamente lo que fija `package-lock.json`.
 
 ## Vercel
 
@@ -69,10 +72,23 @@ El proyecto es Next.js nativo.
 - Root Directory: raíz del repositorio (`.`).
 - Build Command: `npm run build`.
 - Output Directory: dejar vacío; Vercel utiliza `.next` automáticamente.
-- Install Command: `npm install`.
+- Install Command: `npm ci`.
 - Framework Preset: Next.js.
 
-No usar `npm run build:cloudflare` para Vercel, porque genera una salida vinext diferente de `.next`.
+### Dominio `core.hoitlive.com`
+
+1. En Vercel → Project → Settings → Domains, agregar `core.hoitlive.com` y marcarlo como dominio de producción.
+2. En el DNS de `hoitlive.com`, crear el registro `CNAME core → cname.vercel-dns.com` (Vercel muestra el valor exacto).
+3. En Vercel, definir `APP_URL=https://core.hoitlive.com` (si se omite, se usa el dominio de producción de Vercel).
+4. En GitHub → Settings → Secrets and variables → Actions → Variables, definir `CAM5_BASE_URL=https://core.hoitlive.com`.
+5. Actualizar la URL base configurada en cada gateway.
+
+### Seguridad de acceso
+
+- Cada cuenta local se bloquea 15 minutos tras 5 intentos fallidos dentro de 15 minutos; mientras dure, el login responde `429` con `Retry-After`. Recuperar la contraseña o que un administrador asigne una nueva contraseña temporal levanta el bloqueo.
+- Los intentos fallidos y bloqueados quedan en `audit_logs` (`auth.login`, resultado `failed` o `denied`).
+- El portal envía CSP, HSTS, `X-Frame-Options: DENY` y demás cabeceras de seguridad (`next.config.ts`).
+- Las asignaciones de rol (`user_role_assignments.expires_at`) vencidas dejan de otorgar permisos de inmediato. Recomendación: personal interno sin vencimiento; contratistas, auditores y soporte externo con vencimiento obligatorio de 90 días como máximo, renovable.
 
 ## Conexión del gateway
 

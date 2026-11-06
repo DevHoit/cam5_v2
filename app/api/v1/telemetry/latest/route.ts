@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import {
   alarmRules,
   assets,
@@ -10,6 +10,7 @@ import {
   physicalInputs,
   readingProfiles,
   registerDefinitions,
+  userAssetScopes,
   userChannelPreferences,
 } from "../../../../../db/schema";
 import { apiErrorResponse, ApiError, requireApiSession } from "../../_lib/auth";
@@ -20,9 +21,13 @@ export async function GET(request: NextRequest) {
   try {
     const { db, user } = await requireApiSession(request, "condition.read");
     const requestedPointId = request.nextUrl.searchParams.get("pointId");
+    const scopes = await db.select({ assetId: userAssetScopes.assetId }).from(userAssetScopes).where(eq(userAssetScopes.userId, user.id));
+    const allowedAssetIds = scopes.map((scope) => scope.assetId);
+    if (requestedPointId && allowedAssetIds.length && !allowedAssetIds.includes(requestedPointId)) throw new ApiError(403, "No tienes acceso al punto de medición indicado.");
+    const scopeFilter = allowedAssetIds.length ? inArray(assets.id, allowedAssetIds) : undefined;
     const [point] = requestedPointId
       ? await db.select().from(assets).where(and(eq(assets.id, requestedPointId), eq(assets.siteId, user.siteId), eq(assets.active, true))).limit(1)
-      : await db.select().from(assets).where(and(eq(assets.siteId, user.siteId), eq(assets.active, true))).orderBy(assets.code).limit(1);
+      : await db.select().from(assets).where(and(eq(assets.siteId, user.siteId), eq(assets.active, true), scopeFilter)).orderBy(assets.code).limit(1);
     if (!point) throw new ApiError(404, "No existe un punto de medición accesible en el sitio activo.");
 
     const [device] = await db.select({

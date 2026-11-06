@@ -1,3 +1,4 @@
+import { checkPublicDestination, isInternalHostname, type HostResolver } from "../../../../db/network-guard";
 import { ApiError } from "./auth";
 
 export const NOTIFICATION_KINDS = ["email", "teams", "webhook"] as const;
@@ -19,13 +20,30 @@ function optionalSecretReference(value: unknown) {
 
 function httpsUrl(value: unknown, label: string) {
   if (typeof value !== "string") throw new ApiError(400, `${label} no es válida.`);
+  let url: URL;
   try {
-    const url = new URL(value.trim());
+    url = new URL(value.trim());
     if (url.protocol !== "https:") throw new Error();
-    return url.toString();
   } catch {
     throw new ApiError(400, `${label} debe ser una URL HTTPS válida.`);
   }
+  if (isInternalHostname(url.hostname)) throw new ApiError(400, `${label} no puede apuntar a una dirección interna o privada.`);
+  return url.toString();
+}
+
+export { isInternalHostname };
+
+/**
+ * Además de la URL escrita, resuelve el nombre del webhook y rechaza si alguna dirección es
+ * interna o si no resuelve. Llamar después de parseEndpointBody, antes de guardar.
+ */
+export async function assertPublicWebhookTarget(values: { kind: NotificationKind; configuration: Record<string, unknown> }, resolve?: HostResolver) {
+  if (values.kind !== "webhook" || typeof values.configuration.url !== "string") return;
+  const check = await checkPublicDestination(new URL(values.configuration.url).hostname, resolve);
+  if (check.ok) return;
+  throw new ApiError(400, check.reason === "internal"
+    ? "La URL del webhook no puede apuntar a una dirección interna o privada."
+    : "No fue posible resolver el dominio de la URL del webhook.");
 }
 
 export function parseEndpointBody(body: Record<string, unknown>, current?: { kind: NotificationKind; configuration: Record<string, unknown>; secretReference: string | null; name: string; enabled: boolean }) {

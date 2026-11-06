@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { auditLogs, notificationEndpoints, notificationPolicies } from "../../../../../db/schema";
 import { apiErrorResponse, ApiError, requestMetadata, requireApiSession } from "../../_lib/auth";
-import { parseEndpointBody } from "../../_lib/notifications";
+import { assertPublicWebhookTarget, parseEndpointBody } from "../../_lib/notifications";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +15,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     const body = await request.json().catch(() => null) as Record<string, unknown> | null;
     if (!body) throw new ApiError(400, "No se recibieron cambios.");
     const values = parseEndpointBody(body, current);
+    await assertPublicWebhookTarget(values);
     const metadata = requestMetadata(request);
     const updated = await db.transaction(async (tx) => {
       const [item] = await tx.update(notificationEndpoints).set({ ...values, verifiedAt: values.enabled && current.enabled && current.kind === values.kind ? current.verifiedAt : null, updatedAt: new Date() }).where(eq(notificationEndpoints.id, id)).returning();
