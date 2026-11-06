@@ -17,6 +17,8 @@ async function notificationDatabase() {
   return { client, db: drizzle(client, { schema }) };
 }
 
+const publicResolver = async () => ["203.0.113.10"];
+
 test("queues one deduplicated delivery per eligible policy and delivers it through the configured webhook", async () => {
   const { client, db } = await notificationDatabase();
   try {
@@ -34,7 +36,7 @@ test("queues one deduplicated delivery per eligible policy and delivers it throu
     assert.equal(await queueAlarmNotifications(engineDb, { siteId: site.id, alarmId: alarm.id, alarmEventId: alarmEvent.id, severity: "critical", kind: "threshold", eventType: "opened", occurredAt: now }), 0);
 
     let body = "";
-    const result = await processNotificationQueue(engineDb, { now, includeRepeats: false, fetchImpl: async (_input, init) => { body = String(init?.body || ""); return new Response(null, { status: 204, headers: { "x-request-id": "provider-1" } }); } });
+    const result = await processNotificationQueue(engineDb, { now, includeRepeats: false, resolveHost: publicResolver, fetchImpl: async (_input, init) => { body = String(init?.body || ""); return new Response(null, { status: 204, headers: { "x-request-id": "provider-1" } }); } });
     assert.deepEqual(result, { recovered: 0, repeated: 0, processed: 1, delivered: 1, failed: 0 });
     assert.match(body, /Temperatura crítica/);
     const [delivery] = await db.select().from(schema.notificationDeliveries).where(eq(schema.notificationDeliveries.alarmId, alarm.id));
@@ -54,7 +56,7 @@ test("records provider failures and applies bounded exponential retry delays", a
     const [endpoint] = await db.insert(schema.notificationEndpoints).values({ siteId: site.id, name: "Webhook", kind: "webhook", configuration: { url: "https://fail.example.test/events" } }).returning();
     const now = new Date("2026-09-06T13:00:00.000Z");
     const [delivery] = await db.insert(schema.notificationDeliveries).values({ endpointId: endpoint.id, subject: "Prueba", payload: { title: "Falla" }, scheduledAt: now, nextAttemptAt: now }).returning();
-    const result = await processNotificationQueue(db as unknown as Cam5Database, { now, includeRepeats: false, fetchImpl: async () => new Response(null, { status: 503 }) });
+    const result = await processNotificationQueue(db as unknown as Cam5Database, { now, includeRepeats: false, resolveHost: publicResolver, fetchImpl: async () => new Response(null, { status: 503 }) });
     assert.equal(result.failed, 1);
     const [failed] = await db.select().from(schema.notificationDeliveries).where(eq(schema.notificationDeliveries.id, delivery.id));
     assert.equal(failed.status, "failed");
@@ -73,7 +75,7 @@ test("signs webhook payloads without exposing the signing secret", async () => {
   await sendNotification(
     { kind: "webhook", configuration: { url: "https://signed.example.test/events" }, secretReference: "HOOK_SECRET" },
     { subject: "Evento", payload: { alarmCode: "AL-002" } },
-    { environment: { NODE_ENV: "test", HOOK_SECRET: "super-secret" }, fetchImpl: async (_input, init) => { signature = new Headers(init?.headers).get("X-HoitLive-Signature") || ""; return new Response(null, { status: 200 }); } },
+    { environment: { NODE_ENV: "test", HOOK_SECRET: "super-secret" }, resolveHost: publicResolver, fetchImpl: async (_input, init) => { signature = new Headers(init?.headers).get("X-HoitLive-Signature") || ""; return new Response(null, { status: 200 }); } },
   );
   assert.match(signature, /^sha256=[a-f0-9]{64}$/);
   assert.doesNotMatch(signature, /super-secret/);
@@ -116,4 +118,46 @@ test("sends a responsive branded email with a plain-text fallback", async () => 
   assert.match(String(providerBody.html), /&lt;script&gt;/);
   assert.doesNotMatch(String(providerBody.html), /<script>alert/);
   assert.match(String(providerBody.text), /Subestación Norte/);
+});
+
+test("refuses to deliver webhooks whose domain resolves to an internal address", async () => {
+  let called = false;
+  await assert.rejects(
+    sendNotification(
+      { kind: "webhook", configuration: { url: "https://127.0.0.1.nip.io/events" }, secretReference: null },
+      { subject: "Evento", payload: {} },
+      { resolveHost: async () => ["127.0.0.1"], fetchImpl: async () => { called = true; return new Response(null, { status: 200 }); } },
+    ),
+    /interna o privada/,
+  );
+  await assert.rejects(
+    sendNotification(
+      { kind: "webhook", configuration: { url: "https://mixed.example.test/events" }, secretReference: null },
+      { subject: "Evento", payload: {} },
+      { resolveHost: async () => ["203.0.113.10", "::ffff:10.0.0.5"], fetchImpl: async () => { called = true; return new Response(null, { status: 200 }); } },
+    ),
+    /interna o privada/,
+  );
+  await assert.rejects(
+    sendNotification(
+      { kind: "webhook", configuration: { url: "https://nx.example.test/events" }, secretReference: null },
+      { subject: "Evento", payload: {} },
+      { resolveHost: async () => { throw new Error("ENOTFOUND"); }, fetchImpl: async () => { called = true; return new Response(null, { status: 200 }); } },
+    ),
+    /resolver el dominio/,
+  );
+  assert.equal(called, false);
+});
+
+test("does not follow webhook redirects", async () => {
+  let redirectMode: RequestRedirect | undefined;
+  await assert.rejects(
+    sendNotification(
+      { kind: "webhook", configuration: { url: "https://hooks.example.test/events" }, secretReference: null },
+      { subject: "Evento", payload: {} },
+      { resolveHost: publicResolver, fetchImpl: async (_input, init) => { redirectMode = init?.redirect; return new Response(null, { status: 302, headers: { Location: "http://169.254.169.254/latest/meta-data" } }); } },
+    ),
+    /redirección \(302\)/,
+  );
+  assert.equal(redirectMode, "manual");
 });

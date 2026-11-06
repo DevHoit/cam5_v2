@@ -2,6 +2,7 @@ import { createHmac } from "node:crypto";
 import { and, eq, inArray, lte, or, sql } from "drizzle-orm";
 import type { Cam5Database } from "./index";
 import { appBaseUrl } from "./app-url";
+import { checkPublicDestination, type HostResolver } from "./network-guard";
 import {
   alarms,
   assets,
@@ -389,7 +390,7 @@ export function notificationEmailHtml(message: DeliveryMessage) {
 export async function sendNotification(
   endpoint: EndpointTransport,
   message: DeliveryMessage,
-  options: { fetchImpl?: typeof fetch; environment?: NodeJS.ProcessEnv } = {},
+  options: { fetchImpl?: typeof fetch; environment?: NodeJS.ProcessEnv; resolveHost?: HostResolver } = {},
 ): Promise<TransportResult> {
   const fetchImpl = options.fetchImpl ?? fetch;
   const environment = options.environment ?? process.env;
@@ -431,7 +432,24 @@ export async function sendNotification(
     const secret = requiredEnvironmentValue(endpoint.secretReference, environment);
     headers["X-HoitLive-Signature"] = `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`;
   }
-  const response = await fetchImpl(url, { method: "POST", headers, body });
+  // Se vuelve a validar al enviar: el DNS pudo cambiar desde que se guardó el canal.
+  let hostname: string;
+  try {
+    hostname = new URL(url).hostname;
+  } catch {
+    throw new Error("La URL del webhook no es válida.");
+  }
+  const destination = await checkPublicDestination(hostname, options.resolveHost);
+  if (!destination.ok) {
+    throw new Error(destination.reason === "internal"
+      ? "El webhook apunta a una dirección interna o privada; no se envió."
+      : "No fue posible resolver el dominio del webhook.");
+  }
+  // Sin seguir redirecciones: una respuesta 3xx podría desviar la carga a la red interna.
+  const response = await fetchImpl(url, { method: "POST", headers, body, redirect: "manual" });
+  if ((response.status >= 300 && response.status < 400) || response.type === "opaqueredirect") {
+    throw new Error(`El webhook respondió con una redirección (${response.status}); no se siguen redirecciones.`);
+  }
   if (!response.ok) throw new Error(`El webhook respondió ${response.status}.`);
   return { providerMessageId: response.headers.get("x-request-id"), recipient: configuration.destination || url };
 }
@@ -443,7 +461,7 @@ export function retryDelayMinutes(attempt: number) {
 export async function processNotificationDelivery(
   db: Cam5Database,
   deliveryId: number,
-  options: { now?: Date; fetchImpl?: typeof fetch; environment?: NodeJS.ProcessEnv } = {},
+  options: { now?: Date; fetchImpl?: typeof fetch; environment?: NodeJS.ProcessEnv; resolveHost?: HostResolver } = {},
 ) {
   const now = options.now ?? new Date();
   const [candidate] = await db.select({
@@ -480,7 +498,7 @@ export async function processNotificationDelivery(
 
 export async function processNotificationQueue(
   db: Cam5Database,
-  options: { now?: Date; limit?: number; fetchImpl?: typeof fetch; environment?: NodeJS.ProcessEnv; includeRepeats?: boolean } = {},
+  options: { now?: Date; limit?: number; fetchImpl?: typeof fetch; environment?: NodeJS.ProcessEnv; resolveHost?: HostResolver; includeRepeats?: boolean } = {},
 ) {
   const now = options.now ?? new Date();
   const staleSendingBefore = new Date(now.getTime() - 10 * 60_000);
