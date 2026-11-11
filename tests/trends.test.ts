@@ -1,6 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { inferTrendStepSeconds, resolveTrendResolution } from "../app/api/v1/_lib/trend-resolution";
+import { inferTrendStepSeconds, RAW_TREND_WINDOW_MS, resolveTrendResolution, trendRawCutoff } from "../app/api/v1/_lib/trend-resolution";
+
+test("reads raw samples only for the last day and aligns the cutoff to the bucket", () => {
+  const now = new Date("2026-09-05T12:03:27.000Z");
+  // Debe ser menor que la retención cruda (7 días) o el tramo intermedio quedaría vacío.
+  assert.ok(RAW_TREND_WINDOW_MS <= 24 * 3600 * 1000);
+  assert.equal(trendRawCutoff(now, 300).toISOString(), "2026-09-04T12:00:00.000Z");
+  assert.equal(trendRawCutoff(now, 60).toISOString(), "2026-09-04T12:03:00.000Z");
+  assert.equal(trendRawCutoff(now, 3600).toISOString(), "2026-09-04T12:00:00.000Z");
+  assert.equal(trendRawCutoff(now, 86400).toISOString(), "2026-09-04T00:00:00.000Z");
+});
 
 const end = new Date("2026-09-05T12:00:00.000Z");
 const before = (milliseconds: number) => new Date(end.getTime() - milliseconds);

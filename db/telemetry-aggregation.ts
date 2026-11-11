@@ -2,6 +2,9 @@ import { sql } from "drizzle-orm";
 import type { Cam5Database } from "./index";
 import { assets, channels, deviceRegisterSamples, devices, ingestionBatches, latestReadings, readingAggregates, readingProfiles, readings } from "./schema";
 
+/** Días máximos que se conservan las muestras de registros de diagnóstico (device_register_samples). */
+export const DIAGNOSTIC_RETENTION_DAYS = 2;
+
 const AGGREGATION_WINDOWS = [
   { bucketSeconds: 60, lookbackMs: 30 * 60 * 60 * 1000 },
   { bucketSeconds: 300, lookbackMs: 30 * 60 * 60 * 1000 },
@@ -52,6 +55,8 @@ export async function refreshTelemetryAggregates(db: Cam5Database, siteId: strin
     `);
     bucketsUpdated += 1;
   }
+  // Los registros de diagnóstico son la tabla más voluminosa y nada los consulta más allá del
+  // último valor: se retienen como máximo DIAGNOSTIC_RETENTION_DAYS aunque el perfil guarde más.
   await db.execute(sql`
     delete from ${deviceRegisterSamples}
     using ${devices}, ${assets}, ${readingProfiles}
@@ -59,7 +64,7 @@ export async function refreshTelemetryAggregates(db: Cam5Database, siteId: strin
       and ${devices.assetId} = ${assets.id}
       and ${devices.readingProfileId} = ${readingProfiles.id}
       and ${assets.siteId} = ${siteId}
-      and ${deviceRegisterSamples.recordedAt} < ${evaluatedAtIso}::timestamptz - make_interval(days => ${readingProfiles.rawRetentionDays})
+      and ${deviceRegisterSamples.recordedAt} < ${evaluatedAtIso}::timestamptz - make_interval(days => least(${readingProfiles.rawRetentionDays}, ${DIAGNOSTIC_RETENTION_DAYS}::integer))
   `);
   await db.execute(sql`
     delete from ${readings}
