@@ -2061,3 +2061,24 @@ button.module-table-row { width: 100%; }
 @media (max-width: 700px) {
   .channel-visibility-sheet { width: 100vw; }.channel-visibility-sheet > header { padding: 17px 15px 14px; }.visibility-summary { padding: 10px 15px; }.visibility-summary > span { padding: 8px 6px; flex-direction: column; text-align: center; }.visibility-presets { padding: 11px 15px 3px; }.visibility-filters { padding: 8px 15px 10px; grid-template-columns: 1fr; }.visibility-list { padding: 7px 8px 12px; }.visibility-channel { grid-template-columns: 20px 42px minmax(0,1fr); }.visibility-reading { display: none; }.channel-visibility-sheet > footer { padding: 12px 15px; grid-template-columns: 1fr 1fr; }.channel-visibility-sheet > footer > div { grid-column: 1 / -1; }.channel-monitoring-summary { grid-template-columns: 1fr; }
 }
+
+/* Logo del cliente activo (marca compartida con HoitLive Core) */
+.brand-block.has-client-logo { height: auto; min-height: 94px; flex: 0 0 auto; padding: 16px 18px 14px; align-items: flex-start; }
+.client-brand { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 9px; }
+.client-logo-frame { height: 62px; padding: 9px 14px; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #fff; border-radius: 12px; box-shadow: 0 9px 24px rgba(0,0,0,.28), inset 0 0 0 1px rgba(255,255,255,.6); }
+.client-logo-frame img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.client-brand-powered { display: flex; align-items: center; gap: 5px; padding-left: 2px; color: #5d6067; font-size: var(--text-xs); font-weight: 600; letter-spacing: .02em; }
+.client-brand-powered svg { color: #38bdf8; }
+.client-brand-powered strong { color: #a1a1aa; font-weight: 800; }
+.client-logo-field { margin-top: 2px; display: flex; flex-direction: column; gap: 8px; }
+.client-logo-field-label { color: #52525b; font-size: var(--text-label); font-weight: 700; }
+.client-logo-field-body { padding: 13px; display: grid; grid-template-columns: 180px minmax(0,1fr); align-items: center; gap: 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; }
+.client-logo-field-body p { margin: 0 0 10px; color: #64748b; font-size: var(--text-label); line-height: 1.45; }
+.client-logo-preview { height: 76px; box-shadow: none; border: 1px dashed #cbd5e1; }
+.client-logo-preview em { color: #94a3b8; font-size: var(--text-label); font-style: normal; font-weight: 600; }
+.client-logo-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+@media (max-width: 820px) {
+  .mobile-brand.mobile-client-logo { width: auto; max-width: 112px; padding: 4px 9px; background: #fff; border: 1px solid #e4e4e7; }
+  .mobile-client-logo img { display: block; height: 26px; width: auto; max-width: 94px; object-fit: contain; }
+}
+@media (max-width: 600px) { .client-logo-field-body { grid-template-columns: 1fr; } }
