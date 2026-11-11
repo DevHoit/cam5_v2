@@ -7,11 +7,8 @@ import {
   IconAlertTriangle as AlertTriangle,
   IconChartLine as ChartLine,
   IconChevronDown as ChevronDown,
-  IconCircuitCell as CircuitBoard,
   IconDownload as Download,
-  IconGauge as Gauge,
   IconRefresh as Refresh,
-  IconShieldCheck as ShieldCheck,
   IconZoomReset as ZoomReset,
 } from "@tabler/icons-react";
 
@@ -71,6 +68,20 @@ function valueLabel(value: number | null, unit: string, digits = 1) {
   return value === null || !Number.isFinite(value) ? "—" : `${value.toFixed(digits)} ${unit}`.trim();
 }
 
+/** Paso "redondo" (1, 2, 2.5 o 5 × 10^n) para que el eje Y muestre valores legibles. */
+function niceStep(span: number, targetTicks = 5) {
+  const raw = Math.max(span, 1e-6) / targetTicks;
+  const magnitude = 10 ** Math.floor(Math.log10(raw));
+  const normalized = raw / magnitude;
+  const factor = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 2.5 ? 2.5 : normalized <= 5 ? 5 : 10;
+  return factor * magnitude;
+}
+
+const DATE_TIME = new Intl.DateTimeFormat("es-CL", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false });
+const DATE_TIME_SECONDS = new Intl.DateTimeFormat("es-CL", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+const TIME_ONLY = new Intl.DateTimeFormat("es-CL", { hour: "2-digit", minute: "2-digit", hour12: false });
+const DAY_ONLY = new Intl.DateTimeFormat("es-CL", { day: "numeric", month: "short" });
+
 function localInputValue(iso: string) {
   const date = new Date(iso);
   const offset = date.getTimezoneOffset() * 60_000;
@@ -106,7 +117,6 @@ export function TrendsView({
   setPeriod,
   selectedId,
   onSelectChannel,
-  onBackToMap,
   rangeWindow,
   setRangeWindow,
   canExport,
@@ -118,7 +128,6 @@ export function TrendsView({
   setPeriod: (period: string) => void;
   selectedId: string;
   onSelectChannel: (id: string) => void;
-  onBackToMap: () => void;
   rangeWindow: TrendWindow | null;
   setRangeWindow: (value: TrendWindow | null) => void;
   canExport: boolean;
@@ -127,7 +136,6 @@ export function TrendsView({
   const activeChannels = channels.filter((channel) => channel.enabled);
   const primaryOption = activeChannels.find((channel) => channel.id === selectedId) ?? activeChannels[0];
   const [comparisons, setComparisons] = useState<string[]>([]);
-  const [comparisonCandidate, setComparisonCandidate] = useState("");
   const [resolution, setResolution] = useState("auto");
   const [result, setResult] = useState<TrendResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -176,17 +184,25 @@ export function TrendsView({
   }, [activeRange.from, activeRange.to, assetId, channelKey, effectiveResolution, refreshKey]);
 
   const primary = result?.series[0] ?? null;
+  const unit = primary?.unit ?? primaryOption?.unit ?? "";
+  const exceeded = !primary || primary.stats.maximum === null ? "" : primary.criticalThreshold !== null && primary.stats.maximum >= primary.criticalThreshold ? "critical" : primary.warningThreshold !== null && primary.stats.maximum >= primary.warningThreshold ? "warning" : "normal";
   const validValues = result?.series.flatMap((series) => series.points.flatMap((point) => point.value === null ? [] : [point.minimum ?? point.value, point.maximum ?? point.value])) ?? [];
   const thresholds = primary ? [primary.warningThreshold, primary.criticalThreshold].filter((value): value is number => value !== null) : [];
   const rawMin = validValues.length ? Math.min(...validValues, ...thresholds) : 0;
   const rawMax = validValues.length ? Math.max(...validValues, ...thresholds) : 100;
-  const padding = Math.max(1, (rawMax - rawMin) * .12);
-  const yMin = Math.floor((rawMin - padding) * 10) / 10;
-  const yMax = Math.ceil((rawMax + padding) * 10) / 10;
+  const padding = Math.max(.5, (rawMax - rawMin) * .08);
+  const yStep = niceStep(rawMax - rawMin + padding * 2);
+  const yMin = Math.floor((rawMin - padding) / yStep) * yStep;
+  const yMax = Math.ceil((rawMax + padding) / yStep) * yStep;
+  const yDecimals = yStep >= 1 ? 0 : yStep >= .1 ? 1 : 2;
   const fromMs = new Date(result?.from ?? activeRange.from).getTime();
   const toMs = new Date(result?.to ?? activeRange.to).getTime();
   const expectedStepMs = (result?.resolution.expectedStepSeconds ?? 2) * 1000;
-  const yTicks = [0, .25, .5, .75, 1].map((ratio) => ({ ratio, value: yMax - (yMax - yMin) * ratio, y: 30 + ratio * 270 }));
+  const yTicks = Array.from({ length: Math.round((yMax - yMin) / yStep) + 1 }, (_, index) => {
+    const value = yMax - index * yStep;
+    const ratio = (yMax - value) / Math.max(1e-9, yMax - yMin);
+    return { ratio, value, y: 30 + ratio * 270 };
+  });
   const xTicks = [0, .25, .5, .75, 1].map((ratio) => new Date(fromMs + (toMs - fromMs) * ratio));
   const thresholdMarkers = primary ? [
     primary.criticalThreshold === null ? null : { key: "critical", label: "Crítico", value: primary.criticalThreshold, lineY: 300 - (primary.criticalThreshold - yMin) / Math.max(.0001, yMax - yMin) * 270 },
@@ -203,10 +219,9 @@ export function TrendsView({
     return point ? { series, point, color: COLORS[index] } : null;
   }).filter(Boolean) as Array<{ series: TrendSeries; point: TrendPoint; color: string }> || []);
 
-  const addComparison = () => {
-    if (!comparisonCandidate || comparisons.length >= 3) return;
-    setComparisons((current) => [...current, comparisonCandidate]);
-    setComparisonCandidate("");
+  const addComparison = (code: string) => {
+    if (!code || comparisons.length >= 3) return;
+    setComparisons((current) => current.includes(code) ? current : [...current, code]);
   };
   const changePeriod = (next: string) => {
     if (next === "Personalizado" && !rangeWindow) setRangeWindow({ from: new Date(now - 24 * 3600_000).toISOString(), to: new Date(now).toISOString() });
@@ -249,28 +264,31 @@ export function TrendsView({
   return <>
     <section className="trend-control-panel">
       <div className="trend-primary-controls"><label className="channel-select"><Activity size={17} /><span><small>Canal principal</small><select value={primaryOption.id} onChange={(event) => { setComparisons([]); onSelectChannel(event.target.value); }} aria-label="Canal principal">{activeChannels.map((channel) => <option key={channel.id} value={channel.id}>{channel.id} · {channel.label}</option>)}</select></span><ChevronDown size={14} /></label><div className="trend-range-tabs" aria-label="Rango temporal">{PERIODS.map((item) => <button key={item} className={period === item ? "active" : ""} onClick={() => changePeriod(item)}>{item}</button>)}</div></div>
-      <div className="trend-secondary-controls"><label><span>Comparar con</span><select value={comparisonCandidate} onChange={(event) => setComparisonCandidate(event.target.value)} disabled={!compareOptions.length || comparisons.length >= 3}><option value="">Seleccionar canal</option>{compareOptions.map((channel) => <option key={channel.id} value={channel.id}>{channel.id} · {channel.label}</option>)}</select><ChevronDown size={13} /></label><button className="secondary-button" disabled={!comparisonCandidate || comparisons.length >= 3} onClick={addComparison}>Agregar comparación</button><label><span>Resolución</span><select value={effectiveResolution} onChange={(event) => setResolution(event.target.value)}><option value="auto">Automática</option><option value="raw" disabled={rangeSeconds > 2 * 3600}>Cruda · máx. 2 h</option><option value="60" disabled={rangeSeconds > 7 * 86400}>1 minuto</option><option value="300" disabled={rangeSeconds > 90 * 86400}>5 minutos</option><option value="3600" disabled={rangeSeconds > 2 * 365 * 86400}>1 hora</option><option value="86400">1 día</option></select><ChevronDown size={13} /></label>{canExport && <button className="primary-button" onClick={() => void exportCurrent()} disabled={loading}><Download size={16} /> Exportar CSV</button>}</div>
+      <div className="trend-secondary-controls"><label><span>Comparar con</span><select value="" onChange={(event) => addComparison(event.target.value)} disabled={!compareOptions.length || comparisons.length >= 3}><option value="">{comparisons.length >= 3 ? "Máximo 3 comparaciones" : compareOptions.length ? `Agregar canal en ${primaryOption.unit}` : "Sin canales en la misma unidad"}</option>{compareOptions.map((channel) => <option key={channel.id} value={channel.id}>{channel.id} · {channel.label}</option>)}</select><ChevronDown size={13} /></label><label><span>Resolución</span><select value={effectiveResolution} onChange={(event) => setResolution(event.target.value)}><option value="auto">Automática</option><option value="raw" disabled={rangeSeconds > 2 * 3600}>Cruda · máx. 2 h</option><option value="60" disabled={rangeSeconds > 7 * 86400}>1 minuto</option><option value="300" disabled={rangeSeconds > 90 * 86400}>5 minutos</option><option value="3600" disabled={rangeSeconds > 2 * 365 * 86400}>1 hora</option><option value="86400">1 día</option></select><ChevronDown size={13} /></label>{canExport && <button className="primary-button" onClick={() => void exportCurrent()} disabled={loading}><Download size={16} /> Exportar CSV</button>}</div>
       {period === "Personalizado" && rangeWindow && <div className="trend-custom-range"><label><span>Desde</span><input type="datetime-local" value={localInputValue(rangeWindow.from)} max={localInputValue(rangeWindow.to)} onChange={(event) => updateCustomRange("from", event.target.value)} /></label><label><span>Hasta</span><input type="datetime-local" value={localInputValue(rangeWindow.to)} min={localInputValue(rangeWindow.from)} max={localInputValue(new Date().toISOString())} onChange={(event) => updateCustomRange("to", event.target.value)} /></label><button onClick={() => changePeriod("24 h")}><ZoomReset size={15} /> Restablecer 24 h</button></div>}
-      {comparisons.length > 0 && <div className="trend-comparison-chips"><span>Comparación:</span>{comparisons.map((code, index) => <button key={code} onClick={() => setComparisons((current) => current.filter((item) => item !== code))}><i style={{ background: COLORS[index + 1] }} />{code}<b>×</b></button>)}</div>}
+      {comparisons.length > 0 && <div className="trend-comparison-chips"><span>Comparación:</span>{comparisons.map((code, index) => <button key={code} aria-label={`Quitar ${code} de la comparación`} onClick={() => setComparisons((current) => current.filter((item) => item !== code))}><i style={{ background: COLORS[index + 1] }} />{code}<b>×</b></button>)}</div>}
     </section>
 
     {error && <div className="data-error"><AlertTriangle size={18} /><div><strong>No se pudo cargar la tendencia</strong><p>{error}</p></div><button onClick={() => setRefreshKey((value) => value + 1)}>Reintentar</button></div>}
-    <section className="trend-metric-grid">
-      <article><span><Gauge size={19} /></span><div><small>Última lectura</small><strong>{valueLabel(primary?.stats.lastValue ?? null, primary?.unit ?? primaryOption.unit)}</strong><p>{primary?.code ?? primaryOption.id} · {result?.resolution.label ?? "Consultando"}</p></div></article>
-      <article><span><ChartLine size={19} /></span><div><small>Promedio del periodo</small><strong>{valueLabel(primary?.stats.average ?? null, primary?.unit ?? primaryOption.unit)}</strong><p>{valueLabel(primary?.stats.minimum ?? null, primary?.unit ?? primaryOption.unit)} mín. · {valueLabel(primary?.stats.maximum ?? null, primary?.unit ?? primaryOption.unit)} máx.</p></div></article>
-      <article><span><Activity size={19} /></span><div><small>Variación</small><strong>{primary?.stats.variation === null || primary?.stats.variation === undefined ? "—" : `${primary.stats.variation >= 0 ? "+" : ""}${primary.stats.variation.toFixed(1)} ${primary.unit}`}</strong><p>Primera lectura respecto de la última</p></div></article>
-      <article><span><ShieldCheck size={19} /></span><div><small>Calidad de datos</small><strong>{primary?.stats.qualityPercent === null || primary?.stats.qualityPercent === undefined ? "—" : `${primary.stats.qualityPercent}%`}</strong><p>{primary?.stats.validSamples.toLocaleString("es-CL") ?? 0} de {primary?.stats.totalSamples.toLocaleString("es-CL") ?? 0} muestras válidas</p></div></article>
-    </section>
 
     <article className="panel trend-chart-panel">
-      <header><div><span className="eyebrow">{result?.asset.code ?? "Punto activo"} · {result?.resolution.label ?? "Resolución automática"}</span><h2>{primary?.name ?? primaryOption.label}</h2><p>{primary?.zone ?? primaryOption.zone} · {new Intl.DateTimeFormat("es-CL", { dateStyle: "medium", timeStyle: "short" }).format(new Date(activeRange.from))} → {new Intl.DateTimeFormat("es-CL", { dateStyle: "medium", timeStyle: "short" }).format(new Date(activeRange.to))}</p></div><span className="trend-source-pill">{loading ? <><Refresh className="spin" size={14} /> Consultando</> : <><ShieldCheck size={14} /> PostgreSQL</>}</span></header>
+      <header><div><span className="eyebrow">{primary?.code ?? primaryOption.id} · {result?.resolution.label ?? "Resolución automática"}</span><h2>{primary?.name ?? primaryOption.label}</h2><p>{primary?.zone ?? primaryOption.zone} · {DATE_TIME.format(new Date(activeRange.from))} → {DATE_TIME.format(new Date(activeRange.to))}</p></div>{loading && <span className="trend-source-pill"><Refresh className="spin" size={14} aria-hidden="true" /> Actualizando</span>}</header>
+      <dl className="trend-stats">
+        <div><dt>Última</dt><dd>{valueLabel(primary?.stats.lastValue ?? null, unit)}</dd></div>
+        <div><dt>Promedio</dt><dd>{valueLabel(primary?.stats.average ?? null, unit)}</dd></div>
+        <div><dt>Mínimo</dt><dd>{valueLabel(primary?.stats.minimum ?? null, unit)}</dd></div>
+        <div><dt>Máximo</dt><dd>{valueLabel(primary?.stats.maximum ?? null, unit)}</dd></div>
+        <div><dt>Variación</dt><dd>{primary?.stats.variation === null || primary?.stats.variation === undefined ? "—" : `${primary.stats.variation >= 0 ? "+" : ""}${primary.stats.variation.toFixed(1)} ${unit}`}</dd></div>
+        <div><dt>Calidad</dt><dd>{primary?.stats.qualityPercent === null || primary?.stats.qualityPercent === undefined ? "—" : `${Number(primary.stats.qualityPercent.toFixed(1))}%`}<small>{primary ? `${primary.stats.validSamples.toLocaleString("es-CL")} de ${primary.stats.totalSamples.toLocaleString("es-CL")}` : ""}</small></dd></div>
+        <div className={`trend-stats-status ${exceeded}`}><dt>Umbrales</dt><dd>{exceeded === "critical" ? "Superó el crítico" : exceeded === "warning" ? "Superó la advertencia" : exceeded === "normal" ? "Bajo los umbrales" : "—"}</dd></div>
+      </dl>
       <div className="trend-chart-body">
-        <div className="trend-y-axis">{yTicks.map((tick) => <span key={tick.ratio} style={{ top: `${tick.ratio * 100}%` }}>{tick.value.toFixed(1)}</span>)}</div>
+        <div className="trend-y-axis">{yTicks.map((tick) => <span key={tick.ratio} style={{ top: `${tick.ratio * 100}%` }}>{tick.value.toFixed(yDecimals)}</span>)}</div>
         <div className={`trend-svg-wrap ${dragStart !== null ? "selecting" : ""}`} onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); const x = pointerX(event); setDragStart(x); setDragCurrent(x); }} onPointerMove={(event) => { const x = pointerX(event); setHoverX(x); if (dragStart !== null) setDragCurrent(x); }} onPointerUp={finishZoom} onPointerCancel={finishZoom} onPointerLeave={() => { if (dragStart === null) setHoverX(null); }}>
           <svg viewBox="0 0 1000 320" preserveAspectRatio="none" role="img" aria-label="Gráfico de tendencias por canal">
             <g className="trend-grid-lines">{yTicks.map((tick) => <line key={tick.ratio} x1="0" x2="1000" y1={tick.y} y2={tick.y} />)}</g>
             {thresholdMarkers.map((marker) => <g key={marker.key} className={`trend-threshold ${marker.key}`}><line x1="0" x2="1000" y1={marker.lineY} y2={marker.lineY} /></g>)}
-            {result?.series[0]?.points.filter((point) => point.quality !== "good").map((point) => { const x = (new Date(point.timestamp).getTime() - fromMs) / Math.max(1, toMs - fromMs) * 1000; return <rect key={point.timestamp} className={`quality-band ${point.quality}`} x={x - 2} y="30" width="4" height="270" />; })}
+            {result?.series[0]?.points.filter((point) => point.quality === "bad" || (point.quality === "stale" && point.validSamples * 2 <= point.totalSamples)).map((point) => { const x = (new Date(point.timestamp).getTime() - fromMs) / Math.max(1, toMs - fromMs) * 1000; return <rect key={point.timestamp} className={`quality-band ${point.quality}`} x={x - 2} y="30" width="4" height="270" />; })}
             {result?.series.map((series, index) => pathSegments(series, fromMs, toMs, yMin, yMax, expectedStepMs).map((path, segment) => <path key={`${series.id}-${segment}`} className="trend-series-path" d={path} style={{ stroke: COLORS[index] }} />))}
             {result?.resolution.key === "raw" && result.series.map((series, index) => series.points.length <= 240 ? series.points.map((point) => point.value === null || point.quality === "bad" ? null : <circle key={`${series.id}-${point.timestamp}`} className="trend-series-dot" cx={(new Date(point.timestamp).getTime() - fromMs) / Math.max(1, toMs - fromMs) * 1000} cy={300 - (point.value - yMin) / Math.max(.0001, yMax - yMin) * 270} r="2.7" style={{ fill: COLORS[index] }} />) : null)}
             {hoverX !== null && <line className="trend-cursor-line" x1={hoverX} x2={hoverX} y1="30" y2="300" />}
@@ -279,12 +297,11 @@ export function TrendsView({
           </svg>
           {thresholdMarkers.map((marker) => <div key={marker.key} className={`trend-threshold-label ${marker.key}`} style={{ top: `${marker.labelY / 320 * 100}%` }}><span>{marker.label}</span><strong>{valueLabel(marker.value, primary?.unit ?? primaryOption.unit)}</strong></div>)}
           {!loading && !error && !validValues.length && <div className="trend-chart-empty"><ChartLine size={25} /><strong>Sin muestras para este periodo</strong><span>La línea aparecerá cuando el gateway envíe datos del canal.</span></div>}
-          {cursorItems.length > 0 && hoverX !== null && <div className={`trend-tooltip ${hoverX > 720 ? "align-right" : ""}`} style={{ left: `${hoverX / 10}%` }}><strong>{new Intl.DateTimeFormat("es-CL", { dateStyle: "short", timeStyle: "medium" }).format(new Date(cursorItems[0].point.timestamp))}</strong>{cursorItems.map((item) => <span key={item.series.id}><i style={{ background: item.color }} /><b>{item.series.code}</b>{valueLabel(item.point.value, item.series.unit)}<small>{item.point.quality === "good" ? "Válida" : item.point.quality === "stale" ? "Parcial" : "Inválida"}</small></span>)}</div>}
+          {cursorItems.length > 0 && hoverX !== null && <div className={`trend-tooltip ${hoverX > 720 ? "align-right" : ""}`} style={{ left: `${hoverX / 10}%` }}><strong>{DATE_TIME_SECONDS.format(new Date(cursorItems[0].point.timestamp))}</strong>{cursorItems.map((item) => <span key={item.series.id}><i style={{ background: item.color }} /><b>{item.series.code}</b>{valueLabel(item.point.value, item.series.unit)}<small>{item.point.quality === "good" ? "Válida" : item.point.quality === "stale" ? "Parcial" : "Inválida"}</small></span>)}</div>}
         </div>
-        <div className="trend-x-axis">{xTicks.map((date, index) => <span key={index}>{new Intl.DateTimeFormat("es-CL", rangeSeconds > 7 * 86400 ? { day: "2-digit", month: "short" } : { hour: "2-digit", minute: "2-digit" }).format(date)}</span>)}</div>
+        <div className="trend-x-axis">{xTicks.map((date, index) => <span key={index}>{rangeSeconds > 7 * 86400 ? DAY_ONLY.format(date) : rangeSeconds > 86400 ? DATE_TIME.format(date) : TIME_ONLY.format(date)}</span>)}</div>
       </div>
-      <footer><div className="trend-legend">{result?.series.map((series, index) => <span key={series.id}><i style={{ background: COLORS[index] }} />{series.code} · {series.unit}</span>)}<span className="quality-legend"><i />Dato incompleto</span></div><p>Arrastra horizontalmente sobre el gráfico para ampliar un intervalo.</p></footer>
+      <footer><div className="trend-legend">{result?.series.map((series, index) => <span key={series.id}><i style={{ background: COLORS[index] }} />{series.code} · {series.unit}</span>)}<span className="quality-legend"><i />Intervalo parcial</span><span className="quality-legend bad"><i />Muestra inválida</span></div><p>Arrastra horizontalmente sobre el gráfico para ampliar un intervalo.</p></footer>
     </article>
-    <article className="panel trend-insight"><span><ChartLine size={20} /></span><div><strong>Lectura del periodo</strong><p>{primary?.stats.totalSamples ? `${primary.code} registra ${primary.stats.totalSamples.toLocaleString("es-CL")} muestras, con ${primary.stats.qualityPercent ?? 0}% de calidad. ${primary.stats.maximum !== null && primary.criticalThreshold !== null && primary.stats.maximum >= primary.criticalThreshold ? "El máximo superó el umbral crítico configurado." : primary.stats.maximum !== null && primary.warningThreshold !== null && primary.stats.maximum >= primary.warningThreshold ? "El máximo superó el umbral de advertencia." : "Los valores válidos permanecen bajo los umbrales configurados."}` : "No existen muestras suficientes para interpretar este periodo."}</p></div><button onClick={onBackToMap}><CircuitBoard size={15} /> Volver al mapa</button></article>
   </>;
 }
