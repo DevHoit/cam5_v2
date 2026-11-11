@@ -43,7 +43,7 @@ La capa de persistencia utiliza PostgreSQL y Drizzle ORM. Incluye telemetría, h
 
 Antes del primer ingreso, configurar `DATABASE_URL`, `CAM5_ADMIN_EMAIL`, `CAM5_ADMIN_NAME` y `CAM5_ADMIN_PASSWORD`. La contraseña debe tener al menos 10 caracteres.
 
-El mantenimiento de la telemetría se ejecuta cada cinco minutos mediante `.github/workflows/alarm-evaluator.yml`. El workflow y Vercel comparten `CRON_SECRET`: revisa comunicaciones en `GET /api/v1/alarms/evaluate`, actualiza agregados/retención en `GET /api/v1/trends/aggregate`, procesa notificaciones en `GET /api/v1/notifications/process` y genera reportes en `GET /api/v1/reports/process`. La URL base se toma de la variable de repositorio `CAM5_BASE_URL` (por ejemplo `https://core.hoitlive.com`). Con Vercel Pro puede reemplazarse por un cron nativo de un minuto.
+Las tareas programadas corren como cron nativo de Vercel (`vercel.json`, requiere plan Pro) y se autentican con `CRON_SECRET`, que Vercel envía automáticamente como `Authorization: Bearer`: cada minuto revisa comunicaciones (`/api/v1/alarms/evaluate`) y procesa notificaciones (`/api/v1/notifications/process`); cada cinco minutos actualiza agregados y retención (`/api/v1/trends/aggregate`) y genera reportes programados (`/api/v1/reports/process`). Los reportes se reservan antes de generarse, de modo que dos ejecuciones superpuestas no los duplican. `.github/workflows/alarm-evaluator.yml` queda como respaldo manual y usa la variable de repositorio `CAM5_BASE_URL`.
 
 Para correo se requieren `RESEND_API_KEY` y `NOTIFICATION_FROM_EMAIL`. Teams guarda solo el nombre de la variable que contiene su webhook; los webhooks HTTPS pueden usar una variable secreta opcional para firmar cada carga con HMAC-SHA256.
 
