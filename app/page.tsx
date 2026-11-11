@@ -267,9 +267,19 @@ function formatRelativeTime(value: string) {
   return `Hace ${Math.round(seconds / 86_400)} d`;
 }
 
+function formatDurationSeconds(totalSeconds: number) {
+  const seconds = Math.max(0, Math.round(totalSeconds));
+  if (seconds < 60) return `${seconds} s`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)} min`;
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.round((seconds % 3600) / 60);
+  if (hours >= 48) return `${Math.round(hours / 24)} d`;
+  return minutes ? `${hours} h ${minutes} min` : `${hours} h`;
+}
+
 function alarmValue(alarm: PortalAlarm) {
   if (alarm.triggerValue === null) return "—";
-  if (alarm.kind === "communication") return `${Math.round(alarm.triggerValue)} s`;
+  if (alarm.kind === "communication") return formatDurationSeconds(alarm.triggerValue);
   return `${Number(alarm.triggerValue.toFixed(1))} ${alarm.unit || ""}`.trim();
 }
 
@@ -549,11 +559,12 @@ function OverviewChannelRow({ sensor, onOpenTrend }: { sensor: PortalSensor; onO
   const Icon = sensor.metric === "temperature" || sensor.metric === "ambient" ? Thermometer : sensor.metric === "humidity" ? Droplets : Activity;
 
   const fresh = sensor.quality === "Válida";
-  return <button type="button" className={`overview-channel-card channel-${displayState}`} onClick={() => onOpenTrend(sensor.id)} aria-label={`${sensor.id} ${sensor.label}: ${sensor.value} ${sensor.unit}, ${stateLabel}. ${thresholdLabel}. Abrir tendencia`}>
-    <span className="overview-channel-top"><span className="overview-channel-identity"><i aria-hidden="true"><Icon size={16} /></i><span><b>{sensor.id}</b><strong>{sensor.label}</strong><small>{sensor.zone}</small></span></span><i className={`overview-channel-state state-${displayState}`}><b />{stateLabel}</i></span>
-    <span className="overview-channel-reading"><strong>{sensor.value}</strong><small>{sensor.unit}</small><span className="overview-channel-open" aria-hidden="true"><TrendingUp size={14} /> Tendencia</span></span>
-    <span className="overview-channel-threshold"><span>{thresholdLabel}</span><i aria-hidden="true"><b style={{ width: `${progress}%` }} /></i></span>
-    {!fresh && <span className="overview-channel-stale"><Clock3 size={13} aria-hidden="true" /> {sensor.trend} · Revisar adquisición</span>}
+  const age = sensor.trend.replace(/^Actualizado /, "");
+  const note = fresh ? thresholdLabel : `Sin dato vigente · ${age}`;
+  return <button type="button" className={`overview-channel-card channel-${displayState}${fresh ? "" : " is-stale"}`} onClick={() => onOpenTrend(sensor.id)} title={`${sensor.label} · ${sensor.zone}. Abrir tendencia`} aria-label={`${sensor.id} ${sensor.label}, ${sensor.zone}: ${sensor.value} ${sensor.unit}, ${stateLabel}. ${note}. Abrir tendencia`}>
+    <span className="overview-channel-top"><span className="overview-channel-name"><Icon size={14} aria-hidden="true" /><b>{sensor.id}</b><strong>{sensor.label}</strong></span><i className={`overview-channel-state state-${displayState}`}><b />{stateLabel}</i></span>
+    <span className="overview-channel-reading"><strong>{sensor.value}</strong><small>{sensor.unit}</small><span className="overview-channel-note">{note}</span><TrendingUp className="overview-channel-open" size={15} aria-hidden="true" /></span>
+    <i className="overview-channel-bar" aria-hidden="true"><b style={{ width: `${fresh ? progress : 0}%` }} /></i>
   </button>;
 }
 
@@ -597,7 +608,7 @@ function Overview({ onNavigate, onOpenTrend, onAcknowledge, activeAlarms, alarmS
   const latestReadingAt = readableSensors.reduce<string | null>((latest, sensor) => !latest || new Date(sensor.recordedAt!).getTime() > new Date(latest).getTime() ? sensor.recordedAt : latest, null);
   const statusTitle = priorityAlarm?.title ?? (!gatewayOnline ? "Adquisición sin comunicación" : !readableSensors.length ? "Esperando las primeras lecturas" : !freshSensors.length ? "Las lecturas están atrasadas" : conditionState === "critical" ? "Hay señales en condición crítica" : conditionState === "warning" ? "Hay señales que requieren atención" : "Operación sin eventos activos");
   const statusDetail = priorityAlarm ? priorityAlarm.detail || "Existe un evento activo que requiere revisión en el Centro de alertas." : !gatewayOnline ? "La consulta confirmó que el gateway no mantiene comunicación activa." : !readableSensors.length ? "El gateway está en línea y el portal espera el primer conjunto de mediciones del controlador." : !freshSensors.length ? "Las últimas mediciones superan el tiempo de frescura configurado y no se presentan como actuales." : "Los canales vigentes se encuentran dentro de sus reglas operacionales configuradas.";
-  const highestRiskSensor = [...readableSensors].sort((left, right) => riskRatio(right) - riskRatio(left))[0] ?? null;
+  const highestRiskSensor = [...freshSensors].sort((left, right) => riskRatio(right) - riskRatio(left))[0] ?? null;
   const highestRiskPercent = highestRiskSensor && riskRatio(highestRiskSensor) >= 0 ? Math.round(riskRatio(highestRiskSensor) * 100) : null;
 
   return <div className="operational-overview">
@@ -612,7 +623,7 @@ function Overview({ onNavigate, onOpenTrend, onAcknowledge, activeAlarms, alarmS
     <section className="overview-metric-grid" aria-label="Indicadores operativos">
       <article className={alarmSummary.critical ? "metric-critical" : "metric-normal"}><span><AlertTriangle size={19} /></span><div><small>Alertas activas</small><strong>{alarmTotal}</strong><p><b>{alarmSummary.critical} críticas</b> · {alarmSummary.warning} advertencias</p></div></article>
       <article className={unavailableCount ? "metric-warning" : "metric-normal"}><span><Activity size={19} /></span><div><small>Canales vigentes</small><strong>{freshSensors.length}<i> / {activeSensors.length}</i></strong><p>{unavailableCount ? `${unavailableCount} requieren revisión` : "Cobertura de datos completa"}</p></div></article>
-      <article className={highestRiskSensor?.state === "critical" ? "metric-critical" : highestRiskSensor?.state === "warning" ? "metric-warning" : "metric-normal"}><span><Timeline size={19} /></span><div><small>Mayor exigencia</small><strong>{highestRiskPercent === null ? "—" : `${highestRiskPercent}%`}</strong><p>{highestRiskSensor ? `${highestRiskSensor.id} · ${highestRiskSensor.label}` : "Sin datos comparables"}</p></div></article>
+      <article className={!highestRiskSensor ? "metric-info" : highestRiskSensor.state === "critical" ? "metric-critical" : highestRiskSensor.state === "warning" ? "metric-warning" : "metric-normal"}><span><Timeline size={19} /></span><div><small>Mayor exigencia</small><strong>{highestRiskPercent === null ? "—" : `${highestRiskPercent}%`}</strong><p>{highestRiskSensor ? `${highestRiskSensor.id} · ${highestRiskSensor.label}` : "Sin datos comparables"}</p></div></article>
       <article className={latestReadingAt ? "metric-info" : "metric-warning"}><span><Clock3 size={19} /></span><div><small>Última muestra</small><strong className="metric-time">{latestReadingAt ? formatRelativeTime(latestReadingAt) : "Sin datos"}</strong><p>{telemetry?.device?.code ?? "Controlador no configurado"}</p></div></article>
     </section>
 
@@ -624,7 +635,7 @@ function Overview({ onNavigate, onOpenTrend, onAcknowledge, activeAlarms, alarmS
       </article>
 
       <div className="overview-side-column">
-        <article className="panel overview-alerts-panel"><header className="panel-header compact"><div><span className="eyebrow">Atención requerida</span><h2>Eventos prioritarios</h2><p>Primero los críticos, luego los más recientes.</p></div><StatusPill state={priorityAlarm?.severity ?? "normal"}>{alarmTotal ? `${alarmTotal} activos` : "Sin pendientes"}</StatusPill></header><div className="overview-alert-list">{rankedAlarms.slice(0, 4).map((alarm) => <article className={`overview-alert overview-alert-${alarm.severity}`} key={alarm.id}><span className="overview-alert-icon"><AlertTriangle size={18} /></span><div><span>{alarm.channelCode ?? "Comunicación"} · {alarm.assetCode}</span><strong>{alarm.title}</strong><small>{formatRelativeTime(alarm.openedAt)}{alarm.assignedToName ? ` · ${alarm.assignedToName}` : " · Sin asignar"}</small></div><b>{alarmValue(alarm)}</b>{alarm.status === "open" ? <button onClick={() => onAcknowledge(alarm.id)}>Reconocer</button> : <i>Reconocida</i>}</article>)}{activeAlarms.length === 0 && <TableEmptyState title="Sin alertas activas" detail="No hay eventos abiertos o reconocidos para este punto de medición." />}</div><button className="text-action" onClick={() => onNavigate("alarms")}>Gestionar todas las alertas <span>→</span></button></article>
+        <article className="panel overview-alerts-panel"><header className="panel-header compact"><div><span className="eyebrow">Atención requerida</span><h2>Eventos prioritarios</h2><p>Primero los críticos, luego los más recientes.</p></div><StatusPill state={priorityAlarm?.severity ?? "normal"}>{alarmTotal ? `${alarmTotal} activos` : "Sin pendientes"}</StatusPill></header><div className="overview-alert-list">{rankedAlarms.slice(0, 4).map((alarm) => { const value = alarmValue(alarm); return <article className={`overview-alert overview-alert-${alarm.severity}`} key={alarm.id}><div className="overview-alert-main"><span className="overview-alert-meta"><i aria-hidden="true" />{alarm.severity === "critical" ? "Crítica" : "Advertencia"} · {alarm.channelCode ?? "Comunicación"} · {alarm.assetCode}</span><strong>{alarm.title}</strong><small>{formatRelativeTime(alarm.openedAt)}{alarm.assignedToName ? ` · ${alarm.assignedToName}` : " · Sin asignar"}</small></div><div className="overview-alert-side">{value !== "—" && <b>{value}</b>}{alarm.status === "open" ? <button onClick={() => onAcknowledge(alarm.id)}>Reconocer</button> : <i>Reconocida</i>}</div></article>; })}{activeAlarms.length === 0 && <TableEmptyState title="Sin alertas activas" detail="No hay eventos abiertos o reconocidos para este punto de medición." />}</div><button className="text-action" onClick={() => onNavigate("alarms")}>Gestionar todas las alertas <span>→</span></button></article>
 
         <article className="panel overview-acquisition-panel"><header><span className="overview-acquisition-icon"><Radio size={20} /></span><div><span className="eyebrow">Cadena de adquisición</span><h2>{gatewayOnline && freshSensors.length ? "Telemetría disponible" : "Revisión necesaria"}</h2></div></header><div className="overview-data-path"><span className={gatewayOnline ? "healthy" : "offline"}><i><Server size={17} /></i><b>Gateway</b><small>{telemetry?.gateway?.code ?? "No configurado"}</small></span><ChevronRight size={16} /><span className={telemetry?.device ? "healthy" : "offline"}><i><CircuitBoard size={17} /></i><b>CAM-5</b><small>{telemetry?.device?.code ?? "No configurado"}</small></span><ChevronRight size={16} /><span className={freshSensors.length ? "healthy" : "offline"}><i><Database size={17} /></i><b>Core</b><small>{freshSensors.length ? "Recibiendo" : "Sin datos"}</small></span></div><dl><div><dt>Entradas asignadas</dt><dd>{activeInputCount} / {totalInputCount}</dd></div><div><dt>Ventana de vigencia</dt><dd>{telemetry?.staleAfterSeconds ?? 30} s</dd></div><div><dt>Último contacto</dt><dd>{telemetryAge(telemetry?.gateway?.lastSeenAt ?? null).replace("Actualizado ", "")}</dd></div></dl><button onClick={() => onNavigate("diagnostics")}>Abrir diagnóstico técnico <ChevronRight size={16} /></button></article>
       </div>
