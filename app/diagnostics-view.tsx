@@ -41,7 +41,7 @@ async function requestDiagnostic<T>(path: string, init?: RequestInit): Promise<T
 }
 
 function formatDateTime(value: string | null) {
-  return value ? new Intl.DateTimeFormat("es-CL", { dateStyle: "short", timeStyle: "medium" }).format(new Date(value)) : "Sin registro";
+  return value ? new Intl.DateTimeFormat("es-CL", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(new Date(value)) : "Sin registro";
 }
 
 function relativeAge(value: string | null) {
@@ -53,7 +53,13 @@ function relativeAge(value: string | null) {
 }
 
 function percent(value: number | null) {
-  return value === null ? "—" : `${value.toFixed(2)}%`;
+  if (value === null) return "—";
+  return `${Number(value.toFixed(1))}%`;
+}
+
+function gatewayStateLabel(state: string) {
+  const labels: Record<string, string> = { online: "En línea", offline: "Sin conexión", degraded: "Degradado", pending: "Pendiente" };
+  return labels[state] ?? state;
 }
 
 function stateLabel(state: DiagnosticState) {
@@ -135,19 +141,19 @@ export function DiagnosticsView({ assetId, canExecute, notify }: { assetId: stri
         })}
       </div>
 
-      <div className={`diagnostics-result-bar result-${overall}`}><span>{running ? <IconRefresh className="spin" size={16} /> : statusIcon}</span><div><strong>{running ? "Recalculando el estado de la cadena" : overall === "healthy" ? "La cadena tiene evidencia reciente y completa" : overall === "warning" ? "La cadena presenta evidencia incompleta o errores" : "No existe comunicación reciente"}</strong><p>Calculado {formatDateTime(data.serverTime)} · ventana de 24 horas</p></div><small>Dato atrasado desde {data.profile.staleAfterSeconds} s</small></div>
+      <div className={`diagnostics-result-bar result-${overall}`}><span>{running ? <IconRefresh className="spin" size={16} /> : statusIcon}</span><div><strong>{running ? "Recalculando el estado de la cadena" : overall === "healthy" ? "La cadena tiene evidencia reciente y completa" : overall === "warning" ? "La cadena presenta evidencia incompleta o errores" : "No existe comunicación reciente"}</strong><p>Calculado {formatDateTime(data.serverTime)} · ventana de 24 horas</p></div><small>Una lectura se considera atrasada después de {data.profile.staleAfterSeconds} s</small></div>
 
       <div className="diagnostic-profile-strip">
         <div><small>Perfil</small><strong>{data.profile.name}</strong></div><div><small>Controlador</small><strong>{data.device.modelName}</strong><span>{data.device.host}:{data.device.port} · ID {data.device.unitId}</span></div><div><small>Mapa</small><strong>{data.device.registerMapVersion}</strong><span>{data.profile.enabledChannelCount} canales activos</span></div><div><small>Política Modbus</small><strong>{data.device.timeoutMs} ms</strong><span>{data.device.retries} reintentos máximos</span></div>
       </div>
 
       <div className="diagnostics-grid">
-        <section className="diagnostic-health-card"><div className="report-library-head"><div><span className="eyebrow">Salud de comunicación</span><h2>Indicadores medidos</h2></div><span className={`diagnostic-status status-${overall}`}><i />{stateLabel(overall)}</span></div><dl><div><dt>Latencia Modbus promedio</dt><dd>{data.summary.averageLatencyMs === null ? "—" : `${data.summary.averageLatencyMs} ms`}<small>24 h</small></dd></div><div><dt>Latencia Modbus P95</dt><dd>{data.summary.p95LatencyMs === null ? "—" : `${data.summary.p95LatencyMs} ms`}<small>24 h</small></dd></div><div><dt>Última lectura CAM-5</dt><dd>{relativeAge(data.device.lastReadAt)}<small>{formatDateTime(data.device.lastReadAt)}</small></dd></div><div><dt>Último enlace gateway</dt><dd>{relativeAge(data.gateway.lastSeenAt)}<small>{data.gateway.state}</small></dd></div><div><dt>Calidad de registros</dt><dd>{percent(data.summary.qualityRate)}<small>{data.summary.goodSamples}/{data.summary.totalSamples}</small></dd></div><div><dt>Registros inválidos</dt><dd>{data.summary.badSamples + data.summary.staleSamples}<small>{data.summary.badSamples} malos · {data.summary.staleSamples} atrasados</small></dd></div></dl></section>
+        <section className="diagnostic-health-card"><div className="report-library-head"><div><span className="eyebrow">Salud de comunicación</span><h2>Indicadores medidos</h2></div><span className={`diagnostic-status status-${overall}`}><i />{stateLabel(overall)}</span></div><dl><div><dt>Latencia Modbus promedio</dt><dd>{data.summary.averageLatencyMs === null ? "—" : `${data.summary.averageLatencyMs} ms`}<small>24 h</small></dd></div><div><dt>Latencia Modbus P95</dt><dd>{data.summary.p95LatencyMs === null ? "—" : `${data.summary.p95LatencyMs} ms`}<small>24 h</small></dd></div><div><dt>Última lectura CAM-5</dt><dd>{relativeAge(data.device.lastReadAt)}<small>{formatDateTime(data.device.lastReadAt)}</small></dd></div><div><dt>Último enlace gateway</dt><dd>{relativeAge(data.gateway.lastSeenAt)}<small>{gatewayStateLabel(data.gateway.state)}</small></dd></div><div><dt>Calidad de registros</dt><dd>{percent(data.summary.qualityRate)}<small>{data.summary.goodSamples}/{data.summary.totalSamples}</small></dd></div><div><dt>Registros inválidos</dt><dd>{data.summary.badSamples + data.summary.staleSamples}<small>{data.summary.badSamples} malos · {data.summary.staleSamples} atrasados</small></dd></div></dl></section>
 
-        <section className="diagnostic-transactions"><div className="report-library-head"><div><span className="eyebrow">Evidencia persistida</span><h2>Últimos ciclos de adquisición</h2></div><span>{data.summary.totalBatches} ciclos / 24 h</span></div><div className="module-table-wrap"><div className="diagnostic-transaction-table"><div className="module-table-head"><span>Fecha y hora</span><span>Lote</span><span>Registros</span><span>Resultado</span><span>Latencia</span></div>{data.transactions.map((transaction) => <div className="module-table-row" key={transaction.id}><span className="mono-cell">{formatDateTime(transaction.startedAt)}</span><span className="mono-cell" title={transaction.batchKey}>{transaction.batchKey}</span><span className="mono-cell">{transaction.receivedRegisters}/{transaction.expectedRegisters}</span><span className={transaction.success ? "quality-ok" : "quality-error"}>{transaction.success ? <IconCircleCheck size={14} /> : <IconAlertTriangle size={14} />} <span>{transaction.success ? "Completo" : transaction.errorMessage || "Incompleto"}</span></span><span className="mono-cell">{transaction.latencyMs === null ? "—" : `${transaction.latencyMs} ms`}</span></div>)}{!data.transactions.length && <div className="diagnostic-table-empty"><IconDatabase size={20} /><span>No existen ciclos recibidos durante las últimas 24 horas.</span></div>}</div></div><Pagination page={data.pagination.page} totalPages={data.pagination.totalPages} total={data.pagination.total} pageSize={data.pagination.pageSize} onPageChange={setPage} itemLabel="ciclos" /></section>
+        <section className="diagnostic-transactions"><div className="report-library-head"><div><span className="eyebrow">Evidencia persistida</span><h2>Últimos ciclos de adquisición</h2></div><span>{data.summary.totalBatches} ciclos / 24 h</span></div><div className="module-table-wrap" role="region" aria-label="Últimos ciclos de adquisición" tabIndex={0}><div className="diagnostic-transaction-table"><div className="module-table-head"><span>Fecha y hora</span><span>Registros</span><span>Resultado</span><span>Latencia</span></div>{data.transactions.map((transaction) => <div className="module-table-row" key={transaction.id} title={`Lote ${transaction.batchKey}`}><span>{formatDateTime(transaction.startedAt)}</span><span className="mono-cell">{transaction.receivedRegisters}/{transaction.expectedRegisters}</span><span className={transaction.success ? "quality-ok" : "quality-error"}>{transaction.success ? <IconCircleCheck size={14} /> : <IconAlertTriangle size={14} />} <span>{transaction.success ? "Completo" : transaction.errorMessage || "Incompleto"}</span></span><span className="mono-cell">{transaction.latencyMs === null ? "—" : `${transaction.latencyMs} ms`}</span></div>)}{!data.transactions.length && <div className="diagnostic-table-empty"><IconDatabase size={20} /><span>No existen ciclos recibidos durante las últimas 24 horas.</span></div>}</div></div><Pagination page={data.pagination.page} totalPages={data.pagination.totalPages} total={data.pagination.total} pageSize={data.pagination.pageSize} onPageChange={setPage} itemLabel="ciclos" /></section>
       </div>
 
-      <div className="configuration-note diagnostics-note"><IconShieldCheck size={17} /><p><strong>Diagnóstico pasivo y verificable.</strong> El portal no inventa una prueba remota: evalúa los lotes que el gateway ya entregó, sus errores, latencia y calidad. Una prueba activa requerirá incorporar un canal de comandos de bajada en el gateway.</p></div>
+      <div className="configuration-note diagnostics-note"><IconShieldCheck size={17} /><p><strong>Diagnóstico basado en datos reales.</strong> Se calcula con los envíos que el gateway ya realizó: errores, latencia y calidad. Para ejecutar pruebas a pedido, el gateway tendría que poder recibir comandos desde el portal.</p></div>
     </article>
   </>;
 }

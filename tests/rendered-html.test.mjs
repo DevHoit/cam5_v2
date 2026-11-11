@@ -96,7 +96,7 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(page, /Diagnóstico de comunicación/);
   assert.match(diagnostics, /Estado de extremo a extremo/);
   assert.match(diagnostics, /\/api\/v1\/diagnostics/);
-  assert.match(diagnostics, /Diagnóstico pasivo y verificable/);
+  assert.match(diagnostics, /Diagnóstico basado en datos reales/);
   assert.match(diagnostics, /<Pagination/);
   assert.doesNotMatch(diagnostics, /setTimeout|99\.98%|42 ms|86 ms|CAM5-CTRL-01|CAM5-GW-01/);
   assert.match(diagnosticsApi, /ingestionBatches/);
