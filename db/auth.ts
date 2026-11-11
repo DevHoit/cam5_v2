@@ -41,6 +41,8 @@ export type AuthenticatedPortalUser = {
   clientId: string;
   clientCode: string;
   clientName: string;
+  /** Marca de versión del logo del cliente activo; null si el cliente no tiene logo. */
+  clientLogoUpdatedAt: string | null;
   siteId: string;
   siteCode: string;
   siteName: string;
@@ -317,6 +319,7 @@ export async function resolvePortalSession(db: Cam5Database, token: string): Pro
       clientId: clients.id,
       clientCode: clients.code,
       clientName: clients.name,
+      clientLogoUpdatedAt: clients.logoUpdatedAt,
     })
     .from(userRoleAssignments)
     .innerJoin(roles, eq(roles.id, userRoleAssignments.roleId))
@@ -371,6 +374,7 @@ export async function resolvePortalSession(db: Cam5Database, token: string): Pro
     clientId: selected.clientId,
     clientCode: selected.clientCode,
     clientName: selected.clientName,
+    clientLogoUpdatedAt: selected.clientLogoUpdatedAt?.toISOString() ?? null,
     siteId: selected.siteId,
     siteCode: selected.siteCode,
     siteName: selected.siteName,

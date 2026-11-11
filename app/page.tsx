@@ -51,6 +51,7 @@ import {
   IconTemperature as Thermometer,
   IconTimeline as Timeline,
   IconTrash as Trash,
+  IconUpload as Upload,
   IconTrendingUp as TrendingUp,
   IconUserPlus as UserPlus,
   IconUsers as Users,
@@ -126,6 +127,7 @@ type PortalSessionUser = {
   clientId: string;
   clientCode: string;
   clientName: string;
+  clientLogoUpdatedAt?: string | null;
   siteId: string;
   siteCode: string;
   siteName: string;
@@ -134,7 +136,7 @@ type PortalSessionUser = {
 };
 type PortalHierarchy = {
   active: { clientId: string; clientCode: string; clientName: string; siteId: string; siteCode: string; siteName: string };
-  clients: Array<{ id: string; code: string; name: string; legalName: string | null; taxId: string | null; contactEmail: string | null; active: boolean; roleKey: PortalSessionUser["roleKey"]; roleName: UserRole }>;
+  clients: Array<{ id: string; code: string; name: string; legalName: string | null; taxId: string | null; contactEmail: string | null; active: boolean; logoUpdatedAt: string | null; roleKey: PortalSessionUser["roleKey"]; roleName: UserRole }>;
   sites: Array<PortalSiteScope & { description: string | null; timezone: string; active: boolean; pointCount: number; gatewayCount: number; controllerCount: number }>;
   points: Array<{ id: string; siteId: string; code: string; name: string; area: string | null; type: string; nominalVoltageKv: number | null; state: "normal" | "warning" | "critical" | "offline" | "maintenance"; active: boolean }>;
   gateways: Array<{ id: string; siteId: string; code: string; name: string; serialNumber: string | null; softwareVersion: string | null; state: "pending" | "online" | "degraded" | "offline"; active: boolean; lastSeenAt: string | null; ipAddress: string | null }>;
@@ -963,18 +965,107 @@ function HistoryView({ assetId, canExport, onOpenTrend }: { assetId: string; can
   );
 }
 
+function clientLogoUrl(clientId: string, version: string) {
+  return `/api/v1/clients/${encodeURIComponent(clientId)}/logo?v=${encodeURIComponent(version)}`;
+}
+
+/** Logo servido por la API autenticada; next/image no aplica porque su optimizador no envía la cookie de sesión. */
+function ClientLogoImage({ clientId, version, alt, onError }: { clientId: string; version: string; alt: string; onError?: () => void }) {
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={clientLogoUrl(clientId, version)} alt={alt} onError={onError} />;
+}
+
+/** Marca de la barra lateral: logo del cliente activo con "Monitoreo por HoitLive Core", o la marca HoitLive. */
+function SidebarBrand({ clientId, clientName, logoUpdatedAt }: { clientId: string; clientName: string; logoUpdatedAt?: string | null }) {
+  const [failedVersion, setFailedVersion] = useState<string | null>(null);
+  if (logoUpdatedAt && failedVersion !== logoUpdatedAt) {
+    return <div className="client-brand">
+      <span className="client-logo-frame"><ClientLogoImage clientId={clientId} version={logoUpdatedAt} alt={clientName} onError={() => setFailedVersion(logoUpdatedAt)} /></span>
+      <small className="client-brand-powered"><Zap size={11} strokeWidth={2.4} /> Monitoreo por <strong>HoitLive</strong> Core</small>
+    </div>;
+  }
+  return <>
+    <span className="brand-mark"><Zap size={22} strokeWidth={2.3} /></span>
+    <div className="brand-copy"><span className="brand-name"><strong>HoitLive</strong><b>Core</b></span><small>Monitoreo de condición eléctrica</small></div>
+  </>;
+}
+
+const CLIENT_LOGO_ACCEPT = "image/png,image/jpeg,image/webp,image/svg+xml";
+const CLIENT_LOGO_MAX_KB = 300;
+
+/** Carga, reemplazo y eliminación del logo de un cliente desde el editor de estructura. */
+function ClientLogoField({ clientId, clientName, logoUpdatedAt, onChanged }: { clientId: string; clientName: string; logoUpdatedAt: string | null; onChanged: (logoUpdatedAt: string | null) => void }) {
+  const notify = useFeedback();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [version, setVersion] = useState(logoUpdatedAt);
+  const [busy, setBusy] = useState(false);
+
+  const upload = async (file: File) => {
+    if (file.size > CLIENT_LOGO_MAX_KB * 1024) { notify(`El logo no puede superar ${CLIENT_LOGO_MAX_KB} KB.`, "warning"); return; }
+    setBusy(true);
+    try {
+      const response = await fetch(`/api/v1/clients/${encodeURIComponent(clientId)}/logo`, { method: "PUT", credentials: "include", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file });
+      const payload = await response.json().catch(() => null) as { logoUpdatedAt?: string | null; error?: string } | null;
+      if (!response.ok) throw new Error(payload?.error || "No fue posible guardar el logo.");
+      setVersion(payload?.logoUpdatedAt ?? null);
+      onChanged(payload?.logoUpdatedAt ?? null);
+      notify("Logo del cliente actualizado.", "success");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "No fue posible guardar el logo.", "warning");
+    } finally {
+      setBusy(false);
+      if (inputRef.current) inputRef.current.value = "";
+    }
+  };
+
+  const remove = async () => {
+    setBusy(true);
+    try {
+      const response = await fetch(`/api/v1/clients/${encodeURIComponent(clientId)}/logo`, { method: "DELETE", credentials: "include" });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null) as { error?: string } | null;
+        throw new Error(payload?.error || "No fue posible quitar el logo.");
+      }
+      setVersion(null);
+      onChanged(null);
+      notify("Se quitó el logo; el portal mostrará la marca HoitLive Core.", "success");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "No fue posible quitar el logo.", "warning");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return <div className="client-logo-field field-wide">
+    <span className="client-logo-field-label">Logo del cliente</span>
+    <div className="client-logo-field-body">
+      <span className="client-logo-frame client-logo-preview">{version ? <ClientLogoImage clientId={clientId} version={version} alt={`Logo de ${clientName}`} /> : <em>Sin logo</em>}</span>
+      <div>
+        <p>Se muestra en la barra lateral a los usuarios de este cliente, junto a «Monitoreo por HoitLive Core». PNG, JPG, WebP o SVG de hasta {CLIENT_LOGO_MAX_KB} KB; idealmente horizontal y con fondo transparente.</p>
+        <div className="client-logo-actions">
+          <input ref={inputRef} type="file" accept={CLIENT_LOGO_ACCEPT} hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) void upload(file); }} />
+          <button type="button" className="secondary-button" disabled={busy} onClick={() => inputRef.current?.click()}><Upload size={15} /> {busy ? "Guardando…" : version ? "Reemplazar logo" : "Subir logo"}</button>
+          {version && <button type="button" className="secondary-button" disabled={busy} onClick={() => void remove()}><Trash size={15} /> Quitar</button>}
+        </div>
+      </div>
+    </div>
+  </div>;
+}
+
 function OperationalHierarchyView({
   hierarchy,
   loading,
   permissions,
   onReload,
   onSwitchSite,
+  onClientLogoChanged,
 }: {
   hierarchy: PortalHierarchy | null;
   loading: boolean;
   permissions: string[];
   onReload: () => Promise<void>;
   onSwitchSite: (siteId: string) => Promise<void>;
+  onClientLogoChanged: (clientId: string, logoUpdatedAt: string | null) => void;
 }) {
   type Resource = "client" | "site" | "point" | "gateway" | "controller";
   type EditableResource = PortalHierarchy["clients"][number] | PortalHierarchy["sites"][number] | PortalHierarchy["points"][number] | PortalHierarchy["gateways"][number] | PortalHierarchy["controllers"][number];
@@ -1186,6 +1277,7 @@ function OperationalHierarchyView({
           <div className="resource-editor-grid">
             <label className="field-wide"><span>Nombre</span><input required minLength={2} value={editor.name} onChange={(event) => setEditor({ ...editor, name: event.target.value })} /></label>
             {editor.resource === "client" && <><label className="field-wide"><span>Razón social</span><input value={editor.legalName} onChange={(event) => setEditor({ ...editor, legalName: event.target.value })} /></label><label><span>RUT / identificación tributaria</span><input value={editor.taxId} onChange={(event) => setEditor({ ...editor, taxId: event.target.value })} /></label><label><span>Correo de contacto</span><input type="email" value={editor.contactEmail} onChange={(event) => setEditor({ ...editor, contactEmail: event.target.value })} /></label></>}
+            {editor.resource === "client" && <ClientLogoField key={editor.id} clientId={editor.id} clientName={editor.name} logoUpdatedAt={hierarchy.clients.find((client) => client.id === editor.id)?.logoUpdatedAt ?? null} onChanged={(logoUpdatedAt) => { onClientLogoChanged(editor.id, logoUpdatedAt); void onReload(); }} />}
             {editor.resource === "site" && <><label className="field-wide"><span>Descripción</span><input value={editor.description} onChange={(event) => setEditor({ ...editor, description: event.target.value })} /></label><label className="field-wide"><span>Zona horaria</span><select value={editor.timezone} onChange={(event) => setEditor({ ...editor, timezone: event.target.value })}><option value="America/Santiago">America/Santiago</option><option value="UTC">UTC</option></select></label></>}
             {editor.resource === "point" && <><label><span>Área o sala</span><input value={editor.area} onChange={(event) => setEditor({ ...editor, area: event.target.value })} /></label><label><span>Tensión nominal (kV)</span><input type="number" min="0" step="0.1" value={editor.voltage} onChange={(event) => setEditor({ ...editor, voltage: event.target.value })} /></label></>}
             {editor.resource === "gateway" && <><label><span>Dirección IP</span><input value={editor.ipAddress} onChange={(event) => setEditor({ ...editor, ipAddress: event.target.value })} placeholder="10.0.0.20" /></label><label><span>Número de serie</span><input value={editor.serialNumber} onChange={(event) => setEditor({ ...editor, serialNumber: event.target.value })} /></label></>}
@@ -1700,9 +1792,8 @@ export default function Home() {
     <div className="app-shell">
       {menuOpen && <button className="mobile-scrim" aria-label="Cerrar navegación" onClick={() => setMenuOpen(false)} />}
       <aside className={`sidebar ${menuOpen ? "open" : ""}`}>
-        <div className="brand-block">
-          <span className="brand-mark"><Zap size={22} strokeWidth={2.3} /></span>
-          <div className="brand-copy"><span className="brand-name"><strong>HoitLive</strong><b>Core</b></span><small>Monitoreo de condición eléctrica</small></div>
+        <div className={`brand-block ${sessionUser.clientLogoUpdatedAt ? "has-client-logo" : ""}`}>
+          <SidebarBrand clientId={sessionUser.clientId} clientName={sessionUser.clientName} logoUpdatedAt={sessionUser.clientLogoUpdatedAt} />
           <button className="sidebar-close" aria-label="Cerrar menú" onClick={() => setMenuOpen(false)}><X size={20} /></button>
         </div>
 
@@ -1734,7 +1825,7 @@ export default function Home() {
 
       <main className="main-shell">
         <header className="topbar">
-          <div className="topbar-left"><button className="menu-button" aria-label="Abrir navegación" onClick={() => setMenuOpen(true)}><Menu size={22} /></button><span className="mobile-brand"><Zap size={18} fill="currentColor" /></span><div className="operational-context"><Building2 size={17} /><label><span>Cliente</span><select value={sessionUser.clientId} onChange={(event) => { const firstSite = hierarchy?.sites.find((site) => site.active && site.clientId === event.target.value); if (firstSite) void switchSite(firstSite.id); }} aria-label="Cliente activo">{hierarchy?.clients.filter((client) => client.active).map((client) => <option key={client.id} value={client.id}>{client.name}</option>) ?? <option value={sessionUser.clientId}>{sessionUser.clientName}</option>}</select></label><ChevronRight size={14} /><label><span>Sitio</span><select value={sessionUser.siteId} onChange={(event) => void switchSite(event.target.value)} aria-label="Sitio activo">{(hierarchy?.sites ?? sessionUser.sites).filter((site) => site.clientId === sessionUser.clientId && (!("active" in site) || site.active)).map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}</select></label><ChevronRight size={14} /><label><span>Punto de medición</span><select value={activePoint?.id ?? ""} onChange={(event) => { setTelemetryState({ status: "loading", data: null }); setSystemMode("loading"); setActivePointId(event.target.value); }} aria-label="Punto de medición activo"><option value="">Sin punto seleccionado</option>{hierarchy?.points.filter((point) => point.active).map((point) => <option key={point.id} value={point.id}>{point.code} · {point.name}</option>)}</select></label></div></div>
+          <div className="topbar-left"><button className="menu-button" aria-label="Abrir navegación" onClick={() => setMenuOpen(true)}><Menu size={22} /></button>{sessionUser.clientLogoUpdatedAt ? <span className="mobile-brand mobile-client-logo"><ClientLogoImage clientId={sessionUser.clientId} version={sessionUser.clientLogoUpdatedAt} alt={sessionUser.clientName} /></span> : <span className="mobile-brand"><Zap size={18} fill="currentColor" /></span>}<div className="operational-context"><Building2 size={17} /><label><span>Cliente</span><select value={sessionUser.clientId} onChange={(event) => { const firstSite = hierarchy?.sites.find((site) => site.active && site.clientId === event.target.value); if (firstSite) void switchSite(firstSite.id); }} aria-label="Cliente activo">{hierarchy?.clients.filter((client) => client.active).map((client) => <option key={client.id} value={client.id}>{client.name}</option>) ?? <option value={sessionUser.clientId}>{sessionUser.clientName}</option>}</select></label><ChevronRight size={14} /><label><span>Sitio</span><select value={sessionUser.siteId} onChange={(event) => void switchSite(event.target.value)} aria-label="Sitio activo">{(hierarchy?.sites ?? sessionUser.sites).filter((site) => site.clientId === sessionUser.clientId && (!("active" in site) || site.active)).map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}</select></label><ChevronRight size={14} /><label><span>Punto de medición</span><select value={activePoint?.id ?? ""} onChange={(event) => { setTelemetryState({ status: "loading", data: null }); setSystemMode("loading"); setActivePointId(event.target.value); }} aria-label="Punto de medición activo"><option value="">Sin punto seleccionado</option>{hierarchy?.points.filter((point) => point.active).map((point) => <option key={point.id} value={point.id}>{point.code} · {point.name}</option>)}</select></label></div></div>
           <div className="topbar-right"><span className="authenticated-role"><ShieldCheck size={15} /><span><small>Sesión activa</small><strong>{sessionUser.roleName}</strong></span></span><div className={`live-state live-${acquisitionMode}`} aria-live="polite"><span /><div><strong>{acquisitionTitle}</strong><small>{acquisitionDetail}</small></div></div><button className="topbar-logout" onClick={logout} aria-label="Cerrar sesión"><LogOut size={18} /></button></div>
         </header>
 
@@ -1749,7 +1840,7 @@ export default function Home() {
             {view === "trends" && <TrendsView assetId={activePoint?.id ?? ""} channels={sensors.map((sensor) => ({ id: sensor.id, label: sensor.label, zone: sensor.zone, unit: sensor.unit, state: sensor.state, enabled: sensor.enabled }))} period={period} setPeriod={setPeriod} selectedId={resolvedTrendSensorId} onSelectChannel={selectTrendChannel} onBackToMap={() => navigate("cabinet")} rangeWindow={trendWindow} setRangeWindow={setTrendWindow} canExport={sessionUser.permissions.includes("history.export")} notify={notify} />}
             {view === "alarms" && <AlarmsView assetId={activePoint?.id ?? ""} permissions={sessionUser.permissions} onSummaryChange={setAlarmSummary} onOpenTrend={openAlarmTrend} />}
             {view === "history" && <HistoryView assetId={activePoint?.id ?? ""} canExport={sessionUser.permissions.includes("history.export")} onOpenTrend={openTrendRange} />}
-            {view === "assets" && <OperationalHierarchyView hierarchy={hierarchy} loading={hierarchyLoading} permissions={sessionUser.permissions} onReload={loadHierarchy} onSwitchSite={switchSite} />}
+            {view === "assets" && <OperationalHierarchyView hierarchy={hierarchy} loading={hierarchyLoading} permissions={sessionUser.permissions} onReload={loadHierarchy} onSwitchSite={switchSite} onClientLogoChanged={(clientId, logoUpdatedAt) => setSessionUser((current) => current && current.clientId === clientId ? { ...current, clientLogoUpdatedAt: logoUpdatedAt } : current)} />}
             {view === "reports" && <DatabaseReportsView assetId={activePoint?.id ?? ""} assetLabel={activePoint ? `${activePoint.code} · ${activePoint.name}` : "Sin punto seleccionado"} timezone={hierarchy?.sites.find((site) => site.id === sessionUser.siteId)?.timezone ?? "America/Santiago"} canGenerate={sessionUser.permissions.includes("reports.generate")} canSchedule={sessionUser.permissions.includes("reports.schedule")} notify={notify} confirm={(request) => setConfirmRequest(request)} />}
             {view === "settings" && <DatabaseSettingsView assetId={activePoint?.id ?? ""} canWrite={sessionUser.permissions.includes("settings.write")} notify={notify} confirm={(request) => setConfirmRequest(request)} onReloadHierarchy={loadHierarchy} />}
             {view === "provisioning" && <GatewayProvisioningView canWrite={sessionUser.permissions.includes("settings.write")} notify={notify} confirm={(request) => setConfirmRequest(request)} />}

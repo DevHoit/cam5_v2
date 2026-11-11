@@ -60,6 +60,10 @@ export const clients = pgTable("clients", {
   taxId: varchar("tax_id", { length: 40 }),
   contactEmail: varchar("contact_email", { length: 320 }),
   active: boolean("active").default(true).notNull(),
+  // Logo del cliente (PNG, JPEG, WebP o SVG) en base64; se sirve por /api/v1/clients/:id/logo.
+  logoData: text("logo_data"),
+  logoContentType: varchar("logo_content_type", { length: 40 }),
+  logoUpdatedAt: timestamp("logo_updated_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
