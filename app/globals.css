@@ -2082,3 +2082,78 @@ button.module-table-row { width: 100%; }
   .mobile-client-logo img { display: block; height: 26px; width: auto; max-width: 94px; object-fit: contain; }
 }
 @media (max-width: 600px) { .client-logo-field-body { grid-template-columns: 1fr; } }
+
+/* ───────────── Fase 1 UX: accesibilidad, áreas táctiles, contraste y densidad del home ───────────── */
+
+/* Foco visible y consistente (WCAG 2.4.7 / 1.4.11): anillo sólido de 3:1 o más sobre fondos claros y oscuros */
+html body :is(a, button, select, input, textarea, summary, [tabindex]):focus-visible { outline: 3px solid #0284c7; outline-offset: 2px; }
+
+/* Saltar al contenido */
+.skip-link { position: fixed; top: 10px; left: 10px; z-index: 200; padding: 10px 14px; color: #fff; background: #0f172a; border-radius: 8px; font-weight: 700; transform: translateY(-160%); transition: transform .15s ease; }
+.skip-link:focus { transform: translateY(0); }
+.main-shell:focus { outline: none; }
+
+/* Contraste mínimo 4.5:1 en textos pequeños */
+.operational-context label span { color: #71717a; }
+.overview-statusbar-asset > small { color: #52525b; }
+.overview-metric-grid strong i { color: #71717a; }
+.authenticated-role small { color: #475569; }
+.status-pill.status-critical { color: #b91c1c; }
+.status-pill.status-warning { color: #92400e; }
+.overview-channel-identity small, .overview-alert > div > small { color: #52525b; }
+.panel-header p { color: #52525b; }
+.live-state small { color: #52525b; }
+/* El tono del estado se mantiene en bordes y barras; el texto usa una variante más oscura legible */
+.overview-channel-card.channel-critical .overview-channel-identity b, .overview-channel-card.channel-critical .overview-channel-state, .overview-alert-critical > div > span, .overview-alert-critical > b { color: #b91c1c; }
+.overview-channel-card.channel-warning .overview-channel-identity b, .overview-channel-card.channel-warning .overview-channel-state, .overview-alert:not(.overview-alert-critical) > div > span, .overview-alert:not(.overview-alert-critical) > b { color: #92400e; }
+.overview-channel-card.channel-normal .overview-channel-identity b, .overview-channel-card.channel-normal .overview-channel-state { color: #047857; }
+
+/* Textos clave sin cortar: hasta dos líneas */
+.overview-alert > div > strong, .overview-channel-card .overview-channel-identity strong { display: -webkit-box; overflow: hidden; white-space: normal; text-overflow: clip; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
+
+/* Tarjeta de canal compacta: toda la tarjeta abre la tendencia */
+.overview-channel-grid { grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); }
+.overview-channel-card { width: 100%; padding: 11px 12px; gap: 8px; color: inherit; font: inherit; text-align: left; cursor: pointer; transition: border-color .15s ease, box-shadow .15s ease; }
+.overview-channel-card:hover { border-color: color-mix(in srgb, var(--channel-tone) 45%, #d4d4d8); box-shadow: inset 3px 0 0 var(--channel-tone), 0 6px 16px rgba(15,23,42,.07); }
+.overview-channel-top { min-width: 0; display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.overview-channel-card .overview-channel-identity { grid-template-columns: 30px minmax(0, 1fr); gap: 9px; }
+.overview-channel-card .overview-channel-identity > i { width: 30px; height: 30px; border-radius: 8px; }
+.overview-channel-card .overview-channel-state { min-height: 24px; }
+.overview-channel-card .overview-channel-reading strong { font-size: 24px; }
+.overview-channel-card .overview-channel-reading > .overview-channel-open { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; color: #0369a1; font-size: var(--text-xs); font-weight: 700; }
+.overview-channel-card:hover .overview-channel-open { text-decoration: underline; }
+.overview-channel-card .overview-channel-threshold > span { color: #3f3f46; font-size: var(--text-xs); }
+.overview-channel-stale { display: flex; align-items: center; gap: 5px; color: #92400e; font-size: var(--text-xs); font-weight: 650; }
+
+/* Contexto operacional dentro del menú lateral: solo en pantallas pequeñas */
+.sidebar-context { display: none; }
+
+@media (max-width: 820px) {
+  /* Áreas táctiles de al menos 44 px */
+  .menu-button, .sidebar-close { width: 44px; min-width: 44px; height: 44px; flex: 0 0 44px; }
+  .heading-actions .secondary-button, .heading-actions .primary-button { min-width: 44px; min-height: 44px; }
+  .overview-statusbar-actions button, .overview-alert > button, .overview-alert > i, .overview-acquisition-panel > button,
+  .overview-channels-panel > .panel-header .secondary-button, .overview-channel-footer button, .text-action, .sidebar-logout { min-height: 44px; }
+  .overview-channel-card { min-height: 44px; }
+}
+
+@media (max-width: 600px) {
+  .sidebar-context { margin: 12px 14px 4px; padding: 10px 12px; display: grid; gap: 10px; background: #15171b; border: 1px solid #2a2d32; border-radius: 12px; }
+  .sidebar-context label { display: flex; flex-direction: column; gap: 4px; }
+  .sidebar-context label span { color: #a1a1aa; font-size: var(--text-xs); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+  .sidebar-context select { width: 100%; min-height: 44px; padding: 0 10px; color: #f4f4f5; background: #0f1013; border: 1px solid #34373d; border-radius: 9px; font-size: 16px; font-weight: 650; }
+  /* El selector ocupa toda la caja (44 px) y la etiqueta se superpone sin bloquear el toque */
+  .operational-context label { position: relative; gap: 0; }
+  .operational-context label span { position: absolute; top: 3px; left: 0; pointer-events: none; }
+  .operational-context select { min-height: 44px; padding-top: 16px; font-size: 16px; }
+  .mobile-brand.mobile-client-logo { min-height: 44px; }
+  /* Indicadores en grilla de 2 × 2 */
+  .overview-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+  .overview-metric-grid > article { min-height: 0; padding: 12px; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 6px; }
+  .overview-metric-grid > article > span { width: 30px; height: 30px; border-radius: 8px; }
+  .overview-metric-grid strong { font-size: 22px; }
+  .overview-metric-grid .metric-time { font-size: 16px; }
+  .overview-metric-grid article p { overflow: visible; font-size: var(--text-xs); line-height: 1.35; white-space: normal; text-overflow: clip; }
+}
+
+@media (prefers-reduced-motion: reduce) { .skip-link, .overview-channel-card { transition: none; } }

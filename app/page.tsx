@@ -346,7 +346,7 @@ const navGroups = [
     index: "02",
     label: "Diagnóstico",
     items: [
-      { id: "diagnostics" as View, label: "Diagnóstico de comunicación", description: "Controlador, Modbus y gateway", icon: Radio },
+      { id: "diagnostics" as View, label: "Diagnóstico", description: "Controlador, Modbus y gateway", icon: Radio },
       { id: "commissioning" as View, label: "Puesta en marcha", description: "Conectar y validar CAM-5", icon: ClipboardCheck },
       { id: "trends" as View, label: "Tendencias", description: "Evolución por canal", icon: History },
       { id: "alarms" as View, label: "Centro de alertas", description: "Triage y seguimiento", icon: BellRing },
@@ -375,7 +375,7 @@ const navGroups = [
 ];
 
 const viewTitles: Record<View, { title: string; description: string }> = {
-  overview: { title: "Resumen de condición", description: "Estado predictivo de activos críticos en tiempo real." },
+  overview: { title: "Resumen de condición", description: "Condición de los activos críticos en tiempo real." },
   cabinet: { title: "Mapa de condición", description: "Ubicación, lectura y estado de cada canal instrumentado." },
   diagnostics: { title: "Diagnóstico de comunicación", description: "Comprobación de la cadena Controlador → Gateway → HoitLive Core." },
   commissioning: { title: "Puesta en marcha CAM-5", description: "Identidad, entradas, registros, alarmas y controles previos a la conexión productiva." },
@@ -548,12 +548,13 @@ function OverviewChannelRow({ sensor, onOpenTrend }: { sensor: PortalSensor; onO
         : `${Math.round(risk)}% del umbral crítico`;
   const Icon = sensor.metric === "temperature" || sensor.metric === "ambient" ? Thermometer : sensor.metric === "humidity" ? Droplets : Activity;
 
-  return <article className={`overview-channel-card channel-${displayState}`}>
-    <header><span className="overview-channel-identity"><i><Icon size={17} /></i><span><b>{sensor.id}</b><strong>{sensor.label}</strong><small>{sensor.zone}</small></span></span><i className={`overview-channel-state state-${displayState}`}><b />{stateLabel}</i></header>
-    <div className="overview-channel-reading"><strong>{sensor.value}</strong><small>{sensor.unit}</small><span>{sensor.type}</span></div>
-    <div className="overview-channel-threshold"><span>{thresholdLabel}</span><i aria-hidden="true"><b style={{ width: `${progress}%` }} /></i></div>
-    <footer><span className="overview-channel-freshness"><Clock3 size={14} /><span><strong>{sensor.trend}</strong><small>{sensor.quality === "Válida" ? "Dato utilizable" : "Revisar adquisición"}</small></span></span><button className="overview-channel-action" onClick={() => onOpenTrend(sensor.id)} aria-label={`Abrir tendencia de ${sensor.id}`}><TrendingUp size={16} /><span>Ver tendencia</span></button></footer>
-  </article>;
+  const fresh = sensor.quality === "Válida";
+  return <button type="button" className={`overview-channel-card channel-${displayState}`} onClick={() => onOpenTrend(sensor.id)} aria-label={`${sensor.id} ${sensor.label}: ${sensor.value} ${sensor.unit}, ${stateLabel}. ${thresholdLabel}. Abrir tendencia`}>
+    <span className="overview-channel-top"><span className="overview-channel-identity"><i aria-hidden="true"><Icon size={16} /></i><span><b>{sensor.id}</b><strong>{sensor.label}</strong><small>{sensor.zone}</small></span></span><i className={`overview-channel-state state-${displayState}`}><b />{stateLabel}</i></span>
+    <span className="overview-channel-reading"><strong>{sensor.value}</strong><small>{sensor.unit}</small><span className="overview-channel-open" aria-hidden="true"><TrendingUp size={14} /> Tendencia</span></span>
+    <span className="overview-channel-threshold"><span>{thresholdLabel}</span><i aria-hidden="true"><b style={{ width: `${progress}%` }} /></i></span>
+    {!fresh && <span className="overview-channel-stale"><Clock3 size={13} aria-hidden="true" /> {sensor.trend} · Revisar adquisición</span>}
+  </button>;
 }
 
 function Overview({ onNavigate, onOpenTrend, onAcknowledge, activeAlarms, alarmSummary, point }: { onNavigate: (view: View) => void; onOpenTrend: (id: string) => void; onAcknowledge: (id: string) => void; activeAlarms: PortalAlarm[]; alarmSummary: { critical: number; warning: number }; point?: PortalHierarchy["points"][number] }) {
@@ -622,11 +623,11 @@ function Overview({ onNavigate, onOpenTrend, onAcknowledge, activeAlarms, alarmS
         <footer className="overview-channel-footer"><span><i className="critical" />{visibleConditionCounts.critical} críticos</span><span><i className="warning" />{visibleConditionCounts.warning} advertencias</span><span><i className="normal" />{visibleConditionCounts.normal} normales</span><span><i className="offline" />{activeSensors.length - visibleSensors.length} ocultos</span><button onClick={() => onNavigate("cabinet")}>Ver distribución en la cabina <ChevronRight size={15} /></button></footer>
       </article>
 
-      <aside className="overview-side-column">
+      <div className="overview-side-column">
         <article className="panel overview-alerts-panel"><header className="panel-header compact"><div><span className="eyebrow">Atención requerida</span><h2>Eventos prioritarios</h2><p>Primero los críticos, luego los más recientes.</p></div><StatusPill state={priorityAlarm?.severity ?? "normal"}>{alarmTotal ? `${alarmTotal} activos` : "Sin pendientes"}</StatusPill></header><div className="overview-alert-list">{rankedAlarms.slice(0, 4).map((alarm) => <article className={`overview-alert overview-alert-${alarm.severity}`} key={alarm.id}><span className="overview-alert-icon"><AlertTriangle size={18} /></span><div><span>{alarm.channelCode ?? "Comunicación"} · {alarm.assetCode}</span><strong>{alarm.title}</strong><small>{formatRelativeTime(alarm.openedAt)}{alarm.assignedToName ? ` · ${alarm.assignedToName}` : " · Sin asignar"}</small></div><b>{alarmValue(alarm)}</b>{alarm.status === "open" ? <button onClick={() => onAcknowledge(alarm.id)}>Reconocer</button> : <i>Reconocida</i>}</article>)}{activeAlarms.length === 0 && <TableEmptyState title="Sin alertas activas" detail="No hay eventos abiertos o reconocidos para este punto de medición." />}</div><button className="text-action" onClick={() => onNavigate("alarms")}>Gestionar todas las alertas <span>→</span></button></article>
 
         <article className="panel overview-acquisition-panel"><header><span className="overview-acquisition-icon"><Radio size={20} /></span><div><span className="eyebrow">Cadena de adquisición</span><h2>{gatewayOnline && freshSensors.length ? "Telemetría disponible" : "Revisión necesaria"}</h2></div></header><div className="overview-data-path"><span className={gatewayOnline ? "healthy" : "offline"}><i><Server size={17} /></i><b>Gateway</b><small>{telemetry?.gateway?.code ?? "No configurado"}</small></span><ChevronRight size={16} /><span className={telemetry?.device ? "healthy" : "offline"}><i><CircuitBoard size={17} /></i><b>CAM-5</b><small>{telemetry?.device?.code ?? "No configurado"}</small></span><ChevronRight size={16} /><span className={freshSensors.length ? "healthy" : "offline"}><i><Database size={17} /></i><b>Core</b><small>{freshSensors.length ? "Recibiendo" : "Sin datos"}</small></span></div><dl><div><dt>Entradas asignadas</dt><dd>{activeInputCount} / {totalInputCount}</dd></div><div><dt>Ventana de vigencia</dt><dd>{telemetry?.staleAfterSeconds ?? 30} s</dd></div><div><dt>Último contacto</dt><dd>{telemetryAge(telemetry?.gateway?.lastSeenAt ?? null).replace("Actualizado ", "")}</dd></div></dl><button onClick={() => onNavigate("diagnostics")}>Abrir diagnóstico técnico <ChevronRight size={16} /></button></article>
-      </aside>
+      </div>
     </section>
   </div>;
 }
@@ -1784,18 +1785,23 @@ export default function Home() {
           : { title: "Las lecturas están atrasadas", detail: "Los últimos datos superan el tiempo de frescura configurado. Revisa el enlace antes de tomar una decisión." };
   const resolvedTrendSensorId = sensors.some((sensor) => sensor.enabled && sensor.id === trendSensorId) ? trendSensorId : sensors.find((sensor) => sensor.enabled)?.id ?? "";
 
+  const clientContextSelect = <label><span>Cliente</span><select value={sessionUser.clientId} onChange={(event) => { const firstSite = hierarchy?.sites.find((site) => site.active && site.clientId === event.target.value); if (firstSite) void switchSite(firstSite.id); }} aria-label="Cliente activo">{hierarchy?.clients.filter((client) => client.active).map((client) => <option key={client.id} value={client.id}>{client.name}</option>) ?? <option value={sessionUser.clientId}>{sessionUser.clientName}</option>}</select></label>;
+  const siteContextSelect = <label><span>Sitio</span><select value={sessionUser.siteId} onChange={(event) => void switchSite(event.target.value)} aria-label="Sitio activo">{(hierarchy?.sites ?? sessionUser.sites).filter((site) => site.clientId === sessionUser.clientId && (!("active" in site) || site.active)).map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}</select></label>;
   return (
     <FeedbackContext.Provider value={notify}>
     <ConfirmContext.Provider value={setConfirmRequest}>
     <RoleContext.Provider value={activeRole}>
     <TelemetryContext.Provider value={telemetryState}>
     <div className="app-shell">
+      <a className="skip-link" href="#contenido-principal">Saltar al contenido</a>
       {menuOpen && <button className="mobile-scrim" aria-label="Cerrar navegación" onClick={() => setMenuOpen(false)} />}
       <aside className={`sidebar ${menuOpen ? "open" : ""}`}>
         <div className={`brand-block ${sessionUser.clientLogoUpdatedAt ? "has-client-logo" : ""}`}>
           <SidebarBrand clientId={sessionUser.clientId} clientName={sessionUser.clientName} logoUpdatedAt={sessionUser.clientLogoUpdatedAt} />
           <button className="sidebar-close" aria-label="Cerrar menú" onClick={() => setMenuOpen(false)}><X size={20} /></button>
         </div>
+
+        <div className="sidebar-context" aria-label="Contexto operacional">{clientContextSelect}{siteContextSelect}</div>
 
         <nav className="sidebar-nav" aria-label="Navegación principal">
           {navGroups.map((group) => (
@@ -1823,16 +1829,16 @@ export default function Home() {
         </div>
       </aside>
 
-      <main className="main-shell">
+      <main className="main-shell" id="contenido-principal" tabIndex={-1}>
         <header className="topbar">
-          <div className="topbar-left"><button className="menu-button" aria-label="Abrir navegación" onClick={() => setMenuOpen(true)}><Menu size={22} /></button>{sessionUser.clientLogoUpdatedAt ? <span className="mobile-brand mobile-client-logo"><ClientLogoImage clientId={sessionUser.clientId} version={sessionUser.clientLogoUpdatedAt} alt={sessionUser.clientName} /></span> : <span className="mobile-brand"><Zap size={18} fill="currentColor" /></span>}<div className="operational-context"><Building2 size={17} /><label><span>Cliente</span><select value={sessionUser.clientId} onChange={(event) => { const firstSite = hierarchy?.sites.find((site) => site.active && site.clientId === event.target.value); if (firstSite) void switchSite(firstSite.id); }} aria-label="Cliente activo">{hierarchy?.clients.filter((client) => client.active).map((client) => <option key={client.id} value={client.id}>{client.name}</option>) ?? <option value={sessionUser.clientId}>{sessionUser.clientName}</option>}</select></label><ChevronRight size={14} /><label><span>Sitio</span><select value={sessionUser.siteId} onChange={(event) => void switchSite(event.target.value)} aria-label="Sitio activo">{(hierarchy?.sites ?? sessionUser.sites).filter((site) => site.clientId === sessionUser.clientId && (!("active" in site) || site.active)).map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}</select></label><ChevronRight size={14} /><label><span>Punto de medición</span><select value={activePoint?.id ?? ""} onChange={(event) => { setTelemetryState({ status: "loading", data: null }); setSystemMode("loading"); setActivePointId(event.target.value); }} aria-label="Punto de medición activo"><option value="">Sin punto seleccionado</option>{hierarchy?.points.filter((point) => point.active).map((point) => <option key={point.id} value={point.id}>{point.code} · {point.name}</option>)}</select></label></div></div>
+          <div className="topbar-left"><button className="menu-button" aria-label="Abrir navegación" onClick={() => setMenuOpen(true)}><Menu size={22} /></button>{sessionUser.clientLogoUpdatedAt ? <span className="mobile-brand mobile-client-logo"><ClientLogoImage clientId={sessionUser.clientId} version={sessionUser.clientLogoUpdatedAt} alt={sessionUser.clientName} /></span> : <span className="mobile-brand"><Zap size={18} fill="currentColor" /></span>}<div className="operational-context"><Building2 size={17} />{clientContextSelect}<ChevronRight size={14} />{siteContextSelect}<ChevronRight size={14} /><label><span>Punto de medición</span><select value={activePoint?.id ?? ""} onChange={(event) => { setTelemetryState({ status: "loading", data: null }); setSystemMode("loading"); setActivePointId(event.target.value); }} aria-label="Punto de medición activo"><option value="">Sin punto seleccionado</option>{hierarchy?.points.filter((point) => point.active).map((point) => <option key={point.id} value={point.id}>{point.code} · {point.name}</option>)}</select></label></div></div>
           <div className="topbar-right"><span className="authenticated-role"><ShieldCheck size={15} /><span><small>Sesión activa</small><strong>{sessionUser.roleName}</strong></span></span><div className={`live-state live-${acquisitionMode}`} aria-live="polite"><span /><div><strong>{acquisitionTitle}</strong><small>{acquisitionDetail}</small></div></div><button className="topbar-logout" onClick={logout} aria-label="Cerrar sesión"><LogOut size={18} /></button></div>
         </header>
 
         <div className="content-scroll">
           <div className="page-content">
             {systemMode !== "normal" && <section className={`operational-banner banner-${systemMode}`} role={systemMode === "offline" || systemMode === "error" ? "alert" : "status"} aria-live="polite"><span>{systemMode === "offline" ? <PlugConnected size={19} /> : systemMode === "loading" ? <Refresh className="spin" size={19} /> : systemMode === "error" ? <AlertTriangle size={19} /> : <Clock3 size={19} />}</span><div><strong>{systemMessage.title}</strong><p>{systemMessage.detail}</p></div>{systemMode !== "loading" && <button onClick={() => { setTelemetryState({ status: "loading", data: null }); setSystemMode("loading"); setTelemetryRefreshKey((current) => current + 1); notify("Consultando nuevamente la telemetría.", "info"); }}><Refresh size={15} /> Reintentar</button>}</section>}
-            <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> Gestión de activos críticos</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{(view === "overview" || view === "cabinet") && <button className="secondary-button" onClick={() => setVisibilityOpen(true)} disabled={!activePoint || !sensors.some((sensor) => sensor.enabled)}><AdjustmentsHorizontal size={16} /><span>Personalizar canales</span></button>}{view !== "assets" && view !== "settings" && view !== "provisioning" && view !== "users" && view !== "notifications" && view !== "account" && view !== "reports" && view !== "diagnostics" && view !== "commissioning" && view !== "trends" && view !== "history" && <button className="secondary-button" onClick={exportCsv}><Download size={16} /><span>Exportar</span></button>}<button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{alarmSummary.critical + alarmSummary.warning} alertas activas</button></div></section>
+            <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> Gestión de activos críticos</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{(view === "overview" || view === "cabinet") && <button className="secondary-button" onClick={() => setVisibilityOpen(true)} disabled={!activePoint || !sensors.some((sensor) => sensor.enabled)} aria-label="Personalizar canales" title="Personalizar canales"><AdjustmentsHorizontal size={16} aria-hidden="true" /><span>Personalizar canales</span></button>}{view !== "assets" && view !== "settings" && view !== "provisioning" && view !== "users" && view !== "notifications" && view !== "account" && view !== "reports" && view !== "diagnostics" && view !== "commissioning" && view !== "trends" && view !== "history" && <button className="secondary-button" onClick={exportCsv} aria-label="Exportar" title="Exportar"><Download size={16} aria-hidden="true" /><span>Exportar</span></button>}<button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{alarmSummary.critical + alarmSummary.warning} alertas activas</button></div></section>
             {view === "overview" && <Overview onNavigate={navigate} onOpenTrend={openChannelTrend} onAcknowledge={acknowledge} activeAlarms={alarmPreview} alarmSummary={alarmSummary} point={activePoint} />}
             {view === "cabinet" && <CabinetView onOpenTrend={openChannelTrend} />}
             {view === "diagnostics" && <DatabaseDiagnosticsView assetId={activePoint?.id ?? ""} canExecute={sessionUser.permissions.includes("diagnostics.execute")} notify={notify} />}
