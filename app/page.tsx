@@ -436,7 +436,8 @@ function SensorMarker({ sensor, selectedId, onSelect }: { sensor: PortalSensor; 
     <button
       type="button"
       className={`sensor-marker ${!sensor.enabled ? "marker-disabled" : unavailable ? "marker-stale" : `marker-${sensor.state}`} ${selectedId === sensor.id ? "selected" : ""}`}
-      aria-label={`${sensor.id}, ${sensor.label}, ${sensor.value} ${sensor.unit}, ${sensor.state}`}
+      aria-label={`${sensor.id}, ${sensor.label}: ${sensor.value} ${sensor.unit}, ${stateLabel}${unavailable ? `, ${sensor.trend.toLowerCase()}` : ""}`}
+      title={`${sensor.label} · ${stateLabel}`}
       aria-pressed={selectedId === sensor.id}
       disabled={!sensor.enabled}
       onClick={() => onSelect?.(sensor.id)}
@@ -525,7 +526,6 @@ function CabinetDiagram({ selectedId, onSelect }: { selectedId?: string; onSelec
   );
   return (
     <div className="condition-map" aria-label={`Mapa de condición de ${telemetry?.point.code ?? "punto de medición"}`}>
-      <div className="condition-map-header"><span className="map-asset-icon"><CircuitBoard size={20} /></span><div><strong>{telemetry?.point.code ?? "Sin punto seleccionado"}</strong><small>{telemetry?.point.nominalVoltageKv ? `${telemetry.point.nominalVoltageKv} kV · ` : ""}{telemetry?.point.name ?? "Esperando contexto operacional"}</small></div><b>{telemetry?.device?.code ?? "Sin controlador"}</b></div>
 
       <div className="condition-map-zones">
         {zones.map((zone, index) => {
@@ -650,12 +650,22 @@ function CabinetView({ onOpenTrend }: { onOpenTrend: (id: string) => void }) {
   const activeSensors = sensors.filter((sensor) => sensor.enabled);
   const visibleSensors = activeSensors.filter((sensor) => sensor.visible);
   const [selectedId, setSelectedId] = useState("");
+  const detailRef = useRef<HTMLDivElement>(null);
+  const selectChannel = (id: string) => {
+    setSelectedId(id);
+    // En pantallas angostas el detalle queda bajo el mapa: se lleva a la vista para que el toque tenga respuesta.
+    if (typeof window !== "undefined" && window.matchMedia("(max-width: 1100px)").matches) {
+      const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      window.requestAnimationFrame(() => detailRef.current?.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "start" }));
+    }
+  };
   const selected = visibleSensors.find((sensor) => sensor.id === selectedId) ?? visibleSensors[0] ?? null;
   const hasMeasurements = activeSensors.some((sensor) => sensor.recordedAt !== null);
   const conditionState = sensorGroupState(activeSensors);
   const overallState: SensorState | "loading" | "waiting" | "offline" | "error" = !telemetry && telemetryState.status === "loading" ? "loading" : !telemetry && telemetryState.status === "error" ? "error" : telemetry?.gateway?.state !== "online" ? "offline" : !hasMeasurements ? "waiting" : conditionState;
-  const assignedInputs = telemetry?.inputSummary.assigned ?? new Set(activeSensors.map((sensor) => sensor.sourceId).filter((source) => source !== "Sin entrada")).size;
-  const disabledChannels = sensors.length - activeSensors.length;
+  const zoneCount = new Set(visibleSensors.map((sensor) => sensor.zone)).size;
+  const hiddenChannels = activeSensors.length - visibleSensors.length;
+  const thresholdText = (sensor: PortalSensor) => [sensor.warning !== null ? `Advertencia ${sensor.warning} ${sensor.unit}` : null, sensor.critical !== null ? `Crítico ${sensor.critical} ${sensor.unit}` : null].filter(Boolean).join(" · ") || "Sin umbrales";
   const SelectedIcon = selected && (selected.metric === "temperature" || selected.metric === "ambient") ? Thermometer : selected?.metric === "humidity" ? Droplets : Activity;
   const selectedDisplayState: SensorState | "offline" = selected?.quality === "Válida" ? selected.state : "offline";
   const selectedStateLabel = selected?.quality === "Válida" ? selected.state === "critical" ? "Crítico" : selected.state === "warning" ? "Advertencia" : "Normal" : selected?.quality ?? "Sin lectura";
@@ -664,29 +674,18 @@ function CabinetView({ onOpenTrend }: { onOpenTrend: (id: string) => void }) {
   return (
     <section className="cabinet-view-grid">
       <article className="panel cabinet-full-panel">
-        <div className="panel-header"><div><span className="eyebrow">Mapa de condición de la cabina</span><h2>{telemetry?.point ? `${telemetry.point.code} · ${telemetry.point.name}` : "Punto de medición"}</h2><p>{visibleSensors.length} visibles de {activeSensors.length} monitoreadas · {assignedInputs} entradas asignadas{disabledChannels ? ` · ${disabledChannels} sin monitoreo` : ""}</p></div><StatusPill state={overallState}>{statusText}</StatusPill></div>
-        <CabinetDiagram selectedId={selected?.id} onSelect={setSelectedId} />
-        <div className="diagram-legend"><span><i className="dot-normal" />Normal</span><span><i className="dot-warning" />Advertencia</span><span><i className="dot-critical" />Crítico</span><span><i className="dot-disabled" />No configurado</span><small>Selecciona una tarjeta para revisar el canal.</small></div>
+        <div className="panel-header"><div><span className="eyebrow">Mapa de condición de la cabina</span><h2>{telemetry?.point ? `${telemetry.point.code} · ${telemetry.point.name}` : "Punto de medición"}</h2><p>{visibleSensors.length} canales en {zoneCount} {zoneCount === 1 ? "zona" : "zonas"}{hiddenChannels ? ` · ${hiddenChannels} ocultos por tu selección` : ""}{telemetry?.point.nominalVoltageKv ? ` · ${telemetry.point.nominalVoltageKv} kV` : ""}</p></div><StatusPill state={overallState}>{statusText}</StatusPill></div>
+        <CabinetDiagram selectedId={selected?.id} onSelect={selectChannel} />
+        <div className="diagram-legend"><span><i className="dot-normal" />Normal</span><span><i className="dot-warning" />Advertencia</span><span><i className="dot-critical" />Crítico</span><span><i className="dot-disabled" />Sin dato vigente</span><small>Selecciona un canal para ver su detalle.</small></div>
       </article>
-      <article className="panel sensor-panel">
-        {selected ? <div className={`selected-sensor-card selected-${selectedDisplayState}`}>
+      <article className="panel sensor-panel" ref={detailRef}>
+        {selected ? <div className={`selected-sensor-card selected-${selectedDisplayState}`} aria-live="polite">
           <div className="selected-sensor-head"><span className="selected-sensor-icon"><SelectedIcon size={21} /></span><div><small>Canal seleccionado</small><strong>{selected.id} · {selected.type}</strong></div><StatusPill state={selectedDisplayState}>{selectedStateLabel}</StatusPill></div>
           <div className="selected-sensor-value">{selected.value}<span>{selected.unit}</span></div>
           <p>{selected.label} · {selected.zone}</p>
-          <dl><div><dt>Actualización</dt><dd>{selected.trend}</dd></div><div><dt>Umbral</dt><dd>{selected.threshold}</dd></div><div><dt>Registro CAM-5</dt><dd>{selected.nativeRegister} · {selected.register}</dd></div><div><dt>Calidad</dt><dd>{selected.quality}</dd></div></dl>
+          <dl><div><dt>Última lectura</dt><dd>{selected.trend.replace(/^Actualizado /, "")}</dd></div><div><dt>Umbrales</dt><dd>{thresholdText(selected)}</dd></div><div><dt>Registro CAM-5</dt><dd>{selected.nativeRegister} · {selected.register}</dd></div><div><dt>Calidad</dt><dd>{selected.quality}</dd></div></dl>
           <button type="button" onClick={() => onOpenTrend(selected.id)}>Abrir tendencia del canal <TrendingUp size={16} /></button>
         </div> : <div className="selected-sensor-empty"><EyeOff size={25} /><strong>{telemetryState.status === "loading" ? "Cargando canales" : telemetryState.status === "error" ? "Estado no verificado" : "No seleccionaste canales visibles"}</strong><p>{telemetryState.status === "loading" ? "Esperando la respuesta del gateway y del controlador CAM-5." : telemetryState.status === "error" ? "No fue posible consultar la telemetría. Esto no confirma una desconexión del equipo." : "Usa Personalizar canales para elegir las variables que quieres revisar."}</p></div>}
-        <div className="panel-header compact sensor-list-header"><div><span className="eyebrow">Selección personal</span><h2>Canales visibles</h2></div><span className="data-fresh"><Wifi size={14} /> {telemetryAge(telemetry?.device?.lastReadAt ?? null)}</span></div>
-        <div className="sensor-list">
-          {visibleSensors.map((sensor) => (
-            <button type="button" className={`sensor-row ${!sensor.enabled ? "disabled" : ""} ${selected?.id === sensor.id ? "selected" : ""}`} key={sensor.id} onClick={() => setSelectedId(sensor.id)} disabled={!sensor.enabled}>
-              <span className={`sensor-code sensor-${sensor.state}`}>{sensor.id}</span>
-              <div><strong>{sensor.label}</strong><small>{sensor.zone}</small></div>
-              <div className="sensor-reading"><strong>{sensor.value}<small>{sensor.unit}</small></strong><span>{sensor.trend}</span></div>
-            </button>
-          ))}
-          {!visibleSensors.length && <div className="sensor-list-empty">No hay canales seleccionados para esta vista.</div>}
-        </div>
       </article>
     </section>
   );

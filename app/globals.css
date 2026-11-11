@@ -2205,3 +2205,38 @@ html body :is(a, button, summary, [tabindex]):not(input, select, textarea):focus
 .overview-command-warning .overview-priority-value, .overview-command-stale .overview-priority-value, .overview-command-waiting .overview-priority-value, .overview-command-offline .overview-priority-value { color: #b45309; }
 .overview-channel-card.channel-offline .overview-channel-state { color: #475569; }
 @media (max-width: 820px) { .operational-banner button { min-height: 44px; } }
+
+/* ───────────── Mapa de condición: legibilidad, celular y detalle del canal ───────────── */
+/* La grilla debía permitir que el contenido encoja: con 1fr se desbordaba y quedaba cortado en el celular */
+.cabinet-view-grid > * { min-width: 0; }
+@media (max-width: 1400px) { .cabinet-view-grid { grid-template-columns: minmax(0, 1fr); } }
+/* El detalle del canal acompaña el desplazamiento en pantallas anchas */
+@media (min-width: 1401px) { .cabinet-view-grid > .sensor-panel { position: sticky; top: 16px; } }
+.condition-map-zones { border-radius: 14px; }
+.selected-sensor-card dd { white-space: normal; text-overflow: clip; font-family: inherit; font-size: var(--text-sm); line-height: 1.35; }
+.selected-sensor-card > button { min-height: 44px; }
+
+/* Contraste del texto (el tono de estado se mantiene en bordes y fondos) */
+.zone-index { color: #52525b; }
+.zone-header p { color: #52525b; }
+.zone-status.normal { color: #047857; }
+.zone-status.critical { color: #b91c1c; }
+.marker-normal { --marker-text: #047857; }
+.marker-warning { --marker-text: #92400e; }
+.marker-critical { --marker-text: #b91c1c; }
+.marker-stale { --marker-text: #475569; }
+.sensor-marker-state { color: var(--marker-text, var(--marker-color)); }
+.sensor-marker-label { color: #52525b; display: -webkit-box; white-space: normal; text-overflow: clip; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
+.diagram-legend small, .diagram-legend span { color: #52525b; }
+@media (max-width: 820px) { .sensor-marker { min-height: 44px; } }
+@media (max-width: 600px) {
+  /* El estado se lee como texto también en el celular, no solo por color */
+  .sensor-marker-state { display: inline-flex; font-size: 11px; }
+  .sensor-marker-top { flex-wrap: wrap; row-gap: 2px; }
+  .cabinet-full-panel > .panel-header { flex-direction: column; align-items: flex-start; gap: 10px; }
+}
+.condition-map-footer > span { min-width: 0; }
+.condition-map-footer > span > span { min-width: 0; }
+.condition-map-footer > .status-pill { flex: 0 0 auto; }
+.condition-map-footer strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.condition-map-footer small { color: #52525b; }
