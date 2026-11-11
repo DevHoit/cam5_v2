@@ -5,11 +5,22 @@ import {
   assets,
   auditLogs,
   channels,
-  readings,
   userAssetScopes,
   users,
 } from "../../../../db/schema";
 import { apiErrorResponse, ApiError, parsePage, requireApiSession } from "../_lib/auth";
+import {
+  HISTORY_CHANNEL_GROUPS,
+  HISTORY_RESOLUTIONS,
+  HistoryRangeError,
+  historyCsvRows,
+  historyRetention,
+  listHistoryColumns,
+  listHistoryRows,
+  resolveHistoryResolution,
+  type HistoryChannelGroup,
+  type HistoryResolutionRequest,
+} from "../../../../db/history";
 
 export const dynamic = "force-dynamic";
 
@@ -52,62 +63,49 @@ export async function GET(request: NextRequest) {
     const queryOffset = exporting ? 0 : offset;
     const { from, to } = parsePeriod(request);
     const q = request.nextUrl.searchParams.get("q")?.trim() || "";
-    const channel = request.nextUrl.searchParams.get("channel") || "all";
     const assetId = request.nextUrl.searchParams.get("assetId") || "";
     const scopes = await db.select({ assetId: userAssetScopes.assetId }).from(userAssetScopes).where(eq(userAssetScopes.userId, user.id));
     const allowedAssetIds = scopes.map((scope) => scope.assetId);
 
     if (tab === "measurements") {
-      const filters: SQL[] = [eq(assets.siteId, user.siteId), eq(channels.enabled, true), between(readings.recordedAt, from, to)];
-      if (allowedAssetIds.length) filters.push(inArray(assets.id, allowedAssetIds));
-      if (assetId) {
-        if (allowedAssetIds.length && !allowedAssetIds.includes(assetId)) throw new ApiError(403, "No tienes acceso al punto de medición indicado.");
-        filters.push(eq(assets.id, assetId));
+      if (!assetId) throw new ApiError(400, "Selecciona un punto de medición.");
+      if (allowedAssetIds.length && !allowedAssetIds.includes(assetId)) throw new ApiError(403, "No tienes acceso al punto de medición indicado.");
+      const [asset] = await db.select({ id: assets.id }).from(assets).where(and(eq(assets.id, assetId), eq(assets.siteId, user.siteId))).limit(1);
+      if (!asset) throw new ApiError(404, "El punto de medición no pertenece al sitio activo.");
+      const requestedResolution = request.nextUrl.searchParams.get("resolution") || "auto";
+      if (!HISTORY_RESOLUTIONS.includes(requestedResolution as HistoryResolutionRequest)) throw new ApiError(400, "La resolución no es válida.");
+      const group = request.nextUrl.searchParams.get("group") || "visible";
+      if (!HISTORY_CHANNEL_GROUPS.includes(group as HistoryChannelGroup)) throw new ApiError(400, "El grupo de canales no es válido.");
+      const retention = await historyRetention(db, assetId);
+      let resolution;
+      try {
+        resolution = resolveHistoryResolution(from, to, requestedResolution as HistoryResolutionRequest, retention.rawDays);
+      } catch (resolutionError) {
+        if (resolutionError instanceof HistoryRangeError) throw new ApiError(400, resolutionError.message);
+        throw resolutionError;
       }
-      if (channel !== "all") filters.push(eq(channels.code, channel));
-      if (q) filters.push(or(ilike(channels.code, `%${q}%`), ilike(channels.name, `%${q}%`), ilike(channels.zone, `%${q}%`))!);
-      const where = and(...filters);
-      const [items, totals] = await Promise.all([
-        db.select({
-          id: readings.id,
-          recordedAt: readings.recordedAt,
-          receivedAt: readings.receivedAt,
-          code: channels.code,
-          name: channels.name,
-          zone: channels.zone,
-          unit: channels.unit,
-          value: readings.value,
-          rawValue: readings.rawValue,
-          quality: readings.quality,
-          qualityFlags: readings.qualityFlags,
-          sequence: readings.sequence,
-        })
-          .from(readings)
-          .innerJoin(channels, eq(channels.id, readings.channelId))
-          .innerJoin(assets, eq(assets.id, channels.assetId))
-          .where(where)
-          .orderBy(desc(readings.recordedAt), desc(readings.id))
-          .limit(queryLimit)
-          .offset(queryOffset),
-        db.select({ total: count() }).from(readings).innerJoin(channels, eq(channels.id, readings.channelId)).innerJoin(assets, eq(assets.id, channels.assetId)).where(where),
-      ]);
-      const total = Number(totals[0]?.total ?? 0);
-      if (exporting) return csvResponse("hoitlive-historico-mediciones.csv", [
-        ["fecha_medicion_utc", "fecha_recepcion_utc", "canal", "nombre", "zona", "valor", "unidad", "valor_crudo", "calidad", "banderas", "secuencia"],
-        ...items.map((item) => [item.recordedAt.toISOString(), item.receivedAt.toISOString(), item.code, item.name, item.zone, item.value, item.unit, item.rawValue, item.quality, item.qualityFlags.join("|"), item.sequence]),
-      ]);
+      const columns = await listHistoryColumns(db, assetId, user.id, group as HistoryChannelGroup);
+      const rowsPageSize = Math.min(100, Math.max(10, Number.parseInt(request.nextUrl.searchParams.get("pageSize") || "50", 10) || 50));
+      const { rows, total } = await listHistoryRows(db, {
+        channelIds: columns.map((column) => column.id),
+        from,
+        to,
+        resolution,
+        limit: exporting ? 20_000 : rowsPageSize,
+        offset: exporting ? 0 : (page - 1) * rowsPageSize,
+      });
+      if (exporting) return csvResponse(`hoitlive-historico-mediciones-${resolution.key === "raw" ? "por-envio" : resolution.key + "s"}.csv`, historyCsvRows(columns, rows, resolution));
       return Response.json({
-        items: items.map((item) => ({
-          ...item,
-          recordedAt: item.recordedAt.toISOString(),
-          receivedAt: item.receivedAt.toISOString(),
-        })),
+        resolution,
+        columns,
+        rows,
         page,
-        pageSize,
+        pageSize: rowsPageSize,
         total,
-        totalPages: Math.max(1, Math.ceil(total / pageSize)),
+        totalPages: Math.max(1, Math.ceil(total / rowsPageSize)),
         from: from.toISOString(),
         to: to.toISOString(),
+        retention: { ...retention, rawAvailableSince: new Date(Date.now() - retention.rawDays * 86_400_000).toISOString() },
       }, { headers: { "Cache-Control": "no-store" } });
     }
 
