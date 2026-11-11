@@ -40,12 +40,13 @@ test("keeps first-access users outside the portal until a fresh login", async ()
 });
 
 test("keeps history-to-trend ranges out of the future", async () => {
-  const [page, trends] = await Promise.all([
+  const [page, trends, history] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/trends-view.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/history-view.tsx", import.meta.url), "utf8"),
   ]);
 
-  assert.match(page, /new Date\(Math\.min\(Date\.now\(\), new Date\(toIso\)\.getTime\(\)\)\)\.toISOString\(\)/);
+  assert.match(history, /new Date\(Math\.min\(Date\.now\(\), new Date\(range\.to\)\.getTime\(\)\)\)\.toISOString\(\)/);
   assert.match(page, /const toTime = Math\.min\(Date\.now\(\), new Date\(to\)\.getTime\(\)\)/);
   assert.doesNotMatch(trends, /<text[^>]*>Advertencia|<text[^>]*>Crítico/);
   assert.match(trends, /trend-threshold-label/);
@@ -84,8 +85,10 @@ test("keeps the production portal free of starter preview code", async () => {
     readFile(new URL("../app/api/v1/gateway-credentials/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/v1/gateway-credentials/[id]/route.ts", import.meta.url), "utf8"),
   ]);
-  const [historyApi, alarmActionApi] = await Promise.all([
+  const [historyApi, historyQueries, historyView, alarmActionApi] = await Promise.all([
     readFile(new URL("../app/api/v1/history/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../db/history.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/history-view.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/v1/alarms/[id]/route.ts", import.meta.url), "utf8"),
   ]);
 
@@ -147,15 +150,19 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(page, /Visibilidad operacional para activos críticos/);
   assert.match(page, /Mostrar contraseña/);
   assert.doesNotMatch(page, /Cliente → Sitio → Punto|CAM5 → Gateway → HoitLive Core|Acceso por sitio y perfil/);
-  assert.match(page, /function HistoryView/);
-  assert.match(page, /type="date"/);
+  assert.match(page, /import \{ HistoryView \} from "\.\/history-view"/);
+  assert.match(historyView, /export function HistoryView/);
+  assert.match(historyView, /type="datetime-local"/);
   assert.match(page, /<Pagination/);
-  assert.match(page, /Fecha y hora/);
+  assert.match(historyView, /raw \? "Envío" : "Intervalo"/);
   assert.match(page, /requestAlarmClose/);
   assert.match(page, /Nota de cierre obligatoria/);
-  assert.match(historyApi, /\.from\(readings\)/);
-  assert.match(historyApi, /orderBy\(desc\(readings\.recordedAt\), desc\(readings\.id\)\)/);
-  assert.doesNotMatch(historyApi, /groupBy\(channels\.id\)/);
+  // Mediciones: lecturas reales agrupadas por envío del gateway, de la más reciente a la más antigua.
+  assert.match(historyApi, /listHistoryRows/);
+  assert.match(historyQueries, /from readings r/);
+  assert.match(historyQueries, /order by min\(r\.recorded_at\) desc/);
+  assert.match(historyQueries, /coalesce\(r\.batch_id::text/);
+  assert.doesNotMatch(historyQueries, /group by r\.channel_id|groupBy\(channels\.id\)/);
   assert.match(alarmActionApi, /status: "closed"/);
   assert.match(alarmActionApi, /Agrega una nota de cierre/);
   assert.match(page, /Quitar acceso/);
@@ -278,6 +285,7 @@ test("keeps every visible module on authenticated database APIs", async () => {
     "account-view.tsx",
     "cam5-engineering.tsx",
     "diagnostics-view.tsx",
+    "history-view.tsx",
     "gateway-provisioning-view.tsx",
     "notifications-view.tsx",
     "reports-view.tsx",

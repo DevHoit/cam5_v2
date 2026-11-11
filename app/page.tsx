@@ -6,6 +6,7 @@ import { Cam5CommissioningView } from "./cam5-engineering";
 import { DiagnosticsView as DatabaseDiagnosticsView } from "./diagnostics-view";
 import { GatewayProvisioningView } from "./gateway-provisioning-view";
 import { Pagination, useClientPagination } from "./pagination";
+import { HistoryView } from "./history-view";
 import { NotificationsView as DatabaseNotificationsView } from "./notifications-view";
 import { ReportsView as DatabaseReportsView } from "./reports-view";
 import { SettingsView as DatabaseSettingsView } from "./settings-view";
@@ -62,7 +63,6 @@ import {
 type View = "overview" | "cabinet" | "diagnostics" | "commissioning" | "trends" | "alarms" | "history" | "assets" | "reports" | "settings" | "provisioning" | "users" | "notifications" | "account";
 type Severity = "critical" | "warning" | "info";
 type SensorState = "normal" | "warning" | "critical";
-type HistoryTab = "measurements" | "alarms" | "audit";
 type UserRole = "Administrador" | "Ingeniero" | "Operador" | "Solo lectura";
 type AlarmWorkflowStatus = "open" | "acknowledged" | "resolved" | "closed";
 type PortalAlarm = {
@@ -236,22 +236,6 @@ async function portalRequest<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
-}
-
-async function downloadAuthenticatedCsv(path: string, fallbackName: string) {
-  const response = await fetch(path, { credentials: "include" });
-  if (!response.ok) {
-    const payload = await response.json().catch(() => null) as { error?: string } | null;
-    throw new Error(payload?.error || "No fue posible generar la exportación.");
-  }
-  const disposition = response.headers.get("content-disposition") || "";
-  const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] || fallbackName;
-  const url = URL.createObjectURL(await response.blob());
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.click();
-  URL.revokeObjectURL(url);
 }
 
 function formatDateTime(value?: string | null) {
@@ -876,104 +860,6 @@ function AlarmsView({ assetId, permissions, onSummaryChange, onOpenTrend }: { as
       </article>
     </> : <article className="panel alarm-rules-panel"><div className="alarm-rule-summary"><div><span>Reglas configuradas</span><strong>{ruleResult?.summary.total ?? 0}</strong></div><div><span>Activas</span><strong>{ruleResult?.summary.enabled ?? 0}</strong></div><div><span>Evaluadas por telemetría</span><strong>{ruleResult?.summary.evaluating ?? 0}</strong></div><div><span>En estado crítico</span><strong>{ruleResult?.summary.critical ?? 0}</strong></div></div><div className="alarm-toolbar"><label className="search-field"><Search size={17} /><input value={ruleQuery} onChange={(event) => { setRuleQuery(event.target.value); setRulePage(1); }} placeholder="Buscar canal, nombre o zona…" /></label><label className="status-filter"><span>Regla</span><select value={ruleEnabled} onChange={(event) => { setRuleEnabled(event.target.value as typeof ruleEnabled); setRulePage(1); }}><option value="all">Todas</option><option value="true">Activas</option><option value="false">Desactivadas</option></select><ChevronDown size={13} /></label></div><div className="alarm-rule-table-wrap"><div className="alarm-rule-table"><div className="alarm-rule-head"><span>Canal</span><span>Estado</span><span>Advertencia</span><span>Crítico</span><span>Histéresis</span><span>Activación</span><span>Recuperación</span><span>Dato atrasado</span><span>Acción</span></div>{ruleLoading ? <TableEmptyState title="Cargando reglas" detail="Consultando umbrales persistentes." /> : ruleResult?.items.map((rule) => { const draft = ruleDrafts[rule.id]; if (!draft) return null; return <div className="alarm-rule-row" key={rule.id}><span className="rule-channel"><strong>{rule.channelCode}</strong><small>{rule.channelName} · {rule.zone ?? rule.assetCode}</small></span><span><label className="rule-switch"><input type="checkbox" checked={draft.enabled} disabled={!canConfigure} onChange={(event) => updateRuleDraft(rule.id, "enabled", event.target.checked)} /><i /><small>{draft.enabled ? "Activa" : "Inactiva"}</small></label></span><span><input type="number" step="0.1" value={draft.warningThreshold} disabled={!canConfigure} onChange={(event) => updateRuleDraft(rule.id, "warningThreshold", Number(event.target.value))} /><small>{rule.unit}</small></span><span><input type="number" step="0.1" value={draft.criticalThreshold} disabled={!canConfigure} onChange={(event) => updateRuleDraft(rule.id, "criticalThreshold", Number(event.target.value))} /><small>{rule.unit}</small></span><span><input type="number" step="0.1" min="0" value={draft.hysteresis} disabled={!canConfigure} onChange={(event) => updateRuleDraft(rule.id, "hysteresis", Number(event.target.value))} /></span><span><input type="number" min="1" max="100" value={draft.activationSamples} disabled={!canConfigure} onChange={(event) => updateRuleDraft(rule.id, "activationSamples", Number(event.target.value))} /><small>muestras</small></span><span><input type="number" min="1" max="100" value={draft.recoverySamples} disabled={!canConfigure} onChange={(event) => updateRuleDraft(rule.id, "recoverySamples", Number(event.target.value))} /><small>muestras</small></span><span><input type="number" min="1" max="86400" value={draft.staleAfterSeconds} disabled={!canConfigure} onChange={(event) => updateRuleDraft(rule.id, "staleAfterSeconds", Number(event.target.value))} /><small>segundos</small></span><span><button className="ghost-button" disabled={!canConfigure || savingRule === rule.id} onClick={() => void saveRule(rule)}>{savingRule === rule.id ? <Refresh className="spin" size={15} /> : <Save size={15} />} Guardar</button></span></div>})}{!ruleLoading && !ruleResult?.items.length && <TableEmptyState title="No hay reglas configuradas" detail="Configura los canales del punto antes de habilitar alarmas." />}</div></div>{ruleResult && <Pagination page={ruleResult.page} totalPages={ruleResult.totalPages} total={ruleResult.total} pageSize={ruleResult.pageSize} onPageChange={setRulePage} itemLabel="reglas" />}<div className="alarm-rule-note"><ShieldCheck size={18} /><p><strong>Control contra falsos positivos</strong><span>La regla exige muestras consecutivas, aplica histéresis para recuperar y conserva el estado del motor en la base de datos.</span></p></div></article>}
   </>;
-}
-
-function HistoryView({ assetId, canExport, onOpenTrend }: { assetId: string; canExport: boolean; onOpenTrend: (channelId: string, from: string, to: string) => void }) {
-  const sensors = useSensorData();
-  const notify = useFeedback();
-  const [tab, setTab] = useState<HistoryTab>("measurements");
-  const [today] = useState(() => new Date().toISOString().slice(0, 10));
-  const [from, setFrom] = useState(() => new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10));
-  const [to, setTo] = useState(() => new Date().toISOString().slice(0, 10));
-  const [channel, setChannel] = useState("all");
-  const [query, setQuery] = useState("");
-  const [page, setPage] = useState(1);
-  const [result, setResult] = useState<(PaginationMeta & { items: Array<Record<string, unknown>> }) | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const activeSensors = sensors.filter((sensor) => sensor.enabled);
-  const fromIso = new Date(`${from}T00:00:00`).toISOString();
-  const toIso = new Date(`${to}T23:59:59.999`).toISOString();
-
-  useEffect(() => {
-    let active = true;
-    const timeout = window.setTimeout(async () => {
-      setLoading(true);
-      setError("");
-      try {
-        const params = new URLSearchParams({ tab, from: fromIso, to: toIso, page: String(page), pageSize: tab === "measurements" ? "20" : "8" });
-        if (assetId) params.set("assetId", assetId);
-        if (query.trim()) params.set("q", query.trim());
-        if (tab === "measurements" && channel !== "all") params.set("channel", channel);
-        const data = await portalRequest<PaginationMeta & { items: Array<Record<string, unknown>> }>(`/api/v1/history?${params}`);
-        if (active) setResult(data);
-      } catch (requestError) {
-        if (active) setError(requestError instanceof Error ? requestError.message : "No fue posible consultar el histórico.");
-      } finally {
-        if (active) setLoading(false);
-      }
-    }, 250);
-    return () => { active = false; window.clearTimeout(timeout); };
-  }, [assetId, tab, fromIso, toIso, page, query, channel]);
-
-  const changeTab = (next: HistoryTab) => { setTab(next); setPage(1); };
-  const total = result?.total ?? 0;
-  const exportHistory = async () => {
-    try {
-      const params = new URLSearchParams({ tab, from: fromIso, to: toIso, format: "csv" });
-      if (assetId) params.set("assetId", assetId);
-      if (query.trim()) params.set("q", query.trim());
-      if (tab === "measurements" && channel !== "all") params.set("channel", channel);
-      await downloadAuthenticatedCsv(`/api/v1/history?${params}`, `hoitlive-historico-${tab}.csv`);
-      notify("Histórico exportado con los filtros visibles.", "info");
-    } catch (requestError) {
-      notify(requestError instanceof Error ? requestError.message : "No fue posible exportar el histórico.", "warning");
-    }
-  };
-
-  return (
-    <>
-      <section className="module-summary-grid">
-        <article><span className="module-summary-icon blue"><Database size={19} /></span><div><small>Registros encontrados</small><strong>{total.toLocaleString("es-CL")}</strong><span>{from} → {to}</span></div></article>
-        <article><span className="module-summary-icon green"><ShieldCheck size={19} /></span><div><small>Fuente de información</small><strong>PostgreSQL</strong><span>Consulta protegida por perfil</span></div></article>
-        <article><span className="module-summary-icon amber"><Timeline size={19} /></span><div><small>Vista actual</small><strong>{tab === "measurements" ? "Mediciones" : tab === "alarms" ? "Alarmas" : "Auditoría"}</strong><span>Página {result?.page ?? page} de {result?.totalPages ?? 1}</span></div></article>
-      </section>
-
-      <article className="panel module-panel">
-        <div className="module-toolbar">
-          <div className="module-tabs" role="tablist" aria-label="Tipo de histórico">
-            <button className={tab === "measurements" ? "active" : ""} onClick={() => changeTab("measurements")}><Timeline size={16} /> Mediciones</button>
-            <button className={tab === "alarms" ? "active" : ""} onClick={() => changeTab("alarms")}><BellRing size={16} /> Alarmas</button>
-            <button className={tab === "audit" ? "active" : ""} onClick={() => changeTab("audit")}><ShieldCheck size={16} /> Auditoría</button>
-          </div>
-          {canExport && <button className="primary-button history-export-button" onClick={() => void exportHistory()} disabled={loading}><Download size={16} /> Exportar CSV</button>}
-        </div>
-        <div className="history-search-bar">
-          <label className="search-field"><Search size={17} /><input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder={tab === "audit" ? "Buscar acción o recurso…" : "Buscar canal, código o evento…"} /></label>
-          {tab === "measurements" && <label><span>Canal</span><select value={channel} onChange={(event) => { setChannel(event.target.value); setPage(1); }}><option value="all">Todos los canales</option>{activeSensors.map((sensor) => <option key={sensor.id} value={sensor.id}>{sensor.id} · {sensor.label}</option>)}</select><ChevronDown size={13} /></label>}
-          <label><span>Desde</span><input type="date" value={from} max={to} onChange={(event) => { setFrom(event.target.value); setPage(1); }} /></label>
-          <label><span>Hasta</span><input type="date" value={to} min={from} max={today} onChange={(event) => { setTo(event.target.value); setPage(1); }} /></label>
-        </div>
-
-        {error && <div className="data-error"><AlertTriangle size={18} /><div><strong>No se pudo cargar el histórico</strong><p>{error}</p></div></div>}
-        {loading && <div className="data-loading"><Refresh className="spin" size={18} /> Consultando PostgreSQL…</div>}
-
-        {!loading && !error && tab === "measurements" && <div className="module-table-wrap"><div className="history-table measurement-history"><div className="module-table-head"><span>Fecha y hora</span><span>Canal</span><span>Lectura</span><span>Calidad</span><span>Recepción</span><span>Secuencia</span><span>Acción</span></div>{result?.items.map((raw) => {
-          const item = raw as { id: number; recordedAt: string; receivedAt: string; code: string; name: string; zone?: string; unit: string; value?: string | null; rawValue?: number | null; quality: "good" | "stale" | "bad" | "disabled"; qualityFlags: string[]; sequence?: number | null };
-          const qualityLabel = item.quality === "good" ? "Válida" : item.quality === "stale" ? "Atrasada" : item.quality === "bad" ? "Inválida" : "Deshabilitada";
-          const lagMs = Math.max(0, new Date(item.receivedAt).getTime() - new Date(item.recordedAt).getTime());
-          return <div className="module-table-row" key={item.id}><span className="history-timestamp"><strong>{formatDateTime(item.recordedAt)}</strong><small>UTC {new Date(item.recordedAt).toISOString().slice(11, 19)}</small></span><span className="history-channel"><b className="sensor-code sensor-normal">{item.code}</b><span><strong>{item.name}</strong><small>{item.zone || "Sin zona"}</small></span></span><span className="mono-cell"><strong>{item.value === null || item.value === undefined ? "—" : `${Number(item.value).toFixed(1)} ${item.unit}`}</strong><small>Crudo: {item.rawValue ?? "—"}</small></span><span className={item.quality === "good" ? "quality-ok" : "unack-state"}>{item.quality === "good" ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />} {qualityLabel}{item.qualityFlags.length ? <small>{item.qualityFlags.join(", ")}</small> : null}</span><span className="mono-cell">{lagMs < 1_000 ? `${lagMs} ms` : `${(lagMs / 1_000).toFixed(1)} s`}<small>{formatDateTime(item.receivedAt)}</small></span><span className="mono-cell">{item.sequence ?? "—"}</span><span><button className="ghost-button" onClick={() => onOpenTrend(item.code, fromIso, new Date(Math.min(Date.now(), new Date(toIso).getTime())).toISOString())}><TrendingUp size={15} /> Tendencia</button></span></div>;
-        })}{result?.items.length === 0 && <TableEmptyState title="No hay mediciones en este rango" detail="Ajusta las fechas o espera la primera ingestión del CAM-5." />}</div></div>}
-
-        {!loading && !error && tab === "alarms" && <div className="module-table-wrap"><div className="history-table alarm-history"><div className="module-table-head"><span>Fecha</span><span>Severidad</span><span>Evento</span><span>Valor</span><span>Estado</span><span>Acción</span></div>{result?.items.map((raw) => { const item = raw as { id: string; code: string; openedAt: string; severity: Severity; status: string; title: string; detail?: string; triggerValue?: string; channelCode?: string; unit?: string }; const closed = item.status === "closed"; const resolved = item.status === "resolved"; return <div className="module-table-row" key={item.id}><span>{formatDateTime(item.openedAt)}</span><span><StatusPill state={item.severity}>{item.severity === "critical" ? "Crítica" : item.severity === "warning" ? "Advertencia" : "Normal"}</StatusPill></span><span className="event-cell"><strong>{item.title}</strong><small>{item.detail || item.code}</small></span><span className="mono-cell">{item.triggerValue ? `${Number(item.triggerValue).toFixed(1)} ${item.unit || ""}` : "—"}</span><span className={closed || resolved ? "quality-ok" : "unack-state"}>{closed || resolved ? <><CheckCircle2 size={14} /> {closed ? "Cerrada" : "Atendida"}</> : <><Clock3 size={14} /> {item.status === "acknowledged" ? "Reconocida" : "Abierta"}</>}</span><span>{item.channelCode ? <button className="ghost-button" onClick={() => onOpenTrend(item.channelCode!, new Date(new Date(item.openedAt).getTime() - 12 * 3600_000).toISOString(), new Date(Math.min(Date.now(), new Date(item.openedAt).getTime() + 12 * 3600_000)).toISOString())}><TrendingUp size={15} /> Tendencia</button> : "—"}</span></div>; })}{result?.items.length === 0 && <TableEmptyState title="No hay alarmas en este rango" detail="No se encontraron eventos con los filtros indicados." />}</div></div>}
-
-        {!loading && !error && tab === "audit" && <div className="module-table-wrap"><div className="history-table audit-history"><div className="module-table-head"><span>Fecha</span><span>Usuario</span><span>Acción</span><span>Recurso</span><span>Resultado</span></div>{result?.items.map((raw) => { const item = raw as { id: number; createdAt: string; actor: string; action: string; resourceType: string; resourceId?: string; outcome: string }; return <div className="module-table-row" key={item.id}><span>{formatDateTime(item.createdAt)}</span><span><strong>{item.actor}</strong></span><span>{item.action}</span><span className="mono-cell">{item.resourceType}{item.resourceId ? ` · ${item.resourceId}` : ""}</span><span className={item.outcome === "success" ? "quality-ok" : "unack-state"}>{item.outcome === "success" ? "Correcto" : item.outcome}</span></div>; })}{result?.items.length === 0 && <TableEmptyState title="No hay movimientos auditados" detail="No existen acciones registradas para este periodo." />}</div></div>}
-
-        {!loading && !error && result && <Pagination page={result.page} totalPages={result.totalPages} total={result.total} pageSize={result.pageSize} onPageChange={setPage} itemLabel={tab === "measurements" ? "canales" : tab === "alarms" ? "eventos" : "acciones"} />}
-        <div className="module-footer"><span><Database size={14} /> Retención: 30 días crudos · 5 años agregados</span><small>Fuente actual: PostgreSQL · rango consultado inclusive.</small></div>
-      </article>
-    </>
-  );
 }
 
 function clientLogoUrl(clientId: string, version: string) {
@@ -1855,7 +1741,7 @@ export default function Home() {
             {view === "commissioning" && <Cam5CommissioningView assetId={activePoint?.id ?? ""} canExecute={sessionUser.permissions.includes("commissioning.execute")} notify={notify} confirm={(request) => setConfirmRequest(request)} onOpenSettings={() => navigate("settings")} onOpenReports={() => navigate("reports")} />}
             {view === "trends" && <TrendsView assetId={activePoint?.id ?? ""} channels={sensors.map((sensor) => ({ id: sensor.id, label: sensor.label, zone: sensor.zone, unit: sensor.unit, state: sensor.state, enabled: sensor.enabled }))} period={period} setPeriod={setPeriod} selectedId={resolvedTrendSensorId} onSelectChannel={selectTrendChannel} onBackToMap={() => navigate("cabinet")} rangeWindow={trendWindow} setRangeWindow={setTrendWindow} canExport={sessionUser.permissions.includes("history.export")} notify={notify} />}
             {view === "alarms" && <AlarmsView assetId={activePoint?.id ?? ""} permissions={sessionUser.permissions} onSummaryChange={setAlarmSummary} onOpenTrend={openAlarmTrend} />}
-            {view === "history" && <HistoryView assetId={activePoint?.id ?? ""} canExport={sessionUser.permissions.includes("history.export")} onOpenTrend={openTrendRange} />}
+            {view === "history" && <HistoryView assetId={activePoint?.id ?? ""} canExport={sessionUser.permissions.includes("history.export")} notify={notify} onOpenTrend={openTrendRange} />}
             {view === "assets" && <OperationalHierarchyView hierarchy={hierarchy} loading={hierarchyLoading} permissions={sessionUser.permissions} onReload={loadHierarchy} onSwitchSite={switchSite} onClientLogoChanged={(clientId, logoUpdatedAt) => setSessionUser((current) => current && current.clientId === clientId ? { ...current, clientLogoUpdatedAt: logoUpdatedAt } : current)} />}
             {view === "reports" && <DatabaseReportsView assetId={activePoint?.id ?? ""} assetLabel={activePoint ? `${activePoint.code} · ${activePoint.name}` : "Sin punto seleccionado"} timezone={hierarchy?.sites.find((site) => site.id === sessionUser.siteId)?.timezone ?? "America/Santiago"} canGenerate={sessionUser.permissions.includes("reports.generate")} canSchedule={sessionUser.permissions.includes("reports.schedule")} notify={notify} confirm={(request) => setConfirmRequest(request)} />}
             {view === "settings" && <DatabaseSettingsView assetId={activePoint?.id ?? ""} canWrite={sessionUser.permissions.includes("settings.write")} notify={notify} confirm={(request) => setConfirmRequest(request)} onReloadHierarchy={loadHierarchy} />}
