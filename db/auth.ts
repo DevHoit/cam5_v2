@@ -19,8 +19,16 @@ const scrypt = promisify(nodeScrypt);
 const PASSWORD_KEY_LENGTH = 64;
 const SESSION_HOURS = 12;
 export const PASSWORD_RESET_MINUTES = 30;
+/** Intentos fallidos permitidos dentro de la ventana antes de bloquear la cuenta. */
+export const MAX_FAILED_LOGIN_ATTEMPTS = 5;
+/** Ventana de conteo de intentos fallidos y duración del bloqueo temporal. */
+export const LOGIN_LOCKOUT_MINUTES = 15;
+// Hash ficticio para que un correo inexistente tarde lo mismo que uno real.
+const DUMMY_PASSWORD_HASH = `scrypt$${"0".repeat(32)}$${"0".repeat(PASSWORD_KEY_LENGTH * 2)}`;
 
 export const SESSION_COOKIE_NAME = "cam5_session";
+/** Intervalo mínimo entre actualizaciones de "última actividad" de sesiones y credenciales. */
+export const ACTIVITY_WRITE_INTERVAL_MS = 60_000;
 
 export type AuthenticatedPortalUser = {
   id: string;
@@ -142,7 +150,7 @@ export async function consumePasswordResetToken(
       .where(and(eq(passwordResetTokens.id, candidate.id), isNull(passwordResetTokens.usedAt), gt(passwordResetTokens.expiresAt, now)))
       .returning({ id: passwordResetTokens.id });
     if (!claimed) return null;
-    await tx.update(authIdentities).set({ passwordHash, mustChangePassword: false, updatedAt: now })
+    await tx.update(authIdentities).set({ passwordHash, mustChangePassword: false, failedLoginCount: 0, lastFailedLoginAt: null, lockedUntil: null, updatedAt: now })
       .where(and(eq(authIdentities.userId, candidate.userId), eq(authIdentities.provider, "local")));
     await tx.update(authSessions).set({ revokedAt: now })
       .where(and(eq(authSessions.userId, candidate.userId), isNull(authSessions.revokedAt)));
@@ -182,13 +190,20 @@ export async function createPortalSession(
   return { token, expiresAt };
 }
 
-export async function authenticateLocalUser(db: Cam5Database, email: string, password: string) {
+export type LocalLoginResult =
+  | { status: "authenticated"; userId: string }
+  | { status: "invalid"; userId: string | null; failedAttempts: number; lockedUntil: Date | null }
+  | { status: "locked"; userId: string; lockedUntil: Date };
+
+export async function attemptLocalLogin(db: Cam5Database, email: string, password: string, now = new Date()): Promise<LocalLoginResult> {
   const normalizedEmail = normalizeEmail(email);
   const [identity] = await db
     .select({
+      identityId: authIdentities.id,
       userId: users.id,
       status: users.status,
       passwordHash: authIdentities.passwordHash,
+      lockedUntil: authIdentities.lockedUntil,
     })
     .from(authIdentities)
     .innerJoin(users, eq(users.id, authIdentities.userId))
@@ -198,11 +213,41 @@ export async function authenticateLocalUser(db: Cam5Database, email: string, pas
     ))
     .limit(1);
 
-  if (!identity?.passwordHash || identity.status !== "active") return null;
-  if (!await verifyPassword(password, identity.passwordHash)) return null;
+  if (!identity?.passwordHash) {
+    await verifyPassword(password, DUMMY_PASSWORD_HASH);
+    return { status: "invalid", userId: null, failedAttempts: 0, lockedUntil: null };
+  }
+  if (identity.lockedUntil && identity.lockedUntil > now) {
+    return { status: "locked", userId: identity.userId, lockedUntil: identity.lockedUntil };
+  }
 
-  await db.update(users).set({ lastLoginAt: new Date(), updatedAt: new Date() }).where(eq(users.id, identity.userId));
-  return identity.userId;
+  const validPassword = await verifyPassword(password, identity.passwordHash);
+  if (validPassword && identity.status === "active") {
+    await db.update(authIdentities).set({ failedLoginCount: 0, lastFailedLoginAt: null, lockedUntil: null }).where(eq(authIdentities.id, identity.identityId));
+    await db.update(users).set({ lastLoginAt: now, updatedAt: now }).where(eq(users.id, identity.userId));
+    return { status: "authenticated", userId: identity.userId };
+  }
+
+  // El conteo se reinicia si el último fallo quedó fuera de la ventana o si ya terminó un bloqueo anterior.
+  const windowStart = new Date(now.getTime() - LOGIN_LOCKOUT_MINUTES * 60_000);
+  const lockedUntil = new Date(now.getTime() + LOGIN_LOCKOUT_MINUTES * 60_000);
+  const nextCount = sql<number>`(case
+    when ${authIdentities.lastFailedLoginAt} is null
+      or ${authIdentities.lastFailedLoginAt} < ${windowStart.toISOString()}::timestamptz
+      or (${authIdentities.lockedUntil} is not null and ${authIdentities.lockedUntil} <= ${now.toISOString()}::timestamptz)
+    then 1 else ${authIdentities.failedLoginCount} + 1 end)`;
+  const [updated] = await db.update(authIdentities).set({
+    failedLoginCount: nextCount,
+    lastFailedLoginAt: now,
+    lockedUntil: sql`(case when ${nextCount} >= ${MAX_FAILED_LOGIN_ATTEMPTS} then ${lockedUntil.toISOString()}::timestamptz else null end)`,
+  }).where(eq(authIdentities.id, identity.identityId))
+    .returning({ failedLoginCount: authIdentities.failedLoginCount, lockedUntil: authIdentities.lockedUntil });
+  return { status: "invalid", userId: identity.userId, failedAttempts: updated?.failedLoginCount ?? 0, lockedUntil: updated?.lockedUntil ?? null };
+}
+
+export async function authenticateLocalUser(db: Cam5Database, email: string, password: string) {
+  const result = await attemptLocalLogin(db, email, password);
+  return result.status === "authenticated" ? result.userId : null;
 }
 
 export async function revokePortalSession(db: Cam5Database, token: string): Promise<void> {
@@ -241,6 +286,7 @@ export async function resolvePortalSession(db: Cam5Database, token: string): Pro
     .select({
       sessionId: authSessions.id,
       activeSiteId: authSessions.activeSiteId,
+      lastSeenAt: authSessions.lastSeenAt,
       userId: users.id,
       email: users.email,
       displayName: users.displayName,
@@ -306,9 +352,13 @@ export async function resolvePortalSession(db: Cam5Database, token: string): Pro
     .where(and(
       eq(userRoleAssignments.userId, session.userId),
       eq(userRoleAssignments.siteId, selected.siteId),
+      or(isNull(userRoleAssignments.expiresAt), gt(userRoleAssignments.expiresAt, now)),
     ));
 
-  await db.update(authSessions).set({ lastSeenAt: now }).where(eq(authSessions.id, session.sessionId));
+  // Basta con una precisión de un minuto: evita escribir en cada llamada a la API.
+  if (!session.lastSeenAt || now.getTime() - session.lastSeenAt.getTime() >= ACTIVITY_WRITE_INTERVAL_MS) {
+    await db.update(authSessions).set({ lastSeenAt: now }).where(eq(authSessions.id, session.sessionId));
+  }
 
   return {
     id: session.userId,

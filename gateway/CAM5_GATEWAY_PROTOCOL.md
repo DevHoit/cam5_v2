@@ -4,7 +4,7 @@ Este contrato es idéntico para una fuente de datos simulada y para un CAM5 fís
 
 ## Conexión
 
-- API productiva: `https://cam5v2.vercel.app/api/v1`
+- API productiva: `https://core.hoitlive.com/api/v1` (mientras el dominio no esté activo: `https://cam5v2.vercel.app/api/v1`)
 - Configuración: `GET /gateway/config`
 - Ingestión: `POST /gateway/ingest`
 - Heartbeat: `POST /gateway/heartbeat`

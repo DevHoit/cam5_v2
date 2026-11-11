@@ -31,6 +31,19 @@ export function resolveTrendResolution(from: Date, to: Date, requested: Requeste
   return { key: value, bucketSeconds: value === "raw" ? 0 : Number(value), label: RESOLUTION_LABELS[value] };
 }
 
+/**
+ * Solo la ventana más reciente se calcula desde lecturas crudas; lo anterior sale de
+ * reading_aggregates. Debe ser menor que la retención cruda más corta (raw_retention_days),
+ * o el tramo intermedio quedaría sin datos.
+ */
+export const RAW_TREND_WINDOW_MS = 24 * 3600 * 1000;
+
+/** Corte entre agregados y lecturas crudas, alineado al bucket para no duplicar el punto del borde. */
+export function trendRawCutoff(now: Date, bucketSeconds: number) {
+  const bucketMs = Math.max(1, bucketSeconds) * 1000;
+  return new Date(Math.floor((now.getTime() - RAW_TREND_WINDOW_MS) / bucketMs) * bucketMs);
+}
+
 export function inferTrendStepSeconds(
   series: Array<{ points: Array<{ timestamp: string }> }>,
   bucketSeconds: number,

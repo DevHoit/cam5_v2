@@ -11,7 +11,7 @@ import {
   userRoleAssignments,
   users,
 } from "../../../../../db/schema";
-import { apiErrorResponse, ApiError, requestMetadata, requireApiSession } from "../../_lib/auth";
+import { apiErrorResponse, ApiError, requestMetadata, requireApiSession, userHasAccessOutsideAdministration } from "../../_lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -76,6 +76,14 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     if (actor.id === id && status !== "active") throw new ApiError(409, "No puedes suspender tu propia cuenta.");
     if (actor.id === id && !requestedSiteIds.includes(actor.siteId)) throw new ApiError(409, "No puedes retirar tu propio acceso al sitio activo.");
     if (actor.id === id && password) throw new ApiError(409, "Cambia tu propia contraseña desde Mi cuenta.");
+    // Correo, nombre, estado y contraseña son globales: afectan todos los sitios y clientes del
+    // usuario. Solo se pueden cambiar si todo su acceso está bajo la administración del actor;
+    // de lo contrario un administrador de un sitio podría tomar la cuenta de alguien con
+    // acceso a otros clientes.
+    const identityChanged = email !== normalizeEmail(target.email) ||displayName !== target.displayName || status !== target.status || Boolean(password);
+    if (identityChanged && actor.id !== id && await userHasAccessOutsideAdministration(db, actor, id)) {
+      throw new ApiError(403, "Este usuario también tiene acceso a sitios fuera de tu administración: solo puedes cambiar su perfil y sus sitios dentro de tu alcance.");
+    }
     const adminSitesAtRisk = currentScopeRows
       .filter((scope) => scope.roleKey === "administrator" && (roleKey !== "administrator" || status !== "active" || !requestedSiteIds.includes(scope.siteId ?? "")))
       .map((scope) => scope.siteId)
@@ -89,7 +97,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       const [role] = await tx.select().from(roles).where(eq(roles.key, roleKey)).limit(1);
       if (!role) throw new ApiError(400, "El perfil seleccionado no existe.");
       const [record] = await tx.update(users).set({ displayName, email, status: status as typeof VALID_STATUSES[number], updatedAt: new Date() }).where(eq(users.id, id)).returning();
-      await tx.update(authIdentities).set({ providerSubject: email, ...(passwordHash ? { passwordHash, mustChangePassword: true } : {}), updatedAt: new Date() }).where(and(eq(authIdentities.userId, id), eq(authIdentities.provider, "local")));
+      await tx.update(authIdentities).set({ providerSubject: email, ...(passwordHash ? { passwordHash, mustChangePassword: true, failedLoginCount: 0, lastFailedLoginAt: null, lockedUntil: null } : {}), updatedAt: new Date() }).where(and(eq(authIdentities.userId, id), eq(authIdentities.provider, "local")));
       if (passwordHash) await tx.update(authSessions).set({ revokedAt: new Date() }).where(and(eq(authSessions.userId, id), isNull(authSessions.revokedAt)));
       await tx.delete(userRoleAssignments).where(and(eq(userRoleAssignments.userId, id), inArray(userRoleAssignments.siteId, actorSiteIds)));
       await tx.insert(userRoleAssignments).values(requestedSiteIds.map((siteId) => ({ userId: id, roleId: role.id, siteId, grantedBy: actor.id })));

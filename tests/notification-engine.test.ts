@@ -10,12 +10,14 @@ import * as schema from "../db/schema";
 
 async function notificationDatabase() {
   const client = new PGlite();
-  for (const filename of ["0000_cam5_initial_schema.sql", "0001_eager_blockbuster.sql", "0002_sparkling_wallow.sql", "0003_rich_charles_xavier.sql", "0004_windy_gauntlet.sql", "0005_milky_caretaker.sql", "0006_smiling_frightful_four.sql", "0007_big_frightful_four.sql", "0008_sloppy_mister_sinister.sql", "0009_cuddly_infant_terrible.sql", "0010_robust_wallop.sql", "0011_dear_prima.sql"]) {
+  for (const filename of ["0000_cam5_initial_schema.sql", "0001_eager_blockbuster.sql", "0002_sparkling_wallow.sql", "0003_rich_charles_xavier.sql", "0004_windy_gauntlet.sql", "0005_milky_caretaker.sql", "0006_smiling_frightful_four.sql", "0007_big_frightful_four.sql", "0008_sloppy_mister_sinister.sql", "0009_cuddly_infant_terrible.sql", "0010_robust_wallop.sql", "0011_dear_prima.sql", "0012_login_lockout.sql"]) {
     const migration = await readFile(new URL(`../drizzle/${filename}`, import.meta.url), "utf8");
     await client.exec(migration.replaceAll("--> statement-breakpoint", ""));
   }
   return { client, db: drizzle(client, { schema }) };
 }
+
+const publicResolver = async () => ["203.0.113.10"];
 
 test("queues one deduplicated delivery per eligible policy and delivers it through the configured webhook", async () => {
   const { client, db } = await notificationDatabase();
@@ -34,7 +36,7 @@ test("queues one deduplicated delivery per eligible policy and delivers it throu
     assert.equal(await queueAlarmNotifications(engineDb, { siteId: site.id, alarmId: alarm.id, alarmEventId: alarmEvent.id, severity: "critical", kind: "threshold", eventType: "opened", occurredAt: now }), 0);
 
     let body = "";
-    const result = await processNotificationQueue(engineDb, { now, includeRepeats: false, fetchImpl: async (_input, init) => { body = String(init?.body || ""); return new Response(null, { status: 204, headers: { "x-request-id": "provider-1" } }); } });
+    const result = await processNotificationQueue(engineDb, { now, includeRepeats: false, resolveHost: publicResolver, fetchImpl: async (_input, init) => { body = String(init?.body || ""); return new Response(null, { status: 204, headers: { "x-request-id": "provider-1" } }); } });
     assert.deepEqual(result, { recovered: 0, repeated: 0, processed: 1, delivered: 1, failed: 0 });
     assert.match(body, /Temperatura crítica/);
     const [delivery] = await db.select().from(schema.notificationDeliveries).where(eq(schema.notificationDeliveries.alarmId, alarm.id));
@@ -54,7 +56,7 @@ test("records provider failures and applies bounded exponential retry delays", a
     const [endpoint] = await db.insert(schema.notificationEndpoints).values({ siteId: site.id, name: "Webhook", kind: "webhook", configuration: { url: "https://fail.example.test/events" } }).returning();
     const now = new Date("2026-09-06T13:00:00.000Z");
     const [delivery] = await db.insert(schema.notificationDeliveries).values({ endpointId: endpoint.id, subject: "Prueba", payload: { title: "Falla" }, scheduledAt: now, nextAttemptAt: now }).returning();
-    const result = await processNotificationQueue(db as unknown as Cam5Database, { now, includeRepeats: false, fetchImpl: async () => new Response(null, { status: 503 }) });
+    const result = await processNotificationQueue(db as unknown as Cam5Database, { now, includeRepeats: false, resolveHost: publicResolver, fetchImpl: async () => new Response(null, { status: 503 }) });
     assert.equal(result.failed, 1);
     const [failed] = await db.select().from(schema.notificationDeliveries).where(eq(schema.notificationDeliveries.id, delivery.id));
     assert.equal(failed.status, "failed");
@@ -71,12 +73,85 @@ test("records provider failures and applies bounded exponential retry delays", a
 test("signs webhook payloads without exposing the signing secret", async () => {
   let signature = "";
   await sendNotification(
-    { kind: "webhook", configuration: { url: "https://signed.example.test/events" }, secretReference: "HOOK_SECRET" },
+    { kind: "webhook", configuration: { url: "https://signed.example.test/events" }, secretReference: "NOTIFY_HOOK_SECRET" },
     { subject: "Evento", payload: { alarmCode: "AL-002" } },
-    { environment: { NODE_ENV: "test", HOOK_SECRET: "super-secret" }, fetchImpl: async (_input, init) => { signature = new Headers(init?.headers).get("X-HoitLive-Signature") || ""; return new Response(null, { status: 200 }); } },
+    { environment: { NODE_ENV: "test", NOTIFY_HOOK_SECRET: "super-secret" }, resolveHost: publicResolver, fetchImpl: async (_input, init) => { signature = new Headers(init?.headers).get("X-HoitLive-Signature") || ""; return new Response(null, { status: 200 }); } },
   );
   assert.match(signature, /^sha256=[a-f0-9]{64}$/);
   assert.doesNotMatch(signature, /super-secret/);
+});
+
+test("refuses secret references outside the NOTIFY_ prefix and never echoes server secrets", async () => {
+  const environment = { NODE_ENV: "test", CRON_SECRET: "cron-secret-value", NOTIFY_TEAMS_OPS: "not-a-url-secret-value" } as NodeJS.ProcessEnv;
+  let called = false;
+  const fetchImpl = async () => { called = true; return new Response(null, { status: 200 }); };
+  const message = { subject: "Evento", payload: {} };
+
+  // Teams apuntando a una variable del servidor (antes devolvía "Failed to parse URL from <valor>").
+  const teamsError = await sendNotification({ kind: "teams", configuration: { channel: "Ops" }, secretReference: "CRON_SECRET" }, message, { environment, fetchImpl })
+    .then(() => null, (error: unknown) => error as Error);
+  assert.match(String(teamsError?.message), /no está permitida/);
+  assert.doesNotMatch(String(teamsError?.message), /cron-secret-value/);
+
+  // Firma HMAC con una variable del servidor.
+  await assert.rejects(
+    sendNotification({ kind: "webhook", configuration: { url: "https://hooks.example.test/events" }, secretReference: "CRON_SECRET" }, message, { environment, resolveHost: publicResolver, fetchImpl }),
+    /no está permitida/,
+  );
+
+  // Variable permitida pero con un valor que no es un webhook de Teams: se nombra la variable, no su valor.
+  const invalidUrlError = await sendNotification({ kind: "teams", configuration: { channel: "Ops" }, secretReference: "NOTIFY_TEAMS_OPS" }, message, { environment, fetchImpl })
+    .then(() => null, (error: unknown) => error as Error);
+  assert.match(String(invalidUrlError?.message), /NOTIFY_TEAMS_OPS no contiene una URL HTTPS de webhook de Microsoft Teams/);
+  assert.doesNotMatch(String(invalidUrlError?.message), /not-a-url-secret-value/);
+  assert.equal(called, false);
+});
+
+test("delivers Teams messages only to Microsoft webhook hosts", async () => {
+  let target = "";
+  await sendNotification(
+    { kind: "teams", configuration: { channel: "Ops" }, secretReference: "NOTIFY_TEAMS_OPS" },
+    { subject: "Evento", payload: {} },
+    { environment: { NODE_ENV: "test", NOTIFY_TEAMS_OPS: "https://empresa.webhook.office.com/webhookb2/abc" }, fetchImpl: async (input) => { target = String(input); return new Response(null, { status: 200 }); } },
+  );
+  assert.equal(target, "https://empresa.webhook.office.com/webhookb2/abc");
+  await assert.rejects(
+    sendNotification(
+      { kind: "teams", configuration: { channel: "Ops" }, secretReference: "NOTIFY_TEAMS_OPS" },
+      { subject: "Evento", payload: {} },
+      { environment: { NODE_ENV: "test", NOTIFY_TEAMS_OPS: "https://attacker.example.test/collect" }, fetchImpl: async () => new Response(null, { status: 200 }) },
+    ),
+    /no contiene una URL HTTPS de webhook de Microsoft Teams/,
+  );
+});
+
+test("stores only safe error messages when a delivery fails unexpectedly", async () => {
+  const { client, db } = await notificationDatabase();
+  try {
+    const [customer] = await db.insert(schema.clients).values({ code: "SEGURO", name: "Seguro" }).returning();
+    const [site] = await db.insert(schema.sites).values({ clientId: customer.id, code: "SEG", name: "Seguro" }).returning();
+    const [endpoint] = await db.insert(schema.notificationEndpoints).values({ siteId: site.id, name: "Webhook", kind: "webhook", configuration: { url: "https://boom.example.test/events" } }).returning();
+    const now = new Date("2026-09-06T13:00:00.000Z");
+    const [delivery] = await db.insert(schema.notificationDeliveries).values({ endpointId: endpoint.id, subject: "Prueba", payload: { title: "Falla" }, scheduledAt: now, nextAttemptAt: now }).returning();
+    const originalConsoleError = console.error;
+    console.error = () => {};
+    try {
+      await processNotificationQueue(db as unknown as Cam5Database, {
+        now,
+        includeRepeats: false,
+        resolveHost: publicResolver,
+        fetchImpl: async () => { throw new TypeError("Failed to parse URL from leaked-secret-value"); },
+      });
+    } finally {
+      console.error = originalConsoleError;
+    }
+    const [failed] = await db.select().from(schema.notificationDeliveries).where(eq(schema.notificationDeliveries.id, delivery.id));
+    assert.equal(failed.status, "failed");
+    assert.equal(failed.errorMessage, "No fue posible conectar con el webhook.");
+    assert.doesNotMatch(String(failed.errorMessage), /leaked-secret-value/);
+  } finally {
+    await client.close();
+  }
 });
 
 test("sends a responsive branded email with a plain-text fallback", async () => {
@@ -116,4 +191,46 @@ test("sends a responsive branded email with a plain-text fallback", async () => 
   assert.match(String(providerBody.html), /&lt;script&gt;/);
   assert.doesNotMatch(String(providerBody.html), /<script>alert/);
   assert.match(String(providerBody.text), /Subestación Norte/);
+});
+
+test("refuses to deliver webhooks whose domain resolves to an internal address", async () => {
+  let called = false;
+  await assert.rejects(
+    sendNotification(
+      { kind: "webhook", configuration: { url: "https://127.0.0.1.nip.io/events" }, secretReference: null },
+      { subject: "Evento", payload: {} },
+      { resolveHost: async () => ["127.0.0.1"], fetchImpl: async () => { called = true; return new Response(null, { status: 200 }); } },
+    ),
+    /interna o privada/,
+  );
+  await assert.rejects(
+    sendNotification(
+      { kind: "webhook", configuration: { url: "https://mixed.example.test/events" }, secretReference: null },
+      { subject: "Evento", payload: {} },
+      { resolveHost: async () => ["203.0.113.10", "::ffff:10.0.0.5"], fetchImpl: async () => { called = true; return new Response(null, { status: 200 }); } },
+    ),
+    /interna o privada/,
+  );
+  await assert.rejects(
+    sendNotification(
+      { kind: "webhook", configuration: { url: "https://nx.example.test/events" }, secretReference: null },
+      { subject: "Evento", payload: {} },
+      { resolveHost: async () => { throw new Error("ENOTFOUND"); }, fetchImpl: async () => { called = true; return new Response(null, { status: 200 }); } },
+    ),
+    /resolver el dominio/,
+  );
+  assert.equal(called, false);
+});
+
+test("does not follow webhook redirects", async () => {
+  let redirectMode: RequestRedirect | undefined;
+  await assert.rejects(
+    sendNotification(
+      { kind: "webhook", configuration: { url: "https://hooks.example.test/events" }, secretReference: null },
+      { subject: "Evento", payload: {} },
+      { resolveHost: publicResolver, fetchImpl: async (_input, init) => { redirectMode = init?.redirect; return new Response(null, { status: 302, headers: { Location: "http://169.254.169.254/latest/meta-data" } }); } },
+    ),
+    /redirección \(302\)/,
+  );
+  assert.equal(redirectMode, "manual");
 });

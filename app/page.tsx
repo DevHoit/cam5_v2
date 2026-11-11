@@ -436,24 +436,23 @@ function SensorMarker({ sensor, selectedId, onSelect }: { sensor: PortalSensor; 
   );
 }
 
-function ChannelVisibilityDialog({ open, assetId, sensors, onClose, onSaved }: { open: boolean; assetId: string; sensors: PortalSensor[]; onClose: () => void; onSaved: () => void }) {
+type ChannelVisibilityDialogProps = { open: boolean; assetId: string; sensors: PortalSensor[]; onClose: () => void; onSaved: () => void };
+
+function ChannelVisibilityDialog(props: ChannelVisibilityDialogProps) {
+  if (!props.open) return null;
+  // Se monta de nuevo al abrir o al cambiar de punto: la selección se toma al abrir y
+  // las recargas de telemetría no sobrescriben los cambios pendientes.
+  return <ChannelVisibilityDialogContent key={props.assetId} {...props} />;
+}
+
+function ChannelVisibilityDialogContent({ assetId, sensors, onClose, onSaved }: ChannelVisibilityDialogProps) {
   const notify = useFeedback();
   const monitored = sensors.filter((sensor) => sensor.enabled).sort((left, right) => left.displayOrder - right.displayOrder);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(monitored.filter((sensor) => sensor.visible).map((sensor) => sensor.channelId)));
   const [query, setQuery] = useState("");
   const [group, setGroup] = useState("all");
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    if (!open) return;
-    setSelected(new Set(monitored.filter((sensor) => sensor.visible).map((sensor) => sensor.channelId)));
-    setQuery("");
-    setGroup("all");
-  // La selección se toma al abrir; las recargas de telemetría no deben sobrescribir cambios pendientes.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [assetId, open]);
-
-  if (!open) return null;
   const groups = [...new Set(monitored.map((sensor) => sensor.zone))];
   const visibleRows = monitored.filter((sensor) => {
     const matchesQuery = !query.trim() || `${sensor.id} ${sensor.label} ${sensor.zone} ${sensor.type}`.toLowerCase().includes(query.trim().toLowerCase());
@@ -641,7 +640,6 @@ function CabinetView({ onOpenTrend }: { onOpenTrend: (id: string) => void }) {
   const hasMeasurements = activeSensors.some((sensor) => sensor.recordedAt !== null);
   const conditionState = sensorGroupState(activeSensors);
   const overallState: SensorState | "loading" | "waiting" | "offline" | "error" = !telemetry && telemetryState.status === "loading" ? "loading" : !telemetry && telemetryState.status === "error" ? "error" : telemetry?.gateway?.state !== "online" ? "offline" : !hasMeasurements ? "waiting" : conditionState;
-  const totalInputs = telemetry?.inputSummary.total ?? 0;
   const assignedInputs = telemetry?.inputSummary.assigned ?? new Set(activeSensors.map((sensor) => sensor.sourceId).filter((source) => source !== "Sin entrada")).size;
   const disabledChannels = sensors.length - activeSensors.length;
   const SelectedIcon = selected && (selected.metric === "temperature" || selected.metric === "ambient") ? Thermometer : selected?.metric === "humidity" ? Droplets : Activity;

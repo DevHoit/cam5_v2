@@ -9,7 +9,7 @@ import {
   userAssetScopes,
 } from "../../../../db/schema";
 import { apiErrorResponse, ApiError, requireApiSession } from "../_lib/auth";
-import { inferTrendStepSeconds, resolveTrendResolution, TREND_RESOLUTIONS, type RequestedTrendResolution } from "../_lib/trend-resolution";
+import { inferTrendStepSeconds, resolveTrendResolution, TREND_RESOLUTIONS, trendRawCutoff, type RequestedTrendResolution } from "../_lib/trend-resolution";
 
 export const dynamic = "force-dynamic";
 
@@ -109,7 +109,9 @@ export async function GET(request: NextRequest) {
         totalSamples: 1,
       }));
     } else {
-      const retentionCutoff = new Date(Date.now() - 30 * 86400 * 1000);
+      // Antes eran 30 días de lecturas crudas, pero la retención cruda es de 7: entre el día 7
+      // y el 30 las tendencias salían vacías aunque existían agregados.
+      const retentionCutoff = trendRawCutoff(new Date(), resolution.bucketSeconds);
       const rawFrom = from > retentionCutoff ? from : retentionCutoff;
       const historicalTo = to < retentionCutoff ? to : retentionCutoff;
 

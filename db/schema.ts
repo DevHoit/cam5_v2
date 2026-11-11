@@ -141,6 +141,9 @@ export const authIdentities = pgTable("auth_identities", {
   providerSubject: varchar("provider_subject", { length: 320 }).notNull(),
   passwordHash: text("password_hash"),
   mustChangePassword: boolean("must_change_password").default(false).notNull(),
+  failedLoginCount: integer("failed_login_count").default(0).notNull(),
+  lastFailedLoginAt: timestamp("last_failed_login_at", { withTimezone: true }),
+  lockedUntil: timestamp("locked_until", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [

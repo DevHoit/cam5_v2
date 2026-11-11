@@ -104,7 +104,7 @@ El host `192.168.10.42` del seed es provisional. Debe reemplazarse por la direcc
 
 ## Acceso implementado
 
-- Login local validado contra `auth_identities`.
+- Login local validado contra `auth_identities`, con bloqueo temporal (`failed_login_count`, `last_failed_login_at`, `locked_until`) de 15 minutos tras 5 intentos fallidos.
 - Contraseñas derivadas con `scrypt` y sal aleatoria.
 - Sesiones de 12 horas almacenadas en `auth_sessions`, con sitio activo persistido; el navegador recibe solo un token aleatorio en una cookie `HttpOnly`, `SameSite=Strict` y `Secure` en producción.
 - Logout con revocación inmediata de la sesión.

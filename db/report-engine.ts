@@ -220,6 +220,8 @@ export function nextCronRun(expression: string, timezone: string, after = new Da
   throw new Error("No fue posible calcular la próxima ejecución.");
 }
 
+const SCHEDULE_CLAIM_MS = 10 * 60_000;
+
 export async function processScheduledReports(db: Cam5Database, now = new Date()) {
   const due = await db.select({
     id: reportSchedules.id,
@@ -240,6 +242,13 @@ export async function processScheduledReports(db: Cam5Database, now = new Date()
       await db.update(reportSchedules).set({ active: false, updatedAt: now }).where(eq(reportSchedules.id, schedule.id));
       continue;
     }
+    // Reserva la programación antes de generarla: si otra ejecución ya la tomó, se omite.
+    // Si la generación falla, la reserva vence y se reintenta en el siguiente ciclo posterior.
+    const [claimed] = await db.update(reportSchedules)
+      .set({ nextRunAt: new Date(now.getTime() + SCHEDULE_CLAIM_MS), updatedAt: now })
+      .where(and(eq(reportSchedules.id, schedule.id), eq(reportSchedules.active, true), lte(reportSchedules.nextRunAt, now)))
+      .returning({ id: reportSchedules.id });
+    if (!claimed) continue;
     try {
       const periodStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
       await createReportRun(db, { templateId: schedule.templateId, assetId: schedule.assetId, periodStart, periodEnd: now, generatedBy: schedule.creatorName ?? "Sistema", format: "pdf" });

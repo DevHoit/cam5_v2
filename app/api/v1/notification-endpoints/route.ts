@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { and, count, desc, eq, ilike, type SQL } from "drizzle-orm";
 import { auditLogs, notificationEndpoints } from "../../../../db/schema";
 import { apiErrorResponse, ApiError, parsePage, requestMetadata, requireApiSession } from "../_lib/auth";
-import { NOTIFICATION_KINDS, parseEndpointBody } from "../_lib/notifications";
+import { assertPublicWebhookTarget, NOTIFICATION_KINDS, parseEndpointBody } from "../_lib/notifications";
 
 export const dynamic = "force-dynamic";
 
@@ -43,6 +43,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => null) as Record<string, unknown> | null;
     if (!body) throw new ApiError(400, "No se recibió la configuración del canal.");
     const values = parseEndpointBody(body);
+    await assertPublicWebhookTarget(values);
     const metadata = requestMetadata(request);
     const created = await db.transaction(async (tx) => {
       const [item] = await tx.insert(notificationEndpoints).values({ siteId: user.siteId, ...values }).returning();
