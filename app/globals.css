@@ -2341,3 +2341,30 @@ html body :is(a, button, summary, [tabindex]):not(input, select, textarea):focus
   .history-periods button { padding: 0 6px; }
   .history-filters .history-field:has(input[type="datetime-local"]) { grid-column: 1 / -1; }
 }
+
+/* ───────────── Tendencias: indicadores compactos, contraste y áreas táctiles ───────────── */
+.trend-stats { margin: 0; padding: 10px 20px 12px; display: flex; flex-wrap: wrap; gap: 8px 28px; border-bottom: 1px solid #ececef; }
+.trend-stats div { display: flex; flex-direction: column; gap: 2px; }
+.trend-stats dt { color: #52525b; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.trend-stats dd { margin: 0; color: #18181b; font-family: var(--font-plex-mono), ui-monospace, monospace; font-size: 15px; font-weight: 650; }
+.trend-stats dd small { margin-left: 6px; color: #52525b; font-family: inherit; font-size: 11px; font-weight: 500; }
+.trend-stats-status dd { font-family: inherit; font-size: var(--text-sm); }
+.trend-stats-status.critical dd { color: #b91c1c; }
+.trend-stats-status.warning dd { color: #92400e; }
+.trend-stats-status.normal dd { color: #047857; }
+.trend-legend .quality-legend.bad i { background: rgba(239,68,68,.3); }
+.channel-select small, .trend-secondary-controls > label > span { color: #52525b; }
+.trend-range-tabs button { color: #52525b; }
+.trend-range-tabs button.active { color: #075985; }
+.trend-secondary-controls label > svg, .channel-select > svg:last-child { color: #52525b; }
+@media (max-width: 820px) {
+  .trend-range-tabs button, .trend-custom-range input, .trend-custom-range > button, .trend-comparison-chips button { min-height: 44px; }
+  /* El selector ocupa toda la caja (44 px); la etiqueta queda superpuesta sin bloquear el toque */
+  .channel-select, .trend-secondary-controls > label { height: auto; min-height: 50px; padding-top: 0; padding-bottom: 0; }
+  .channel-select > span, .trend-secondary-controls > label { position: relative; }
+  .channel-select small, .trend-secondary-controls > label > span { position: absolute; top: 4px; left: 0; pointer-events: none; }
+  .trend-secondary-controls > label > span { left: 10px; }
+  .channel-select select, .trend-secondary-controls select { min-height: 48px; padding-top: 16px; font-size: 16px; }
+  .trend-stats { padding: 10px 14px 12px; gap: 8px 18px; }
+}
+@media (max-width: 820px) { .trend-range-tabs button { min-width: 46px; } .trend-secondary-controls .primary-button { min-height: 44px; } }
