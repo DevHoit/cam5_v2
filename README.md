@@ -74,6 +74,7 @@ El proyecto es Next.js nativo.
 - Output Directory: dejar vacío; Vercel utiliza `.next` automáticamente.
 - Install Command: `npm ci`.
 - Framework Preset: Next.js.
+- Región de funciones: `gru1` (São Paulo), fijada en `vercel.json` para quedar junto a Neon (`sa-east-1`).
 
 ### Dominio `core.hoitlive.com`
 
