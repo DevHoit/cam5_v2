@@ -240,10 +240,62 @@ export async function queueRepeatingNotifications(db: Cam5Database, now = new Da
   return inserted.length;
 }
 
+/**
+ * Error de entrega cuyo mensaje es seguro de guardar y mostrar en el portal. Cualquier otro
+ * error se reemplaza por un texto genérico: un mensaje crudo (p. ej. "Failed to parse URL
+ * from <valor>") podría contener el valor de una variable de entorno.
+ */
+export class DeliveryError extends Error {}
+
+/**
+ * Solo las variables con este prefijo pueden usarse como referencia secreta de un canal.
+ * Impide que un usuario con permiso de notificaciones apunte a DATABASE_URL, CRON_SECRET,
+ * RESEND_API_KEY u otras variables del servidor.
+ */
+export const NOTIFICATION_SECRET_PREFIX = "NOTIFY_";
+const SECRET_REFERENCE_PATTERN = /^NOTIFY_[A-Z0-9_]{2,120}$/;
+
+export function isAllowedSecretReference(name: string): boolean {
+  return SECRET_REFERENCE_PATTERN.test(name);
+}
+
+// Dominios que Microsoft usa para webhooks entrantes de Teams (conectores y flujos de Workflows).
+const TEAMS_WEBHOOK_HOST_SUFFIXES = [".webhook.office.com", ".logic.azure.com", ".api.powerplatform.com"];
+
+export function isTeamsWebhookUrl(value: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+  const host = url.hostname.toLowerCase();
+  return url.protocol === "https:" && !url.username && !url.password && TEAMS_WEBHOOK_HOST_SUFFIXES.some((suffix) => host.endsWith(suffix));
+}
+
+const DELIVERY_TIMEOUT_MS = 10_000;
+
 function requiredEnvironmentValue(name: string, environment: NodeJS.ProcessEnv) {
   const value = environment[name]?.trim();
-  if (!value) throw new Error(`Falta configurar la variable segura ${name}.`);
+  if (!value) throw new DeliveryError(`Falta configurar la variable segura ${name}.`);
   return value;
+}
+
+function requiredSecretReference(name: string, environment: NodeJS.ProcessEnv) {
+  if (!isAllowedSecretReference(name)) {
+    throw new DeliveryError(`La referencia secreta ${name} no está permitida; usa una variable con prefijo ${NOTIFICATION_SECRET_PREFIX}.`);
+  }
+  return requiredEnvironmentValue(name, environment);
+}
+
+/** fetch con límite de tiempo y errores de red traducidos a mensajes que no exponen la URL. */
+async function deliveryFetch(fetchImpl: typeof fetch, target: string, url: string, init: RequestInit) {
+  try {
+    return await fetchImpl(url, { ...init, signal: AbortSignal.timeout(DELIVERY_TIMEOUT_MS) });
+  } catch (error) {
+    const timedOut = error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
+    throw new DeliveryError(timedOut ? `${target} no respondió dentro de ${DELIVERY_TIMEOUT_MS / 1000} s.` : `No fue posible conectar con ${target}.`);
+  }
 }
 
 function messageText(message: DeliveryMessage) {
@@ -399,37 +451,40 @@ export async function sendNotification(
 
   if (endpoint.kind === "email") {
     const recipients = configuration.recipients?.filter((recipient) => recipient.trim()) ?? [];
-    if (!recipients.length) throw new Error("El canal de correo no tiene destinatarios.");
+    if (!recipients.length) throw new DeliveryError("El canal de correo no tiene destinatarios.");
     const apiKey = requiredEnvironmentValue("RESEND_API_KEY", environment);
     const from = requiredEnvironmentValue("NOTIFICATION_FROM_EMAIL", environment);
-    const response = await fetchImpl("https://api.resend.com/emails", {
+    const response = await deliveryFetch(fetchImpl, "el proveedor de correo", "https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({ from, to: recipients, subject: message.subject, text, html: notificationEmailHtml(message) }),
     });
     const result = await response.json().catch(() => ({})) as { id?: string; message?: string };
-    if (!response.ok) throw new Error(result.message || `El proveedor de correo respondió ${response.status}.`);
+    if (!response.ok) throw new DeliveryError(`El proveedor de correo respondió ${response.status}${typeof result.message === "string" ? `: ${result.message.slice(0, 300)}` : "."}`);
     return { providerMessageId: result.id ?? null, recipient: recipients.join(", ").slice(0, 320) };
   }
 
   if (endpoint.kind === "teams") {
-    if (!endpoint.secretReference) throw new Error("El canal de Teams no tiene una referencia segura al webhook.");
-    const url = requiredEnvironmentValue(endpoint.secretReference, environment);
-    const response = await fetchImpl(url, {
+    if (!endpoint.secretReference) throw new DeliveryError("El canal de Teams no tiene una referencia segura al webhook.");
+    const url = requiredSecretReference(endpoint.secretReference, environment);
+    // Nunca se incluye el valor en el error: si no es un webhook de Teams, solo se nombra la variable.
+    if (!isTeamsWebhookUrl(url)) throw new DeliveryError(`La variable ${endpoint.secretReference} no contiene una URL HTTPS de webhook de Microsoft Teams.`);
+    const response = await deliveryFetch(fetchImpl, "Microsoft Teams", url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: "message", attachments: [{ contentType: "application/vnd.microsoft.card.adaptive", content: { type: "AdaptiveCard", version: "1.4", body: [{ type: "TextBlock", weight: "Bolder", text: message.subject }, { type: "TextBlock", wrap: true, text }] } }] }),
+      redirect: "manual",
     });
-    if (!response.ok) throw new Error(`Microsoft Teams respondió ${response.status}.`);
+    if (!response.ok) throw new DeliveryError(`Microsoft Teams respondió ${response.status}.`);
     return { providerMessageId: response.headers.get("request-id"), recipient: configuration.channel || configuration.destination || "Microsoft Teams" };
   }
 
   const url = configuration.url?.trim();
-  if (!url) throw new Error("El webhook no tiene una URL configurada.");
+  if (!url) throw new DeliveryError("El webhook no tiene una URL configurada.");
   const body = JSON.stringify({ subject: message.subject, ...message.payload });
   const headers: Record<string, string> = { "Content-Type": "application/json", "User-Agent": "HoitLive-Core-Notifications/1.0" };
   if (endpoint.secretReference) {
-    const secret = requiredEnvironmentValue(endpoint.secretReference, environment);
+    const secret = requiredSecretReference(endpoint.secretReference, environment);
     headers["X-HoitLive-Signature"] = `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`;
   }
   // Se vuelve a validar al enviar: el DNS pudo cambiar desde que se guardó el canal.
@@ -437,20 +492,20 @@ export async function sendNotification(
   try {
     hostname = new URL(url).hostname;
   } catch {
-    throw new Error("La URL del webhook no es válida.");
+    throw new DeliveryError("La URL del webhook no es válida.");
   }
   const destination = await checkPublicDestination(hostname, options.resolveHost);
   if (!destination.ok) {
-    throw new Error(destination.reason === "internal"
+    throw new DeliveryError(destination.reason === "internal"
       ? "El webhook apunta a una dirección interna o privada; no se envió."
       : "No fue posible resolver el dominio del webhook.");
   }
   // Sin seguir redirecciones: una respuesta 3xx podría desviar la carga a la red interna.
-  const response = await fetchImpl(url, { method: "POST", headers, body, redirect: "manual" });
+  const response = await deliveryFetch(fetchImpl, "el webhook", url, { method: "POST", headers, body, redirect: "manual" });
   if ((response.status >= 300 && response.status < 400) || response.type === "opaqueredirect") {
-    throw new Error(`El webhook respondió con una redirección (${response.status}); no se siguen redirecciones.`);
+    throw new DeliveryError(`El webhook respondió con una redirección (${response.status}); no se siguen redirecciones.`);
   }
-  if (!response.ok) throw new Error(`El webhook respondió ${response.status}.`);
+  if (!response.ok) throw new DeliveryError(`El webhook respondió ${response.status}.`);
   return { providerMessageId: response.headers.get("x-request-id"), recipient: configuration.destination || url };
 }
 
@@ -490,7 +545,9 @@ export async function processNotificationDelivery(
   } catch (error) {
     const exhausted = nextAttempt >= candidate.maxAttempts;
     const nextAttemptAt = exhausted ? now : new Date(now.getTime() + retryDelayMinutes(nextAttempt) * 60_000);
-    const message = error instanceof Error ? error.message.slice(0, 2000) : "Error de entrega desconocido.";
+    // Solo los DeliveryError llegan a la base y al portal; el resto puede contener datos sensibles.
+    if (!(error instanceof DeliveryError)) console.error("Error inesperado al enviar la notificación", candidate.id, error);
+    const message = error instanceof DeliveryError ? error.message.slice(0, 2000) : "Error interno al enviar la notificación; revisa los registros del servidor.";
     await db.update(notificationDeliveries).set({ status: "failed", attemptCount: nextAttempt, errorMessage: message, nextAttemptAt, updatedAt: now }).where(eq(notificationDeliveries.id, candidate.id));
     return { status: "failed" as const, error: message };
   }

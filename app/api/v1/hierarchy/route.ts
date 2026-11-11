@@ -19,7 +19,7 @@ import {
   userRoleAssignments,
   workOrders,
 } from "../../../../db/schema";
-import { apiErrorResponse, ApiError, requestMetadata, requireApiSession } from "../_lib/auth";
+import { apiErrorResponse, ApiError, requestMetadata, requireApiSession, requireAssetInScope, requireClientPermission, requireSitePermission } from "../_lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -185,12 +185,13 @@ export async function POST(request: NextRequest) {
         await tx.insert(userClientAssignments).values({ userId: user.id, clientId: row.id, roleId: role.id, grantedBy: user.id });
         record = row;
       } else if (resource === "site") {
-        requirePermission(user.permissions, "users.manage");
         const clientId = textField(body, "clientId", "El cliente");
         const [membership] = await tx.select({ id: userClientAssignments.id }).from(userClientAssignments)
           .innerJoin(clients, eq(clients.id, userClientAssignments.clientId))
           .where(and(eq(userClientAssignments.userId, user.id), eq(userClientAssignments.clientId, clientId), eq(clients.active, true))).limit(1);
         if (!membership) throw new ApiError(403, "No tienes acceso al cliente indicado.");
+        // El permiso se evalúa con el rol en ese cliente, no con el del sitio activo.
+        await requireClientPermission(db, user.id, clientId, "users.manage");
         const [row] = await tx.insert(sites).values({
           clientId,
           code,
@@ -203,9 +204,11 @@ export async function POST(request: NextRequest) {
         await tx.insert(userRoleAssignments).values({ userId: user.id, roleId: role.id, siteId: row.id, grantedBy: user.id });
         record = row;
       } else if (resource === "point") {
-        requirePermission(user.permissions, "assets.write");
         const siteId = typeof body.siteId === "string" ? body.siteId : user.siteId;
         assertSiteAccess(siteIds, siteId);
+        await requireSitePermission(db, user, siteId, "assets.write");
+        // Un usuario limitado a ciertos puntos no puede crear puntos nuevos.
+        await requireAssetInScope(db, user.id, null);
         const [row] = await tx.insert(assets).values({
           siteId,
           code,
@@ -217,9 +220,9 @@ export async function POST(request: NextRequest) {
         }).returning();
         record = row;
       } else if (resource === "gateway") {
-        requirePermission(user.permissions, "settings.write");
         const siteId = typeof body.siteId === "string" ? body.siteId : user.siteId;
         assertSiteAccess(siteIds, siteId);
+        await requireSitePermission(db, user, siteId, "settings.write");
         const [row] = await tx.insert(gateways).values({
           siteId,
           code,
@@ -231,7 +234,6 @@ export async function POST(request: NextRequest) {
         }).returning();
         record = row;
       } else {
-        requirePermission(user.permissions, "settings.write");
         const pointId = textField(body, "pointId", "El punto de medición");
         const gatewayId = textField(body, "gatewayId", "El gateway");
         const [[point], [gateway], [model], [profile]] = await Promise.all([
@@ -242,6 +244,8 @@ export async function POST(request: NextRequest) {
         ]);
         if (!point || !gateway || point.siteId !== gateway.siteId) throw new ApiError(400, "El punto y el gateway deben pertenecer al mismo sitio.");
         assertSiteAccess(siteIds, point.siteId);
+        await requireSitePermission(db, user, point.siteId, "settings.write");
+        await requireAssetInScope(db, user.id, point.id);
         if (!model) throw new ApiError(409, "El modelo CAM5 no está configurado.");
         const host = textField(body, "host", "La dirección del controlador");
         const [row] = await tx.insert(devices).values({
@@ -292,10 +296,7 @@ export async function PATCH(request: NextRequest) {
     const updated = await db.transaction(async (tx) => {
       let record: Record<string, unknown> | undefined;
       if (resource === "client") {
-        requirePermission(user.permissions, "users.manage");
-        const [membership] = await tx.select({ id: userClientAssignments.id }).from(userClientAssignments)
-          .where(and(eq(userClientAssignments.userId, user.id), eq(userClientAssignments.clientId, id))).limit(1);
-        if (!membership) throw new ApiError(403, "No tienes acceso al cliente indicado.");
+        await requireClientPermission(db, user.id, id, "users.manage");
         if (body.active === false && id === user.clientId) throw new ApiError(409, "Cambia primero a otro cliente antes de desactivar el contexto activo.");
         [record] = await tx.update(clients).set({
           ...(typeof body.name === "string" ? { name: textField(body, "name", "El nombre") } : {}),
@@ -306,10 +307,7 @@ export async function PATCH(request: NextRequest) {
           updatedAt: new Date(),
         }).where(eq(clients.id, id)).returning();
       } else if (resource === "site") {
-        requirePermission(user.permissions, "users.manage");
-        const [membership] = await tx.select({ id: userRoleAssignments.id }).from(userRoleAssignments)
-          .where(and(eq(userRoleAssignments.userId, user.id), eq(userRoleAssignments.siteId, id), or(isNull(userRoleAssignments.expiresAt), gt(userRoleAssignments.expiresAt, new Date())))).limit(1);
-        if (!membership) throw new ApiError(403, "No tienes acceso al sitio indicado.");
+        await requireSitePermission(db, user, id, "users.manage");
         if (body.active === false && id === user.siteId) throw new ApiError(409, "Cambia primero a otro sitio antes de desactivar el contexto activo.");
         [record] = await tx.update(sites).set({
           ...(typeof body.name === "string" ? { name: textField(body, "name", "El nombre") } : {}),
@@ -319,10 +317,11 @@ export async function PATCH(request: NextRequest) {
           updatedAt: new Date(),
         }).where(eq(sites.id, id)).returning();
       } else if (resource === "point") {
-        requirePermission(user.permissions, "assets.write");
         const [current] = await tx.select({ siteId: assets.siteId }).from(assets).where(eq(assets.id, id)).limit(1);
         if (!current) throw new ApiError(404, "El punto de medición no existe.");
         assertSiteAccess(siteIds, current.siteId);
+        await requireSitePermission(db, user, current.siteId, "assets.write");
+        await requireAssetInScope(db, user.id, id);
         [record] = await tx.update(assets).set({
           ...(typeof body.name === "string" ? { name: textField(body, "name", "El nombre") } : {}),
           ...(typeof body.area === "string" ? { area: optionalText(body, "area") } : {}),
@@ -331,10 +330,10 @@ export async function PATCH(request: NextRequest) {
           updatedAt: new Date(),
         }).where(eq(assets.id, id)).returning();
       } else if (resource === "gateway") {
-        requirePermission(user.permissions, "settings.write");
         const [current] = await tx.select({ siteId: gateways.siteId }).from(gateways).where(eq(gateways.id, id)).limit(1);
         if (!current) throw new ApiError(404, "El gateway no existe.");
         assertSiteAccess(siteIds, current.siteId);
+        await requireSitePermission(db, user, current.siteId, "settings.write");
         [record] = await tx.update(gateways).set({
           ...(typeof body.name === "string" ? { name: textField(body, "name", "El nombre") } : {}),
           ...(typeof body.ipAddress === "string" ? { ipAddress: optionalText(body, "ipAddress") } : {}),
@@ -343,10 +342,11 @@ export async function PATCH(request: NextRequest) {
           updatedAt: new Date(),
         }).where(eq(gateways.id, id)).returning();
       } else {
-        requirePermission(user.permissions, "settings.write");
-        const [current] = await tx.select({ siteId: assets.siteId }).from(devices).innerJoin(assets, eq(assets.id, devices.assetId)).where(eq(devices.id, id)).limit(1);
+        const [current] = await tx.select({ siteId: assets.siteId, assetId: assets.id }).from(devices).innerJoin(assets, eq(assets.id, devices.assetId)).where(eq(devices.id, id)).limit(1);
         if (!current) throw new ApiError(404, "El controlador no existe.");
         assertSiteAccess(siteIds, current.siteId);
+        await requireSitePermission(db, user, current.siteId, "settings.write");
+        await requireAssetInScope(db, user.id, current.assetId);
         [record] = await tx.update(devices).set({
           ...(typeof body.name === "string" ? { name: textField(body, "name", "El nombre") } : {}),
           ...(typeof body.host === "string" ? { host: textField(body, "host", "La dirección del controlador") } : {}),
@@ -388,19 +388,13 @@ export async function DELETE(request: NextRequest) {
     await db.transaction(async (tx) => {
       let record: Record<string, unknown> | undefined;
       if (resource === "client") {
-        requirePermission(user.permissions, "users.manage");
-        const [membership] = await tx.select({ id: userClientAssignments.id }).from(userClientAssignments)
-          .where(and(eq(userClientAssignments.userId, user.id), eq(userClientAssignments.clientId, id))).limit(1);
-        if (!membership) throw new ApiError(403, "No tienes acceso al cliente indicado.");
+        await requireClientPermission(db, user.id, id, "users.manage");
         const [dependencies] = await tx.select({ value: count() }).from(sites).where(eq(sites.clientId, id));
         if (Number(dependencies.value)) throw new ApiError(409, "El cliente conserva sitios. Desactívalo o elimina primero sus sitios vacíos.");
         [record] = await tx.delete(clients).where(eq(clients.id, id)).returning();
       } else if (resource === "site") {
-        requirePermission(user.permissions, "users.manage");
         if (id === user.siteId) throw new ApiError(409, "Cambia primero a otro sitio antes de eliminar el contexto activo.");
-        const [membership] = await tx.select({ id: userRoleAssignments.id }).from(userRoleAssignments)
-          .where(and(eq(userRoleAssignments.userId, user.id), eq(userRoleAssignments.siteId, id), or(isNull(userRoleAssignments.expiresAt), gt(userRoleAssignments.expiresAt, new Date())))).limit(1);
-        if (!membership) throw new ApiError(403, "No tienes acceso al sitio indicado.");
+        await requireSitePermission(db, user, id, "users.manage");
         const [[pointCount], [gatewayCount], [auditCount]] = await Promise.all([
           tx.select({ value: count() }).from(assets).where(eq(assets.siteId, id)),
           tx.select({ value: count() }).from(gateways).where(eq(gateways.siteId, id)),
@@ -409,10 +403,11 @@ export async function DELETE(request: NextRequest) {
         if (Number(pointCount.value) || Number(gatewayCount.value) || Number(auditCount.value)) throw new ApiError(409, "El sitio conserva puntos, gateways o auditoría. Desactívalo para preservar su trazabilidad.");
         [record] = await tx.delete(sites).where(eq(sites.id, id)).returning();
       } else if (resource === "point") {
-        requirePermission(user.permissions, "assets.write");
         const [current] = await tx.select().from(assets).where(eq(assets.id, id)).limit(1);
         if (!current) throw new ApiError(404, "El punto de medición no existe.");
         assertSiteAccess(siteIds, current.siteId);
+        await requireSitePermission(db, user, current.siteId, "assets.write");
+        await requireAssetInScope(db, user.id, id);
         const [[deviceCount], [alarmCount], [orderCount]] = await Promise.all([
           tx.select({ value: count() }).from(devices).where(eq(devices.assetId, id)),
           tx.select({ value: count() }).from(alarms).where(eq(alarms.assetId, id)),
@@ -421,10 +416,10 @@ export async function DELETE(request: NextRequest) {
         if (Number(deviceCount.value) || Number(alarmCount.value) || Number(orderCount.value)) throw new ApiError(409, "El punto conserva controladores, alarmas u órdenes. Desactívalo para preservar su trazabilidad.");
         [record] = await tx.delete(assets).where(eq(assets.id, id)).returning();
       } else if (resource === "gateway") {
-        requirePermission(user.permissions, "settings.write");
         const [current] = await tx.select().from(gateways).where(eq(gateways.id, id)).limit(1);
         if (!current) throw new ApiError(404, "El gateway no existe.");
         assertSiteAccess(siteIds, current.siteId);
+        await requireSitePermission(db, user, current.siteId, "settings.write");
         const [[deviceCount], [credentialCount]] = await Promise.all([
           tx.select({ value: count() }).from(devices).where(eq(devices.gatewayId, id)),
           tx.select({ value: count() }).from(gatewayApiCredentials).where(eq(gatewayApiCredentials.gatewayId, id)),
@@ -432,10 +427,11 @@ export async function DELETE(request: NextRequest) {
         if (Number(deviceCount.value) || Number(credentialCount.value)) throw new ApiError(409, "El gateway conserva controladores o credenciales. Desactívalo para preservar la comunicación y auditoría.");
         [record] = await tx.delete(gateways).where(eq(gateways.id, id)).returning();
       } else {
-        requirePermission(user.permissions, "settings.write");
-        const [current] = await tx.select({ id: devices.id, siteId: assets.siteId }).from(devices).innerJoin(assets, eq(assets.id, devices.assetId)).where(eq(devices.id, id)).limit(1);
+        const [current] = await tx.select({ id: devices.id, siteId: assets.siteId, assetId: assets.id }).from(devices).innerJoin(assets, eq(assets.id, devices.assetId)).where(eq(devices.id, id)).limit(1);
         if (!current) throw new ApiError(404, "El controlador no existe.");
         assertSiteAccess(siteIds, current.siteId);
+        await requireSitePermission(db, user, current.siteId, "settings.write");
+        await requireAssetInScope(db, user.id, current.assetId);
         const [historyCount] = await tx.select({ value: count() }).from(ingestionBatches).where(eq(ingestionBatches.deviceId, id));
         if (Number(historyCount.value)) throw new ApiError(409, "El controlador conserva telemetría. Desactívalo para mantener el histórico.");
         [record] = await tx.delete(devices).where(eq(devices.id, id)).returning();

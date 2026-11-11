@@ -1,4 +1,5 @@
 import { checkPublicDestination, isInternalHostname, type HostResolver } from "../../../../db/network-guard";
+import { isAllowedSecretReference, NOTIFICATION_SECRET_PREFIX } from "../../../../db/notification-engine";
 import { ApiError } from "./auth";
 
 export const NOTIFICATION_KINDS = ["email", "teams", "webhook"] as const;
@@ -14,7 +15,9 @@ function requiredText(value: unknown, label: string, maximum: number) {
 
 function optionalSecretReference(value: unknown) {
   if (value === null || value === undefined || value === "") return null;
-  if (typeof value !== "string" || !/^[A-Z][A-Z0-9_]{2,127}$/.test(value.trim())) throw new ApiError(400, "La referencia secreta debe ser el nombre de una variable de entorno en mayúsculas.");
+  if (typeof value !== "string" || !isAllowedSecretReference(value.trim())) {
+    throw new ApiError(400, `La referencia secreta debe ser el nombre de una variable de entorno en mayúsculas que comience con ${NOTIFICATION_SECRET_PREFIX} (p. ej. ${NOTIFICATION_SECRET_PREFIX}TEAMS_MANTENIMIENTO).`);
+  }
   return value.trim();
 }
 
