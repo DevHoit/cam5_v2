@@ -24,6 +24,18 @@ export type AlarmEvaluationReading = {
   qualityFlags: string[];
 };
 
+/** Duración legible para textos de alarma: "45 s", "12 min", "3 h 17 min", "2 d". */
+export function formatAge(totalSeconds: number) {
+  const seconds = Math.max(0, Math.round(totalSeconds));
+  if (seconds < 60) return `${seconds} s`;
+  const totalMinutes = Math.round(seconds / 60);
+  if (totalMinutes < 60) return `${totalMinutes} min`;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours >= 48) return `${Math.round(totalMinutes / 1440)} d`;
+  return minutes ? `${hours} h ${minutes} min` : `${hours} h`;
+}
+
 const ACTIVE_STATUSES = ["open", "acknowledged", "resolved"] as const;
 const severityRank: Record<AlarmSeverity, number> = { normal: 0, warning: 1, critical: 2 };
 
@@ -162,7 +174,7 @@ export async function evaluateAlarmReadings(
     }
 
     if (observed.severity !== "normal" && breachCount >= row.activationSamples) {
-      const copy = alarmCopy({
+      const copyInput = {
         kind: observed.kind,
         severity: observed.severity,
         channelCode: row.channelCode,
@@ -171,7 +183,8 @@ export async function evaluateAlarmReadings(
         value: reading.value,
         unit: row.unit,
         threshold: observed.threshold,
-      });
+      };
+      const copy = alarmCopy(copyInput);
       const [activeAlarm] = activeAlarmId
         ? await db.select({ id: alarms.id, status: alarms.status, severity: alarms.severity, kind: alarms.kind }).from(alarms).where(eq(alarms.id, activeAlarmId)).limit(1)
         : [];
@@ -201,12 +214,15 @@ export async function evaluateAlarmReadings(
         const escalated = severityRank[observed.severity] > severityRank[activeAlarm.severity];
         const reopened = activeAlarm.status === "resolved";
         const nextSeverity = escalated ? observed.severity : activeAlarm.severity;
+        // La severidad no baja sola mientras la alarma sigue activa: el título debe reflejar esa severidad,
+        // no la de la última lectura (evita "Crítica" con título "Umbral de advertencia superado").
+        const storedCopy = nextSeverity === observed.severity ? copy : alarmCopy({ ...copyInput, severity: nextSeverity });
         await db.update(alarms).set({
           status: reopened ? "open" : activeAlarm.status,
           kind: observed.kind,
           severity: nextSeverity,
-          title: copy.title,
-          detail: copy.detail,
+          title: storedCopy.title,
+          detail: storedCopy.detail,
           triggerValue: reading.value === null ? null : String(reading.value),
           thresholdValue: observed.threshold === null ? null : String(observed.threshold),
           lastObservedAt: evaluatedAt,
@@ -293,7 +309,7 @@ export async function evaluateStaleCommunications(db: Cam5Database, siteId: stri
           severity,
           status: "open",
           title: `Sin comunicación con ${device.deviceCode}`,
-          detail: `${device.assetName} no recibe telemetría desde hace ${ageSeconds} segundos.`,
+          detail: `${device.assetName} no recibe telemetría desde hace ${formatAge(ageSeconds)}.`,
           triggerValue: String(ageSeconds),
           thresholdValue: String(staleAfterSeconds),
           openedAt: evaluatedAt,
@@ -307,7 +323,7 @@ export async function evaluateStaleCommunications(db: Cam5Database, siteId: stri
         await db.update(alarms).set({
           status: active.status === "resolved" ? "open" : active.status,
           severity: escalated ? severity : active.severity,
-          detail: `${device.assetName} no recibe telemetría desde hace ${ageSeconds} segundos.`,
+          detail: `${device.assetName} no recibe telemetría desde hace ${formatAge(ageSeconds)}.`,
           triggerValue: String(ageSeconds),
           thresholdValue: String(staleAfterSeconds),
           lastObservedAt: evaluatedAt,
