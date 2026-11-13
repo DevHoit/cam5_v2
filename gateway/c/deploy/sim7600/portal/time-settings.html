@@ -75,6 +75,15 @@
             </div>
 
             <div class="field">
+              <label>Zona horaria</label>
+              <select id="timeZone">
+                <option value="America/Santiago">Chile continental (cambia sola en verano)</option>
+                <option value="America/Punta_Arenas">Magallanes (UTC-03:00)</option>
+                <option value="fixed">Desfase UTC fijo</option>
+              </select>
+            </div>
+
+            <div class="field">
               <label>Zona UTC</label>
               <select id="utcOffset"></select>
             </div>
@@ -204,7 +213,7 @@
 
 <script src="assets/hoit.js"></script>
 <script src="assets/gateway-identity-context-v1.js?v=1.3"></script>
-<script src="assets/time-settings-v1.js?v=1.0"></script>
+<script src="assets/time-settings-v1.js?v=1.1"></script>
 <script src="assets/navigation-v1.js?v=1.0"></script>
 </body>
 </html>

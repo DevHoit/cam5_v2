@@ -24,7 +24,9 @@ cfg()
     printf '%s' "$VALUE"
 }
 
-if [ ! -s "$RUNTIME" ] && [ -x "$DAEMON" ]; then
+# Siempre se regenera: el archivo podía tener la hora de la última sincronización (hasta 1 h
+# atrás) y el reloj del portal retrocedía en cada actualización.
+if [ -x "$DAEMON" ]; then
     "$DAEMON" --status >/dev/null 2>&1 || true
 fi
 
@@ -49,6 +51,14 @@ RETRY="$(cfg RETRY_INTERVAL_SEC 60)"
 TIMEOUT="$(cfg NTP_TIMEOUT_SEC 8)"
 DEVICE="$(cfg CELLULAR_DEVICE /dev/smd8)"
 FALLBACK="$(cfg CELLULAR_FALLBACK 0)"
+ZONE="$(cfg TIMEZONE fixed)"
+case "$ZONE" in America/Santiago|America/Punta_Arenas) ;; *) ZONE=fixed ;; esac
+
+# Con zona horaria, el desfase vigente (con horario de verano) lo calcula hoit_timed.
+if [ "$ZONE" != "fixed" ] && [ -s "$RUNTIME" ]; then
+    LIVE="$(sed -n 's/.*"utc_offset_minutes":\(-\{0,1\}[0-9]\{1,4\}\).*/\1/p' "$RUNTIME" | head -n 1)"
+    [ -n "$LIVE" ] && OFFSET="$LIVE"
+fi
 
 case "$OFFSET" in ''|*[!0-9-]*) OFFSET=0 ;; esac
 case "$INTERVAL" in ''|*[!0-9]*) INTERVAL=21600 ;; esac
@@ -60,8 +70,8 @@ pa_json_headers
 echo ""
 printf '{'
 printf '"ok":true,"version":"1.0","service_running":%s,' "$RUNNING"
-printf '"config":{"mode":"%s","utc_offset_minutes":%s,"ntp_servers":"%s",' \
-  "$(pa_json_escape "$MODE")" "$OFFSET" "$(pa_json_escape "$SERVERS")"
+printf '"config":{"mode":"%s","timezone":"%s","utc_offset_minutes":%s,"ntp_servers":"%s",' \
+  "$(pa_json_escape "$MODE")" "$ZONE" "$OFFSET" "$(pa_json_escape "$SERVERS")"
 printf '"sync_interval_sec":%s,"retry_interval_sec":%s,"ntp_timeout_sec":%s,' \
   "$INTERVAL" "$RETRY" "$TIMEOUT"
 printf '"cellular_device":"%s","cellular_fallback":%s},' \

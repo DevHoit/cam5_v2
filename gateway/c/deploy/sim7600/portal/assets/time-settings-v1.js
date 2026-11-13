@@ -175,6 +175,7 @@
     }
 
     const automatic = mode !== "manual";
+    $("utcOffset").disabled = $("timeZone").value !== "fixed";
     $("ntpServers").disabled = mode === "cellular" || !automatic;
     $("syncInterval").disabled = !automatic;
     $("retryInterval").disabled = !automatic;
@@ -196,6 +197,7 @@
     state.offsetMinutes = offset;
 
     $("timeMode").value = config.mode || "ntp";
+    $("timeZone").value = config.timezone || "fixed";
     $("utcOffset").value = String(offset);
     $("manualOffset").value = String(offset);
     $("ntpServers").value = config.ntp_servers || "";
@@ -247,6 +249,7 @@
   });
 
   $("timeMode").addEventListener("change", modeWarning);
+  $("timeZone").addEventListener("change", modeWarning);
   $("refreshBtn").addEventListener("click", load);
 
   $("saveConfigBtn").addEventListener("click", async () => {
@@ -256,6 +259,7 @@
       const result = await post({
         action:"save",
         mode:$("timeMode").value,
+        timezone:$("timeZone").value,
         utc_offset_minutes:$("utcOffset").value,
         ntp_servers:$("ntpServers").value.trim().replace(/\s+/g, ""),
         sync_interval_sec:$("syncInterval").value,

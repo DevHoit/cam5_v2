@@ -13,7 +13,7 @@ SRC="${1:-/cache/cam5-deploy}"
 H=/data/hoit
 say() { echo "[apply] $*"; }
 
-for F in hoit_conn_watchdog.sh hoit_conn_runner.sh hoit_wifi_manager.sh portal/cam5.html; do
+for F in hoit_conn_watchdog.sh hoit_conn_runner.sh hoit_wifi_manager.sh hoit_timed portal/cam5.html portal/time-settings.html; do
     [ -f "$SRC/$F" ] || { echo "Falta $SRC/$F"; exit 1; }
 done
 
@@ -85,6 +85,11 @@ for ITEM in telemetry mqtt devices gps modbus_tcp tcp_bridges modbus_rtu digital
     sed -i "s/^\(ITEM|[a-z]*|$ITEM|.*\)|1$/\1|0/" "$N"
 done
 grep -q '|cam5|' "$N" || echo 'ITEM|operation|cam5|CAM-5 → Core|cam5.html|telemetry|5|1' >> "$N"
+# Hora: página con zona horaria (horario de verano de Chile) y reloj que no retrocede.
+cp "$SRC/portal/time-settings.html" "$W/time-settings.html"
+cp "$SRC/portal/assets/time-settings-v1.js" "$W/assets/time-settings-v1.js"
+cp "$SRC/portal/cgi-bin/time_settings.cgi" "$SRC/portal/cgi-bin/time_settings_action.cgi" "$W/cgi-bin/"
+chmod 755 "$W/cgi-bin/time_settings.cgi" "$W/cgi-bin/time_settings_action.cgi"
 say "Portal: página CAM-5 agregada; menú y CGI heredados depurados"
 
 # 5) Limpieza -------------------------------------------------------------------------------------
@@ -110,6 +115,12 @@ mount -o remount,ro / 2>/dev/null
 cp "$SRC/hoit_wifi_manager.sh" "$H/bin/hoit_wifi_manager.sh" && chmod 755 "$H/bin/hoit_wifi_manager.sh"
 /etc/init.d/hoit_wifi stop >/dev/null 2>&1
 setsid /etc/init.d/hoit_wifi start </dev/null >/dev/null 2>&1
+cp "$SRC/hoit_timed" "$H/bin/hoit_timed" && chmod 755 "$H/bin/hoit_timed"
+TC="$H/config/hoit_time.conf"
+sed -i -e '/^TIMEZONE=/d' -e 's|^MODE=.*|MODE=auto\nTIMEZONE=America/Santiago|' \
+       -e 's|^CELLULAR_FALLBACK=.*|CELLULAR_FALLBACK=1|' "$TC"
+/etc/init.d/hoit_time stop >/dev/null 2>&1
+setsid /etc/init.d/hoit_time start </dev/null >/dev/null 2>&1
 /etc/init.d/hoit_health stop >/dev/null 2>&1
 setsid /etc/init.d/hoit_health start </dev/null >/dev/null 2>&1
 setsid /etc/init.d/hoit_conn start </dev/null >/dev/null 2>&1

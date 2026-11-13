@@ -68,6 +68,9 @@ backup_conf()
     BACKUP="/data/hoit/backups/time_settings_$STAMP"
     mkdir -p "$BACKUP"
     [ -f "$CONF" ] && cp -p "$CONF" "$BACKUP/hoit_time.conf"
+    # Solo las 5 copias más recientes (antes se acumulaban sin límite en /data).
+    ls -1d /data/hoit/backups/time_settings_* 2>/dev/null | sort -r | sed -n '6,$p' |
+      while read -r OLD; do rm -rf "$OLD"; done
 }
 
 write_conf()
@@ -80,10 +83,12 @@ write_conf()
     TIMEOUT="$6"
     DEVICE="$7"
     FALLBACK="$8"
+    ZONE="$9"
 
     cat > "$CONF.tmp.$$" <<EOF
 # HOIT Time & NTP Manager v1
 MODE=$MODE
+TIMEZONE=$ZONE
 UTC_OFFSET_MINUTES=$OFFSET
 NTP_SERVERS=$SERVERS
 SYNC_INTERVAL_SEC=$INTERVAL
@@ -134,7 +139,9 @@ case "$ACTION" in
         TIMEOUT="$(pa_form_value ntp_timeout_sec)"
         DEVICE="$(pa_form_value cellular_device)"
         FALLBACK="$(pa_form_value cellular_fallback)"
+        ZONE="$(pa_form_value timezone)"
 
+        case "$ZONE" in ''|fixed) ZONE=fixed ;; America/Santiago|America/Punta_Arenas) ;; *) pa_error 400 "Zona horaria inválida" ;; esac
         case "$MODE" in auto|ntp|cellular|manual) ;; *) pa_error 400 "Modo de hora inválido" ;; esac
 
         is_int "$OFFSET" || pa_error 400 "UTC inválido"
@@ -155,7 +162,7 @@ case "$ACTION" in
         [ "$FALLBACK" = 1 ] || FALLBACK=0
 
         backup_conf
-        write_conf "$MODE" "$OFFSET" "$SERVERS" "$INTERVAL" "$RETRY" "$TIMEOUT" "$DEVICE" "$FALLBACK"
+        write_conf "$MODE" "$OFFSET" "$SERVERS" "$INTERVAL" "$RETRY" "$TIMEOUT" "$DEVICE" "$FALLBACK" "$ZONE"
 
         "$INIT" restart >/dev/null 2>&1 || pa_error 500 "Configuración guardada, pero hoit_time no reinició"
         respond "Configuración de hora guardada"
@@ -176,9 +183,10 @@ case "$ACTION" in
         TIMEOUT="$(current_value NTP_TIMEOUT_SEC 8)"
         DEVICE="$(current_value CELLULAR_DEVICE /dev/smd8)"
         FALLBACK="$(current_value CELLULAR_FALLBACK 0)"
+        ZONE="$(current_value TIMEZONE fixed)"
 
         backup_conf
-        write_conf manual "$OFFSET" "$SERVERS" "$INTERVAL" "$RETRY" "$TIMEOUT" "$DEVICE" "$FALLBACK"
+        write_conf manual "$OFFSET" "$SERVERS" "$INTERVAL" "$RETRY" "$TIMEOUT" "$DEVICE" "$FALLBACK" "$ZONE"
 
         "$INIT" manual "$LOCAL_VALUE" "$OFFSET" >/dev/null 2>&1 ||
           pa_error 500 "No fue posible ajustar la hora manualmente"
