@@ -263,13 +263,15 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(trends, /Exportar CSV/);
   assert.match(trends, /Comparar con/);
   assert.match(css, /\.trend-chart-panel/);
-  assert.match(notifications, /PostgreSQL · trazabilidad activa/);
-  assert.match(notifications, /Enviar prueba/);
+  assert.match(notifications, /\/api\/v1\/notification-endpoints/);
+  assert.match(notifications, /testEndpoint\(endpoint\)/);
   assert.match(notifications, /Reintentar/);
   assert.match(notifications, /Detalle de la notificación/);
   assert.match(notifications, /setSelectedDelivery\(delivery\)/);
   assert.match(notifications, /Reintentar entrega/);
-  assert.match(notifications, /RESEND_API_KEY/);
+  // La nota de secretos se retiró de la interfaz; la ayuda vive en los campos del formulario.
+  assert.doesNotMatch(notifications, /Secretos fuera de la base de datos/);
+  assert.match(notifications, /Debe comenzar con NOTIFY_/);
   assert.match(notificationEngine, /queueAlarmNotifications/);
   assert.match(notificationEngine, /processNotificationQueue/);
   assert.match(notificationEngine, /X-HoitLive-Signature/);
