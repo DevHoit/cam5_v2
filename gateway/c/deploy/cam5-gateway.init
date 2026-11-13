@@ -45,6 +45,12 @@ start() {
         ETH_IFACE="${ETH_IFACE:-eth0}"
         ip link set "$ETH_IFACE" up 2>/dev/null
         ip addr show dev "$ETH_IFACE" | grep -q "inet ${ETH_ADDR%%/*}/" || ip addr add "$ETH_ADDR" dev "$ETH_IFACE"
+        # La red del CAM-5 no es salida a internet: QCMAP puede agregar "default dev eth0" si el
+        # cable está conectado al arrancar (eth0 es su 4.º backhaul) y deja al gateway sin portal.
+        # (El ip de busybox ignora el filtro "default": se filtra por el inicio de línea.)
+        while ip route show | grep -qE "^default .*dev $ETH_IFACE( |$)"; do
+            ip route del default dev "$ETH_IFACE" 2>/dev/null || break
+        done
     fi
     # setsid: el supervisor no depende de la consola que lo lanzó (adb shell, ssh)
     rm -f "$PIDFILE"

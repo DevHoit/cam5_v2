@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HOIT Gateway Portal — CAM-5 → Core</title>
+<link rel="stylesheet" href="assets/hoit.css">
+<link rel="stylesheet" href="assets/navigation-v1.css?v=1.0">
+<style>
+  .c5-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin:18px 0}
+  .c5-kpis article{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;box-shadow:var(--shadow)}
+  .c5-kpis span{display:block;font-size:12px;color:var(--ink-3);text-transform:uppercase;letter-spacing:.04em}
+  .c5-kpis strong{display:block;font-size:20px;margin:6px 0 2px;color:var(--ink)}
+  .c5-kpis small{color:var(--ink-3);font-size:12px;word-break:break-word}
+  .c5-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px}
+  .c5-pre{font-family:var(--mono);font-size:12px;line-height:1.5;background:var(--bg);border:1px solid var(--line);border-radius:var(--r-s);padding:12px;max-height:420px;overflow:auto;white-space:pre-wrap;word-break:break-all;margin:0}
+  .c5-row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+  .c5-row .field{flex:1;min-width:140px}
+  .c5-ok{color:var(--ok)} .c5-warn{color:var(--warn)} .c5-err{color:var(--err)}
+  .c5-list{margin:0;padding-left:18px;font-size:14px;line-height:1.7}
+  .card{padding:16px 18px}
+  .card h3{margin:0 0 4px}
+  .card p{margin:0 0 12px;color:var(--ink-3);font-size:13px}
+</style>
+</head>
+<body data-page="cam5">
+<div class="app">
+<svg style="display:none" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></symbol>
+</svg>
+<aside class="sidebar" id="sidebar">
+  <a class="logo-wrap" href="index.html"><img class="logo-img" src="assets/logo.png" alt="HOIT"><span class="logo-fallback" style="display:none">HOIT</span></a>
+  <nav class="nav"></nav>
+  <div class="sidebar-foot"><b>HOIT Gateway</b><br>CAM-5 → HoitLive Core</div>
+</aside>
+<div class="scrim" id="scrim"></div>
+<div class="main">
+  <header class="topbar">
+    <button class="burger" id="burger" aria-label="Menú"><svg width="19" height="19"><use href="#i-menu"/></svg></button>
+    <div class="crumb"><span>CAM-5 → Core</span><small>Lectura Modbus del CAM-5 y envío a core.hoitlive.com</small></div>
+    <div class="topbar-right"><div class="user-chip">AD</div></div>
+  </header>
+  <div class="content">
+    <section class="page on">
+      <div class="c5-row" style="justify-content:space-between">
+        <div><h2 class="section-title">Gateway CAM-5</h2><p class="section-sub">Estado del servicio cam5-gateway, cola local y último envío al portal.</p></div>
+        <div class="c5-row">
+          <button class="btn ghost" id="refreshBtn"><svg width="17" height="17"><use href="#i-refresh"/></svg>Actualizar</button>
+          <button class="btn" id="restartBtn">Reiniciar servicio</button>
+        </div>
+      </div>
+
+      <div class="c5-kpis">
+        <article><span>Servicio</span><strong id="kService">—</strong><small id="kVersion">—</small></article>
+        <article><span>Último envío aceptado</span><strong id="kLastOk">—</strong><small id="kLastOkDetail">—</small></article>
+        <article><span>Cola local</span><strong id="kQueue">—</strong><small id="kRejected">—</small></article>
+        <article><span>Salida a internet</span><strong id="kUplink">—</strong><small id="kLte">—</small></article>
+      </div>
+
+      <div class="c5-grid">
+        <div class="card">
+          <h3>Configuración</h3>
+          <p>Se edita en /cache/cam5-gateway/gateway.env (el token nunca se muestra).</p>
+          <ul class="c5-list" id="cfgList"><li>—</li></ul>
+        </div>
+        <div class="card">
+          <h3>Controladores</h3>
+          <p>Según la configuración descargada del portal.</p>
+          <ul class="c5-list" id="ctrlList"><li>—</li></ul>
+        </div>
+        <div class="card">
+          <h3>Último problema</h3>
+          <p>Advertencia o error más reciente del registro.</p>
+          <pre class="c5-pre" id="lastProblem">—</pre>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:16px">
+        <h3>Probar lectura Modbus</h3>
+        <p>Lee los registros 418–522 de un CAM-5 (no envía nada al portal). Útil en la puesta en marcha.</p>
+        <div class="c5-row">
+          <div class="field"><label for="probeTarget">IP[:puerto]</label><input id="probeTarget" value="192.168.0.200:502" maxlength="21"></div>
+          <div class="field" style="max-width:120px"><label for="probeUnit">Unit ID</label><input id="probeUnit" value="1" maxlength="3"></div>
+          <button class="btn primary" id="probeBtn">Leer</button>
+        </div>
+        <pre class="c5-pre" id="probeOut" style="margin-top:12px">Sin lectura.</pre>
+      </div>
+
+      <div class="card" style="margin-top:16px">
+        <h3>Registro</h3>
+        <p>Últimas 60 líneas de /cache/cam5-gateway/gateway.log (hora UTC).</p>
+        <pre class="c5-pre" id="logBox">—</pre>
+      </div>
+    </section>
+  </div>
+</div>
+<script src="assets/hoit.js"></script>
+<script src="assets/cam5-v1.js?v=1.0"></script>
+<script src="assets/navigation-v1.js?v=1.0"></script>
+</body>
+</html>
