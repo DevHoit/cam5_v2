@@ -99,6 +99,8 @@ Las integraciones externas con historiadores, CMMS/ERP u otras plataformas queda
 
 El gateway consulta `GET /api/v1/gateway/config`, mantiene conectividad con `POST /api/v1/gateway/heartbeat` y publica telemetría en `POST /api/v1/gateway/ingest`. El contrato completo está en [`gateway/CAM5_GATEWAY_PROTOCOL.md`](./gateway/CAM5_GATEWAY_PROTOCOL.md): separa lectura local, almacenamiento, diagnóstico y eventos inmediatos, e incluye un emisor Python de referencia.
 
+El gateway para terreno, [`gateway/cam5_gateway.py`](./gateway/cam5_gateway.py), lee uno o varios CAM-5 por Modbus TCP usando solo la biblioteca estándar de Python; su instalación está en [`gateway/INSTALACION_GATEWAY.md`](./gateway/INSTALACION_GATEWAY.md) y [`gateway/tools/cam5_modbus_simulator.py`](./gateway/tools/cam5_modbus_simulator.py) emula un CAM-5 para probar sin hardware. Para equipos sin Python, como el módulo 4G SIMCom SIM7600SA-H con OpenLinux, está la versión en C en [`gateway/c/`](./gateway/c/README.md), con el mismo contrato y optimizada para planes de datos móviles.
+
 La cobertura de persistencia por módulo está documentada en [`DATABASE_COVERAGE.md`](./DATABASE_COVERAGE.md).
 
 ## Archivos principales

@@ -1,0 +1,4 @@
+cam5-gateway
+tests/unit_tests
+*.dSYM/
+dist-sim7600/

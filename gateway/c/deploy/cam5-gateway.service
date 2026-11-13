@@ -1,0 +1,16 @@
+# Unidad systemd para el gateway C, en equipos Linux con systemd.
+# En el SIM7600 OpenLinux se usa deploy/cam5-gateway.init.
+[Unit]
+Description=HoitLive Core CAM-5 gateway (C)
+After=network-online.target time-sync.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/data/cam5-gateway/cam5-gateway --env-file /data/cam5-gateway/gateway.env
+Restart=always
+RestartSec=10
+MemoryMax=32M
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

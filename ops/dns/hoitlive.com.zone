@@ -1,0 +1,35 @@
+;; Zona hoitlive.com para importar en Cloudflare (DNS → Records → Import and Export).
+;; Generada el 2026-11-13 desde ns2.mysitehosted.com (serial 2026111300), el servidor sincronizado.
+;; Al importar: DESMARCA "Proxy imported DNS records" (todo debe quedar en nube gris / DNS only).
+$ORIGIN hoitlive.com.
+$TTL 300
+_autodiscover._tcp.hoitlive.com.	300	IN	SRV	0 0 443 cpanelemaildiscovery.cpanel.net.
+_caldav._tcp.hoitlive.com.	300	IN	SRV	0 0 2079 reseller2.mysitehosted.com.
+_caldav._tcp.hoitlive.com.	300	IN	TXT	"path=/"
+_caldavs._tcp.hoitlive.com.	300	IN	SRV	0 0 2080 reseller2.mysitehosted.com.
+_caldavs._tcp.hoitlive.com.	300	IN	TXT	"path=/"
+_carddav._tcp.hoitlive.com.	300	IN	SRV	0 0 2079 reseller2.mysitehosted.com.
+_carddav._tcp.hoitlive.com.	300	IN	TXT	"path=/"
+_carddavs._tcp.hoitlive.com.	300	IN	SRV	0 0 2080 reseller2.mysitehosted.com.
+_carddavs._tcp.hoitlive.com.	300	IN	TXT	"path=/"
+_dmarc.hoitlive.com.	300	IN	TXT	"v=DMARC1; p=none;"
+autoconfig.hoitlive.com.	300	IN	A	143.95.238.90
+autodiscover.hoitlive.com.	300	IN	A	143.95.238.90
+core.hoitlive.com.	300	IN	CNAME	df6ca530d2f50294.vercel-dns-017.com.
+cpanel.hoitlive.com.	300	IN	A	143.95.238.90
+cpcalendars.hoitlive.com.	300	IN	A	143.95.238.90
+cpcontacts.hoitlive.com.	300	IN	A	143.95.238.90
+default._domainkey.hoitlive.com.	300	IN	TXT	"v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvRN86H+fZWX/gUJe9rB9k7D5W56K+GbTlMonVmhmVp+bi2yOrYWLVhhrNqPFNRe35mPnsGIttjmxIA3AmAKxs7BmuKHLNvHYW2fmNclNiz/IXSHWLuFsP9UTgHsYOstADQK/nNu5b3HRjou7WJtaoVZ/kDpGLOqxuZFVlesyKKmBwopVd9eVV+skwiUBJnbAf" "uiE/kWjeN6AhqMPzfZqc4+fR8weTFSOpiGxTrxmeV9/R5AY777IbfEMjCeE/NJqafQg/sEGcv5+s8GJ2BFLU/DjSvsgmj3npDMj2EH3t+7ugVYLgZhGzppZtezIPP2WtbR/Xen1eXRv2a6ClkAPbwIDAQAB;"
+ftp.hoitlive.com.	300	IN	CNAME	hoitlive.com.
+hoitlive.com.	300	IN	A	143.95.238.90
+hoitlive.com.	300	IN	MX	0 mail.hoitlive.com.
+hoitlive.com.	300	IN	TXT	"google-site-verification=ItN6-w86INjMPVoY5dW7IzjIffaumTZrjSUPu3Q8tc8"
+hoitlive.com.	300	IN	TXT	"resend-domain-verification=dcf0c2defecb0193c7ca18685bdaaa72"
+hoitlive.com.	300	IN	TXT	"v=spf1 +a +mx +ip4:143.95.239.84 +include:relay.mailchannels.net +include:websitewelcome.com ~all"
+mail.hoitlive.com.	300	IN	A	143.95.238.90
+resend._domainkey.hoitlive.com.	300	IN	TXT	"p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQC6vbTtwcYcPYdIDeOBqYydY4rYzE5pZzXWDuwv3rgrK2qF7rGKwyImLJwyVWr5wZ8Fj+Ope7+KoCemhR7Q+gGq1wyQImfW7xhi3s01cbUAtf4TQfMRCtrHe8WmxfaQFIYFGZaL/QyUfX1tzudpEt8wT8yXPmV9SVpH1F15SHUEIQIDAQAB"
+send.hoitlive.com.	300	IN	CNAME	send.forge.rmta.net.
+webdisk.hoitlive.com.	300	IN	A	143.95.238.90
+webmail.hoitlive.com.	300	IN	A	143.95.238.90
+whm.hoitlive.com.	300	IN	A	143.95.238.90
+www.hoitlive.com.	300	IN	CNAME	hoitlive.com.

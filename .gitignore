@@ -40,3 +40,7 @@ next-env.d.ts
 /dist/
 /outputs/
 /work/
+
+# Python
+__pycache__/
+*.pyc
