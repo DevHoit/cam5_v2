@@ -38,7 +38,8 @@ load_active_config() {
     unset APN PROFILE_ID PDP_TYPE APN_AUTH APN_USER APN_PASSWORD AT_PORT WAN_IF
     # Archivo root-owned mode 600. Se carga para conservar el resto de variables HOIT.
     . "$CONF"
-    CFG_APN="${APN:-gigsky-02}"
+    # Sin ":": un APN vacío guardado a propósito no se reemplaza por el de fábrica.
+    CFG_APN="${APN-gigsky-02}"
     CFG_PROFILE_ID="${PROFILE_ID:-6}"
     CFG_PDP_TYPE="${PDP_TYPE:-IP}"
     CFG_AUTH="${APN_AUTH:-0}"

@@ -26,6 +26,8 @@ DEVICE_ID="${DEVICE_ID:-SIM7600}"
 AT_PORT="${AT_PORT:-/dev/smd8}"
 WAN_IF="${WAN_IF:-rmnet_data0}"
 WIFI_IF="${WIFI_IF:-wlan1}"
+# APN definido pero vacío = SIM sin APN: el perfil se deja vacío para que la red asigne el suyo.
+APN_SET="${APN+1}"
 APN="${APN:-}"
 PROFILE_ID="${PROFILE_ID:-6}"
 PDP_TYPE="${PDP_TYPE:-IP}"
@@ -154,7 +156,7 @@ read_modem() {
 }
 
 ensure_apn() {
-    [ -n "$APN" ] || return 0
+    [ -n "$APN" ] || [ "$APN_SET" = "1" ] || return 0
     CUR="$(at_cmd 'AT+CGDCONT?' | grep "^+CGDCONT: $PROFILE_ID," | cut -d'"' -f4)"
     if [ "$CUR" != "$APN" ]; then
         log "APN del perfil $PROFILE_ID era \"$CUR\"; se configura \"$APN\""

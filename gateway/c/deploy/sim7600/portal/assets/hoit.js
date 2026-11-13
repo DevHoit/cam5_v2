@@ -581,7 +581,7 @@ applyLang();
     setValue('connLteIccid', modem.iccid);
     setValue('connLteImei', modem.imei);
     setValue('connLteImsi', modem.imsi || modem.imsi_prefix);
-    setValue('connLteApn', config.apn || connection.apn);
+    setValue('connLteApn', config.apn || connection.apn || 'Automático (operador)');
     setValue('connLteProfile', config.profile_id || connection.profile_id);
     setValue('connLteMetric', lte.metric);
 
@@ -962,7 +962,7 @@ applyLang();
     const keepPassword=$id('lteKeepPasswordCheck').checked;
     const profile=Number(profileId);
 
-    if(!/^[A-Za-z0-9._-]{1,100}$/.test(apn)){setError('El APN solo puede contener letras, números, punto, guion y guion bajo.');return;}
+    if(!/^[A-Za-z0-9._-]{0,100}$/.test(apn)){setError('El APN solo puede contener letras, números, punto, guion y guion bajo.');return;}
     if(!Number.isInteger(profile)||!((profile>=1&&profile<=24)||(profile>=100&&profile<=179))){setError('Profile ID inválido. Usa un valor entre 1-24 o 100-179.');return;}
     let passwordMode='clear';
     if(authType!=='0'){

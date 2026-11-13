@@ -14,8 +14,9 @@ PASSWORD="$(pa_form_value password)"
 PASSWORD_MODE="$(pa_form_value password_mode)"
 
 APN_LEN="$(printf '%s' "$APN" | wc -c | awk '{print $1}')"
-[ "$APN_LEN" -ge 1 ] && [ "$APN_LEN" -le 100 ] || pa_error 400 "El APN debe tener entre 1 y 100 caracteres"
-printf '%s' "$APN" | grep -Eq '^[A-Za-z0-9._-]+$' || pa_error 400 "El APN solo puede contener letras, números, punto, guion y guion bajo"
+# APN vacío = el operador asigna el suyo (SIM sin APN ni contraseña).
+[ "$APN_LEN" -le 100 ] || pa_error 400 "El APN no puede superar 100 caracteres"
+[ -z "$APN" ] || printf '%s' "$APN" | grep -Eq '^[A-Za-z0-9._-]+$' || pa_error 400 "El APN solo puede contener letras, números, punto, guion y guion bajo"
 
 case "$PROFILE_ID" in ''|*[!0-9]*) pa_error 400 "Profile ID inválido" ;; esac
 if ! { [ "$PROFILE_ID" -ge 1 ] && [ "$PROFILE_ID" -le 24 ]; } && ! { [ "$PROFILE_ID" -ge 100 ] && [ "$PROFILE_ID" -le 179 ]; }; then

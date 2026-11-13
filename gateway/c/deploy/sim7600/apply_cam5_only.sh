@@ -90,6 +90,11 @@ cp "$SRC/portal/time-settings.html" "$W/time-settings.html"
 cp "$SRC/portal/assets/time-settings-v1.js" "$W/assets/time-settings-v1.js"
 cp "$SRC/portal/cgi-bin/time_settings.cgi" "$SRC/portal/cgi-bin/time_settings_action.cgi" "$W/cgi-bin/"
 chmod 755 "$W/cgi-bin/time_settings.cgi" "$W/cgi-bin/time_settings_action.cgi"
+# Conectividad: APN vacío permitido (SIM sin APN ni contraseña).
+cp "$SRC/portal/conectividad.html" "$W/conectividad.html"
+cp "$SRC/portal/assets/hoit.js" "$W/assets/hoit.js"
+cp "$SRC/portal/cgi-bin/lte_apply.cgi" "$W/cgi-bin/lte_apply.cgi" && chmod 755 "$W/cgi-bin/lte_apply.cgi"
+cp "$SRC/hoit_lte_apply_worker.sh" "$H/bin/hoit_lte_apply_worker.sh" && chmod 755 "$H/bin/hoit_lte_apply_worker.sh"
 say "Portal: página CAM-5 agregada; menú y CGI heredados depurados"
 
 # 5) Limpieza -------------------------------------------------------------------------------------
