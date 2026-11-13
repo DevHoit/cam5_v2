@@ -1,0 +1,77 @@
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          cam5-gateway
+# Required-Start:    $network $local_fs
+# Required-Stop:     $network $local_fs
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Gateway HoitLive Core para CAM-5 (Modbus TCP -> HTTPS)
+### END INIT INFO
+#
+# Script SysV para SIM7600 OpenLinux (y cualquier Linux con /etc/init.d).
+# Mantiene el proceso vivo con un bucle supervisor: si el gateway termina,
+# vuelve a arrancar a los 10 s. Requiere setsid (busybox).
+#
+#   cp cam5-gateway.init /etc/init.d/cam5-gateway && chmod +x /etc/init.d/cam5-gateway
+#   update-rc.d cam5-gateway defaults        # o el enlace manual en /etc/rc5.d (ver README)
+
+BIN=/data/cam5-gateway/cam5-gateway
+ENV_FILE=/data/cam5-gateway/gateway.env
+PIDFILE=/var/run/cam5-gateway.pid
+
+supervise() {
+    echo $$ > "$PIDFILE"
+    trap 'kill -TERM "$child" 2>/dev/null; wait "$child" 2>/dev/null; exit 0' TERM INT
+    while :; do
+        "$BIN" --env-file "$ENV_FILE" >/dev/null 2>&1 &
+        child=$!
+        wait "$child"
+        sleep 10
+    done
+}
+
+start() {
+    if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+        echo "cam5-gateway ya está en ejecución"
+        return 0
+    fi
+    [ -x "$BIN" ] || { echo "No existe $BIN"; return 1; }
+    [ -r "$ENV_FILE" ] || { echo "No existe $ENV_FILE"; return 1; }
+    # IP fija hacia el CAM-5 (opcional): CAM5_ETH_IFACE=eth0 y CAM5_ETH_ADDR=192.168.1.10/24
+    # en gateway.env. Se agrega como dirección adicional; no toca otras IP de la interfaz.
+    ETH_ADDR="$(sed -n 's/^CAM5_ETH_ADDR=//p' "$ENV_FILE" | tr -d '\r' | tail -1)"
+    ETH_IFACE="$(sed -n 's/^CAM5_ETH_IFACE=//p' "$ENV_FILE" | tr -d '\r' | tail -1)"
+    if [ -n "$ETH_ADDR" ]; then
+        ETH_IFACE="${ETH_IFACE:-eth0}"
+        ip link set "$ETH_IFACE" up 2>/dev/null
+        ip addr show dev "$ETH_IFACE" | grep -q "inet ${ETH_ADDR%%/*}/" || ip addr add "$ETH_ADDR" dev "$ETH_IFACE"
+    fi
+    # setsid: el supervisor no depende de la consola que lo lanzó (adb shell, ssh)
+    rm -f "$PIDFILE"
+    setsid "$0" supervise </dev/null >/dev/null 2>&1 &
+    sleep 1
+    echo "cam5-gateway iniciado"
+}
+
+stop() {
+    if [ -f "$PIDFILE" ]; then
+        kill -TERM "$(cat "$PIDFILE")" 2>/dev/null
+        rm -f "$PIDFILE"
+    fi
+    echo "cam5-gateway detenido"
+}
+
+case "$1" in
+    start) start ;;
+    supervise) supervise ;;
+    stop) stop ;;
+    restart) stop; sleep 2; start ;;
+    status)
+        if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+            echo "cam5-gateway en ejecución (supervisor $(cat "$PIDFILE"))"
+        else
+            echo "cam5-gateway detenido"; exit 3
+        fi
+        ;;
+    *) echo "Uso: $0 {start|stop|restart|status}"; exit 1 ;;
+esac

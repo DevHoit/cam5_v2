@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { and, desc, eq } from "drizzle-orm";
 import { alarmRules, assets, channels, configurationSnapshots, devices, readingProfileRanges, readingProfiles, registerDefinitions } from "../../../../../db/schema";
@@ -5,6 +6,11 @@ import { apiErrorResponse } from "../../_lib/auth";
 import { requireGatewayCredential } from "../_lib/auth";
 
 export const dynamic = "force-dynamic";
+
+function matchesEtag(header: string | null, etag: string): boolean {
+  if (!header) return false;
+  return header.split(",").some((candidate) => candidate.trim().replace(/^W\//, "") === etag);
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -95,14 +101,19 @@ export async function GET(request: NextRequest) {
         })),
       };
     }));
-    return Response.json({
+    const content = {
       schemaVersion: "1.2",
-      serverTime: new Date().toISOString(),
       ingestionUrl: "/api/v1/gateway/ingest",
       heartbeatUrl: "/api/v1/gateway/heartbeat",
       gateway: { code: credential.gatewayCode, name: credential.gatewayName },
       devices: payloadDevices,
-    }, { headers: { "Cache-Control": "no-store" } });
+    };
+    // La etiqueta cubre todo menos serverTime: un gateway por 4G puede preguntar
+    // con If-None-Match y recibir 304 sin descargar de nuevo la configuración.
+    const etag = `"${createHash("sha256").update(JSON.stringify(content)).digest("base64url")}"`;
+    const headers = { "Cache-Control": "no-store", ETag: etag };
+    if (matchesEtag(request.headers.get("if-none-match"), etag)) return new Response(null, { status: 304, headers });
+    return Response.json({ ...content, serverTime: new Date().toISOString() }, { headers });
   } catch (error) {
     return apiErrorResponse(error);
   }

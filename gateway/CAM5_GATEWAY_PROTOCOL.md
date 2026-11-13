@@ -18,6 +18,8 @@ El token identifica al gateway y no debe guardarse en el repositorio. Se recomie
 
 La credencial se administra en **Administración → Provisionamiento** dentro de HoitLive Core. El portal muestra el token completo una sola vez y permite descargar un archivo `.env` listo para instalar, rotarlo o revocarlo. La base de datos conserva únicamente su hash, prefijo, vigencia y trazabilidad de uso.
 
+El gateway para terreno es [`cam5_gateway.py`](./cam5_gateway.py), con instalación en [`INSTALACION_GATEWAY.md`](./INSTALACION_GATEWAY.md). Para equipos sin Python, como el módulo 4G SIMCom SIM7600SA-H con OpenLinux, existe la versión en C: [`c/README.md`](./c/README.md). [`tools/cam5_modbus_simulator.py`](./tools/cam5_modbus_simulator.py) emula un CAM-5 para probar sin hardware.
+
 Para comprobar el circuito completo con el emisor de referencia incluido:
 
 ```bash
@@ -190,6 +192,8 @@ Errores `400`, `403`, `404`, `413` o `422` indican que el lote no debe repetirse
 ## Configuración remota
 
 `GET /gateway/config` devuelve los controladores autorizados, host, puerto, Unit ID, rangos, intervalos, tipos, escalas, unidades, códigos de error y políticas de canal. El script debe consultar esta ruta al iniciar y luego cada 15 minutos. Si la consulta falla, debe continuar con la última configuración válida almacenada localmente. Los rangos con `enabled: false` no deben consultarse.
+
+La respuesta incluye la cabecera `ETag`, calculada sobre todo el contenido salvo `serverTime`. Un gateway con enlace de datos limitado puede enviar `If-None-Match: <etag>`: si la configuración no cambió, el portal responde `304` sin cuerpo y el gateway sigue con su copia local. Cada controlador ocupa del orden de 30 KB, así que la consulta condicional evita descargar decenas de MB al mes por 4G.
 
 Desde la versión `1.2`, cada controlador incluye la revisión vigente y la política de envío:
 

@@ -1,0 +1,24 @@
+[Unit]
+Description=HoitLive Core - gateway CAM-5 (Modbus TCP)
+Wants=network-online.target time-sync.target
+After=network-online.target time-sync.target
+
+[Service]
+Type=simple
+User=cam5gw
+Group=cam5gw
+EnvironmentFile=/etc/cam5-gateway/gateway.env
+Environment=CAM5_STATE_DIR=/var/lib/cam5-gateway
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 /opt/cam5-gateway/cam5_gateway.py
+Restart=always
+RestartSec=10
+StateDirectory=cam5-gateway
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/cam5-gateway
+
+[Install]
+WantedBy=multi-user.target
