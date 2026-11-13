@@ -101,6 +101,7 @@ if [ "${SSH_KEY_ONLY:-0}" = 1 ]; then
         chmod 700 /root/.ssh; chmod 600 /root/.ssh/authorized_keys
         set_ssh PasswordAuthentication no
         set_ssh PermitRootLogin without-password
+        set_ssh ChallengeResponseAuthentication no
         say "SSH: solo con llave"
     else
         say "SSH: SSH_KEY_ONLY=1 pero no hay /root/.ssh/authorized_keys; se mantiene la contraseña"
