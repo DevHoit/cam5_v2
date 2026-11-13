@@ -57,6 +57,19 @@ Para dimensionar el plan:
 
 En terreno, el gateway informa sus KB enviados y recibidos cada 15 minutos.
 
+### Versión 1.2: formato compacto, envío agrupado y salud
+
+Con un portal que lo declara en `GET /gateway/config` (`capabilities`), el gateway:
+
+- **Formato compacto**: envía `"blocks":[{"start":418,"raw":[…]}]` en vez de un objeto por registro. Un diagnóstico de 105 registros baja de ~3,4 KB a ~0,9 KB.
+- **Envío agrupado**: con 2 o más lotes en cola (dos CAM-5, o al vaciar la cola tras un corte) los manda en una sola solicitud `{"batches":[…]}`. El portal responde el estado de cada uno; si no lo entiende, el gateway vuelve a enviar de a uno.
+- **Diagnóstico sin duplicado**: si el diagnóstico ya trae los canales operativos, no sale además el lote programado de esa ventana.
+- **Salud cada 15 min** en el heartbeat: salida activa, señal, consumo 4G del mes (lo cuenta `hoit_conn`), controladores que responden, cola, memoria y versión. Se ve en el portal, en **Provisionamiento → Equipos en terreno**.
+- **Configuración cada 60 min** (`CAM5_CONFIG_REFRESH_MIN`) en vez de 15.
+- Las respuestas de `/api/v1/gateway/*` ya no llevan las cabeceras de seguridad de navegador (~450 B menos cada una).
+
+Con un portal anterior, el gateway sigue usando el formato 1.0 sin cambios.
+
 `CAM5_TLS_GROUPS` es `X25519:P-256` por omisión. Las versiones recientes de OpenSSL proponen además un intercambio poscuántico (X25519MLKEM768) que duplica el tamaño de cada handshake: 4,0 KB frente a 1,7 KB, medido. Si se prefiere, se activa con `CAM5_TLS_GROUPS=X25519MLKEM768:X25519`.
 
 ## Compilar
@@ -266,7 +279,9 @@ adb shell "sh /cache/cam5-deploy/apply_hardening.sh /cache/cam5-deploy"
 | `CAM5_QUEUE_MAX_MB` | `16` | tope de la cola; al superarlo se descartan los lotes más antiguos |
 | `CAM5_HTTP_TIMEOUT` | `20` | segundos por solicitud sobre 4G |
 | `CAM5_TLS_GROUPS` | `X25519:P-256` | intercambio de claves TLS; ver «Consumo de datos» |
-| `CAM5_HEARTBEAT_IDLE_S` | intervalo del portal | segundos sin contacto antes de enviar un heartbeat (máx. 170) |
+| `CAM5_HEARTBEAT_IDLE_S` | intervalo del portal | segundos sin contacto antes de enviar un heartbeat (máx. 3600) |
+| `CAM5_CONFIG_REFRESH_MIN` | `60` | minutos entre consultas de configuración (5–1440) |
+| `CAM5_NET_STATUS_FILE` | `/cache/hoit/gateway_status_current.json` | estado de `hoit_conn` que se agrega a la salud |
 | `CAM5_REGISTER_OFFSET` | `0` | desplazamiento de dirección Modbus |
 | `CAM5_MAX_READ` | `81` | registros por transacción Modbus |
 | `CAM5_RUN_ONCE` | — | `1` equivale a `--once` |

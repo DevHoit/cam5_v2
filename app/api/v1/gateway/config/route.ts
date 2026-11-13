@@ -4,6 +4,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { alarmRules, assets, channels, configurationSnapshots, devices, readingProfileRanges, readingProfiles, registerDefinitions } from "../../../../../db/schema";
 import { apiErrorResponse } from "../../_lib/auth";
 import { requireGatewayCredential } from "../_lib/auth";
+import { MAX_BULK_BATCHES } from "../_lib/limits";
 
 export const dynamic = "force-dynamic";
 
@@ -106,6 +107,9 @@ export async function GET(request: NextRequest) {
       ingestionUrl: "/api/v1/gateway/ingest",
       heartbeatUrl: "/api/v1/gateway/heartbeat",
       gateway: { code: credential.gatewayCode, name: credential.gatewayName },
+      // Lo que entiende este portal: el gateway usa el formato compacto, el envío agrupado y la
+      // salud en el heartbeat solo si aparecen aquí (compatibilidad con portales anteriores).
+      capabilities: { ingestBlocks: true, ingestBulkMaxBatches: MAX_BULK_BATCHES, heartbeatHealth: true },
       devices: payloadDevices,
     };
     // La etiqueta cubre todo menos serverTime: un gateway por 4G puede preguntar

@@ -15,11 +15,13 @@ import {
 } from "../../../../../db/schema";
 import { apiErrorResponse, ApiError } from "../../_lib/auth";
 import { requireGatewayCredential } from "../_lib/auth";
+import { MAX_BULK_BATCHES } from "../_lib/limits";
 
 export const dynamic = "force-dynamic";
 
 const MAX_BODY_BYTES = 256 * 1024;
 const MAX_REGISTERS = 105;
+const MAX_BLOCKS = 16;
 const MAX_BACKFILL_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_FUTURE_SKEW_MS = 5 * 60 * 1000;
 const QUALITY_VALUES = ["good", "stale", "bad"] as const;
@@ -77,6 +79,27 @@ function timestamp(value: unknown, label: string, now: Date): Date {
   return parsed;
 }
 
+/**
+ * Formato compacto: "blocks":[{"start":418,"raw":[684,541,…],"at":"…"}] equivale a una lectura
+ * por registro consecutivo (register = start + i, recordedAt = at o poll.completedAt).
+ * Un lote de 105 registros pasa de ~3,2 KB a ~0,5 KB por 4G.
+ */
+function expandBlocks(value: unknown): unknown[] {
+  if (!Array.isArray(value) || value.length === 0 || value.length > MAX_BLOCKS) throw new ApiError(400, `blocks debe ser un arreglo de 1 a ${MAX_BLOCKS} bloques.`);
+  const expanded: unknown[] = [];
+  value.forEach((entry, index) => {
+    const block = object(entry, `blocks[${index}]`);
+    const start = safeInteger(block.start, `blocks[${index}].start`, 0, 65535);
+    if (!Array.isArray(block.raw) || block.raw.length === 0) throw new ApiError(400, `blocks[${index}].raw debe ser un arreglo con valores.`);
+    if (start + block.raw.length - 1 > 65535) throw new ApiError(400, `blocks[${index}] excede el registro 65535.`);
+    if (expanded.length + block.raw.length > MAX_REGISTERS) throw new ApiError(413, `Un lote admite como máximo ${MAX_REGISTERS} registros.`);
+    block.raw.forEach((raw, offset) => {
+      expanded.push(block.at === undefined ? { register: start + offset, rawValue: raw } : { register: start + offset, rawValue: raw, recordedAt: block.at });
+    });
+  });
+  return expanded;
+}
+
 function parsePayload(value: unknown, now: Date): IngestionPayload {
   const body = object(value, "El cuerpo");
   if (body.schemaVersion !== "1.0") throw new ApiError(400, "schemaVersion debe ser 1.0.");
@@ -85,26 +108,28 @@ function parsePayload(value: unknown, now: Date): IngestionPayload {
   const gateway = object(body.gateway, "gateway");
   const device = object(body.device, "device");
   const poll = object(body.poll, "poll");
-  if (!Array.isArray(body.readings)) throw new ApiError(400, "readings debe ser un arreglo.");
-  if (body.readings.length > MAX_REGISTERS) throw new ApiError(413, `Un lote admite como máximo ${MAX_REGISTERS} registros.`);
+  if (body.readings !== undefined && body.blocks !== undefined) throw new ApiError(400, "Usa readings o blocks, no ambos.");
+  const rawReadings: unknown = body.blocks !== undefined ? expandBlocks(body.blocks) : body.readings;
+  if (!Array.isArray(rawReadings)) throw new ApiError(400, "readings debe ser un arreglo.");
+  if (rawReadings.length > MAX_REGISTERS) throw new ApiError(413, `Un lote admite como máximo ${MAX_REGISTERS} registros.`);
 
   const sentAt = timestamp(body.sentAt, "sentAt", now);
   const startedAt = timestamp(poll.startedAt, "poll.startedAt", now);
   const completedAt = timestamp(poll.completedAt, "poll.completedAt", now);
   if (completedAt < startedAt) throw new ApiError(400, "poll.completedAt no puede ser anterior a poll.startedAt.");
   const expectedRegisters = safeInteger(poll.expectedRegisters, "poll.expectedRegisters", 1, MAX_REGISTERS);
-  if (body.readings.length > expectedRegisters) throw new ApiError(400, "readings contiene más elementos que poll.expectedRegisters.");
+  if (rawReadings.length > expectedRegisters) throw new ApiError(400, "readings contiene más elementos que poll.expectedRegisters.");
 
   let pollError: IngestionPayload["poll"]["error"];
   if (poll.error !== undefined && poll.error !== null) {
     const error = object(poll.error, "poll.error");
     pollError = { code: requiredString(error.code, "poll.error.code", 60), message: requiredString(error.message, "poll.error.message", 500) };
   }
-  if (!pollError && body.readings.length !== expectedRegisters) throw new ApiError(400, "Un lote sin error debe contener todos los registros esperados.");
+  if (!pollError && rawReadings.length !== expectedRegisters) throw new ApiError(400, "Un lote sin error debe contener todos los registros esperados.");
 
   const defaultSequence = safeInteger(gateway.sequence, "gateway.sequence", 0, Number.MAX_SAFE_INTEGER);
   const seenRegisters = new Set<number>();
-  const parsedReadings = body.readings.map((entry, index) => {
+  const parsedReadings = rawReadings.map((entry, index) => {
     const reading = object(entry, `readings[${index}]`);
     const register = safeInteger(reading.register, `readings[${index}].register`, 0, 65535);
     if (seenRegisters.has(register)) throw new ApiError(400, `El registro ${register} está duplicado en el lote.`);
@@ -153,15 +178,11 @@ function parsePayload(value: unknown, now: Date): IngestionPayload {
   };
 }
 
-export async function POST(request: NextRequest) {
-  try {
-    const contentLength = Number(request.headers.get("content-length") ?? 0);
-    if (Number.isFinite(contentLength) && contentLength > MAX_BODY_BYTES) throw new ApiError(413, "El lote supera el máximo de 256 KiB.");
-    const { db, credential } = await requireGatewayCredential(request);
-    const receivedAt = new Date();
-    const rawBody = await request.text();
-    if (new TextEncoder().encode(rawBody).byteLength > MAX_BODY_BYTES) throw new ApiError(413, "El lote supera el máximo de 256 KiB.");
-    const payload = parsePayload((() => { try { return JSON.parse(rawBody) as unknown; } catch { return null; } })(), receivedAt);
+type GatewayContext = Awaited<ReturnType<typeof requireGatewayCredential>>;
+type IngestResult = { httpStatus: number; body: Record<string, unknown> };
+
+async function ingestOne({ db, credential }: GatewayContext, value: unknown, receivedAt: Date): Promise<IngestResult> {
+    const payload = parsePayload(value, receivedAt);
     if (payload.gateway.code !== credential.gatewayCode) throw new ApiError(403, "El código del gateway no corresponde a la credencial utilizada.");
 
     const [device] = await db.select({
@@ -189,7 +210,7 @@ export async function POST(request: NextRequest) {
       .where(and(eq(ingestionBatches.gatewayId, credential.gatewayId), eq(ingestionBatches.batchKey, payload.batchKey)))
       .limit(1);
     if (existing) {
-      return Response.json({ status: "duplicate", batchId: existing.id, accepted: existing.receivedRegisters, success: existing.success, serverTime: receivedAt.toISOString() }, { headers: { "Cache-Control": "no-store" } });
+      return { httpStatus: 200, body: { status: "duplicate", batchId: existing.id, accepted: existing.receivedRegisters, success: existing.success, serverTime: receivedAt.toISOString() } };
     }
 
     const catalog = await db.select({
@@ -255,7 +276,7 @@ export async function POST(request: NextRequest) {
         }).where(eq(devices.id, device.id));
         await tx.update(assets).set({ state: transformed.length ? "normal" : "offline", updatedAt: receivedAt }).where(eq(assets.id, device.assetId));
       });
-      return Response.json({
+      return { httpStatus: 202, body: {
         status: "deferred",
         accepted: 0,
         observed: transformed.length,
@@ -264,7 +285,7 @@ export async function POST(request: NextRequest) {
         nextUploadInMs: storageIntervalMs,
         nextHeartbeatInMs: (device.heartbeatIntervalSeconds ?? 30) * 1_000,
         nextDiagnosticInMs: diagnosticIntervalMs,
-      }, { status: 202, headers: { "Cache-Control": "no-store" } });
+      } };
     }
 
     const result = await db.transaction(async (tx) => {
@@ -376,7 +397,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (result.duplicate) {
-      return Response.json({ status: "duplicate", batchId: result.id, accepted: result.accepted, success: result.success, serverTime: receivedAt.toISOString() }, { headers: { "Cache-Control": "no-store" } });
+      return { httpStatus: 200, body: { status: "duplicate", batchId: result.id, accepted: result.accepted, success: result.success, serverTime: receivedAt.toISOString() } };
     }
 
     let alarmEvaluation = { opened: 0, updated: 0, resolved: 0 };
@@ -394,7 +415,7 @@ export async function POST(request: NextRequest) {
       console.error("No fue posible evaluar las alarmas del lote", alarmError);
     }
 
-    return Response.json({
+    return { httpStatus: 202, body: {
       status: "accepted",
       batchId: result.id,
       accepted: transformed.length,
@@ -406,7 +427,46 @@ export async function POST(request: NextRequest) {
       nextUploadInMs: complete ? storageIntervalMs : 10_000,
       nextHeartbeatInMs: (device.heartbeatIntervalSeconds ?? 30) * 1_000,
       nextDiagnosticInMs: diagnosticIntervalMs,
-    }, { status: 202, headers: { "Cache-Control": "no-store" } });
+    } };
+}
+
+function batchKeyOf(value: unknown): string | null {
+  return value && typeof value === "object" && typeof (value as { batchKey?: unknown }).batchKey === "string"
+    ? (value as { batchKey: string }).batchKey.slice(0, 160)
+    : null;
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const contentLength = Number(request.headers.get("content-length") ?? 0);
+    if (Number.isFinite(contentLength) && contentLength > MAX_BODY_BYTES) throw new ApiError(413, "El lote supera el máximo de 256 KiB.");
+    const context = await requireGatewayCredential(request);
+    const receivedAt = new Date();
+    const rawBody = await request.text();
+    if (new TextEncoder().encode(rawBody).byteLength > MAX_BODY_BYTES) throw new ApiError(413, "El lote supera el máximo de 256 KiB.");
+    const parsed = (() => { try { return JSON.parse(rawBody) as unknown; } catch { return null; } })();
+    const headers = { "Cache-Control": "no-store" };
+
+    // Envío agrupado: varios lotes en una sola solicitud (menos cabeceras y saludos TLS por 4G).
+    // Cada lote se procesa por separado y responde su propio estado: un rechazo no afecta al resto.
+    const bulk = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as { batches?: unknown }).batches : undefined;
+    if (bulk !== undefined) {
+      if (!Array.isArray(bulk) || bulk.length === 0 || bulk.length > MAX_BULK_BATCHES) throw new ApiError(400, `batches debe contener de 1 a ${MAX_BULK_BATCHES} lotes.`);
+      const results: Record<string, unknown>[] = [];
+      for (const entry of bulk) {
+        try {
+          const result = await ingestOne(context, entry, receivedAt);
+          results.push({ batchKey: batchKeyOf(entry), httpStatus: result.httpStatus, ...result.body });
+        } catch (error) {
+          if (!(error instanceof ApiError)) console.error("CAM5 lote agrupado", error);
+          results.push({ batchKey: batchKeyOf(entry), httpStatus: error instanceof ApiError ? error.status : 500, error: error instanceof ApiError ? error.message : "No fue posible procesar el lote." });
+        }
+      }
+      return Response.json({ status: "bulk", results, serverTime: receivedAt.toISOString() }, { headers });
+    }
+
+    const result = await ingestOne(context, parsed, receivedAt);
+    return Response.json(result.body, { status: result.httpStatus, headers });
   } catch (error) {
     return apiErrorResponse(error);
   }

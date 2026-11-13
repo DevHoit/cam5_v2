@@ -69,6 +69,7 @@ export async function GET(request: NextRequest) {
         lastSeenAt: gateways.lastSeenAt,
         softwareVersion: gateways.softwareVersion,
         ipAddress: gateways.ipAddress,
+        metadata: gateways.metadata,
       }).from(gateways).where(eq(gateways.siteId, user.siteId)).orderBy(gateways.code),
       db.select({
         gatewayId: gatewayApiCredentials.gatewayId,
@@ -86,8 +87,9 @@ export async function GET(request: NextRequest) {
     const expiringCredentials = statusRows.filter((credential) => (credential.status === "active" || credential.status === "unused") && credential.expiresAt && credential.expiresAt <= renewalWarningAt).length;
     const expiredCredentials = statusRows.filter((credential) => credential.status === "expired").length;
     return Response.json({
-      gateways: gatewayRows.map((gateway) => ({
+      gateways: gatewayRows.map(({ metadata, ...gateway }) => ({
         ...gateway,
+        health: metadata && typeof metadata.health === "object" && metadata.health !== null ? metadata.health : null,
         lastSeenAt: gateway.lastSeenAt?.toISOString() ?? null,
         activeCredentials: statusRows.filter((credential) => credential.gatewayId === gateway.id && (credential.status === "active" || credential.status === "unused")).length,
       })),
