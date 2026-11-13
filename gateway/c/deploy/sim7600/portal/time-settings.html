@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HOIT Gateway Portal — Fecha y hora</title>
+<link rel="stylesheet" href="assets/hoit.css">
+<link rel="stylesheet" href="assets/gateway-identity-context-v1.css?v=1.3">
+<link rel="stylesheet" href="assets/time-settings-v1.css?v=1.0">
+<link rel="stylesheet" href="assets/navigation-v1.css?v=1.0">
+</head>
+<body data-page="time-settings">
+<div class="app">
+
+<aside class="sidebar" id="sidebar">
+  <a class="logo-wrap" href="index.html"><img class="logo-img" src="assets/logo.png" alt="HOIT"></a>
+  <nav class="nav">
+    <a class="nav-item" href="index.html"><span>Dashboard</span></a>
+    <a class="nav-item" href="dispositivos.html"><span>Dispositivos</span></a>
+    <a class="nav-item" href="sistema.html"><span>Sistema</span></a>
+  </nav>
+  <div class="sidebar-foot"><b id="sidebarDeviceId">Gateway HOIT</b><br><span id="sidebarPortalVersion">Portal local</span></div>
+</aside>
+
+<div class="scrim" id="scrim"></div>
+
+<div class="main">
+<header class="topbar">
+  <button class="burger" id="burger" type="button" aria-label="Menú">☰</button>
+  <div class="crumb"><span>Fecha y hora</span><small id="timeCrumb">Reloj del gateway</small></div>
+  <div class="topbar-right">
+    <div class="health-pill"><span class="dot" id="timeDot"></span><span id="timeHealth">Consultando</span></div>
+    <button class="btn ghost sm" id="refreshBtn" type="button">Actualizar</button>
+    <div class="user-chip">AD</div>
+  </div>
+</header>
+
+<div class="content time-page">
+<section class="page on">
+
+  <div class="time-hero">
+    <div>
+      <span class="time-eyebrow">SYSTEM CLOCK CONTROL</span>
+      <h2 id="currentLocalTime">--:--:--</h2>
+      <p><span id="currentLocalDate">—</span><span class="time-separator">•</span><span id="currentOffsetLabel">UTC</span></p>
+    </div>
+    <div class="time-hero-side">
+      <small>Hora UTC</small>
+      <b id="currentUtcTime">--:--:--</b>
+      <span id="currentUtcDate">—</span>
+    </div>
+  </div>
+
+  <div class="time-kpis">
+    <div class="time-kpi"><small>Modo</small><b id="modeValue">—</b><span>Fuente configurada</span></div>
+    <div class="time-kpi"><small>Fuente</small><b id="sourceValue">—</b><span>Última sincronización</span></div>
+    <div class="time-kpi"><small>Estado</small><b id="syncValue">—</b><span id="syncDetail">Sin datos</span></div>
+    <div class="time-kpi"><small>Próxima</small><b id="nextSyncValue">—</b><span>Sincronización automática</span></div>
+  </div>
+
+  <div class="time-layout">
+    <div class="time-stack">
+      <div class="card">
+        <div class="card-h"><h3>Sincronización automática</h3><span class="spacer"></span><button class="btn ghost sm" id="syncNowBtn" type="button">Sincronizar ahora</button></div>
+        <div class="card-b">
+          <div class="time-form-grid">
+            <div class="field">
+              <label>Modo</label>
+              <select id="timeMode">
+                <option value="auto">Automática por red</option>
+                <option value="ntp">NTP</option>
+                <option value="cellular">Hora de red celular</option>
+                <option value="manual">Manual</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label>Zona UTC</label>
+              <select id="utcOffset"></select>
+            </div>
+
+            <div class="field full">
+              <label>Servidores NTP</label>
+              <input id="ntpServers" placeholder="pool.ntp.org,time.google.com">
+              <small>Hasta tres servidores separados por coma.</small>
+            </div>
+
+            <div class="field">
+              <label>Sincronizar cada</label>
+              <select id="syncInterval">
+                <option value="900">15 minutos</option>
+                <option value="3600">1 hora</option>
+                <option value="21600">6 horas</option>
+                <option value="43200">12 horas</option>
+                <option value="86400">24 horas</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label>Reintento</label>
+              <select id="retryInterval">
+                <option value="30">30 segundos</option>
+                <option value="60">1 minuto</option>
+                <option value="300">5 minutos</option>
+                <option value="900">15 minutos</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label>Timeout</label>
+              <select id="ntpTimeout">
+                <option value="3">3 segundos</option>
+                <option value="5">5 segundos</option>
+                <option value="8">8 segundos</option>
+                <option value="15">15 segundos</option>
+                <option value="30">30 segundos</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label>Puerto de reloj SIM</label>
+              <input id="cellularDevice" value="/dev/smd8" readonly>
+            </div>
+
+            <label class="time-check full">
+              <input id="cellularFallback" type="checkbox">
+              Usar hora celular como respaldo del modo automático
+            </label>
+          </div>
+
+          <div class="time-warning" id="modeWarning">
+            NTP modifica el reloj del sistema usando la interfaz de red activa.
+          </div>
+
+          <div class="time-actions">
+            <button class="btn primary" id="saveConfigBtn" type="button">Guardar configuración</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-h"><h3>Ajuste manual</h3></div>
+        <div class="card-b">
+          <div class="time-form-grid">
+            <div class="field">
+              <label>Fecha y hora local</label>
+              <input id="manualDatetime" type="datetime-local" step="1">
+            </div>
+
+            <div class="field">
+              <label>Zona UTC aplicada</label>
+              <select id="manualOffset"></select>
+            </div>
+          </div>
+
+          <div class="time-warning">
+            Cambiar el reloj puede alterar marcas de tiempo, certificados TLS, logs y ventanas de telemetría.
+          </div>
+
+          <div class="time-actions">
+            <button class="btn primary" id="setManualBtn" type="button">Aplicar hora manual</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="time-side-stack">
+      <div class="card">
+        <div class="card-h"><h3>Estado técnico</h3></div>
+        <div class="card-b time-status-list">
+          <div><span>Servicio</span><b id="serviceState">—</b></div>
+          <div><span>Último intento</span><b id="lastAttempt">—</b></div>
+          <div><span>Último éxito</span><b id="lastSuccess">—</b></div>
+          <div><span>Servidor</span><b id="lastServer">—</b></div>
+          <div><span>Resultado</span><b id="lastResult">—</b></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-h"><h3>Fuentes disponibles</h3></div>
+        <div class="card-b time-source-list">
+          <div><span class="dot ok"></span><p><b>NTP</b><small>UDP/123 mediante la ruta activa.</small></p></div>
+          <div><span class="dot warn"></span><p><b>Red celular</b><small>Consulta AT+CCLK? en /dev/smd8.</small></p></div>
+          <div><span class="dot"></span><p><b>Manual</b><small>Fecha local más offset UTC fijo.</small></p></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-h"><h3>Zona horaria</h3></div>
+        <div class="card-b time-note">
+          <p>El kernel conserva una hora UTC. La zona seleccionada se utiliza para mostrar la hora local en el portal.</p>
+          <p>El offset es fijo. Los cambios de horario de verano deben ajustarse manualmente o mediante una futura tabla regional.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</section>
+</div>
+</div>
+
+<div class="toast" id="toast"><span class="dot ok"></span><span id="toastMsg"></span></div>
+</div>
+
+<script src="assets/hoit.js"></script>
+<script src="assets/gateway-identity-context-v1.js?v=1.3"></script>
+<script src="assets/time-settings-v1.js?v=1.0"></script>
+<script src="assets/navigation-v1.js?v=1.0"></script>
+</body>
+</html>
