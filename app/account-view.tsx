@@ -51,7 +51,7 @@ async function accountRequest<T>(init?: RequestInit): Promise<T> {
 }
 
 function formatDateTime(value: string | null) {
-  return value ? new Intl.DateTimeFormat("es-CL", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "Sin registro";
+  return value ? new Intl.DateTimeFormat("es-CL", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(value)) : "Sin registro";
 }
 
 function deviceLabel(userAgent: string | null) {
@@ -77,6 +77,7 @@ export function AccountView({
   const [savingPassword, setSavingPassword] = useState(false);
   const [profile, setProfile] = useState({ displayName: "" });
   const [passwords, setPasswords] = useState({ currentPassword: "", newPassword: "", confirmation: "" });
+  const [showAllSessions, setShowAllSessions] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -131,6 +132,23 @@ export function AccountView({
     }
   };
 
+  const otherSessions = data ? data.sessions.filter((session) => !session.current).length : 0;
+  const revokeOtherSessions = () => confirm({
+    title: "Cerrar las demás sesiones",
+    detail: `Se cerrarán ${otherSessions} ${otherSessions === 1 ? "sesión" : "sesiones"} en otros dispositivos o navegadores. Esta sesión seguirá abierta y la acción quedará auditada.`,
+    confirmLabel: "Cerrar las demás",
+    tone: "danger",
+    onConfirm: async () => {
+      try {
+        const result = await accountRequest<{ revoked: number }>({ method: "DELETE", body: JSON.stringify({ scope: "others" }) });
+        notify(`${result.revoked} ${result.revoked === 1 ? "sesión cerrada" : "sesiones cerradas"}. Solo esta sesión sigue activa.`);
+        await load();
+      } catch (revokeError) {
+        notify(revokeError instanceof Error ? revokeError.message : "No fue posible cerrar las sesiones.", "warning");
+      }
+    },
+  });
+
   const revokeSession = (session: AccountResponse["sessions"][number]) => confirm({
     title: "Cerrar sesión remota",
     detail: `${deviceLabel(session.userAgent)} dejará de tener acceso inmediatamente. Esta acción quedará auditada.`,
@@ -152,10 +170,10 @@ export function AccountView({
   if (!data) return null;
 
   return <>
-    <section className="module-summary-grid account-summary-grid">
-      <article><span className="module-summary-icon blue"><IconUser size={19} /></span><div><small>Perfil activo</small><strong>{data.profile.roleName}</strong><span>{data.profile.email}</span></div></article>
-      <article><span className="module-summary-icon green"><IconShieldCheck size={19} /></span><div><small>Sesiones activas</small><strong>{data.sessions.length}</strong><span>Incluye este dispositivo</span></div></article>
-      <article><span className="module-summary-icon amber"><IconClock size={19} /></span><div><small>Último ingreso</small><strong>{formatDateTime(data.profile.lastLoginAt)}</strong><span>Cuenta creada {formatDateTime(data.profile.createdAt)}</span></div></article>
+    <section className="module-summary-strip" aria-label="Resumen de la cuenta">
+      <span><IconUser size={15} aria-hidden="true" /><strong>{data.profile.roleName}</strong> · {data.profile.email}</span>
+      <span><IconClock size={15} aria-hidden="true" />Último ingreso: <strong>{formatDateTime(data.profile.lastLoginAt)}</strong></span>
+      <span><IconShieldCheck size={15} aria-hidden="true" /><strong>{data.sessions.length}</strong> {data.sessions.length === 1 ? "sesión activa" : "sesiones activas"}</span>
     </section>
 
     <div className="account-layout">
@@ -182,13 +200,18 @@ export function AccountView({
     </div>
 
     <section className="panel account-sessions">
-      <header><span><IconDeviceDesktop size={21} /></span><div><span className="eyebrow">Control de acceso</span><h2>Sesiones activas</h2><p>Revisa dónde está abierta tu cuenta y cierra cualquier acceso que no reconozcas.</p></div></header>
-      <div className="account-session-list">{data.sessions.map((session) => <article key={session.id} className={session.current ? "current" : ""}>
-        <span className="session-device"><IconDeviceDesktop size={20} /></span>
-        <div><strong>{deviceLabel(session.userAgent)}{session.current ? " · Esta sesión" : ""}</strong><small>IP {session.ipAddress || "no disponible"} · Actividad {formatDateTime(session.lastSeenAt)}</small></div>
-        <time>Expira {formatDateTime(session.expiresAt)}</time>
-        {session.current ? <i><IconShieldCheck size={14} /> Protegida</i> : <button className="danger-button" onClick={() => revokeSession(session)}>Cerrar sesión</button>}
-      </article>)}</div>
+      <header><span><IconDeviceDesktop size={21} aria-hidden="true" /></span><div><span className="eyebrow">Control de acceso</span><h2>Sesiones activas</h2><p>Revisa dónde está abierta tu cuenta y cierra cualquier acceso que no reconozcas.</p></div>{otherSessions > 0 && <button type="button" className="danger-button account-revoke-others" onClick={revokeOtherSessions}>Cerrar las demás ({otherSessions})</button>}</header>
+      <div className="account-session-table" role="table" aria-label="Sesiones activas">
+        <div className="account-session-head" role="row"><span role="columnheader">Dispositivo</span><span role="columnheader">IP</span><span role="columnheader">Última actividad</span><span role="columnheader">Expira</span><span role="columnheader"><span className="sr-only">Acción</span></span></div>
+        {(showAllSessions ? data.sessions : data.sessions.slice(0, 5)).map((session) => <div key={session.id} role="row" className={`account-session-row ${session.current ? "current" : ""}`}>
+          <span role="cell" className="account-session-device"><IconDeviceDesktop size={16} aria-hidden="true" /><strong>{deviceLabel(session.userAgent)}</strong>{session.current && <i>Esta sesión</i>}</span>
+          <span role="cell">{session.ipAddress || "No disponible"}</span>
+          <span role="cell">{formatDateTime(session.lastSeenAt)}</span>
+          <span role="cell">{formatDateTime(session.expiresAt)}</span>
+          <span role="cell">{session.current ? <small className="account-session-safe"><IconShieldCheck size={14} aria-hidden="true" /> Actual</small> : <button className="ghost-button" onClick={() => revokeSession(session)} aria-label={`Cerrar sesión de ${deviceLabel(session.userAgent)}, última actividad ${formatDateTime(session.lastSeenAt)}`}>Cerrar</button>}</span>
+        </div>)}
+      </div>
+      {data.sessions.length > 5 && <button type="button" className="account-sessions-toggle" onClick={() => setShowAllSessions((value) => !value)}>{showAllSessions ? "Mostrar solo las 5 más recientes" : `Mostrar todas (${data.sessions.length})`}</button>}
     </section>
   </>;
 }
