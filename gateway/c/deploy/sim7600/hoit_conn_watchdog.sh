@@ -147,8 +147,10 @@ read_modem() {
     done
     ROAMING=0
     case "$(echo "$CREG" | cut -d, -f2 | tr -d ' ')$(echo "$CEREG" | cut -d, -f2 | tr -d ' ')" in *5*) ROAMING=1 ;; esac
-    # Identificadores: se leen una vez por arranque.
-    if [ ! -s "$RUN_DIR/iccid" ]; then
+    # Identificadores: se leen una vez por arranque, y de nuevo si la SIM se cambió en caliente
+    # (mientras no está READY se descarta lo guardado para no mostrar el ICCID de la anterior).
+    [ "$SIM" = "READY" ] || rm -f "$RUN_DIR/iccid" "$RUN_DIR/imsi_prefix"
+    if [ "$SIM" = "READY" ] && [ ! -s "$RUN_DIR/iccid" ]; then
         at_value "$(at_cmd 'AT+CCID')" '+CCID:' | tr -d ' "' > "$RUN_DIR/iccid"
         at_cmd 'AT+CGSN' | grep -E '^[0-9]{14,}' | head -1 > "$RUN_DIR/imei"
         at_cmd 'AT+CIMI' | grep -E '^[0-9]{10,}' | head -1 | cut -c1-6 > "$RUN_DIR/imsi_prefix"
