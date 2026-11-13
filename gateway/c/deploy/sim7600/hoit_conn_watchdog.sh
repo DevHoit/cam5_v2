@@ -291,6 +291,7 @@ write_status() {
   },
   "modem": {
     "sim": "$(json_escape "$SIM")",
+    "network_error": "$(json_escape "$CEER")",
     "operator": "$(json_escape "$OPERATOR")",
     "rat": "$(json_escape "$RAT")",
     "rssi": "$(json_escape "$RSSI")",
@@ -337,6 +338,7 @@ single_cycle() {
     UPLINK="$(active_uplink)"
 
     WIFI_OK=0
+    CEER=""
     [ -n "$WIFI_IP" ] && probe_iface "$WIFI_IF" && WIFI_OK=1
 
     # 4G: si es la salida activa y recibió tráfico desde el ciclo anterior, está sano.
@@ -364,11 +366,22 @@ single_cycle() {
         case "$SIM" in
             READY)
                 if [ "$REGISTERED" != "1" ]; then LTE_STATE="sin_registro"
-                elif [ -z "$LTE_IP" ]; then LTE_STATE="sin_ip"
+                elif [ -z "$LTE_IP" ]; then
+                    # Motivo que dio la red al rechazar la sesión de datos (p. ej. plan inactivo).
+                    CEER="$(at_value "$(at_cmd 'AT+CEER')" '+CEER:')"
+                    case "$CEER" in
+                        *[Nn]ot\ subscribed*|*[Uu]nknown\ APN*|*[Mm]issing\ or\ unknown\ APN*|*[Aa]uthentication*)
+                            LTE_STATE="rechazado_por_red" ;;
+                        *) LTE_STATE="sin_ip" ;;
+                    esac
                 else LTE_STATE="sin_trafico"; fi ;;
             *) LTE_STATE="sim_no_lista" ;;
         esac
-        [ "$F" -eq 1 ] && log "4G con falla: $LTE_STATE (SIM $SIM, $RAT, ${OPERATOR:-sin operador}, CSQ ${RSSI:-?}, IP ${LTE_IP:-ninguna})"
+        [ "$F" -eq 1 ] && log "4G con falla: $LTE_STATE (SIM $SIM, $RAT, ${OPERATOR:-sin operador}, CSQ ${RSSI:-?}, IP ${LTE_IP:-ninguna}${CEER:+, red: $CEER})"
+        if [ "$LTE_STATE" = "rechazado_por_red" ] && [ "$(get_s last_ceer)" != "$CEER" ]; then
+            log "4G: la red rechaza la sesión de datos: \"$CEER\". Revisar plan/APN de la SIM (APN=$APN)"
+        fi
+        set_s last_ceer "$CEER"
         if [ "$LTE_STATE" = "sim_no_lista" ]; then
             # Sin SIM utilizable: solo reintentar la radio de vez en cuando.
             [ "$SINCE_RADIO" -ge "$RADIO_RESET_EVERY" ] && radio_reset
