@@ -34,6 +34,7 @@
 #include "util.h"
 
 #include <errno.h>
+#include <sys/statvfs.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -41,10 +42,13 @@
 #include <strings.h>
 #include <unistd.h>
 
-#define CONFIG_REFRESH_SECONDS (15 * 60)
+#define HEALTH_INTERVAL_SECONDS (15 * 60) /* salud del equipo en el heartbeat */
+#define BULK_MAX_BYTES (192 * 1024)
 #define CONFIG_RETRY_SECONDS 30
 #define QUEUE_MAX_AGE_MS (INT64_C(7) * 24 * 3600 * 1000 - INT64_C(10) * 60 * 1000)
 #define MAX_FLUSH_PER_LOOP 5
+#define FLUSH_BUDGET_SECONDS 3.0 /* envío máximo por vuelta: la lectura Modbus no espera al 4G */
+#define ALIVE_INTERVAL_SECONDS 10
 #define STATE_UPLOAD_MIN_GAP 30.0
 #define LOOP_SLEEP_MS 200
 #define STATS_INTERVAL_SECONDS (15 * 60)
@@ -136,6 +140,9 @@ typedef struct {
     char state_dir[512];
     char ca_file[512];
     char log_file[512];
+    char alive_file[512];
+    char net_status_file[512];
+    int config_refresh_s;
     host_override overrides[32];
     int noverrides;
     int register_offset;
@@ -167,6 +174,14 @@ typedef struct {
     double next_attempt;
     double next_stats;
     int warned_clock;
+    double next_alive;
+    double last_accept_up; /* segundos desde el arranque del equipo; 0 = ninguno */
+    /* Lo que el portal declara entender (config.capabilities); sin declarar, formato 1.0. */
+    int cap_blocks;
+    int cap_bulk;      /* lotes por solicitud; 0 o 1 = uno por solicitud */
+    int cap_health;
+    int bulk_disabled; /* el portal rechazó un envío agrupado: se vuelve a uno por solicitud */
+    double next_health;
 } gateway;
 
 static volatile sig_atomic_t g_running = 1;
@@ -296,13 +311,24 @@ static int load_settings(settings *s)
     copy_str(s->state_dir, sizeof(s->state_dir), env_or("CAM5_STATE_DIR", "/data/cam5-gateway"));
     copy_str(s->ca_file, sizeof(s->ca_file), env_or("CAM5_CA_FILE", ""));
     copy_str(s->log_file, sizeof(s->log_file), env_or("CAM5_LOG_FILE", ""));
+    /* Archivo de vida en RAM: el vigilante del equipo reinicia el gateway si deja de actualizarse.
+     * CAM5_ALIVE_FILE= (vacío) lo desactiva. */
+    {
+        const char *alive = getenv("CAM5_ALIVE_FILE");
+        copy_str(s->alive_file, sizeof(s->alive_file), alive ? alive : "/var/run/cam5-gateway.alive");
+    }
     if (parse_overrides(s, getenv("CAM5_HOST_OVERRIDES")) != 0)
         return -1;
     s->register_offset = env_int("CAM5_REGISTER_OFFSET", 0, -65535, 65535);
     s->max_read = env_int("CAM5_MAX_READ", 81, 1, 125);
     s->run_once = truthy(getenv("CAM5_RUN_ONCE"));
     s->http_timeout = env_int("CAM5_HTTP_TIMEOUT", 20, 3, 120);
-    s->heartbeat_idle_s = env_int("CAM5_HEARTBEAT_IDLE_S", 0, 0, 170);
+    /* Los lotes ya mantienen al día la comunicación en el portal (la alarma usa la hora del
+     * último lote): el heartbeat solo hace falta cuando no sale ningún lote. */
+    s->heartbeat_idle_s = env_int("CAM5_HEARTBEAT_IDLE_S", 0, 0, 3600);
+    s->config_refresh_s = env_int("CAM5_CONFIG_REFRESH_MIN", 60, 5, 1440) * 60;
+    copy_str(s->net_status_file, sizeof(s->net_status_file),
+             env_or("CAM5_NET_STATUS_FILE", "/cache/hoit/gateway_status_current.json"));
     s->queue_max_bytes = (uint64_t) env_int("CAM5_QUEUE_MAX_MB", 16, 1, 4096) * 1024 * 1024;
     return 0;
 }
@@ -593,22 +619,53 @@ static int enqueue_batch(gateway *gw, device *d, const char *trigger, const int 
     sb_init(&sb);
     begin_payload(gw, d, &sb, trigger, seq);
     poll_section(d, &sb, started, completed, selected, NULL);
-    sb_puts(&sb, ",\"readings\":[");
     int written = 0;
-    for (int i = 0; i < nregs && written < selected; i++) {
-        cache_entry *e = cache_at(d, regs[i]);
-        if (!e || !e->valid)
-            continue;
-        sb_printf(&sb, "%s{\"register\":%d,\"rawValue\":%u", written ? "," : "", regs[i], (unsigned) e->raw);
-        if (e->recorded_ms != completed) {
-            char at[ISO_LEN + 1];
-            iso_from_ms(e->recorded_ms, at);
-            sb_printf(&sb, ",\"recordedAt\":\"%s\"", at);
+    if (gw->cap_blocks) {
+        /* Formato compacto: registros consecutivos leídos a la misma hora van en un bloque
+         * {"start":418,"raw":[…]}; un diagnóstico de 105 registros pasa de ~3,2 KB a ~0,5 KB. */
+        sb_puts(&sb, ",\"blocks\":[");
+        int prev = -2, nblocks = 0;
+        int64_t prev_at = -1;
+        for (int i = 0; i < nregs && written < selected; i++) {
+            cache_entry *e = cache_at(d, regs[i]);
+            if (!e || !e->valid)
+                continue;
+            if (regs[i] != prev + 1 || e->recorded_ms != prev_at) {
+                if (nblocks)
+                    sb_puts(&sb, "]}");
+                sb_printf(&sb, "%s{\"start\":%d", nblocks ? "," : "", regs[i]);
+                if (e->recorded_ms != completed) {
+                    char at[ISO_LEN + 1];
+                    iso_from_ms(e->recorded_ms, at);
+                    sb_printf(&sb, ",\"at\":\"%s\"", at);
+                }
+                sb_printf(&sb, ",\"raw\":[%u", (unsigned) e->raw);
+                nblocks++;
+            } else {
+                sb_printf(&sb, ",%u", (unsigned) e->raw);
+            }
+            prev = regs[i];
+            prev_at = e->recorded_ms;
+            written++;
         }
-        sb_puts(&sb, "}");
-        written++;
+        sb_puts(&sb, nblocks ? "]}]}" : "]}");
+    } else {
+        sb_puts(&sb, ",\"readings\":[");
+        for (int i = 0; i < nregs && written < selected; i++) {
+            cache_entry *e = cache_at(d, regs[i]);
+            if (!e || !e->valid)
+                continue;
+            sb_printf(&sb, "%s{\"register\":%d,\"rawValue\":%u", written ? "," : "", regs[i], (unsigned) e->raw);
+            if (e->recorded_ms != completed) {
+                char at[ISO_LEN + 1];
+                iso_from_ms(e->recorded_ms, at);
+                sb_printf(&sb, ",\"recordedAt\":\"%s\"", at);
+            }
+            sb_puts(&sb, "}");
+            written++;
+        }
+        sb_puts(&sb, "]}");
     }
-    sb_puts(&sb, "]}");
     int rc = enqueue(gw, &sb, seq, completed);
     LOGD("Lote %s de %s: %d registro(s), %lu B", trigger, d->code, selected, (unsigned long) sb.len);
     sb_free(&sb);
@@ -725,6 +782,18 @@ static void compute_states(device *d)
     }
 }
 
+static int diagnostic_covers_operational(const device *d)
+{
+    for (int i = 0; i < d->noperational; i++) {
+        int found = 0;
+        for (int j = 0; j < d->ndiagnostic && !found; j++)
+            found = d->diagnostic[j] == d->operational[i];
+        if (!found)
+            return 0;
+    }
+    return d->noperational > 0;
+}
+
 static void device_due(gateway *gw, device *d, double now)
 {
     if (d->failing || !d->nranges)
@@ -761,6 +830,12 @@ static void device_due(gateway *gw, device *d, double now)
     if (now >= d->next_diagnostic) {
         d->next_diagnostic = now + d->diagnostic_s;
         enqueue_batch(gw, d, "diagnostic", d->diagnostic, d->ndiagnostic);
+        /* El diagnóstico trae también los canales operativos y el portal los guarda si
+         * corresponde: un lote programado en la misma ventana sería redundante. */
+        if (diagnostic_covers_operational(d)) {
+            d->next_storage = now + d->storage_s;
+            memcpy(d->sent_states, d->states, (size_t) d->nchannels);
+        }
         return;
     }
     if (now >= d->next_storage && d->noperational) {
@@ -818,6 +893,16 @@ static int apply_configuration(gateway *gw, const json_node *root)
         LOGE("La configuración recibida no tiene gateway.code ni devices");
         return -1;
     }
+    const json_node *caps = json_get(root, "capabilities");
+    int blocks = json_bool_or(json_get(caps, "ingestBlocks"), 0);
+    int bulk = (int) json_number_or(json_get(caps, "ingestBulkMaxBatches"), 0);
+    int health = json_bool_or(json_get(caps, "heartbeatHealth"), 0);
+    if (blocks != gw->cap_blocks || bulk != gw->cap_bulk || health != gw->cap_health)
+        LOGI("Portal: formato compacto %s, envío agrupado %s, salud en heartbeat %s", blocks ? "sí" : "no",
+             bulk > 1 ? "sí" : "no", health ? "sí" : "no");
+    gw->cap_blocks = blocks;
+    gw->cap_bulk = bulk < 0 ? 0 : bulk > 50 ? 50 : bulk;
+    gw->cap_health = health;
     strbuf sig;
     sb_init(&sig);
     sb_puts(&sig, code);
@@ -936,12 +1021,71 @@ static int load_configuration(gateway *gw)
 
 static void backoff(gateway *gw, const char *reason);
 
-static void heartbeat(gateway *gw)
+/* Salud del equipo para el portal: lo propio del gateway más lo que publica la vigilancia
+ * de red (salida activa, señal, consumo 4G del mes, reinicios). */
+static void health_json(gateway *gw, strbuf *sb)
+{
+    int ok = 0;
+    for (int i = 0; i < gw->ndevices; i++)
+        ok += !gw->devices[i].failing;
+    sb_printf(sb, "{\"health\":{\"version\":\"%s\",\"queue\":%lu,\"uptimeS\":%.0f,\"devices\":%d,\"devicesOk\":%d",
+              CAM5_VERSION, gw->queue.count, uptime_now(), gw->ndevices, ok);
+    struct statvfs vfs;
+    if (statvfs("/", &vfs) == 0 && vfs.f_blocks > 0)
+        sb_printf(sb, ",\"rootfsPct\":%d", (int) (100 - (vfs.f_bavail * 100) / vfs.f_blocks));
+    char *mem = read_file("/proc/meminfo", NULL, 8192);
+    if (mem) {
+        const char *p = strstr(mem, "MemAvailable:");
+        if (p)
+            sb_printf(sb, ",\"memFreeKb\":%ld", strtol(p + 13, NULL, 10));
+        free(mem);
+    }
+    size_t len = 0;
+    char *text = gw->cfg.net_status_file[0] ? read_file(gw->cfg.net_status_file, &len, 64 * 1024) : NULL;
+    json_node *net = text ? json_parse(text, len, NULL, 0) : NULL;
+    if (net) {
+        const json_node *modem = json_get(net, "modem"), *watch = json_get(net, "netwatch");
+        const char *uplink = json_string_or(json_get(watch, "uplink"), "");
+        sb_printf(sb, ",\"uplink\":\"%s\"", !strncmp(uplink, "wlan", 4) ? "wifi" : !strncmp(uplink, "rmnet", 5) ? "4g" : "none");
+        const char *rssi = json_string_or(json_get(modem, "rssi"), "");
+        if (*rssi >= '0' && *rssi <= '9')
+            sb_printf(sb, ",\"csq\":%d", atoi(rssi));
+        const char *rat = json_string_or(json_get(modem, "rat"), ""), *op = json_string_or(json_get(modem, "operator"), "");
+        if (*rat) {
+            sb_puts(sb, ",\"rat\":");
+            sb_json_string(sb, rat);
+        }
+        if (*op) {
+            sb_puts(sb, ",\"operator\":");
+            sb_json_string(sb, op);
+        }
+        sb_printf(sb, ",\"reboots24h\":%d", (int) json_number_or(json_get(watch, "reboots_24h"), 0));
+        const char *month = json_string_or(json_get(watch, "lte_month"), "");
+        if (*month) {
+            sb_puts(sb, ",\"lteMonth\":");
+            sb_json_string(sb, month);
+            sb_printf(sb, ",\"lteMonthMb\":%.1f", json_number_or(json_get(watch, "lte_month_bytes"), 0) / 1048576.0);
+        }
+        json_free(net);
+    }
+    free(text);
+    sb_puts(sb, "}}");
+}
+
+static void heartbeat(gateway *gw, int with_health)
 {
     http_response resp;
     char err[300];
+    strbuf body;
+    sb_init(&body);
+    if (with_health)
+        health_json(gw, &body);
+    else
+        sb_puts(&body, "{}");
     int64_t sent = wall_ms();
-    if (http_request(&gw->http, "POST", "/gateway/heartbeat", gw->cfg.token, "{}", 2, NULL, &resp, err, sizeof(err)) != 0) {
+    int rc = http_request(&gw->http, "POST", "/gateway/heartbeat", gw->cfg.token, body.data, body.len, NULL, &resp, err, sizeof(err));
+    sb_free(&body);
+    if (rc != 0) {
         char reason[340];
         snprintf(reason, sizeof(reason), "heartbeat fallido: %s", err);
         backoff(gw, reason);
@@ -985,32 +1129,171 @@ static int permanent_rejection(int status)
     return status == 400 || status == 403 || status == 404 || status == 413 || status == 422;
 }
 
+/* Aplica la respuesta del portal a un lote. 0: el lote sale de la cola (aceptado, duplicado,
+ * diferido o rechazado definitivamente); -1: debe reintentarse más tarde. */
+static int settle_item(gateway *gw, queue_item *item, const char *payload, size_t len, int status,
+                       const json_node *answer, const char *excerpt)
+{
+    if (status == 200 || status == 202) {
+        json_node *batch = json_parse(payload, len, NULL, 0);
+        const char *result = json_string_or(json_get(answer, "status"), "accepted");
+        const char *trigger = json_string_or(json_get(batch, "trigger"), "?");
+        const char *code = json_string_or(json_get(json_get(batch, "device"), "code"), "?");
+        LOGI("%s %s %s: %d registro(s)", result, code, trigger, (int) json_number_or(json_get(answer, "accepted"), 0));
+        double next_upload = json_number_or(json_get(answer, "nextUploadInMs"), 0);
+        /* El portal mide el intervalo desde que recibió el lote; seguir su
+         * indicación evita envíos «deferred». Un diagnóstico con registros
+         * fuera de rango o sin dato también guarda los canales operativos. */
+        int stored_operational = strcmp(trigger, "diagnostic") != 0 || json_number_or(json_get(answer, "operationalReadings"), 0) > 0;
+        if (next_upload > 0 && stored_operational && strcmp(trigger, "error") != 0) {
+            device *d = device_by_code(gw, code);
+            if (d)
+                d->next_storage = mono_now() + next_upload / 1000.0;
+        }
+        if (strcmp(result, "duplicate") != 0)
+            gw->last_contact = mono_now(); /* el portal ya registró la conectividad */
+        json_free(batch);
+        queue_remove(&gw->queue, item);
+        gw->retry_index = 0;
+        gw->last_accept_up = uptime_now();
+        return 0;
+    }
+    if (permanent_rejection(status)) {
+        LOGE("Lote %s rechazado (%d): %s", item->name, status, excerpt ? excerpt : "");
+        queue_reject(&gw->queue, item);
+        return 0;
+    }
+    return -1;
+}
+
+/* Carga el lote y actualiza sentAt; NULL si está vencido o ilegible (ya archivado). */
+static char *load_for_send(gateway *gw, queue_item *item, size_t *len)
+{
+    if (wall_ms() - item->completed_ms > QUEUE_MAX_AGE_MS) {
+        LOGW("Lote %s excede 7 días; se archiva sin enviar", item->name);
+        queue_reject(&gw->queue, item);
+        return NULL;
+    }
+    char *payload = queue_load(&gw->queue, item, len);
+    if (!payload) {
+        LOGW("Lote %s ilegible; se archiva", item->name);
+        queue_reject(&gw->queue, item);
+        return NULL;
+    }
+    size_t prefix = sizeof(PAYLOAD_PREFIX) - 1;
+    if (*len > prefix + ISO_LEN && !memcmp(payload, PAYLOAD_PREFIX, prefix)) {
+        char now[ISO_LEN + 1];
+        iso_from_ms(wall_ms(), now);
+        memcpy(payload + prefix, now, ISO_LEN);
+    }
+    return payload;
+}
+
+#define BULK_MAX_ITEMS 20
+
+/*
+ * Varios lotes en una sola solicitud {"batches":[…]}: con dos CAM-5, o al vaciar la cola
+ * después de un corte, ahorra las cabeceras y el saludo TLS de cada lote. El portal responde
+ * el estado de cada uno en "results", en el mismo orden. Devuelve 1 si lo manejó, 0 si hay
+ * que seguir con el envío individual.
+ */
+static int flush_bulk(gateway *gw)
+{
+    int max = gw->cap_bulk < BULK_MAX_ITEMS ? gw->cap_bulk : BULK_MAX_ITEMS;
+    if (max < 2 || gw->bulk_disabled || gw->queue.count < 2)
+        return 0;
+    queue_item items[BULK_MAX_ITEMS];
+    char *payloads[BULK_MAX_ITEMS];
+    size_t lens[BULK_MAX_ITEMS];
+    int n = queue_oldest(&gw->queue, items, max), used = 0;
+    strbuf sb;
+    sb_init(&sb);
+    sb_puts(&sb, "{\"batches\":[");
+    for (int i = 0; i < n; i++) {
+        size_t len;
+        char *payload = load_for_send(gw, &items[i], &len);
+        if (!payload)
+            continue;
+        if (used && sb.len + len + 3 > BULK_MAX_BYTES) {
+            free(payload);
+            break;
+        }
+        if (used)
+            sb_puts(&sb, ",");
+        sb_append(&sb, payload, len);
+        items[used] = items[i];
+        payloads[used] = payload;
+        lens[used] = len;
+        used++;
+    }
+    sb_puts(&sb, "]}");
+    if (used < 2) {
+        for (int i = 0; i < used; i++)
+            free(payloads[i]);
+        sb_free(&sb);
+        return used == 1 ? 0 : 1;
+    }
+
+    http_response resp;
+    char err[300];
+    int64_t sent = wall_ms();
+    int rc = http_request(&gw->http, "POST", "/gateway/ingest", gw->cfg.token, sb.data, sb.len, NULL, &resp, err, sizeof(err));
+    int64_t received = wall_ms();
+    sb_free(&sb);
+    if (rc != 0) {
+        backoff(gw, err);
+    } else {
+        json_node *root = resp.status == 200 ? json_parse(resp.body, resp.body_len, NULL, 0) : NULL;
+        const json_node *results = json_get(root, "results");
+        if (!results || results->type != JSON_ARRAY || json_count(results) != (size_t) used) {
+            if (resp.status == 400 || resp.status == 404 || resp.status == 405 || resp.status == 413 || resp.status == 422 || resp.status == 200) {
+                /* Portal sin envío agrupado: los lotes siguen en la cola y salen uno por uno. */
+                gw->bulk_disabled = 1;
+                LOGW("El portal no aceptó el envío agrupado (HTTP %d); se envía de a un lote", resp.status);
+            } else {
+                char reason[64];
+                snprintf(reason, sizeof(reason), "HTTP %d", resp.status);
+                log_http_failure("Ingestión agrupada", &resp);
+                backoff(gw, reason);
+            }
+        } else {
+            observe_server_time(root, sent, received);
+            int pending = 0, i = 0;
+            for (const json_node *r = results->child; r; r = r->next, i++) {
+                int status = (int) json_number_or(json_get(r, "httpStatus"), 500);
+                if (settle_item(gw, &items[i], payloads[i], lens[i], status, r, json_string_or(json_get(r, "error"), NULL)) != 0)
+                    pending++;
+            }
+            LOGD("Envío agrupado: %d lote(s), %lu B", used, (unsigned long) resp.body_len);
+            if (pending)
+                backoff(gw, "lotes con error transitorio en el envío agrupado");
+        }
+        json_free(root);
+        http_response_free(&resp);
+    }
+    for (int i = 0; i < used; i++)
+        free(payloads[i]);
+    return 1;
+}
+
 static void flush_queue(gateway *gw)
 {
     if (mono_now() < gw->next_attempt || gw->queue.count == 0)
         return;
+    if (flush_bulk(gw))
+        return;
     queue_item items[MAX_FLUSH_PER_LOOP];
     int n = queue_oldest(&gw->queue, items, MAX_FLUSH_PER_LOOP);
+    double began = mono_now();
     for (int i = 0; i < n && g_running; i++) {
-        if (wall_ms() - items[i].completed_ms > QUEUE_MAX_AGE_MS) {
-            LOGW("Lote %s excede 7 días; se archiva sin enviar", items[i].name);
-            queue_reject(&gw->queue, &items[i]);
-            continue;
-        }
+        /* Con un 4G lento, vaciar la cola de una vez dejaría a los controladores sin leer:
+         * el resto sale en la vuelta siguiente, 200 ms después de una nueva lectura. */
+        if (i > 0 && mono_now() - began > FLUSH_BUDGET_SECONDS)
+            break;
         size_t len;
-        char *payload = queue_load(&gw->queue, &items[i], &len);
-        if (!payload) {
-            LOGW("Lote %s ilegible; se archiva", items[i].name);
-            queue_reject(&gw->queue, &items[i]);
+        char *payload = load_for_send(gw, &items[i], &len);
+        if (!payload)
             continue;
-        }
-        size_t prefix = sizeof(PAYLOAD_PREFIX) - 1;
-        if (len > prefix + ISO_LEN && !memcmp(payload, PAYLOAD_PREFIX, prefix)) {
-            char now[ISO_LEN + 1];
-            iso_from_ms(wall_ms(), now);
-            memcpy(payload + prefix, now, ISO_LEN);
-        }
-
         http_response resp;
         char err[300];
         int64_t sent = wall_ms();
@@ -1021,37 +1304,15 @@ static void flush_queue(gateway *gw)
             backoff(gw, err);
             break;
         }
-        if (resp.status == 200 || resp.status == 202) {
-            json_node *answer = json_parse(resp.body, resp.body_len, NULL, 0);
-            json_node *batch = json_parse(payload, len, NULL, 0);
-            const char *status = json_string_or(json_get(answer, "status"), "accepted");
-            const char *trigger = json_string_or(json_get(batch, "trigger"), "?");
-            const char *code = json_string_or(json_get(json_get(batch, "device"), "code"), "?");
-            LOGI("%s %s %s: %d registro(s)", status, code, trigger, (int) json_number_or(json_get(answer, "accepted"), 0));
+        json_node *answer = json_parse(resp.body, resp.body_len, NULL, 0);
+        if (resp.status == 200 || resp.status == 202)
             observe_server_time(answer, sent, received);
-            double next_upload = json_number_or(json_get(answer, "nextUploadInMs"), 0);
-            /* El portal mide el intervalo desde que recibió el lote; seguir su
-             * indicación evita envíos «deferred». Un diagnóstico con registros
-             * fuera de rango o sin dato también guarda los canales operativos. */
-            int stored_operational = strcmp(trigger, "diagnostic") != 0 || json_number_or(json_get(answer, "operationalReadings"), 0) > 0;
-            if (next_upload > 0 && stored_operational && strcmp(trigger, "error") != 0) {
-                device *d = device_by_code(gw, code);
-                if (d)
-                    d->next_storage = mono_now() + next_upload / 1000.0;
-            }
-            if (strcmp(status, "duplicate") != 0)
-                gw->last_contact = mono_now(); /* el portal ya registró la conectividad */
-            json_free(answer);
-            json_free(batch);
-            queue_remove(&gw->queue, &items[i]);
-            gw->retry_index = 0;
-        } else if (permanent_rejection(resp.status)) {
-            char excerpt[400] = "";
-            if (resp.body)
-                copy_str(excerpt, sizeof(excerpt), resp.body);
-            LOGE("Lote %s rechazado (%d): %s", items[i].name, resp.status, excerpt);
-            queue_reject(&gw->queue, &items[i]);
-        } else {
+        char excerpt[400] = "";
+        if (resp.body)
+            copy_str(excerpt, sizeof(excerpt), resp.body);
+        int settled = settle_item(gw, &items[i], payload, len, resp.status, answer, excerpt);
+        json_free(answer);
+        if (settled != 0) {
             char reason[64];
             snprintf(reason, sizeof(reason), "HTTP %d", resp.status);
             log_http_failure("Ingestión", &resp);
@@ -1062,6 +1323,23 @@ static void flush_queue(gateway *gw)
         }
         http_response_free(&resp);
         free(payload);
+    }
+}
+
+/* Escribe uptime, último lote aceptado y cola en un archivo en RAM (tmpfs). Lo lee
+ * /etc/init.d/cam5-gateway status: sin actualización por 3 min, el vigilante lo reinicia. */
+static void write_alive(gateway *gw, double now)
+{
+    if (!gw->cfg.alive_file[0] || now < gw->next_alive)
+        return;
+    gw->next_alive = now + ALIVE_INTERVAL_SECONDS;
+    char text[200];
+    int n = snprintf(text, sizeof(text), "uptime=%.0f\nlast_accept=%.0f\nqueue=%lu\npid=%ld\n", uptime_now(),
+                     gw->last_accept_up, gw->queue.count, (long) getpid());
+    static int warned = 0;
+    if (n > 0 && write_file_atomic(gw->cfg.alive_file, text, (size_t) n) != 0 && !warned) {
+        warned = 1;
+        LOGW("No se pudo escribir el archivo de vida %s: %s", gw->cfg.alive_file, strerror(errno));
     }
 }
 
@@ -1083,7 +1361,7 @@ static int run(gateway *gw)
         double now = mono_now();
         if (now >= gw->next_config) {
             if (load_configuration(gw) == 0) {
-                gw->next_config = now + CONFIG_REFRESH_SECONDS;
+                gw->next_config = now + gw->cfg.config_refresh_s;
             } else {
                 if (gw->cfg.run_once) {
                     LOGE("No fue posible obtener la configuración y no hay copia local");
@@ -1099,8 +1377,12 @@ static int run(gateway *gw)
              * Durante una caída de red espera el mismo retroceso que la cola,
              * para no bloquear el ciclo con dos intentos fallidos seguidos. */
             double idle = gw->heartbeat_s > gw->cfg.heartbeat_idle_s ? gw->heartbeat_s : gw->cfg.heartbeat_idle_s;
-            if (now - gw->last_contact >= idle - 1 || gw->last_contact == 0)
-                heartbeat(gw);
+            if (gw->cap_health && now >= gw->next_health) {
+                gw->next_health = now + HEALTH_INTERVAL_SECONDS;
+                heartbeat(gw, 1);
+            } else if (now - gw->last_contact >= idle - 1 || gw->last_contact == 0) {
+                heartbeat(gw, 0);
+            }
             gw->next_heartbeat = now + gw->heartbeat_s;
         }
         for (int i = 0; i < gw->ndevices; i++) {
@@ -1108,6 +1390,7 @@ static int run(gateway *gw)
             device_due(gw, &gw->devices[i], now);
         }
         flush_queue(gw);
+        write_alive(gw, mono_now());
         if (now >= gw->next_stats || g_dump_stats) {
             if (gw->next_stats > 0)
                 log_stats(gw);

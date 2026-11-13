@@ -21,7 +21,48 @@ import { Pagination } from "./pagination";
 
 type NoticeTone = "success" | "info" | "warning";
 type ConfirmRequest = { title: string; detail: string; confirmLabel: string; tone?: "default" | "danger"; onConfirm: () => void };
-type Gateway = { id: string; code: string; name: string; state: string; active: boolean; lastSeenAt: string | null; softwareVersion: string | null; ipAddress: string | null; activeCredentials: number };
+type GatewayHealth = Partial<Record<"version" | "uplink" | "rat" | "operator" | "receivedAt" | "lteMonth", string>> & Partial<Record<"csq" | "lteMonthMb" | "queue" | "uptimeS" | "devices" | "devicesOk" | "memFreeKb" | "rootfsPct" | "reboots24h", number>>;
+type Gateway = { id: string; code: string; name: string; state: string; active: boolean; lastSeenAt: string | null; softwareVersion: string | null; ipAddress: string | null; activeCredentials: number; health: GatewayHealth | null };
+
+const UPLINK_LABELS: Record<string, string> = { wifi: "Wi-Fi", "4g": "4G", none: "Sin salida" };
+
+function signalLabel(csq: number | undefined): string {
+  if (csq === undefined || csq === 99) return "—";
+  const dbm = -113 + 2 * csq;
+  return `${dbm} dBm · ${csq >= 20 ? "buena" : csq >= 14 ? "regular" : csq >= 10 ? "débil" : "muy débil"}`;
+}
+
+function sinceLabel(iso: string | null | undefined): string {
+  if (!iso) return "nunca";
+  const seconds = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+  if (seconds < 90) return `hace ${seconds} s`;
+  if (seconds < 5400) return `hace ${Math.round(seconds / 60)} min`;
+  if (seconds < 172800) return `hace ${Math.round(seconds / 3600)} h`;
+  return `hace ${Math.round(seconds / 86400)} días`;
+}
+
+function GatewayHealthPanel({ gateways }: { gateways: Gateway[] }) {
+  const reporting = gateways.filter((gateway) => gateway.health);
+  if (!reporting.length) return null;
+  return <section className="panel gateway-health-panel" aria-label="Estado de los gateways en terreno">
+    <header><IconRouter size={18} /><div><h2>Equipos en terreno</h2><p>Lo informa cada gateway en su heartbeat (cada 15 min).</p></div></header>
+    <div className="gateway-health-list">{reporting.map((gateway) => {
+      const health = gateway.health!;
+      return <article key={gateway.id}>
+        <div className="gateway-health-title"><strong>{gateway.code}</strong><small>{gateway.name}</small><span className={`gateway-health-state ${gateway.state === "online" ? "online" : ""}`}>{gateway.state === "online" ? "En línea" : "Sin conexión"} · {sinceLabel(gateway.lastSeenAt)}</span></div>
+        <dl>
+          <div><dt>Salida</dt><dd>{UPLINK_LABELS[health.uplink ?? ""] ?? health.uplink ?? "—"}</dd></div>
+          <div><dt>Señal 4G</dt><dd>{signalLabel(health.csq)}{health.rat ? ` · ${health.rat}` : ""}</dd></div>
+          <div><dt>Datos 4G del mes</dt><dd>{health.lteMonthMb !== undefined ? `${health.lteMonthMb.toFixed(1)} MB` : "—"}</dd></div>
+          <div><dt>Controladores</dt><dd>{health.devices !== undefined ? `${health.devicesOk ?? 0}/${health.devices} respondiendo` : "—"}</dd></div>
+          <div><dt>Cola</dt><dd>{health.queue ?? "—"} lote(s)</dd></div>
+          <div><dt>Versión</dt><dd>{health.version ?? gateway.softwareVersion ?? "—"}</dd></div>
+        </dl>
+        <small className="gateway-health-foot">Informe {sinceLabel(health.receivedAt)}{health.uptimeS !== undefined ? ` · encendido hace ${Math.round(health.uptimeS / 3600)} h` : ""}{health.reboots24h ? ` · ${health.reboots24h} reinicio(s) en 24 h` : ""}</small>
+      </article>;
+    })}</div>
+  </section>;
+}
 type Credential = { id: string; name: string; tokenPrefix: string; gateway: { id: string; code: string; name: string }; status: "active" | "unused" | "revoked" | "expired"; expiresAt: string | null; lastUsedAt: string | null; revokedAt: string | null; createdAt: string };
 type ProvisioningResponse = {
   gateways: Gateway[];
@@ -265,6 +306,8 @@ export function GatewayProvisioningView({
       <article><span className="module-summary-icon green"><IconKey size={19} /></span><div><small>Credenciales vigentes</small><strong>{data.summary.activeCredentials}</strong><span>{data.summary.usedCredentials} verificadas por uso</span></div></article>
       <article className={data.summary.expiringCredentials || data.summary.expiredCredentials ? "summary-attention" : ""}><span className="module-summary-icon amber"><IconClock size={19} /></span><div><small>Renovación requerida</small><strong>{data.summary.expiringCredentials + data.summary.expiredCredentials}</strong><span>{data.summary.expiredCredentials} vencidas · {data.summary.expiringCredentials} por vencer</span></div></article>
     </section>
+
+    <GatewayHealthPanel gateways={data.gateways} />
 
     {secret && <div className="credential-secret-backdrop">
       <section className="panel credential-reveal credential-secret-dialog" role="alertdialog" aria-modal="true" aria-labelledby="gateway-token-title" aria-describedby="gateway-token-description">

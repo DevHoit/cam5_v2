@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HOIT Gateway Portal — Seguridad y acceso</title>
+<link rel="stylesheet" href="assets/hoit.css">
+<link rel="stylesheet" href="assets/gateway-identity-context-v1.css?v=1.3">
+<link rel="stylesheet" href="assets/security-access-v1.css?v=1.1">
+<link rel="stylesheet" href="assets/navigation-v1.css?v=1.0">
+</head>
+<body data-page="security-access">
+<div class="app">
+
+<aside class="sidebar" id="sidebar">
+  <a class="logo-wrap" href="index.html"><img class="logo-img" src="assets/logo.png" alt="HOIT"></a>
+  <nav class="nav">
+    <a class="nav-item" href="index.html"><span>Dashboard</span></a>
+    <a class="nav-item" href="dispositivos.html"><span>Dispositivos</span></a>
+    <a class="nav-item" href="sistema.html"><span>Sistema</span></a>
+  </nav>
+  <div class="sidebar-foot"><b id="sidebarDeviceId">Gateway HOIT</b><br><span id="sidebarPortalVersion">Portal local</span></div>
+</aside>
+
+<div class="scrim" id="scrim"></div>
+
+<div class="main">
+<header class="topbar">
+  <button class="burger" id="burger" type="button" aria-label="Menú">☰</button>
+  <div class="crumb"><span>Seguridad y acceso</span><small id="securityCrumb">Usuarios y roles</small></div>
+  <div class="topbar-right">
+    <div class="health-pill"><span class="dot ok"></span><span id="securityHealth">Autenticación v2</span></div>
+    <button class="btn ghost sm" id="refreshBtn" type="button">Actualizar</button>
+    <button class="btn primary sm" id="newUserBtn" type="button">Nuevo usuario</button>
+    <div class="user-chip">AD</div>
+  </div>
+</header>
+
+<div class="content security-page">
+<section class="page on">
+
+  <div class="security-hero">
+    <div>
+      <span class="security-eyebrow">ROLE-BASED LOCAL ACCESS</span>
+      <h2 class="section-title">Seguridad y acceso</h2>
+      <p class="section-sub">Administra cuentas locales, permisos, sesiones y políticas de bloqueo.</p>
+    </div>
+  </div>
+
+  <div class="security-kpis">
+    <div class="security-kpi"><small>Usuarios</small><b id="userCount">—</b><span>Cuentas configuradas</span></div>
+    <div class="security-kpi"><small>Administradores</small><b id="adminCount">—</b><span>Habilitados</span></div>
+    <div class="security-kpi"><small>Sesiones</small><b id="sessionCount">—</b><span>Activas</span></div>
+    <div class="security-kpi"><small>Sesión actual</small><b id="currentUser">—</b><span id="currentRole">—</span></div>
+  </div>
+
+  <div class="security-layout">
+    <div class="card">
+      <div class="card-h"><h3>Usuarios locales</h3><span class="spacer"></span><button class="btn ghost sm" id="logoutOthersBtn" type="button">Cerrar otras sesiones</button></div>
+      <div class="card-b">
+        <div id="userList" class="security-user-list">
+          <div class="security-empty">Cargando usuarios…</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="security-side-stack">
+      <div class="card" id="netAccessCard">
+        <div class="card-h"><h3>Acceso desde el Wi-Fi corporativo</h3><span class="spacer"></span><span class="security-net-badge" id="netAccessBadge">—</span></div>
+        <div class="card-b">
+          <p class="security-net-help">Define si el portal y SSH responden en la red Wi-Fi a la que se conecta el gateway (<b id="netWifiIf">wlan1</b> · <span id="netWifiIp">—</span>). Bloqueado, esa red solo sirve de salida a internet. Por el hotspot del gateway, el cable del CAM-5 y USB el acceso no cambia; por 4G nunca se acepta.</p>
+          <div class="security-policy-grid">
+            <div class="field"><label>Acceso</label>
+              <select id="netMode">
+                <option value="allow">Permitido</option>
+                <option value="temp">Permitido por un tiempo</option>
+                <option value="block">Bloqueado</option>
+              </select>
+            </div>
+            <div class="field" id="netHoursField"><label>Duración</label>
+              <select id="netHours">
+                <option value="2">2 horas</option>
+                <option value="8">8 horas</option>
+                <option value="24">24 horas</option>
+                <option value="72">3 días</option>
+              </select>
+            </div>
+            <div class="field full"><label>Solo desde estas IP (opcional)</label><input id="netAllow" maxlength="200" autocomplete="off" placeholder="Ej.: 192.168.1.20 192.168.1.21"><small>Vacío: cualquier equipo de esa red. Tu IP actual: <span id="netClientIp">—</span></small></div>
+          </div>
+          <div class="security-net-warn" id="netWarn" hidden></div>
+          <div class="security-actions"><button class="btn primary" id="saveNetBtn" type="button">Aplicar</button></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-h"><h3>Política de acceso</h3></div>
+        <div class="card-b">
+          <div class="security-policy-grid">
+            <div class="field"><label>Duración de sesión</label>
+              <select id="sessionTtl">
+                <option value="900">15 minutos</option>
+                <option value="1800">30 minutos</option>
+                <option value="3600">1 hora</option>
+                <option value="14400">4 horas</option>
+                <option value="28800">8 horas</option>
+                <option value="86400">24 horas</option>
+              </select>
+            </div>
+            <div class="field"><label>Longitud mínima</label><input id="passwordMin" type="number" min="10" max="32"></div>
+            <div class="field"><label>Intentos permitidos</label><input id="maxFailures" type="number" min="3" max="10"></div>
+            <div class="field"><label>Ventana de intentos</label><input id="failureWindow" type="number" min="60" max="1800"><small>segundos</small></div>
+            <div class="field"><label>Bloqueo temporal</label><input id="lockoutSeconds" type="number" min="60" max="3600"><small>segundos</small></div>
+          </div>
+          <div class="security-actions"><button class="btn primary" id="savePolicyBtn" type="button">Guardar política</button></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-h"><h3>Roles</h3></div>
+        <div class="card-b security-role-list">
+          <div><span class="security-role admin">Administrador</span><p>Usuarios, actualizaciones, restauraciones y configuración completa.</p></div>
+          <div><span class="security-role operator">Operador</span><p>Lectura y cambios operacionales; sin usuarios, actualizaciones ni restauraciones.</p></div>
+          <div><span class="security-role viewer">Solo lectura</span><p>Consulta del portal y diagnósticos, sin acciones de escritura.</p></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-h"><h3>Recuperación</h3></div>
+        <div class="card-b security-note">
+          <p>No existe contraseña maestra ni puerta trasera remota.</p>
+          <p>La recuperación de administrador se incorporará al paquete maestro mediante un procedimiento físico local y auditable.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</section>
+</div>
+</div>
+
+<div class="overlay" id="userModal">
+  <div class="modal security-modal" role="dialog" aria-modal="true">
+    <div class="m-icon">U</div>
+    <h4 id="userModalTitle">Nuevo usuario</h4>
+    <p>Las contraseñas se guardan únicamente como hash con salt individual.</p>
+
+    <div class="security-modal-grid">
+      <div class="field"><label>Usuario</label><input id="username" maxlength="32" autocomplete="off"></div>
+      <div class="field"><label>Rol</label>
+        <select id="userRole">
+          <option value="admin">Administrador</option>
+          <option value="operator">Operador</option>
+          <option value="viewer">Solo lectura</option>
+        </select>
+      </div>
+      <div class="field full"><label>Contraseña inicial</label><input id="userPassword" type="password" maxlength="64" autocomplete="new-password"><small id="passwordHelp">Obligatoria para usuarios nuevos.</small></div>
+      <label class="security-check"><input id="userEnabled" type="checkbox" checked> Cuenta habilitada</label>
+      <label class="security-check"><input id="userMustChange" type="checkbox" checked> Exigir cambio de contraseña</label>
+    </div>
+
+    <div class="m-actions">
+      <button class="btn ghost" id="cancelUserBtn" type="button">Cancelar</button>
+      <button class="btn primary" id="saveUserBtn" type="button">Guardar usuario</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="deleteModal">
+  <div class="modal" role="dialog" aria-modal="true">
+    <div class="m-icon">!</div>
+    <h4>Eliminar usuario</h4>
+    <p id="deleteMessage">Se eliminará la cuenta seleccionada.</p>
+    <div class="m-actions">
+      <button class="btn ghost" id="cancelDeleteBtn" type="button">Cancelar</button>
+      <button class="btn primary security-danger" id="confirmDeleteBtn" type="button">Eliminar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"><span class="dot ok"></span><span id="toastMsg"></span></div>
+</div>
+
+<script src="assets/hoit.js"></script>
+<script src="assets/gateway-identity-context-v1.js?v=1.3"></script>
+<script src="assets/security-access-v1.js?v=1.1"></script>
+<script src="assets/navigation-v1.js?v=1.0"></script>
+</body>
+</html>

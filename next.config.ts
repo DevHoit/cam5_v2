@@ -31,7 +31,9 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   async headers() {
-    return [{ source: "/:path*", headers: securityHeaders }];
+    // La API de los gateways no la abre un navegador: sin estas cabeceras cada respuesta pesa
+    // ~450 B menos, y los gateways de terreno conversan por 4G con datos limitados.
+    return [{ source: "/:path((?!api/v1/gateway/).*)", headers: securityHeaders }];
   },
 };
 

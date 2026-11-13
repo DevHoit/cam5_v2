@@ -83,6 +83,43 @@ uptime_s() { awk '{print int($1)}' /proc/uptime 2>/dev/null || echo 0; }
 iface_ip() { ip -4 addr show dev "$1" 2>/dev/null | awk '/inet /{split($2,a,"/"); print a[1]; exit}'; }
 
 rx_bytes() { cat "/sys/class/net/$1/statistics/rx_bytes" 2>/dev/null || echo 0; }
+tx_bytes() { cat "/sys/class/net/$1/statistics/tx_bytes" 2>/dev/null || echo 0; }
+
+# Consumo 4G del mes (bajada + subida de WAN_IF). Los contadores del kernel vuelven a 0 al
+# reiniciar o al recrearse la interfaz: se suman diferencias. El total vive en RAM y se guarda
+# en /cache cada 15 ciclos (y al cambiar de mes): un corte de energía pierde como máximo 15 min.
+LTE_USAGE_FILE="${LTE_USAGE_FILE:-/cache/hoit/lte_usage}"
+lte_usage() {
+    MONTH="$(date +%Y-%m)"
+    if [ ! -f "$RUN_DIR/lte_month" ]; then
+        if [ -f "$LTE_USAGE_FILE" ]; then
+            set_s lte_month "$(sed -n 's/^month=//p' "$LTE_USAGE_FILE")"
+            set_n lte_month_bytes "$(sed -n 's/^bytes=//p' "$LTE_USAGE_FILE")"
+        else
+            set_s lte_month "$MONTH"; set_n lte_month_bytes 0
+        fi
+    fi
+    NOW_B=$(( $(rx_bytes "$WAN_IF") + $(tx_bytes "$WAN_IF") ))
+    LAST_B="$(get_n lte_counter)"
+    if [ "$NOW_B" -ge "$LAST_B" ]; then DELTA=$((NOW_B - LAST_B)); else DELTA="$NOW_B"; fi
+    set_n lte_counter "$NOW_B"
+    TOTAL="$(get_n lte_month_bytes)"; case "$TOTAL" in ''|*[!0-9]*) TOTAL=0 ;; esac
+    SAVE=0
+    if [ "$(get_s lte_month)" != "$MONTH" ]; then
+        # Reloj sin sincronizar (1980): no se reinicia el mes por una fecha falsa.
+        if [ "${MONTH%%-*}" -ge 2024 ]; then
+            log "Consumo 4G de $(get_s lte_month): $((TOTAL / 1048576)) MB; comienza $MONTH"
+            set_s lte_month "$MONTH"; TOTAL=0; SAVE=1
+        fi
+    fi
+    TOTAL=$((TOTAL + DELTA))
+    set_n lte_month_bytes "$TOTAL"
+    [ $((CYCLE % 15)) -eq 0 ] && SAVE=1
+    if [ "$SAVE" = 1 ]; then
+        printf 'month=%s\nbytes=%s\n' "$(get_s lte_month)" "$TOTAL" > "$LTE_USAGE_FILE.tmp" &&
+            mv -f "$LTE_USAGE_FILE.tmp" "$LTE_USAGE_FILE"
+    fi
+}
 
 # Comando AT con bloqueo exclusivo del puerto y lector propio (no mata otros procesos).
 at_cmd() {
@@ -237,6 +274,11 @@ kill_stale_at_readers() {
 ensure_firewall() {
     [ "$FIREWALL" = "1" ] || return 0
     command -v iptables >/dev/null 2>&1 || return 0
+    # Cortafuegos completo (IPv4/IPv6, Wi-Fi corporativo, reenvíos): ver hoit_firewall.sh.
+    if [ -x /data/hoit/bin/hoit_firewall.sh ]; then
+        /data/hoit/bin/hoit_firewall.sh apply >/dev/null 2>&1
+        return 0
+    fi
     iptables -N HOIT_GUARD 2>/dev/null
     iptables -C INPUT -j HOIT_GUARD 2>/dev/null || iptables -I INPUT 1 -j HOIT_GUARD
     if ! iptables -C HOIT_GUARD -p tcp --dport 5565 -j DROP 2>/dev/null; then
@@ -320,7 +362,9 @@ write_status() {
     "no_uplink_cycles": $(get_n no_uplink),
     "last_action": "$(json_escape "$(get_s last_action)")",
     "reboots_24h": $(reboots_last_day),
-    "check_interval_s": $CHECK_INTERVAL
+    "check_interval_s": $CHECK_INTERVAL,
+    "lte_month": "$(json_escape "$(get_s lte_month)")",
+    "lte_month_bytes": $(get_n lte_month_bytes)
   }
 }
 EOF
@@ -335,6 +379,7 @@ single_cycle() {
     [ "$CYCLE" -eq 1 ] && kill_stale_at_readers
     ensure_routes
     ensure_firewall
+    lte_usage
 
     WIFI_IP="$(iface_ip "$WIFI_IF")"
     LTE_IP="$(iface_ip "$WAN_IF")"

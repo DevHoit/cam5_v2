@@ -157,6 +157,36 @@ El backend reconoce automáticamente `0x8000` y `0xFFFF`, convierte registros `I
 }
 ```
 
+### Formato compacto (enlaces 4G)
+
+Si `GET /gateway/config` incluye `capabilities.ingestBlocks: true`, el lote puede reemplazar `readings` por bloques de registros consecutivos:
+
+```json
+"blocks": [
+  { "start": 418, "raw": [684, 541, 552] },
+  { "start": 500, "at": "2026-09-05T18:42:14.100Z", "raw": [1, 0] }
+]
+```
+
+Equivale a una lectura por registro (`register = start + i`, `rawValue = raw[i]`, `recordedAt = at` o `poll.completedAt`), con `quality: "good"` y sin banderas. No se pueden mezclar `readings` y `blocks` en el mismo lote. Un diagnóstico de 105 registros pasa de ~3,4 KB a ~0,9 KB.
+
+### Envío agrupado
+
+Con `capabilities.ingestBulkMaxBatches` mayor que 1, `POST /gateway/ingest` acepta `{"batches":[lote, lote, …]}` (hasta ese máximo y 256 KiB en total). Responde HTTP `200`:
+
+```json
+{ "status": "bulk", "serverTime": "…", "results": [
+  { "batchKey": "…", "httpStatus": 202, "status": "accepted", "accepted": 105, "nextUploadInMs": 300000 },
+  { "batchKey": "…", "httpStatus": 422, "error": "Registros fuera del mapa del controlador: 999." }
+] }
+```
+
+Cada resultado sigue las reglas de un lote individual: `200`/`202` se retira de la cola, `400`/`403`/`404`/`413`/`422` no se repite, `429`/`5xx` se reintenta.
+
+### Salud en el heartbeat
+
+Con `capabilities.heartbeatHealth: true`, el cuerpo del heartbeat puede ser `{"health":{…}}` con valores simples (hasta 40 claves): `version`, `uplink` (`wifi`, `4g`, `none`), `csq`, `rat`, `operator`, `lteMonth`, `lteMonthMb`, `devices`, `devicesOk`, `queue`, `uptimeS`, `memFreeKb`, `rootfsPct`, `reboots24h`. El portal guarda el último informe en `gateways.metadata.health` y lo muestra en **Provisionamiento → Equipos en terreno**. Las respuestas de `/api/v1/gateway/*` no llevan cabeceras de seguridad de navegador.
+
 ## Respuesta
 
 Un lote nuevo responde HTTP `202`:

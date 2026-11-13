@@ -12,19 +12,38 @@
 # Mantiene el proceso vivo con un bucle supervisor: si el gateway termina,
 # vuelve a arrancar a los 10 s. Requiere setsid (busybox).
 #
+# "status" no solo mira si el proceso existe: también exige que el gateway haya
+# actualizado su archivo de vida en los últimos 3 min y, con lotes en cola y salida
+# a internet, que haya entregado alguno en los últimos 15 min. hoit_healthd lo usa
+# para reiniciar un gateway colgado (responde "running" solo si está sano).
+#
 #   cp cam5-gateway.init /etc/init.d/cam5-gateway && chmod +x /etc/init.d/cam5-gateway
 #   update-rc.d cam5-gateway defaults        # o el enlace manual en /etc/rc5.d (ver README)
 
-BIN=/data/cam5-gateway/cam5-gateway
-ENV_FILE=/data/cam5-gateway/gateway.env
+DIR=/data/cam5-gateway
+[ -x /cache/cam5-gateway/cam5-gateway ] && DIR=/cache/cam5-gateway
+BIN="$DIR/cam5-gateway"
+ENV_FILE="$DIR/gateway.env"
 PIDFILE=/var/run/cam5-gateway.pid
+CHILDFILE=/var/run/cam5-gateway.child
+STARTED=/var/run/cam5-gateway.started
+ALIVE=/var/run/cam5-gateway.alive
+NETSTATUS=/cache/hoit/gateway_status_current.json
+STALE_S=180          # sin actualizar el archivo de vida
+UPLOAD_STALL_S=900   # cola sin vaciarse teniendo internet
+
+uptime_s() { cut -d. -f1 /proc/uptime; }
+alive_value() { sed -n "s/^$1=//p" "$ALIVE" 2>/dev/null | cut -d. -f1; }
 
 supervise() {
     echo $$ > "$PIDFILE"
     trap 'kill -TERM "$child" 2>/dev/null; wait "$child" 2>/dev/null; exit 0' TERM INT
     while :; do
+        uptime_s > "$STARTED"
+        rm -f "$ALIVE"
         "$BIN" --env-file "$ENV_FILE" >/dev/null 2>&1 &
         child=$!
+        echo "$child" > "$CHILDFILE"
         wait "$child"
         sleep 10
     done
@@ -37,7 +56,7 @@ start() {
     fi
     [ -x "$BIN" ] || { echo "No existe $BIN"; return 1; }
     [ -r "$ENV_FILE" ] || { echo "No existe $ENV_FILE"; return 1; }
-    # IP fija hacia el CAM-5 (opcional): CAM5_ETH_IFACE=eth0 y CAM5_ETH_ADDR=192.168.1.10/24
+    # IP fija hacia el CAM-5 (opcional): CAM5_ETH_IFACE=eth0 y CAM5_ETH_ADDR=192.168.0.10/24
     # en gateway.env. Se agrega como dirección adicional; no toca otras IP de la interfaz.
     ETH_ADDR="$(sed -n 's/^CAM5_ETH_ADDR=//p' "$ENV_FILE" | tr -d '\r' | tail -1)"
     ETH_IFACE="$(sed -n 's/^CAM5_ETH_IFACE=//p' "$ENV_FILE" | tr -d '\r' | tail -1)"
@@ -64,7 +83,39 @@ stop() {
         kill -TERM "$(cat "$PIDFILE")" 2>/dev/null
         rm -f "$PIDFILE"
     fi
+    # Un gateway colgado puede no atender TERM: se espera 10 s y se fuerza, para que
+    # un reinicio nunca deje dos instancias leyendo el mismo CAM-5.
+    CHILD="$(cat "$CHILDFILE" 2>/dev/null)"
+    if [ -n "$CHILD" ]; then
+        kill -TERM "$CHILD" 2>/dev/null
+        I=0
+        while kill -0 "$CHILD" 2>/dev/null && [ "$I" -lt 10 ]; do sleep 1; I=$((I + 1)); done
+        kill -9 "$CHILD" 2>/dev/null
+        rm -f "$CHILDFILE"
+    fi
     echo "cam5-gateway detenido"
+}
+
+# Imprime el motivo y devuelve 1 si el proceso existe pero no está trabajando.
+health() {
+    NOW="$(uptime_s)"
+    SINCE="$(cat "$STARTED" 2>/dev/null)"; SINCE="${SINCE:-0}"
+    if [ ! -f "$ALIVE" ]; then
+        [ $((NOW - SINCE)) -lt "$STALE_S" ] && return 0
+        echo "sin archivo de vida desde hace $((NOW - SINCE)) s"; return 1
+    fi
+    UP="$(alive_value uptime)"; UP="${UP:-0}"
+    if [ $((NOW - UP)) -gt "$STALE_S" ]; then
+        echo "colgado: sin actividad hace $((NOW - UP)) s"; return 1
+    fi
+    QUEUE="$(alive_value queue)"; QUEUE="${QUEUE:-0}"
+    LAST="$(alive_value last_accept)"; LAST="${LAST:-0}"
+    [ "$LAST" -gt 0 ] || LAST="$SINCE"
+    if [ "$QUEUE" -gt 0 ] && [ $((NOW - LAST)) -gt "$UPLOAD_STALL_S" ] &&
+       grep -Eq '"(wifi_ok|lte_ok)": *1' "$NETSTATUS" 2>/dev/null; then
+        echo "envío trabado: $QUEUE lote(s) en cola y ninguno aceptado hace $((NOW - LAST)) s con internet"; return 1
+    fi
+    return 0
 }
 
 case "$1" in
@@ -74,7 +125,11 @@ case "$1" in
     restart) stop; sleep 2; start ;;
     status)
         if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
-            echo "cam5-gateway en ejecución (supervisor $(cat "$PIDFILE"))"
+            if REASON="$(health)"; then
+                echo "cam5-gateway running (supervisor $(cat "$PIDFILE"))"
+            else
+                echo "cam5-gateway con falla: $REASON"; exit 1
+            fi
         else
             echo "cam5-gateway detenido"; exit 3
         fi
