@@ -1105,19 +1105,22 @@ function OperationalHierarchyView({
   const stateLabel = (state: string, active = true) => !active ? "Desactivado" : state === "online" || state === "active" || state === "normal" ? "Operativo" : state === "commissioning" || state === "pending" ? "En puesta en marcha" : state === "warning" || state === "degraded" ? "Atención" : state === "critical" ? "Crítico" : state === "maintenance" ? "Mantenimiento" : "Sin conexión";
 
   return <>
-    <section className="module-summary-grid hierarchy-summary">
-      <article><span className="module-summary-icon blue"><Building2 size={19} /></span><div><small>Clientes accesibles</small><strong>{hierarchy.clients.length}</strong><span>{hierarchy.sites.length} sitios autorizados</span></div></article>
-      <article><span className="module-summary-icon green"><MapPin size={19} /></span><div><small>Puntos de medición</small><strong>{hierarchy.points.length}</strong><span>En {hierarchy.active.siteName}</span></div></article>
-      <article><span className="module-summary-icon amber"><Server size={19} /></span><div><small>Cadena de adquisición</small><strong>{hierarchy.gateways.length}</strong><span>{hierarchy.controllers.length} controladores asociados</span></div></article>
+    <section className="module-summary-strip" aria-label="Resumen de la estructura">
+      <span><Building2 size={15} aria-hidden="true" /><strong>{hierarchy.clients.length}</strong> {hierarchy.clients.length === 1 ? "cliente" : "clientes"} · <strong>{hierarchy.sites.length}</strong> {hierarchy.sites.length === 1 ? "sitio" : "sitios"}</span>
+      <span><MapPin size={15} aria-hidden="true" /><strong>{hierarchy.points.length}</strong> {hierarchy.points.length === 1 ? "punto de medición" : "puntos de medición"} en {hierarchy.active.siteName}</span>
+      <span><Server size={15} aria-hidden="true" /><strong>{hierarchy.gateways.length}</strong> {hierarchy.gateways.length === 1 ? "gateway" : "gateways"} · <strong>{hierarchy.controllers.length}</strong> {hierarchy.controllers.length === 1 ? "controlador" : "controladores"}</span>
     </section>
 
     <article className="panel module-panel hierarchy-module">
       <div className="module-toolbar">
         <div className="module-tabs" role="tablist" aria-label="Estructura operacional">
-          <button className={tab === "structure" ? "active" : ""} onClick={() => setTab("structure")}><Hierarchy size={16} /> Organización</button>
-          <button className={tab === "connections" ? "active" : ""} onClick={() => setTab("connections")}><PlugConnected size={16} /> Conexiones Modbus</button>
+          <button role="tab" aria-selected={tab === "structure"} className={tab === "structure" ? "active" : ""} onClick={() => setTab("structure")}><Hierarchy size={16} aria-hidden="true" /> Organización</button>
+          <button role="tab" aria-selected={tab === "connections"} className={tab === "connections" ? "active" : ""} onClick={() => setTab("connections")}><PlugConnected size={16} aria-hidden="true" /> Conexiones Modbus</button>
         </div>
-        {availableResources.length > 0 && <button className="primary-button" onClick={() => setShowCreate((current) => !current)}><Plus size={16} />{showCreate ? "Cancelar" : "Agregar elemento"}</button>}
+        <div className="hierarchy-toolbar-actions">
+          <label className="search-field"><Search size={17} aria-hidden="true" /><input value={query} onChange={(event) => { setQuery(event.target.value); pointPage.setPage(1); gatewayPage.setPage(1); controllerPage.setPage(1); }} placeholder="Buscar punto, gateway o controlador…" aria-label="Buscar en la estructura" /></label>
+          {availableResources.length > 0 && <button className={showCreate ? "secondary-button" : "primary-button"} onClick={() => setShowCreate((current) => !current)}>{showCreate ? <><X size={16} aria-hidden="true" /> Cancelar</> : <><Plus size={16} aria-hidden="true" /> Agregar elemento</>}</button>}
+        </div>
       </div>
 
       {showCreate && <form className="hierarchy-create-form" onSubmit={createResource}>
@@ -1132,46 +1135,45 @@ function OperationalHierarchyView({
         <button className="primary-button" type="submit" disabled={saving || (resource === "controller" && (!hierarchy.points.length || !hierarchy.gateways.length))}>{saving ? "Guardando…" : "Registrar"}</button>
       </form>}
 
-      <div className="hierarchy-scope-bar"><div><span className="eyebrow">Contexto operacional</span><strong>{hierarchy.active.clientName} <ChevronRight size={14} /> {hierarchy.active.siteName}</strong></div><label className="search-field"><Search size={17} /><input value={query} onChange={(event) => { setQuery(event.target.value); pointPage.setPage(1); gatewayPage.setPage(1); controllerPage.setPage(1); }} placeholder="Buscar punto, gateway o controlador…" /></label></div>
 
       {tab === "structure" && <div className="hierarchy-workspace">
-        <aside className="organization-tree">
+        <nav className="organization-tree" aria-label="Clientes y sitios">
           {hierarchy.clients.map((client) => <section key={client.id} className={client.active ? "" : "inactive-resource"}>
             <div className="organization-client"><span><Factory size={17} /></span><div><strong>{client.name}</strong><small>{client.code}{client.active ? "" : " · Desactivado"}</small></div>{canManageClients && <button className="resource-edit-button" onClick={() => openEditor("client", client)} aria-label={`Editar cliente ${client.name}`}><Pencil size={15} /></button>}</div>
-            <div className="organization-sites">{hierarchy.sites.filter((site) => site.clientId === client.id).map((site) => <div className={`organization-site-row ${site.active && client.active ? "" : "inactive-resource"}`} key={site.id}><button className={site.id === hierarchy.active.siteId ? "active" : ""} disabled={!site.active || !client.active} onClick={() => onSwitchSite(site.id)}><span><Building2 size={16} /></span><span><strong>{site.name}</strong><small>{!client.active ? "Cliente desactivado" : site.active ? `${site.pointCount} puntos · ${site.gatewayCount} gateways` : "Sitio desactivado"}</small></span><ChevronRight size={15} /></button>{canManageClients && <button className="resource-edit-button" onClick={() => openEditor("site", site)} aria-label={`Editar sitio ${site.name}`}><Pencil size={15} /></button>}</div>)}{hierarchy.sites.every((site) => site.clientId !== client.id) && <p>Cliente sin sitios registrados.</p>}</div>
+            <div className="organization-sites">{hierarchy.sites.filter((site) => site.clientId === client.id).map((site) => <div className={`organization-site-row ${site.active && client.active ? "" : "inactive-resource"}`} key={site.id}><button className={site.id === hierarchy.active.siteId ? "active" : ""} disabled={!site.active || !client.active} onClick={() => onSwitchSite(site.id)}><span><Building2 size={16} /></span><span><strong>{site.name}</strong><small>{!client.active ? "Cliente desactivado" : site.active ? `${site.pointCount} ${site.pointCount === 1 ? "punto" : "puntos"} · ${site.gatewayCount} ${site.gatewayCount === 1 ? "gateway" : "gateways"}` : "Sitio desactivado"}</small></span><ChevronRight size={15} /></button>{canManageClients && <button className="resource-edit-button" onClick={() => openEditor("site", site)} aria-label={`Editar sitio ${site.name}`}><Pencil size={15} /></button>}</div>)}{hierarchy.sites.every((site) => site.clientId !== client.id) && <p>Cliente sin sitios registrados.</p>}</div>
           </section>)}
-        </aside>
+        </nav>
         <div className="site-inventory">
-          <section className="site-identity-card"><span><Building2 size={22} /></span><div><span className="eyebrow">Sitio activo · {activeSite?.code}</span><h2>{hierarchy.active.siteName}</h2><p>{hierarchy.active.clientName} · {activeSite?.roleName}</p></div><dl><div><dt>Puntos</dt><dd>{activeSite?.pointCount ?? 0}</dd></div><div><dt>Gateways</dt><dd>{activeSite?.gatewayCount ?? 0}</dd></div><div><dt>Controladores</dt><dd>{activeSite?.controllerCount ?? 0}</dd></div></dl></section>
+          <section className="site-identity-card"><span aria-hidden="true"><Building2 size={20} /></span><div><span className="eyebrow">Sitio activo · {activeSite?.code}</span><h2>{hierarchy.active.siteName}</h2><p>{hierarchy.active.clientName} · Tu rol: {activeSite?.roleName}</p></div></section>
           <div className="inventory-columns">
             <section>
-              <div className="inventory-heading"><div><span className="eyebrow">Medición</span><h3>Puntos de medición</h3></div><span>{filteredPoints.length}</span></div>
+              <div className="inventory-heading"><h3><MapPin size={16} aria-hidden="true" /> Puntos de medición</h3><span>{filteredPoints.length}</span></div>
               <div className="operational-card-list">{pointPage.pageItems.map((point) => {
                 const linked = hierarchy.controllers.filter((controller) => controller.pointId === point.id);
                 return <article key={point.id} className={point.active ? "" : "inactive-resource"}><span className={`operational-state state-${point.state}`}><CircuitBoard size={18} /></span><div><strong>{point.code} · {point.name}</strong><small>{point.area || "Área sin definir"} · {point.nominalVoltageKv ? `${point.nominalVoltageKv} kV` : "Tensión sin definir"}</small><em>{linked.length} controlador{linked.length === 1 ? "" : "es"} asociado{linked.length === 1 ? "" : "s"}</em></div><span className="operational-card-actions"><b>{stateLabel(point.state, point.active)}</b>{canManagePoints && <button className="resource-edit-button" onClick={() => openEditor("point", point)} aria-label={`Editar punto ${point.name}`}><Pencil size={15} /></button>}</span></article>;
               })}{pointPage.pageItems.length === 0 && <TableEmptyState title="No hay puntos de medición" detail="Registra el primer punto para asociar un controlador CAM5." />}</div>
-              <Pagination page={pointPage.page} totalPages={pointPage.totalPages} total={filteredPoints.length} pageSize={6} onPageChange={pointPage.setPage} itemLabel="puntos" />
+              {pointPage.totalPages > 1 && <Pagination page={pointPage.page} totalPages={pointPage.totalPages} total={filteredPoints.length} pageSize={6} onPageChange={pointPage.setPage} itemLabel="puntos" />}
             </section>
             <section>
-              <div className="inventory-heading"><div><span className="eyebrow">Conectividad</span><h3>Gateways del sitio</h3></div><span>{filteredGateways.length}</span></div>
+              <div className="inventory-heading"><h3><Server size={16} aria-hidden="true" /> Gateways del sitio</h3><span>{filteredGateways.length}</span></div>
               <div className="operational-card-list">{gatewayPage.pageItems.map((gateway) => {
                 const linked = hierarchy.controllers.filter((controller) => controller.gatewayId === gateway.id);
                 return <article key={gateway.id} className={gateway.active ? "" : "inactive-resource"}><span className={`operational-state state-${gateway.state}`}><Server size={18} /></span><div><strong>{gateway.code} · {gateway.name}</strong><small>{gateway.ipAddress || "IP pendiente"} · {gateway.softwareVersion || "Versión pendiente"}</small><em>{linked.length} punto{linked.length === 1 ? "" : "s"} conectado{linked.length === 1 ? "" : "s"}</em></div><span className="operational-card-actions"><b>{stateLabel(gateway.state, gateway.active)}</b>{canManageConnections && <button className="resource-edit-button" onClick={() => openEditor("gateway", gateway)} aria-label={`Editar gateway ${gateway.name}`}><Pencil size={15} /></button>}</span></article>;
               })}{gatewayPage.pageItems.length === 0 && <TableEmptyState title="No hay gateways" detail="Registra un gateway antes de configurar conexiones Modbus." />}</div>
-              <Pagination page={gatewayPage.page} totalPages={gatewayPage.totalPages} total={filteredGateways.length} pageSize={6} onPageChange={gatewayPage.setPage} itemLabel="gateways" />
+              {gatewayPage.totalPages > 1 && <Pagination page={gatewayPage.page} totalPages={gatewayPage.totalPages} total={filteredGateways.length} pageSize={6} onPageChange={gatewayPage.setPage} itemLabel="gateways" />}
             </section>
           </div>
         </div>
       </div>}
 
       {tab === "connections" && <div className="connections-content">
-        <div className="connection-explainer"><span><PlugConnected size={21} /></span><div><h3>Ruta de adquisición</h3><p>El gateway consulta por Modbus al controlador CAM5 instalado en cada punto. La base impide relacionar equipos de sitios distintos.</p></div><strong>{activeGateway?.code ?? "Sin gateway"} → CAM5 → HoitLive Core</strong></div>
-        <div className="module-table-wrap"><div className="connections-table"><div className="module-table-head"><span>Controlador</span><span>Punto de medición</span><span>Gateway</span><span>Destino Modbus</span><span>Estado</span><span>Acciones</span></div>{controllerPage.pageItems.map((controller) => {
+        <p className="connection-explainer-line"><PlugConnected size={15} aria-hidden="true" /><span>Ruta de adquisición:</span><strong>{activeGateway?.code ?? "Sin gateway"} → CAM5 → HoitLive Core</strong><span>· El gateway consulta por Modbus a cada controlador; solo se pueden relacionar equipos del mismo sitio.</span></p>
+        <div className="module-table-wrap" role="region" aria-label="Conexiones Modbus" tabIndex={0}><div className="connections-table"><div className="module-table-head"><span>Controlador</span><span>Punto de medición</span><span>Gateway</span><span>Destino Modbus</span><span>Estado</span><span><span className="sr-only">Acciones</span></span></div>{controllerPage.pageItems.map((controller) => {
           const point = hierarchy.points.find((item) => item.id === controller.pointId);
           const gateway = hierarchy.gateways.find((item) => item.id === controller.gatewayId);
-          return <div className={`module-table-row ${controller.active ? "" : "inactive-resource"}`} key={controller.id}><span><strong>{controller.code}</strong><small>{controller.model}</small></span><span>{point ? `${point.code} · ${point.name}` : "Punto no disponible"}</span><span>{gateway ? gateway.code : "Gateway no disponible"}</span><span className="mono-cell">{controller.host}:{controller.port} · ID {controller.unitId}</span><span><i className={`connection-status state-${controller.state}`}>{stateLabel(controller.state, controller.active)}</i></span><span>{canManageConnections && <button className="resource-edit-button" onClick={() => openEditor("controller", controller)} aria-label={`Editar controlador ${controller.name}`}><Pencil size={15} /> Editar</button>}</span></div>;
+          return <div className={`module-table-row ${controller.active ? "" : "inactive-resource"}`} key={controller.id}><span><strong>{controller.code}</strong><small>{controller.model}</small></span><span>{point ? `${point.code} · ${point.name}` : "Punto no disponible"}</span><span>{gateway ? gateway.code : "Gateway no disponible"}</span><span>{controller.host}:{controller.port} · Unit ID {controller.unitId}</span><span><i className={`connection-status state-${controller.state}`}>{stateLabel(controller.state, controller.active)}</i></span><span>{canManageConnections && <button className="resource-edit-button" onClick={() => openEditor("controller", controller)} aria-label={`Editar controlador ${controller.name}`}><Pencil size={15} /> Editar</button>}</span></div>;
         })}{controllerPage.pageItems.length === 0 && <TableEmptyState title="No hay conexiones Modbus" detail="Asocia un controlador CAM5 a un punto de medición y a un gateway." />}</div></div>
-        <Pagination page={controllerPage.page} totalPages={controllerPage.totalPages} total={filteredControllers.length} pageSize={8} onPageChange={controllerPage.setPage} itemLabel="conexiones" />
+        {controllerPage.totalPages > 1 && <Pagination page={controllerPage.page} totalPages={controllerPage.totalPages} total={filteredControllers.length} pageSize={8} onPageChange={controllerPage.setPage} itemLabel="conexiones" />}
       </div>}
     </article>
     {editor && <div className="resource-editor-backdrop" role="presentation" onMouseDown={() => !editorSaving && setEditor(null)}>
