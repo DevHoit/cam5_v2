@@ -14,7 +14,7 @@ H=/data/hoit
 W="$H/www"
 say() { echo "[fase1] $*"; }
 
-for F in hoit_firewall.sh hoit_keeper.sh hoit_conn_watchdog.sh cam5-gateway.init \
+for F in hoit_firewall.sh hoit_keeper.sh hoit_conn_watchdog.sh hoit_healthd.sh cam5-gateway.init \
          portal/security-access.html portal/assets/security-access-v1.js portal/assets/security-access-v1.css \
          portal/cgi-bin/security_network.cgi portal/cgi-bin/security_network_action.cgi; do
     [ -f "$SRC/$F" ] || { echo "Falta $SRC/$F"; exit 1; }
@@ -52,6 +52,9 @@ fi
 cp "$SRC/cam5-gateway.init" /etc/init.d/cam5-gateway && chmod 755 /etc/init.d/cam5-gateway
 
 # 4) hoit_health vigila también cam5-gateway -------------------------------------------------------
+# v1.0.1: recupera el bloqueo huérfano que lo dejaba sin revisar nada tras un corte de energía.
+cp "$SRC/hoit_healthd.sh" "$H/bin/hoit_healthd.sh.new" && chmod 755 "$H/bin/hoit_healthd.sh.new" &&
+    mv -f "$H/bin/hoit_healthd.sh.new" "$H/bin/hoit_healthd.sh"
 HC="$H/config/hoit_health.conf"
 for KEY in MONITORED_SERVICES AUTO_RESTART_SERVICES; do
     grep -q "^$KEY=.*cam5-gateway" "$HC" || sed -i "s|^$KEY=\"\(.*\)\"|$KEY=\"\1 cam5-gateway\"|" "$HC"
