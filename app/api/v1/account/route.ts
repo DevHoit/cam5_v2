@@ -117,9 +117,29 @@ export async function PATCH(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const { db, user, token } = await requireApiSession(request);
-    const body = await request.json().catch(() => null) as { sessionId?: unknown } | null;
-    if (typeof body?.sessionId !== "string" || !body.sessionId) throw new ApiError(400, "Debes seleccionar una sesión.");
+    const body = await request.json().catch(() => null) as { sessionId?: unknown; scope?: unknown } | null;
     const currentTokenHash = hashSessionToken(token);
+    if (body?.scope === "others") {
+      // Cierra de una vez todas las sesiones activas del usuario, excepto la actual.
+      const metadata = requestMetadata(request);
+      const revoked = await db.transaction(async (tx) => {
+        const rows = await tx.update(authSessions).set({ revokedAt: new Date() })
+          .where(and(eq(authSessions.userId, user.id), isNull(authSessions.revokedAt), gt(authSessions.expiresAt, new Date()), ne(authSessions.tokenHash, currentTokenHash)))
+          .returning({ id: authSessions.id });
+        await tx.insert(auditLogs).values({
+          siteId: user.siteId,
+          actorUserId: user.id,
+          action: "account.session.revoke_others",
+          resourceType: "auth_session",
+          ipAddress: metadata.ipAddress,
+          userAgent: metadata.userAgent,
+          metadata: { revoked: rows.length },
+        });
+        return rows.length;
+      });
+      return Response.json({ revoked }, { headers: { "Cache-Control": "no-store" } });
+    }
+    if (typeof body?.sessionId !== "string" || !body.sessionId) throw new ApiError(400, "Debes seleccionar una sesión.");
     const [target] = await db.select({ id: authSessions.id, tokenHash: authSessions.tokenHash }).from(authSessions)
       .where(and(eq(authSessions.id, body.sessionId), eq(authSessions.userId, user.id), isNull(authSessions.revokedAt)))
       .limit(1);

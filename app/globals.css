@@ -2460,3 +2460,64 @@ html body :is(a, button, summary, [tabindex]):not(input, select, textarea):focus
   .notification-date-filter input { height: 48px; min-height: 48px; padding-top: 16px; }
   .notification-delivery-table .delivery-row-actions button { min-height: 44px; }
 }
+
+/* ───────────── Usuarios y roles ───────────── */
+.module-summary-strip { margin-bottom: 14px; padding: 10px 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 22px; color: #3f3f46; background: #fff; border: 1px solid #e4e4e7; border-radius: 12px; font-size: var(--text-sm); }
+.module-summary-strip span { display: inline-flex; align-items: center; gap: 6px; }
+.module-summary-strip strong { color: #18181b; font-weight: 750; }
+.module-summary-strip svg { color: #52525b; }
+/* El ícono de búsqueda y el filtro de estado vuelven a su lugar (una regla para flechas los posicionaba en absoluto) */
+.user-list-toolbar { align-items: center; }
+.user-list-toolbar .search-field svg { position: static; }
+.user-list-toolbar > label.status-filter { min-width: 140px; display: grid; grid-template-columns: 1fr 13px; flex-direction: unset; gap: 0 5px; }
+.user-list-toolbar .status-filter span { color: #52525b; font-size: var(--text-xs); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.user-list-toolbar .status-filter select { min-height: 0; padding: 0; color: #3f3f46; background: transparent; border: 0; font-size: var(--text-xs); font-weight: 650; }
+.user-list-toolbar .status-filter svg { position: static; color: #52525b; }
+.user-identity small { color: #52525b; }
+@media (max-width: 820px) {
+  .users-module .module-toolbar .primary-button, .users-table .row-actions button, .user-editor-form input, .user-editor-form select, .user-editor-form button { min-height: 44px; }
+  .users-table .icon-danger-button { min-width: 44px; }
+  .user-list-toolbar .search-field { height: 44px; }
+  .user-list-toolbar .search-field input { min-height: 40px; font-size: 16px; }
+  .user-list-toolbar > label.status-filter { height: auto; min-height: 50px; position: relative; display: flex; }
+  .user-list-toolbar .status-filter select { min-height: 48px; padding-top: 16px; font-size: 16px; }
+  .user-list-toolbar .status-filter svg { position: absolute; right: 10px; top: 50%; }
+}
+@media (max-width: 820px) { .user-list-toolbar .search-field { height: auto; } .user-list-toolbar .search-field input { min-height: 44px; } }
+.users-table { min-width: 860px; }
+.users-table .module-table-head, .users-table .module-table-row { grid-template-columns: minmax(220px, 1.4fr) 120px 80px 150px 140px 120px; }
+.user-security-state small { white-space: nowrap; }
+.user-editor-form { align-items: start; }
+.user-editor-form .user-password-field { grid-column: span 2; }
+@media (max-width: 820px) { .user-editor-form .user-password-field { grid-column: auto; } }
+
+/* ───────────── Mi cuenta ───────────── */
+.account-form small, .account-form label small { color: #52525b; }
+.account-sessions > header { display: flex; align-items: center; gap: 12px; }
+.account-sessions > header > div { flex: 1; }
+.account-revoke-others { white-space: nowrap; }
+.account-session-table { padding: 0 19px 6px; }
+.account-session-head, .account-session-row { display: grid; grid-template-columns: minmax(200px, 1.3fr) minmax(110px, .7fr) minmax(150px, .9fr) minmax(150px, .9fr) 110px; align-items: center; gap: 12px; }
+.account-session-head { min-height: 38px; color: #52525b; border-bottom: 1px solid #e4e4e7; font-size: var(--text-xs); font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+.account-session-row { min-height: 52px; color: #3f3f46; border-bottom: 1px solid #f1f1f3; font-size: var(--text-sm); }
+.account-session-row:last-child { border-bottom: 0; }
+.account-session-row.current { background: #f0f9ff; box-shadow: inset 3px 0 0 #0284c7; }
+.account-session-row > span:last-child { justify-self: end; }
+.account-session-device { min-width: 0; display: flex; align-items: center; gap: 8px; }
+.account-session-device svg { flex: 0 0 auto; color: #52525b; }
+.account-session-device strong { overflow: hidden; color: #18181b; text-overflow: ellipsis; white-space: nowrap; }
+.account-session-device i { padding: 2px 7px; color: #075985; background: #e0f2fe; border-radius: 999px; font-size: 11px; font-style: normal; font-weight: 700; white-space: nowrap; }
+.account-session-safe { display: inline-flex; align-items: center; gap: 4px; color: #047857; font-weight: 650; }
+.account-sessions-toggle { margin: 0 19px 16px; padding: 0; color: #0369a1; background: none; border: 0; font-size: var(--text-sm); font-weight: 700; cursor: pointer; }
+@media (max-width: 820px) {
+  .account-sessions > header { flex-wrap: wrap; }
+  .account-revoke-others { width: 100%; }
+  .account-session-head { display: none; }
+  .account-session-row { grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; padding: 10px 0; }
+  .account-session-row > span:nth-child(2), .account-session-row > span:nth-child(3), .account-session-row > span:nth-child(4) { grid-column: 1; color: #52525b; font-size: var(--text-xs); }
+  .account-session-row > span:nth-child(2)::before { content: "IP "; }
+  .account-session-row > span:nth-child(3)::before { content: "Actividad "; }
+  .account-session-row > span:nth-child(4)::before { content: "Expira "; }
+  .account-session-row > span:last-child { grid-column: 2; grid-row: 1 / span 4; align-self: center; }
+  .account-form input, .account-form button, .account-session-row button, .account-revoke-others, .account-sessions-toggle { min-height: 44px; }
+}
