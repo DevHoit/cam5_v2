@@ -193,6 +193,42 @@ Comportamiento ante fallas:
 - **Portal caído o sin configuración**: se usa la última configuración guardada en `config.json`.
 - **Lote rechazado** (`400`, `403`, `404`, `413`, `422`): se mueve a `rejected/` y no se repite. Un `401` no descarta datos: se reintenta hasta que el token se corrija.
 
+## SIM7600 con la plataforma HOIT: modo "solo CAM-5"
+
+Los módulos que vienen con la plataforma HOIT (portal en `/data/hoit`, servicios `hoit_*`) se dejan dedicados al CAM-5 con [`deploy/sim7600/`](./deploy/sim7600/):
+
+| Archivo | Qué hace |
+|---|---|
+| `apply_cam5_only.sh` | Desactiva meteo, MQTT, el lector Modbus duplicado, RTU, NMEA, digitales, sockets, alarmas locales, trabajos remotos y auditoría; instala la vigilancia de conectividad y la página del portal; borra simuladores, temporales y registros viejos |
+| `hoit_conn_watchdog.sh` | Vigilancia de conectividad Wi-Fi + 4G (reemplaza la original, misma interfaz para el portal) |
+| `hoit_conn_runner.sh` | Bucle del servicio `hoit_conn` sin escribir en `/data` cada minuto |
+| `hoit_timed` | Servicio de hora corregido (ver abajo) |
+| `portal/` | Página **CAM-5 → Core**: servicio, último envío, cola, controladores, registro, reinicio y prueba de lectura Modbus. Página **Hora** con zona horaria |
+
+```bash
+adb shell "cd / && tar czf /cache/respaldo.tgz data/hoit cache/hoit etc/init.d" && adb pull /cache/respaldo.tgz   # respaldo
+adb push deploy/sim7600 /cache/cam5-deploy
+adb shell "sh /cache/cam5-deploy/apply_cam5_only.sh /cache/cam5-deploy"
+```
+
+**Vigilancia de conectividad** (`hoit_conn`, cada 60 s, registro en `/cache/hoit/netwatch.log`):
+
+1. Prueba Wi-Fi y 4G por separado (`ping -I` y HTTPS al portal con `--interface`). Si el 4G es la salida activa y recibe tráfico, no gasta datos en probarlo; en reserva se prueba cada 5 ciclos.
+2. Lee el módem por AT con bloqueo del puerto: SIM, registro, tecnología, operador, señal.
+3. 4G con falla: a los 3 ciclos reactiva el contexto PDP; a los 8 reinicia la radio (`CFUN=4` → `CFUN=1`) y luego lo repite cada 30 ciclos. Con la SIM ausente o bloqueada solo reintenta la radio cada 30 ciclos.
+4. Sin **ninguna** salida durante 45 ciclos reinicia el equipo, como máximo 3 veces en 24 h y nunca antes de 30 min de encendido.
+5. Cortafuegos: bloquea ADB por red (puerto 5565, root sin clave) y SSH/portal desde la red celular.
+6. Escribe `/cache/hoit/gateway_status_current.json`, que muestra la página Conectividad.
+
+Los umbrales se ajustan en `/data/hoit/config/hoit_conn.conf` (`PDP_RESET_AFTER`, `RADIO_RESET_AFTER`, `RADIO_RESET_EVERY`, `REBOOT_AFTER`, `REBOOT_MAX_PER_DAY`). El APN se cambia desde la página Conectividad del portal.
+
+**Hora** (`hoit_time`, `/data/hoit/config/hoit_time.conf`). El reloj del sistema queda en UTC; la zona solo afecta lo que muestra el portal.
+
+- `TIMEZONE=America/Santiago` aplica sola el horario de verano de Chile (`America/Punta_Arenas` = UTC-3 fijo; `fixed` usa `UTC_OFFSET_MINUTES`).
+- Modo `auto`: NTP y, si falla (sin DNS o sin salida), la hora de la red celular (`AT+CCLK?`, `CELLULAR_FALLBACK=1`), con el mismo bloqueo del puerto AT que `hoit_conn`.
+- `time_status.json` se refresca cada 30 s: antes guardaba la hora de la última sincronización y el reloj del portal retrocedía hasta una hora en cada actualización.
+- Cuando el reloj salta (arranque en 1980, ajuste manual), se corre el vencimiento de las sesiones del portal: ajustar la hora ya no cierra la sesión.
+
 ## Variables de entorno
 
 | Variable | Por defecto | Uso |

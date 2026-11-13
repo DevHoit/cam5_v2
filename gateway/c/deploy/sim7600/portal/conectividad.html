@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HOIT Gateway Portal — Conectividad</title>
+<link rel="stylesheet" href="assets/hoit.css">
+<link rel="stylesheet" href="assets/gateway-identity-context-v1.css?v=1.0.0">
+<link rel="stylesheet" href="assets/navigation-v1.css?v=1.0">
+</head>
+<body data-page="connectivity">
+<div class="app">
+<svg style="display:none" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-dash" viewBox="0 0 24 24"><rect x="3" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5"/></symbol>
+  <symbol id="i-net" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.7 2.6 15.3 0 18M12 3c-2.6 2.7-2.6 15.3 0 18"/></symbol>
+  <symbol id="i-wifi" viewBox="0 0 24 24"><path d="M5 12.5a11 11 0 0 1 14 0M8.5 16a6 6 0 0 1 7 0M12 19.5h.01"/></symbol>
+  <symbol id="i-lte" viewBox="0 0 24 24"><path d="M4 20v-5M9 20v-9M14 20V7M19 20V3"/></symbol>
+  <symbol id="i-eth" viewBox="0 0 24 24"><rect x="5" y="9" width="14" height="8" rx="1"/><path d="M9 9V5h6v4M9 17v3M15 17v3"/></symbol>
+  <symbol id="i-server" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><path d="M7 7.5h.01M7 16.5h.01"/></symbol>
+  <symbol id="i-wind" viewBox="0 0 24 24"><path d="M3 8h9a3 3 0 1 0-3-3M3 12h13a3 3 0 1 1-3 3M3 16h6"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s-7-5.2-7-11a7 7 0 0 1 14 0c0 5.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></symbol>
+  <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5"/><rect x="9.5" y="9.5" width="5" height="5"/><path d="M9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3"/></symbol>
+  <symbol id="i-diag" viewBox="0 0 24 24"><path d="M4 17l6-5-6-5M12 19h8"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></symbol>
+  <symbol id="i-warn" viewBox="0 0 24 24"><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 3v12M6 11l6 6 6-6M4 21h16"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 21V9M6 13l6-6 6 6M4 3h16"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-activity" viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M12 12v4"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+  <symbol id="i-box" viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5v8l9 5 9-5V8zM3 8l9 5 9-5M12 13v8"/></symbol>
+  <symbol id="i-power" viewBox="0 0 24 24"><path d="M12 3v8M6.3 6.3a8 8 0 1 0 11.4 0"/></symbol>
+</svg>
+
+<aside class="sidebar" id="sidebar">
+  <a class="logo-wrap" href="index.html">
+    <img class="logo-img" src="assets/logo.png" alt="HOIT — Think. Build. Scale."
+         onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+    <span class="logo-fallback" style="display:none">
+      <span class="logo">h<span class="o"></span>it</span>
+      <span class="logo-tag">THINK. BUILD. SCALE.</span>
+    </span>
+  </a>
+  <nav class="nav">
+    <a class="nav-item" href="index.html"><svg width="19" height="19"><use href="#i-dash"/></svg><span data-i18n="nav_dash">Dashboard</span></a>
+    <a class="nav-item active" href="conectividad.html"><svg width="19" height="19"><use href="#i-net"/></svg><span data-i18n="nav_conn">Conectividad</span></a>
+    <a class="nav-item" href="telemetria.html"><svg width="19" height="19"><use href="#i-server"/></svg><span data-i18n="nav_telem">Telemetría</span></a>
+    <a class="nav-item" href="mqtt.html"><svg width="19" height="19" viewBox="0 0 24 24"><path d="M4 17.5a8.5 8.5 0 0 1 8.5-8.5M4 12.5A13.5 13.5 0 0 1 17.5 4M4 21a3 3 0 0 1 3-3"/><circle cx="6" cy="20" r="1"/></svg><span>MQTT</span></a>
+    <a class="nav-item" href="dispositivos.html"><svg width="19" height="19"><use href="#i-wind"/></svg><span data-i18n="nav_sens">Sensores</span></a>
+    <a class="nav-item" href="sockets.html"><svg width="19" height="19"><use href="#i-net"/></svg><span data-i18n="nav_sock">Puentes TCP</span></a>
+    <a class="nav-item" href="gps.html"><svg width="19" height="19"><use href="#i-pin"/></svg><span>GPS</span></a>
+    <a class="nav-item" href="identidad.html"><svg width="19" height="19" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2.5"/><path d="M5.5 17c.7-2 2-3 3.5-3s2.8 1 3.5 3M14 9h4M14 13h4"/></svg><span>Identidad</span></a>
+    <a class="nav-item" href="sistema.html"><svg width="19" height="19"><use href="#i-cpu"/></svg><span data-i18n="nav_sys">Sistema</span></a>
+    <a class="nav-item" href="diagnostico.html"><svg width="19" height="19"><use href="#i-diag"/></svg><span data-i18n="nav_diag">Diagnóstico</span></a>
+  </nav>
+  <div class="sidebar-foot"><b>HOIT GW-4100</b><br>S/N HTG-2601-0042 · FW 2.4.1</div>
+</aside>
+<div class="scrim" id="scrim"></div>
+
+<div class="main">
+  <header class="topbar">
+    <button class="burger" id="burger" aria-label="Menú"><svg width="19" height="19"><use href="#i-menu"/></svg></button>
+    <div class="crumb"><span data-i18n="nav_conn">Conectividad</span><small>HOIT GW-4100 · Planta Norte</small></div>
+    <div class="topbar-right">
+      <div class="health-pill"><span class="dot ok"></span><span class="txt" data-i18n="health_ok">Operativo</span></div>
+      <div class="lang-switch"><button id="langEs" class="on">ES</button><button id="langEn">EN</button></div>
+      <div class="user-chip">AD</div>
+    </div>
+  </header>
+
+  <div class="content">
+  <section class="page on">
+    <div class="section-head-row">
+      <div>
+        <h2 class="section-title" data-i18n="nav_conn">Conectividad</h2>
+        <p class="section-sub">Estado real de Ethernet, WiFi AP + Cliente, LTE y rutas del gateway.</p>
+      </div>
+      <div class="conn-refresh-box">
+        <span class="conn-updated" id="connUpdated">Consultando…</span>
+        <button class="btn ghost sm" id="connRefresh" type="button">
+          <svg width="19" height="19"><use href="#i-refresh"/></svg>
+          <span data-i18n="a_update">Actualizar</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="alert info conn-readonly-note mt">
+      <svg width="19" height="19"><use href="#i-info"/></svg>
+      <div><b>Estado real y administración protegida</b>La lectura se actualiza en tiempo real. Los cambios WiFi requieren sesión de administrador, validación de Internet y restauración automática ante fallas.</div>
+    </div>
+
+    <div class="card mt2">
+      <div class="card-h">
+        <h3 data-i18n="c_prio">Prioridad de uso (failover)</h3>
+        <span class="spacer"></span>
+        <span class="badge ok" id="connFailoverBadge">Failover automático</span>
+      </div>
+      <div class="card-b">
+        <div class="prio" id="connPriorityList">
+          <div class="conn-loading">Consultando rutas del gateway…</div>
+        </div>
+        <div class="conn-route-summary mt" id="connRouteSummary">Ruta efectiva: —</div>
+        <p class="field hint" style="margin-top:10px">La ruta con menor métrica tiene mayor prioridad. La interfaz utilizada realmente se marca como «En uso».</p>
+      </div>
+    </div>
+
+    <div class="tabs" role="tablist">
+      <button class="on" data-tab="eth"><svg width="16" height="16" style="stroke:currentColor;fill:none;stroke-width:1.7"><use href="#i-eth"/></svg>Ethernet</button>
+      <button data-tab="wifi"><svg width="16" height="16" style="stroke:currentColor;fill:none;stroke-width:1.7"><use href="#i-wifi"/></svg>WiFi</button>
+      <button data-tab="lte"><svg width="16" height="16" style="stroke:currentColor;fill:none;stroke-width:1.7"><use href="#i-lte"/></svg>LTE</button>
+    </div>
+
+    <!-- ETHERNET -->
+    <div class="tabpane" id="tab-eth">
+      <div class="grid g3">
+        <div class="card stat">
+          <div class="lbl" data-i18n="e_cable">Estado del cable</div>
+          <div class="val"><span class="dot off" id="connEthDot"></span><span id="connEthState">Consultando…</span></div>
+          <div class="sub" id="connEthStateSub">eth0</div>
+        </div>
+        <div class="card stat">
+          <div class="lbl" data-i18n="e_speed">Velocidad del enlace</div>
+          <div class="val" id="connEthSpeed">—</div>
+          <div class="sub" id="connEthDuplex">—</div>
+        </div>
+        <div class="card stat">
+          <div class="lbl">MAC</div>
+          <div class="val data technical-value" id="connEthMac">—</div>
+          <div class="sub">eth0</div>
+        </div>
+      </div>
+
+      <div class="card mt">
+        <div class="card-h"><h3 data-i18n="e_cfg">Configuración IP actual</h3><span class="spacer"></span><span class="badge off">Solo lectura</span></div>
+        <div class="card-b">
+          <div class="fgrid">
+            <div class="field"><label data-i18n="e_ip">Dirección IP</label><input class="data" id="connEthIp" value="—" readonly></div>
+            <div class="field"><label>Prefijo de red</label><input class="data" id="connEthPrefix" value="—" readonly></div>
+            <div class="field"><label>Gateway</label><input class="data" id="connEthGateway" value="—" readonly></div>
+            <div class="field"><label>DNS del sistema</label><input class="data" id="connDns" value="—" readonly></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- WIFI -->
+    <div class="tabpane" id="tab-wifi" style="display:none">
+      <div class="card">
+        <div class="card-h">
+          <h3 data-i18n="w_mode">Modo de operación</h3>
+          <span class="spacer"></span>
+          <span class="badge off" id="connWifiModeBadge">Consultando…</span>
+        </div>
+        <div class="card-b">
+          <div class="conn-mode-grid">
+            <div class="conn-mode-card">
+              <div class="conn-mode-head"><span class="dot off" id="connApDot"></span><b>Access Point de mantenimiento</b><span class="badge off" id="connApBadge">—</span></div>
+              <div class="kv-grid">
+                <div><span>Interfaz</span><b class="data">wlan0 / bridge0</b></div>
+                <div><span>SSID</span><b id="connApSsid">—</b></div>
+                <div><span>IP local</span><b class="data" id="connApIp">—</b></div>
+                <div><span>Seguridad</span><b id="connApSecurity">—</b></div>
+                <div><span>Canal</span><b id="connApChannel">—</b></div>
+                <div><span>Clientes</span><b id="connApClients">0</b></div>
+              </div>
+            </div>
+
+            <div class="conn-mode-card">
+              <div class="conn-mode-head"><span class="dot off" id="connClientDot"></span><b>Cliente de Internet</b><span class="badge off" id="connClientBadge">—</span></div>
+              <div class="kv-grid">
+                <div><span>Interfaz</span><b class="data">wlan1</b></div>
+                <div><span>SSID</span><b id="connClientSsid">—</b></div>
+                <div><span>IP</span><b class="data" id="connClientIp">—</b></div>
+                <div><span>Gateway</span><b class="data" id="connClientGateway">—</b></div>
+                <div><span>Señal</span><b id="connClientSignal">—</b></div>
+                <div><span>Ruta</span><b id="connClientRoute">—</b></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mt wifi-manage-card" id="wifiManageCard">
+        <div class="card-h">
+          <h3>Configurar WiFi cliente</h3>
+          <span class="spacer"></span>
+          <span class="badge info">Administración protegida</span>
+        </div>
+        <div class="card-b">
+          <div class="alert info wifi-safety-note">
+            <svg width="19" height="19"><use href="#i-info"/></svg>
+            <div><b>El AP HOIT permanece activo</b>La prueba modifica únicamente <span class="data">wlan1</span>. Ante una clave incorrecta, falta de DHCP o ausencia de Internet, se restaura automáticamente la conexión anterior. Para cambios de red, se recomienda abrir esta página desde <span class="data">http://192.168.225.1</span>.</div>
+          </div>
+
+          <div class="wifi-config-grid mt">
+            <section class="wifi-scan-panel">
+              <div class="wifi-panel-head"><div><h4>Redes disponibles</h4><p>Escaneo real mediante wpa_supplicant.</p></div><button class="btn ghost sm" id="wifiScanBtn" type="button"><svg width="16" height="16"><use href="#i-refresh"/></svg>Escanear</button></div>
+              <div class="wifi-network-list" id="wifiNetworkList"><div class="conn-empty">Presiona «Escanear» para buscar redes.</div></div>
+            </section>
+
+            <section class="wifi-form-panel">
+              <div class="wifi-panel-head"><div><h4>Nueva conexión</h4><p>La clave nunca se devuelve al navegador.</p></div></div>
+              <form id="wifiApplyForm" autocomplete="off">
+                <div class="field"><label for="wifiSsidInput">SSID</label><input id="wifiSsidInput" maxlength="32" placeholder="Nombre de la red" required></div>
+                <div class="field"><label for="wifiSecurityInput">Seguridad</label><select id="wifiSecurityInput"><option value="psk">WPA/WPA2 Personal</option><option value="open">Red abierta</option></select></div>
+                <div class="field" id="wifiPasswordField"><label for="wifiPasswordInput">Contraseña</label><div class="password-wrap"><input id="wifiPasswordInput" type="password" minlength="8" maxlength="64" autocomplete="new-password" placeholder="8 a 63 caracteres"><button type="button" class="password-toggle" id="wifiPasswordToggle">Ver</button></div></div>
+                <label class="wifi-confirm-line"><input type="checkbox" id="wifiConfirmCheck"> <span>Comprendo que la conexión cliente se reiniciará durante la prueba.</span></label>
+                <div class="wifi-form-error" id="wifiFormError"></div>
+                <button class="btn primary wifi-apply-button" id="wifiApplyBtn" type="submit" disabled>Probar y guardar conexión</button>
+              </form>
+            </section>
+          </div>
+
+          <div class="wifi-job" id="wifiJobPanel" hidden>
+            <div class="wifi-job-head"><span class="dot info" id="wifiJobDot"></span><div><b id="wifiJobTitle">Preparando cambio WiFi</b><p id="wifiJobMessage">—</p></div><span class="badge info" id="wifiJobBadge">En curso</span></div>
+            <div class="wifi-job-progress"><i id="wifiJobProgress"></i></div>
+            <div class="wifi-job-meta"><span>SSID: <b id="wifiJobSsid">—</b></span><span>IP: <b class="data" id="wifiJobIp">—</b></span><span>Estado WPA: <b class="data" id="wifiJobWpa">—</b></span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid g2 mt">
+        <div class="card">
+          <div class="card-h"><h3 data-i18n="w_clients_t">Clientes conectados al AP</h3><span class="spacer"></span><span class="badge info" id="connClientsBadge">0</span></div>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Dispositivo / MAC</th><th>IP</th><th data-i18n="w_sig">Señal</th></tr></thead>
+            <tbody id="connClientsBody"><tr><td colspan="3" class="conn-empty">Consultando clientes…</td></tr></tbody>
+          </table></div>
+        </div>
+
+        <div class="card">
+          <div class="card-h"><h3>Servicios WiFi</h3></div>
+          <div class="list" id="connWifiServices">
+            <div class="list-row"><span class="dot off"></span>Consultando…</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mt">
+        <div class="card-h"><h3>Detalles del enlace cliente</h3><span class="spacer"></span><span class="badge off" id="connWpaState">—</span></div>
+        <div class="card-b">
+          <div class="fgrid">
+            <div class="field"><label>BSSID</label><input class="data" id="connClientBssid" value="—" readonly></div>
+            <div class="field"><label>Frecuencia</label><input class="data" id="connClientFreq" value="—" readonly></div>
+            <div class="field"><label>Velocidad TX</label><input class="data" id="connClientBitrate" value="—" readonly></div>
+            <div class="field"><label>Métrica</label><input class="data" id="connClientMetric" value="—" readonly></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- LTE -->
+    <div class="tabpane" id="tab-lte" style="display:none">
+      <div class="grid g3">
+        <div class="card stat">
+          <div class="lbl" data-i18n="l_carrier">Operador</div>
+          <div class="val"><span class="dot off" id="connLteDot"></span><span id="connLteOperator">—</span></div>
+          <div class="sub" id="connLteRegistration">Consultando…</div>
+        </div>
+        <div class="card stat">
+          <div class="lbl" data-i18n="l_signal">Señal</div>
+          <div class="val data" id="connLteSignal">—</div>
+          <div class="sub" id="connLteRat">—</div>
+        </div>
+        <div class="card stat">
+          <div class="lbl">IP WAN</div>
+          <div class="val data technical-value" id="connLteIp">—</div>
+          <div class="sub" id="connLteRoute">—</div>
+        </div>
+      </div>
+
+      <div class="card mt">
+        <div class="card-h"><h3 data-i18n="l_id">Identificación y perfil LTE</h3><span class="spacer"></span><span class="badge info">Estado y perfil guardado</span></div>
+        <div class="card-b">
+          <div class="fgrid">
+            <div class="field"><label>ICCID</label><input class="data" id="connLteIccid" value="—" readonly></div>
+            <div class="field"><label>IMEI</label><input class="data" id="connLteImei" value="—" readonly></div>
+            <div class="field"><label>IMSI</label><input class="data" id="connLteImsi" value="—" readonly></div>
+            <div class="field"><label>APN</label><input class="data" id="connLteApn" value="—" readonly></div>
+            <div class="field"><label>Profile ID</label><input class="data" id="connLteProfile" value="—" readonly></div>
+            <div class="field"><label>Métrica</label><input class="data" id="connLteMetric" value="—" readonly></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mt lte-manage-card" id="lteManageCard">
+        <div class="card-h">
+          <h3>Configurar perfil LTE</h3>
+          <span class="spacer"></span>
+          <span class="badge info">Prueba y rollback automático</span>
+        </div>
+        <div class="card-b">
+          <div class="alert info wifi-safety-note">
+            <svg width="19" height="19"><use href="#i-info"/></svg>
+            <div><b>WiFi y AP permanecen disponibles</b>El cambio reinicia únicamente la conexión celular y el servicio <span class="data">hoit_conn</span>. Si el módem no obtiene Internet, el perfil anterior se restaura automáticamente. La contraseña APN nunca se devuelve al navegador.</div>
+          </div>
+
+          <form id="lteApplyForm" class="mt" autocomplete="off">
+            <div class="fgrid">
+              <div class="field"><label for="lteApnInput">APN</label><input id="lteApnInput" maxlength="100" placeholder="Vacío: lo asigna el operador"><small>Déjalo vacío si la SIM no trae APN.</small></div>
+              <div class="field"><label for="lteProfileInput">Profile ID</label><input id="lteProfileInput" type="number" min="1" max="179" step="1" placeholder="6" required><small>Rangos válidos: 1-24 o 100-179.</small></div>
+              <div class="field"><label for="ltePdpInput">Tipo PDP</label><select id="ltePdpInput"><option value="IP">IPv4</option><option value="IPV4V6">IPv4 / IPv6</option><option value="IPV6">IPv6</option></select></div>
+              <div class="field"><label for="lteAuthInput">Autenticación</label><select id="lteAuthInput"><option value="0">Ninguna</option><option value="1">PAP</option><option value="2">CHAP</option><option value="3">PAP o CHAP</option></select></div>
+              <div class="field" id="lteUsernameField"><label for="lteUsernameInput">Usuario APN</label><input id="lteUsernameInput" maxlength="127" autocomplete="off" placeholder="Usuario entregado por el operador"></div>
+              <div class="field" id="ltePasswordField"><label for="ltePasswordInput">Contraseña APN</label><div class="password-wrap"><input id="ltePasswordInput" type="password" maxlength="127" autocomplete="new-password" placeholder="Dejar en blanco para conservar"><button type="button" class="password-toggle" id="ltePasswordToggle">Ver</button></div><small id="ltePasswordState">Consultando contraseña guardada…</small></div>
+            </div>
+
+            <label class="wifi-confirm-line" id="lteKeepPasswordLine"><input type="checkbox" id="lteKeepPasswordCheck" checked> <span>Conservar la contraseña APN configurada si no ingreso una nueva.</span></label>
+            <label class="wifi-confirm-line"><input type="checkbox" id="lteConfirmCheck"> <span>Comprendo que LTE se reiniciará y será validado antes de guardar definitivamente.</span></label>
+            <div class="wifi-form-error" id="lteFormError"></div>
+            <button class="btn primary wifi-apply-button" id="lteApplyBtn" type="submit" disabled>Probar y guardar perfil LTE</button>
+          </form>
+
+          <div class="wifi-job" id="lteJobPanel" hidden>
+            <div class="wifi-job-head"><span class="dot info" id="lteJobDot"></span><div><b id="lteJobTitle">Preparando cambio LTE</b><p id="lteJobMessage">—</p></div><span class="badge info" id="lteJobBadge">En curso</span></div>
+            <div class="wifi-job-progress"><i id="lteJobProgress"></i></div>
+            <div class="wifi-job-meta"><span>APN: <b id="lteJobApn">—</b></span><span>Profile: <b class="data" id="lteJobProfile">—</b></span><span>PDP: <b class="data" id="lteJobPdp">—</b></span><span>IP LTE: <b class="data" id="lteJobIp">—</b></span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mt">
+        <div class="card-h"><h3>Registro de red</h3></div>
+        <div class="list">
+          <div class="list-row"><span class="dot off" id="connCgattDot"></span>CGATT<span class="when data" id="connCgatt">—</span></div>
+          <div class="list-row"><span class="dot off" id="connCeregDot"></span>CEREG<span class="when data" id="connCereg">—</span></div>
+          <div class="list-row"><span class="dot off" id="connCregDot"></span>CREG<span class="when data" id="connCreg">—</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+  </div>
+</div>
+
+<!-- MODAL confirmación -->
+<div class="overlay" id="overlay">
+  <div class="modal" role="dialog" aria-modal="true">
+    <div class="m-icon"><svg width="19" height="19"><use href="#i-warn"/></svg></div>
+    <h4 id="mTitle"></h4>
+    <p id="mBody"></p>
+    <div class="m-actions">
+      <button class="btn ghost" id="mCancel" data-i18n="a_cancel">Cancelar</button>
+      <button class="btn primary" id="mOk" style="background:var(--err)" data-i18n="a_confirm">Confirmar</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"><span class="dot ok" style="background:#4ADE80"></span><span id="toastMsg"></span></div>
+</div>
+<script src="assets/hoit.js?v=2"></script>
+<script src="assets/gateway-identity-context-v1.js?v=1.3" defer></script>
+<script src="assets/onboarding-gate-v1.js?v=1.1"></script>
+<script src="assets/driver-nav-v1.js?v=1.0"></script>
+<script src="assets/navigation-v1.js?v=1.0"></script>
+</body>
+</html>

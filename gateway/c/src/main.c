@@ -772,12 +772,22 @@ static void device_due(gateway *gw, device *d, double now)
 
 /* ---- API ---------------------------------------------------------------- */
 
+/* Ida y vuelta máxima para estimar la hora del servidor: el error de tomar el punto medio es de
+ * hasta RTT/2, así que una solicitud lenta (4G, TLS completo) daría un desfase falso. */
+#define CLOCK_MAX_RTT_MS 3000
+
 static void observe_server_time(const json_node *root, int64_t sent_ms, int64_t received_ms)
 {
     int64_t server;
     const char *text = json_string_or(json_get(root, "serverTime"), NULL);
-    if (text && iso_to_ms(text, &server) == 0)
-        clock_observe_server(server, sent_ms + (received_ms - sent_ms) / 2);
+    if (!text || iso_to_ms(text, &server) != 0)
+        return;
+    int64_t rtt = received_ms - sent_ms;
+    if (rtt < 0 || rtt > CLOCK_MAX_RTT_MS)
+        return;
+    /* sent/received vienen de wall_ms() (ya corregido): el desfase se mide contra el reloj del
+     * sistema sin corregir; si no, cada corrección se ve como un desfase opuesto y oscila. */
+    clock_observe_server(server, sent_ms + rtt / 2 - clock_offset_ms());
 }
 
 static void log_http_failure(const char *what, const http_response *resp)
