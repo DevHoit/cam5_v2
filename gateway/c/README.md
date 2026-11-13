@@ -203,6 +203,9 @@ Los módulos que vienen con la plataforma HOIT (portal en `/data/hoit`, servicio
 | `hoit_conn_watchdog.sh` | Vigilancia de conectividad Wi-Fi + 4G (reemplaza la original, misma interfaz para el portal) |
 | `hoit_conn_runner.sh` | Bucle del servicio `hoit_conn` sin escribir en `/data` cada minuto |
 | `hoit_timed` | Servicio de hora corregido (ver abajo) |
+| `apply_hardening.sh` | Fase 1 de seguridad y vigilancia (ver abajo); `apply_cam5_only.sh` la ejecuta al final y también se puede correr sola |
+| `hoit_firewall.sh` | Cortafuegos IPv4/IPv6 con interruptor de administración desde el Wi-Fi corporativo |
+| `hoit_keeper.sh` | Supervisor raíz lanzado por `init` (`/etc/inittab`, `respawn`) |
 | `portal/` | Página **CAM-5 → Core**: servicio, último envío, cola, controladores, registro, reinicio y prueba de lectura Modbus. Página **Hora** con zona horaria |
 
 ```bash
@@ -217,7 +220,7 @@ adb shell "sh /cache/cam5-deploy/apply_cam5_only.sh /cache/cam5-deploy"
 2. Lee el módem por AT con bloqueo del puerto: SIM, registro, tecnología, operador, señal.
 3. 4G con falla: a los 3 ciclos reactiva el contexto PDP; a los 8 reinicia la radio (`CFUN=4` → `CFUN=1`) y luego lo repite cada 30 ciclos. Con la SIM ausente o bloqueada solo reintenta la radio cada 30 ciclos.
 4. Sin **ninguna** salida durante 45 ciclos reinicia el equipo, como máximo 3 veces en 24 h y nunca antes de 30 min de encendido.
-5. Cortafuegos: bloquea ADB por red (puerto 5565, root sin clave) y SSH/portal desde la red celular.
+5. Cortafuegos: aplica `hoit_firewall.sh` (ver «Seguridad y vigilancia»).
 6. Escribe `/cache/hoit/gateway_status_current.json`, que muestra la página Conectividad.
 
 Los umbrales se ajustan en `/data/hoit/config/hoit_conn.conf` (`PDP_RESET_AFTER`, `RADIO_RESET_AFTER`, `RADIO_RESET_EVERY`, `REBOOT_AFTER`, `REBOOT_MAX_PER_DAY`). El APN se cambia desde la página Conectividad del portal.
@@ -228,6 +231,25 @@ Los umbrales se ajustan en `/data/hoit/config/hoit_conn.conf` (`PDP_RESET_AFTER`
 - Modo `auto`: NTP y, si falla (sin DNS o sin salida), la hora de la red celular (`AT+CCLK?`, `CELLULAR_FALLBACK=1`), con el mismo bloqueo del puerto AT que `hoit_conn`.
 - `time_status.json` se refresca cada 30 s: antes guardaba la hora de la última sincronización y el reloj del portal retrocedía hasta una hora en cada actualización.
 - Cuando el reloj salta (arranque en 1980, ajuste manual), se corre el vencimiento de las sesiones del portal: ajustar la hora ya no cierra la sesión.
+
+**Seguridad y vigilancia** (`apply_hardening.sh`, idempotente):
+
+```bash
+adb push deploy/sim7600 /cache/cam5-deploy && adb push cam5-gateway /cache/cam5-deploy/   # binario opcional
+adb push deploy/cam5-gateway.init /cache/cam5-deploy/
+adb shell "sh /cache/cam5-deploy/apply_hardening.sh /cache/cam5-deploy"
+```
+
+- **Cortafuegos** (`hoit_firewall.sh apply`, lo reaplica `hoit_conn` cada minuto si alguien lo borra):
+  - 4G: ninguna conexión entrante. ADB por red (5565): siempre cerrado.
+  - Wi-Fi corporativo (`wlan1`): portal y SSH solo si el interruptor lo permite. El gateway sigue saliendo a internet por esa red aunque esté bloqueado.
+  - Reenvío: nada pasa desde el Wi-Fi corporativo ni desde el 4G; la red del CAM-5 solo es alcanzable desde el hotspot propio; los equipos del hotspot no salen por el 4G ni por la red corporativa.
+  - IPv6 con las mismas reglas (ICMPv6 permitido para el descubrimiento de vecinos).
+- **Interruptor** en el portal, **Seguridad y acceso → Acceso desde el Wi-Fi corporativo**: Permitido, Permitido por 2/8/24/72 h (se bloquea solo al vencer) o Bloqueado, y opcionalmente solo desde ciertas IP. Avisa si el cambio corta la sesión actual. Se guarda en `/data/hoit/config/hoit_security.conf` (`WIFI_ADMIN`, `WIFI_ADMIN_UNTIL`, `WIFI_ADMIN_ALLOW`); por consola: `hoit_firewall.sh set 0|1 HASTA_EPOCH "IP …"`. Por el hotspot, el cable del CAM-5 y USB la administración no cambia.
+- **Cuelgue del gateway**: `cam5-gateway` escribe cada 10 s `/var/run/cam5-gateway.alive` (RAM). `/etc/init.d/cam5-gateway status` informa falla si no se actualiza en 3 min o si hay lotes en cola, internet según `hoit_conn` y ninguno aceptado en 15 min; `hoit_health` (cada 30 s) lo reinicia: 2 fallas seguidas, 120 s entre intentos, máximo 3 por hora. El reinicio fuerza el cierre a los 10 s para no dejar dos instancias.
+- **Envío sin frenar la lectura**: el gateway dedica como máximo 3 s por vuelta a vaciar la cola; con un 4G lento, la lectura Modbus de los controladores no espera.
+- **Supervisor raíz**: `init` relanza `hoit_keeper.sh`, que levanta `hoit_health` y `hoit_conn` si se detienen (copia de `inittab` en `/etc/inittab.pre_hoit`).
+- **Otros**: hotspot en WPA2-CCMP (misma red y clave), `simcom_aliyun` desactivado, `sshd` con `MaxAuthTries 3` y `LoginGraceTime 30`, permisos 600 en `/etc/shadow` y `/etc/hostapd.conf`. Con `SSH_KEY_ONLY=1` y `/root/.ssh/authorized_keys` instalado, SSH queda solo con llave.
 
 ## Variables de entorno
 
@@ -247,6 +269,7 @@ Los umbrales se ajustan en `/data/hoit/config/hoit_conn.conf` (`PDP_RESET_AFTER`
 | `CAM5_REGISTER_OFFSET` | `0` | desplazamiento de dirección Modbus |
 | `CAM5_MAX_READ` | `81` | registros por transacción Modbus |
 | `CAM5_RUN_ONCE` | — | `1` equivale a `--once` |
+| `CAM5_ALIVE_FILE` | `/var/run/cam5-gateway.alive` | archivo de vida para el vigilante; vacío lo desactiva |
 
 `--env-file` carga un archivo `CLAVE=valor`; las variables ya definidas en el entorno tienen prioridad. `http://` solo se acepta hacia `localhost`, para que el token nunca viaje sin cifrar.
 

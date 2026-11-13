@@ -103,6 +103,17 @@ double mono_now(void)
     return (double) ts.tv_sec + (double) ts.tv_nsec / 1e9;
 }
 
+/* Segundos desde el arranque del equipo, comparables con /proc/uptime. */
+double uptime_now(void)
+{
+#ifdef CLOCK_BOOTTIME
+    struct timespec ts;
+    if (clock_gettime(CLOCK_BOOTTIME, &ts) == 0)
+        return (double) ts.tv_sec + (double) ts.tv_nsec / 1e9;
+#endif
+    return mono_now();
+}
+
 int64_t system_ms(void)
 {
     struct timeval tv;

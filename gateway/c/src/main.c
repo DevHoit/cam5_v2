@@ -45,6 +45,8 @@
 #define CONFIG_RETRY_SECONDS 30
 #define QUEUE_MAX_AGE_MS (INT64_C(7) * 24 * 3600 * 1000 - INT64_C(10) * 60 * 1000)
 #define MAX_FLUSH_PER_LOOP 5
+#define FLUSH_BUDGET_SECONDS 3.0 /* envío máximo por vuelta: la lectura Modbus no espera al 4G */
+#define ALIVE_INTERVAL_SECONDS 10
 #define STATE_UPLOAD_MIN_GAP 30.0
 #define LOOP_SLEEP_MS 200
 #define STATS_INTERVAL_SECONDS (15 * 60)
@@ -136,6 +138,7 @@ typedef struct {
     char state_dir[512];
     char ca_file[512];
     char log_file[512];
+    char alive_file[512];
     host_override overrides[32];
     int noverrides;
     int register_offset;
@@ -167,6 +170,8 @@ typedef struct {
     double next_attempt;
     double next_stats;
     int warned_clock;
+    double next_alive;
+    double last_accept_up; /* segundos desde el arranque del equipo; 0 = ninguno */
 } gateway;
 
 static volatile sig_atomic_t g_running = 1;
@@ -296,6 +301,12 @@ static int load_settings(settings *s)
     copy_str(s->state_dir, sizeof(s->state_dir), env_or("CAM5_STATE_DIR", "/data/cam5-gateway"));
     copy_str(s->ca_file, sizeof(s->ca_file), env_or("CAM5_CA_FILE", ""));
     copy_str(s->log_file, sizeof(s->log_file), env_or("CAM5_LOG_FILE", ""));
+    /* Archivo de vida en RAM: el vigilante del equipo reinicia el gateway si deja de actualizarse.
+     * CAM5_ALIVE_FILE= (vacío) lo desactiva. */
+    {
+        const char *alive = getenv("CAM5_ALIVE_FILE");
+        copy_str(s->alive_file, sizeof(s->alive_file), alive ? alive : "/var/run/cam5-gateway.alive");
+    }
     if (parse_overrides(s, getenv("CAM5_HOST_OVERRIDES")) != 0)
         return -1;
     s->register_offset = env_int("CAM5_REGISTER_OFFSET", 0, -65535, 65535);
@@ -991,7 +1002,12 @@ static void flush_queue(gateway *gw)
         return;
     queue_item items[MAX_FLUSH_PER_LOOP];
     int n = queue_oldest(&gw->queue, items, MAX_FLUSH_PER_LOOP);
+    double began = mono_now();
     for (int i = 0; i < n && g_running; i++) {
+        /* Con un 4G lento, vaciar la cola de una vez dejaría a los controladores sin leer:
+         * el resto sale en la vuelta siguiente, 200 ms después de una nueva lectura. */
+        if (i > 0 && mono_now() - began > FLUSH_BUDGET_SECONDS)
+            break;
         if (wall_ms() - items[i].completed_ms > QUEUE_MAX_AGE_MS) {
             LOGW("Lote %s excede 7 días; se archiva sin enviar", items[i].name);
             queue_reject(&gw->queue, &items[i]);
@@ -1045,6 +1061,7 @@ static void flush_queue(gateway *gw)
             json_free(batch);
             queue_remove(&gw->queue, &items[i]);
             gw->retry_index = 0;
+            gw->last_accept_up = uptime_now();
         } else if (permanent_rejection(resp.status)) {
             char excerpt[400] = "";
             if (resp.body)
@@ -1062,6 +1079,23 @@ static void flush_queue(gateway *gw)
         }
         http_response_free(&resp);
         free(payload);
+    }
+}
+
+/* Escribe uptime, último lote aceptado y cola en un archivo en RAM (tmpfs). Lo lee
+ * /etc/init.d/cam5-gateway status: sin actualización por 3 min, el vigilante lo reinicia. */
+static void write_alive(gateway *gw, double now)
+{
+    if (!gw->cfg.alive_file[0] || now < gw->next_alive)
+        return;
+    gw->next_alive = now + ALIVE_INTERVAL_SECONDS;
+    char text[200];
+    int n = snprintf(text, sizeof(text), "uptime=%.0f\nlast_accept=%.0f\nqueue=%lu\npid=%ld\n", uptime_now(),
+                     gw->last_accept_up, gw->queue.count, (long) getpid());
+    static int warned = 0;
+    if (n > 0 && write_file_atomic(gw->cfg.alive_file, text, (size_t) n) != 0 && !warned) {
+        warned = 1;
+        LOGW("No se pudo escribir el archivo de vida %s: %s", gw->cfg.alive_file, strerror(errno));
     }
 }
 
@@ -1108,6 +1142,7 @@ static int run(gateway *gw)
             device_due(gw, &gw->devices[i], now);
         }
         flush_queue(gw);
+        write_alive(gw, mono_now());
         if (now >= gw->next_stats || g_dump_stats) {
             if (gw->next_stats > 0)
                 log_stats(gw);

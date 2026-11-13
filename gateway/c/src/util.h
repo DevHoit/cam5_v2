@@ -26,6 +26,7 @@ void log_msg(int level, const char *fmt, ...) CAM5_PRINTF(2, 3);
 
 /* Segundos monótonos; no saltan cuando cambia la hora del sistema. */
 double mono_now(void);
+double uptime_now(void);
 /* Milisegundos desde 1970 en UTC, corregidos con la hora del servidor. */
 int64_t wall_ms(void);
 /* Milisegundos desde 1970 según el reloj del sistema, sin corrección. */

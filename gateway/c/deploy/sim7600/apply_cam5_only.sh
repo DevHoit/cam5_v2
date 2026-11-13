@@ -131,3 +131,6 @@ setsid /etc/init.d/hoit_health start </dev/null >/dev/null 2>&1
 setsid /etc/init.d/hoit_conn start </dev/null >/dev/null 2>&1
 say "Listo. Espacio:"
 df -h /data /cache | sed 's/^/        /'
+
+# 7) Seguridad y vigilancia (fase 1): cortafuegos, interruptor Wi-Fi, detección de cuelgue, inittab
+[ -f "$SRC/apply_hardening.sh" ] && sh "$SRC/apply_hardening.sh" "$SRC"

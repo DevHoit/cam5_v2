@@ -237,6 +237,11 @@ kill_stale_at_readers() {
 ensure_firewall() {
     [ "$FIREWALL" = "1" ] || return 0
     command -v iptables >/dev/null 2>&1 || return 0
+    # Cortafuegos completo (IPv4/IPv6, Wi-Fi corporativo, reenvíos): ver hoit_firewall.sh.
+    if [ -x /data/hoit/bin/hoit_firewall.sh ]; then
+        /data/hoit/bin/hoit_firewall.sh apply >/dev/null 2>&1
+        return 0
+    fi
     iptables -N HOIT_GUARD 2>/dev/null
     iptables -C INPUT -j HOIT_GUARD 2>/dev/null || iptables -I INPUT 1 -j HOIT_GUARD
     if ! iptables -C HOIT_GUARD -p tcp --dport 5565 -j DROP 2>/dev/null; then
