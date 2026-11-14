@@ -79,7 +79,7 @@ export async function GET(request: NextRequest) {
       const retention = await historyRetention(db, assetId);
       let resolution;
       try {
-        resolution = resolveHistoryResolution(from, to, requestedResolution as HistoryResolutionRequest, retention.rawDays);
+        resolution = resolveHistoryResolution(from, to, requestedResolution as HistoryResolutionRequest, retention.rawDays, new Date(), retention.aggregateDays);
       } catch (resolutionError) {
         if (resolutionError instanceof HistoryRangeError) throw new ApiError(400, resolutionError.message);
         throw resolutionError;

@@ -118,3 +118,39 @@ test("keeps diagnostic register samples for at most two days while raw readings 
     await client.close();
   }
 });
+
+test("keeps each aggregate resolution only as long as it is used", async () => {
+  const client = new PGlite();
+  try {
+    for (const filename of ["0000_cam5_initial_schema.sql", "0001_eager_blockbuster.sql", "0002_sparkling_wallow.sql", "0003_rich_charles_xavier.sql", "0004_windy_gauntlet.sql", "0005_milky_caretaker.sql", "0006_smiling_frightful_four.sql", "0007_big_frightful_four.sql", "0008_sloppy_mister_sinister.sql", "0009_cuddly_infant_terrible.sql", "0010_robust_wallop.sql", "0011_dear_prima.sql", "0012_login_lockout.sql", "0013_client_logo.sql"]) {
+      const migration = await readFile(new URL(`../drizzle/${filename}`, import.meta.url), "utf8");
+      await client.exec(migration.replaceAll("--> statement-breakpoint", ""));
+    }
+    const db = drizzle(client, { schema });
+    const aggregationDb = db as unknown as Cam5Database;
+    await seedCam5Database(aggregationDb, { log: false });
+    const [site] = await db.select().from(schema.sites).limit(1);
+    const [channel] = await db.select().from(schema.channels).where(eq(schema.channels.code, "T01")).limit(1);
+    const evaluatedAt = new Date("2026-09-10T12:00:00.000Z");
+    const daysAgo = (days: number) => new Date(Math.floor((evaluatedAt.getTime() - days * 86_400_000) / 86_400_000) * 86_400_000);
+    const cases: Array<[number, number, boolean]> = [
+      [60, 20, true], [60, 40, false],
+      [300, 80, true], [300, 100, false],
+      [3600, 400, true], [86400, 1000, true], [86400, 2000, false],
+    ];
+    await db.insert(schema.readingAggregates).values(cases.map(([bucketSeconds, days]) => ({
+      channelId: channel.id, bucketStart: daysAgo(days), bucketSeconds, sampleCount: 1, averageValue: "40", minimumValue: "40", maximumValue: "40", firstValue: "40", lastValue: "40",
+    })));
+
+    await refreshTelemetryAggregates(aggregationDb, site.id, evaluatedAt);
+
+    const kept = await db.select({ bucketSeconds: schema.readingAggregates.bucketSeconds, bucketStart: schema.readingAggregates.bucketStart })
+      .from(schema.readingAggregates).where(eq(schema.readingAggregates.channelId, channel.id));
+    for (const [bucketSeconds, days, expected] of cases) {
+      const present = kept.some((row) => row.bucketSeconds === bucketSeconds && row.bucketStart.getTime() === daysAgo(days).getTime());
+      assert.equal(present, expected, `${bucketSeconds}s de hace ${days} días`);
+    }
+  } finally {
+    await client.close();
+  }
+});

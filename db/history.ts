@@ -1,4 +1,5 @@
 import { and, asc, eq, sql, type SQL } from "drizzle-orm";
+import { DEFAULT_AGGREGATE_RETENTION_DAYS, resolutionCovers } from "./aggregate-retention";
 import type { Cam5Database } from "./index";
 import { alarmRules, channels, devices, readingProfiles, userChannelPreferences } from "./schema";
 
@@ -26,15 +27,24 @@ const GROUP_METRICS: Record<Exclude<HistoryChannelGroup, "visible" | "all">, str
   environment: ["ambient_temperature", "humidity"],
 };
 
-export function resolveHistoryResolution(from: Date, to: Date, requested: HistoryResolutionRequest, rawRetentionDays: number, now = new Date()): HistoryResolution {
+export function resolveHistoryResolution(
+  from: Date,
+  to: Date,
+  requested: HistoryResolutionRequest,
+  rawRetentionDays: number,
+  now = new Date(),
+  aggregateRetentionDays = DEFAULT_AGGREGATE_RETENTION_DAYS,
+): HistoryResolution {
   const rangeDays = (to.getTime() - from.getTime()) / 86_400_000;
   const rawAvailableSince = now.getTime() - rawRetentionDays * 86_400_000;
-  const key: HistoryResolution["key"] = requested !== "auto"
+  let key: HistoryResolution["key"] = requested !== "auto"
     ? requested
     : from.getTime() >= rawAvailableSince && rangeDays <= 7 ? "raw"
       : rangeDays <= 7 ? "300"
         : rangeDays <= 92 ? "3600"
           : "86400";
+  // El promedio de 5 min se guarda menos que el de hora: si ya se borró, se usa el de hora.
+  if (requested === "auto" && key === "300" && !resolutionCovers(300, from, { rawDays: rawRetentionDays, aggregateDays: aggregateRetentionDays }, now)) key = "3600";
   if (rangeDays > HISTORY_MAX_RANGE_DAYS[key]) {
     throw new HistoryRangeError(`${RESOLUTION_LABELS[key]} admite como máximo ${HISTORY_MAX_RANGE_DAYS[key]} días. Elige un periodo más corto o una resolución mayor.`);
   }

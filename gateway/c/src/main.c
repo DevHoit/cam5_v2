@@ -1347,9 +1347,9 @@ static void log_stats(gateway *gw)
 {
     const http_client *h = &gw->http;
     LOGI("Estado: %d controlador(es), cola %lu lote(s) (%llu KB); HTTP %lu solicitud(es), %lu conexión(es) (%lu reanudadas), "
-         "%.1f KB enviados, %.1f KB recibidos desde el arranque",
+         "%lu consulta(s) DNS, %.1f KB enviados, %.1f KB recibidos desde el arranque",
          gw->ndevices, gw->queue.count, (unsigned long long) (gw->queue.bytes / 1024), h->requests, h->connections, h->resumed,
-         (double) h->bytes_sent / 1024.0, (double) h->bytes_received / 1024.0);
+         h->dns_lookups, (double) h->bytes_sent / 1024.0, (double) h->bytes_received / 1024.0);
 }
 
 /* ---- Ciclo principal ---------------------------------------------------- */

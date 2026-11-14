@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import type { Cam5Database } from "./index";
+import { AGGREGATE_RETENTION_DAYS } from "./aggregate-retention";
 import { assets, channels, deviceRegisterSamples, devices, ingestionBatches, latestReadings, readingAggregates, readingProfiles, readings } from "./schema";
 
 /** Días máximos que se conservan las muestras de registros de diagnóstico (device_register_samples). */
@@ -11,6 +12,15 @@ const AGGREGATION_WINDOWS = [
   { bucketSeconds: 3600, lookbackMs: 8 * 24 * 60 * 60 * 1000 },
   { bucketSeconds: 86400, lookbackMs: 8 * 24 * 60 * 60 * 1000 },
 ] as const;
+
+/** Días por resolución, acotados por aggregate_retention_days del perfil. */
+const aggregateRetentionDays = sql.join([
+  sql`case ${readingAggregates.bucketSeconds}`,
+  ...Object.entries(AGGREGATE_RETENTION_DAYS)
+    .filter(([, days]) => days !== null)
+    .map(([bucket, days]) => sql`when ${sql.raw(String(Number(bucket)))} then least(${sql.raw(String(days))}, ${readingProfiles.aggregateRetentionDays})`),
+  sql`else ${readingProfiles.aggregateRetentionDays} end`,
+], sql` `);
 
 export async function refreshTelemetryAggregates(db: Cam5Database, siteId: string, evaluatedAt = new Date()) {
   let bucketsUpdated = 0;
@@ -94,7 +104,7 @@ export async function refreshTelemetryAggregates(db: Cam5Database, siteId: strin
       and ${devices.assetId} = ${assets.id}
       and ${devices.readingProfileId} = ${readingProfiles.id}
       and ${assets.siteId} = ${siteId}
-      and ${readingAggregates.bucketStart} < ${evaluatedAtIso}::timestamptz - make_interval(days => ${readingProfiles.aggregateRetentionDays})
+      and ${readingAggregates.bucketStart} < ${evaluatedAtIso}::timestamptz - make_interval(days => ${aggregateRetentionDays})
   `);
   return { bucketsUpdated, retentionApplied: true };
 }

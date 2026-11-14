@@ -94,6 +94,7 @@ El host `192.168.10.42` del seed es provisional. Debe reemplazarse por la direcc
 - Cada lote admite una sola lectura por señal.
 - Los códigos `0x8000` y `0xFFFF` se almacenan como valor crudo, con valor procesado nulo y calidad `bad`.
 - El backend actualiza `latest_readings` en la misma transacción que el histórico.
+- Retención (cada 5 minutos, `db/telemetry-aggregation.ts`): lecturas crudas e `ingestion_batches` según `raw_retention_days` del perfil (7 días por omisión); muestras de diagnóstico 2 días; `reading_aggregates` por resolución según `db/aggregate-retention.ts`: 1 minuto 30 días, 5 minutos 92 días, 1 hora y 1 día según `aggregate_retention_days` (5 años). Tendencias e histórico en modo automático pasan a una resolución mayor cuando el detalle del periodo ya se borró.
 - Después de aceptar cada lote, el motor evalúa umbrales, calidad e histéresis; su progreso por regla se conserva en `alarm_rule_states`.
 - Los eventos de apertura, escalamiento, reapertura y recuperación generan entregas según las políticas activas; cada entrega queda deduplicada y conserva contenido, destino, intentos y respuesta del proveedor.
 - Las alarmas de comunicación se revisan al recibir telemetría, al consultar el centro de alarmas y mediante el endpoint protegido `/api/v1/alarms/evaluate` para un programador externo.

@@ -14,6 +14,8 @@ test("picks per-batch rows for recent ranges and stored averages for longer ones
   assert.equal(resolveHistoryResolution(hoursAgo(24 * 30), now, "auto", 7, now).key, "3600");
   assert.equal(resolveHistoryResolution(hoursAgo(24 * 365), now, "auto", 7, now).key, "86400");
   assert.throws(() => resolveHistoryResolution(hoursAgo(24 * 40), now, "raw", 7, now), HistoryRangeError);
+  // El promedio de 5 min se guarda 92 días; más atrás se usa el de hora.
+  assert.equal(resolveHistoryResolution(hoursAgo(24 * 100), hoursAgo(24 * 99), "auto", 7, now).key, "3600");
 });
 
 test("groups readings from the same gateway batch into a single row", async () => {

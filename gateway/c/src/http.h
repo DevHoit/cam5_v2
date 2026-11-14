@@ -25,6 +25,14 @@ typedef struct {
     void *ssl;            /* SSL* */
     void *session;        /* SSL_SESSION* para reanudar */
     double last_used;
+    /* Caché de DNS: direcciones resueltas de host:port (sockaddr opacos para no
+     * arrastrar cabeceras de sockets). Evita una consulta DNS por conexión. */
+    unsigned char dns_addr[4][128];
+    unsigned int dns_len[4];
+    int dns_family[4];
+    int dns_count;
+    double dns_until;
+    unsigned long dns_lookups;
     /* Estadísticas, para estimar el consumo del plan de datos. */
     uint64_t bytes_sent;
     uint64_t bytes_received;

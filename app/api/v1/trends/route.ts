@@ -8,6 +8,7 @@ import {
   readings,
   userAssetScopes,
 } from "../../../../db/schema";
+import { historyRetention } from "../../../../db/history";
 import { apiErrorResponse, ApiError, requireApiSession } from "../_lib/auth";
 import { inferTrendStepSeconds, resolveTrendResolution, TREND_RESOLUTIONS, trendRawCutoff, type RequestedTrendResolution } from "../_lib/trend-resolution";
 
@@ -49,13 +50,13 @@ export async function GET(request: NextRequest) {
     const { from, to } = parseRange(request);
     const requestedResolution = request.nextUrl.searchParams.get("resolution") || "auto";
     if (!TREND_RESOLUTIONS.includes(requestedResolution as RequestedTrendResolution)) throw new ApiError(400, "La resolución solicitada no es válida.");
-    const resolution = resolveTrendResolution(from, to, requestedResolution as RequestedTrendResolution);
 
     const [asset] = await db.select({ id: assets.id, code: assets.code, name: assets.name, siteId: assets.siteId })
       .from(assets)
       .where(and(eq(assets.id, assetId), eq(assets.siteId, user.siteId), eq(assets.active, true)))
       .limit(1);
     if (!asset) throw new ApiError(404, "El punto de medición no existe en el sitio activo.");
+    const resolution = resolveTrendResolution(from, to, requestedResolution as RequestedTrendResolution, await historyRetention(db, asset.id));
     const scopes = await db.select({ assetId: userAssetScopes.assetId }).from(userAssetScopes).where(eq(userAssetScopes.userId, user.id));
     if (scopes.length && !scopes.some((scope) => scope.assetId === assetId)) throw new ApiError(403, "No tienes acceso al punto de medición indicado.");
 
