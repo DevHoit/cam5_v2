@@ -1,4 +1,7 @@
 import { ApiError } from "./auth";
+import { DEFAULT_AGGREGATE_RETENTION_DAYS, DEFAULT_RAW_RETENTION_DAYS, resolutionCovers, type RetentionDays } from "../../../../db/aggregate-retention";
+
+const AUTO_ORDER = ["raw", "60", "300", "3600", "86400"] as const;
 
 export const TREND_RESOLUTIONS = ["auto", "raw", "60", "300", "3600", "86400"] as const;
 export type RequestedTrendResolution = typeof TREND_RESOLUTIONS[number];
@@ -11,15 +14,28 @@ const RESOLUTION_LABELS: Record<Exclude<RequestedTrendResolution, "auto">, strin
   "86400": "1 día",
 };
 
-export function resolveTrendResolution(from: Date, to: Date, requested: RequestedTrendResolution) {
+export function resolveTrendResolution(
+  from: Date,
+  to: Date,
+  requested: RequestedTrendResolution,
+  retention: RetentionDays = { rawDays: DEFAULT_RAW_RETENTION_DAYS, aggregateDays: DEFAULT_AGGREGATE_RETENTION_DAYS },
+  now = new Date(),
+) {
   const rangeSeconds = (to.getTime() - from.getTime()) / 1000;
-  const value = requested === "auto"
+  let value: Exclude<RequestedTrendResolution, "auto"> = requested === "auto"
     ? rangeSeconds <= 2 * 3600 ? "raw"
       : rangeSeconds <= 7 * 86400 ? "60"
         : rangeSeconds <= 90 * 86400 ? "300"
           : rangeSeconds <= 2 * 365 * 86400 ? "3600"
             : "86400"
     : requested;
+  // En automático, si el detalle elegido ya se borró por retención, se sube a una resolución mayor.
+  if (requested === "auto") {
+    for (let index = AUTO_ORDER.indexOf(value); index < AUTO_ORDER.length - 1; index++) {
+      if (resolutionCovers(value === "raw" ? 0 : Number(value), from, retention, now)) break;
+      value = AUTO_ORDER[index + 1];
+    }
+  }
   const maximumRange: Record<Exclude<RequestedTrendResolution, "auto">, number> = {
     raw: 2 * 3600,
     "60": 7 * 86400,

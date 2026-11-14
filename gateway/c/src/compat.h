@@ -26,7 +26,7 @@
 #define _TIME_BITS 64
 #endif
 
-#define CAM5_VERSION "1.2.0"
+#define CAM5_VERSION "1.2.1"
 
 #if defined(__GNUC__) || defined(__clang__)
 #define CAM5_PRINTF(fmt, args) __attribute__((format(printf, fmt, args)))

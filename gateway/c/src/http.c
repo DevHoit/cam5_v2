@@ -35,6 +35,10 @@
  * quedaría esperando el timeout completo. 90 s cubre la cadencia de un lote
  * por minuto; si el servidor cerró antes, poll() lo detecta sin costo. */
 #define MAX_IDLE_SECONDS 90.0
+/* Las direcciones resueltas se reutilizan este tiempo. Si la conexión falla con
+ * una dirección guardada se vuelve a resolver de inmediato, y si el DNS falla
+ * se usa la última dirección conocida aunque haya vencido. */
+#define DNS_CACHE_SECONDS 1800.0
 
 static void set_err(char *err, size_t err_len, const char *fmt, ...) CAM5_PRINTF(3, 4);
 
@@ -252,59 +256,123 @@ void http_response_free(http_response *resp)
 
 /* ---- Conexión ----------------------------------------------------------- */
 
-static int tcp_connect(const char *host, const char *port, int timeout_s, char *err, size_t err_len)
+static int try_connect(int family, const struct sockaddr *addr, socklen_t addrlen, int timeout_s, int *last_errno)
+{
+    int fd = socket(family, SOCK_STREAM, 0);
+    if (fd < 0) {
+        *last_errno = errno;
+        return -1;
+    }
+    int flags = fcntl(fd, F_GETFL, 0);
+    fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+    int rc = connect(fd, addr, addrlen);
+    if (rc != 0 && errno == EINPROGRESS) {
+        struct pollfd pfd = { fd, POLLOUT, 0 };
+        rc = poll(&pfd, 1, timeout_s * 1000);
+        if (rc == 1) {
+            int so_error = 0;
+            socklen_t len = sizeof(so_error);
+            getsockopt(fd, SOL_SOCKET, SO_ERROR, &so_error, &len);
+            rc = so_error ? -1 : 0;
+            errno = so_error;
+        } else {
+            errno = rc == 0 ? ETIMEDOUT : errno;
+            rc = -1;
+        }
+    }
+    if (rc != 0) {
+        *last_errno = errno;
+        close(fd);
+        return -1;
+    }
+    fcntl(fd, F_SETFL, flags);
+    struct timeval tv = { timeout_s, 0 };
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+    int one = 1;
+    setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+#ifdef SO_NOSIGPIPE
+    setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one));
+#endif
+    return fd;
+}
+
+/* Resuelve host:port y guarda hasta 4 direcciones. Devuelve 0 si resolvió. */
+static int dns_resolve(http_client *http, char *err, size_t err_len)
 {
     struct addrinfo hints, *res = NULL;
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
-    int gai = getaddrinfo(host, port, &hints, &res);
+    http->dns_lookups++;
+    int gai = getaddrinfo(http->host, http->port, &hints, &res);
     if (gai != 0) {
-        set_err(err, err_len, "No se pudo resolver %s: %s", host, gai_strerror(gai));
+        set_err(err, err_len, "No se pudo resolver %s: %s", http->host, gai_strerror(gai));
         return -1;
     }
-    int fd = -1;
-    int last_errno = 0;
-    for (struct addrinfo *rp = res; rp; rp = rp->ai_next) {
-        fd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
-        if (fd < 0)
+    int n = 0;
+    for (struct addrinfo *rp = res; rp && n < 4; rp = rp->ai_next) {
+        if (rp->ai_addrlen > sizeof(http->dns_addr[0]))
             continue;
-        int flags = fcntl(fd, F_GETFL, 0);
-        fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-        int rc = connect(fd, rp->ai_addr, rp->ai_addrlen);
-        if (rc != 0 && errno == EINPROGRESS) {
-            struct pollfd pfd = { fd, POLLOUT, 0 };
-            rc = poll(&pfd, 1, timeout_s * 1000);
-            if (rc == 1) {
-                int so_error = 0;
-                socklen_t len = sizeof(so_error);
-                getsockopt(fd, SOL_SOCKET, SO_ERROR, &so_error, &len);
-                rc = so_error ? -1 : 0;
-                errno = so_error;
-            } else {
-                errno = rc == 0 ? ETIMEDOUT : errno;
-                rc = -1;
-            }
-        }
-        if (rc == 0) {
-            fcntl(fd, F_SETFL, flags);
-            struct timeval tv = { timeout_s, 0 };
-            setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-            setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
-            int one = 1;
-            setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
-#ifdef SO_NOSIGPIPE
-            setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one));
-#endif
-            break;
-        }
-        last_errno = errno;
-        close(fd);
-        fd = -1;
+        memcpy(http->dns_addr[n], rp->ai_addr, rp->ai_addrlen);
+        http->dns_len[n] = (unsigned int) rp->ai_addrlen;
+        http->dns_family[n] = rp->ai_family;
+        n++;
     }
     freeaddrinfo(res);
+    if (n == 0) {
+        set_err(err, err_len, "No se pudo resolver %s: sin direcciones", http->host);
+        return -1;
+    }
+    http->dns_count = n;
+    http->dns_until = mono_now() + DNS_CACHE_SECONDS;
+    return 0;
+}
+
+/* Prueba las direcciones guardadas; la que conecta pasa al primer lugar. */
+static int connect_cached(http_client *http, int *last_errno)
+{
+    for (int i = 0; i < http->dns_count; i++) {
+        int fd = try_connect(http->dns_family[i], (const struct sockaddr *) http->dns_addr[i],
+                             (socklen_t) http->dns_len[i], http->timeout_s, last_errno);
+        if (fd < 0)
+            continue;
+        if (i > 0) {
+            unsigned char addr[sizeof(http->dns_addr[0])];
+            unsigned int len = http->dns_len[i];
+            int family = http->dns_family[i];
+            memcpy(addr, http->dns_addr[i], sizeof(addr));
+            memmove(http->dns_addr[1], http->dns_addr[0], sizeof(http->dns_addr[0]) * (size_t) i);
+            memmove(&http->dns_len[1], &http->dns_len[0], sizeof(http->dns_len[0]) * (size_t) i);
+            memmove(&http->dns_family[1], &http->dns_family[0], sizeof(http->dns_family[0]) * (size_t) i);
+            memcpy(http->dns_addr[0], addr, sizeof(addr));
+            http->dns_len[0] = len;
+            http->dns_family[0] = family;
+        }
+        return fd;
+    }
+    return -1;
+}
+
+static int tcp_connect(http_client *http, char *err, size_t err_len)
+{
+    int last_errno = 0;
+    int fresh = 0;
+    if (http->dns_count == 0 || mono_now() >= http->dns_until) {
+        char dns_err[256] = "";
+        fresh = 1;
+        if (dns_resolve(http, dns_err, sizeof(dns_err)) != 0 && http->dns_count == 0) {
+            set_err(err, err_len, "%s", dns_err);
+            return -1;
+        }
+        /* DNS caído pero hay una dirección conocida: se usa vencida. */
+    }
+    int fd = connect_cached(http, &last_errno);
+    if (fd < 0 && !fresh && dns_resolve(http, NULL, 0) == 0)
+        fd = connect_cached(http, &last_errno);  /* la dirección guardada pudo cambiar */
     if (fd < 0)
-        set_err(err, err_len, "No se pudo conectar a %s:%s: %s", host, port, strerror(last_errno));
+        set_err(err, err_len, "No se pudo conectar a %s:%s: %s", http->host, http->port,
+                last_errno ? strerror(last_errno) : "sin direcciones");
     return fd;
 }
 
@@ -316,7 +384,7 @@ static int is_ip_literal(const char *host)
 
 static int http_connect(http_client *http, char *err, size_t err_len)
 {
-    http->fd = tcp_connect(http->host, http->port, http->timeout_s, err, err_len);
+    http->fd = tcp_connect(http, err, err_len);
     if (http->fd < 0)
         return -1;
     http->connections++;
