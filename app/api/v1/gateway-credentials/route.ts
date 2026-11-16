@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { and, count, desc, eq, gt, ilike, isNotNull, isNull, lte, or, type SQL } from "drizzle-orm";
 import { createGatewayToken, gatewayTokenDisplayPrefix, hashGatewayToken } from "../../../../db/gateway-auth";
-import { auditLogs, gatewayApiCredentials, gateways } from "../../../../db/schema";
+import { auditLogs, gatewayApiCredentials, gatewayReleases, gateways } from "../../../../db/schema";
 import { readDataAlert, readDataPlan } from "../../../../db/gateway-data-plan";
 import { apiErrorResponse, ApiError, parsePage, requestMetadata, requireApiSession } from "../_lib/auth";
 
@@ -71,7 +71,12 @@ export async function GET(request: NextRequest) {
         softwareVersion: gateways.softwareVersion,
         ipAddress: gateways.ipAddress,
         metadata: gateways.metadata,
-      }).from(gateways).where(eq(gateways.siteId, user.siteId)).orderBy(gateways.code),
+        targetReleaseId: gateways.targetReleaseId,
+        targetVersion: gatewayReleases.version,
+        targetAssignedAt: gateways.targetAssignedAt,
+      }).from(gateways)
+        .leftJoin(gatewayReleases, eq(gatewayReleases.id, gateways.targetReleaseId))
+        .where(eq(gateways.siteId, user.siteId)).orderBy(gateways.code),
       db.select({
         gatewayId: gatewayApiCredentials.gatewayId,
         revokedAt: gatewayApiCredentials.revokedAt,
@@ -94,6 +99,7 @@ export async function GET(request: NextRequest) {
         dataPlan: readDataPlan(metadata),
         dataAlert: readDataAlert(metadata),
         lastSeenAt: gateway.lastSeenAt?.toISOString() ?? null,
+        targetAssignedAt: gateway.targetAssignedAt?.toISOString() ?? null,
         activeCredentials: statusRows.filter((credential) => credential.gatewayId === gateway.id && (credential.status === "active" || credential.status === "unused")).length,
       })),
       items: records.map((record) => ({
@@ -120,6 +126,7 @@ export async function GET(request: NextRequest) {
         expiredCredentials,
       },
       canEditDataPlan: user.platformStaff,
+      canManageReleases: user.platformStaff,
       serverTime: now.toISOString(),
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {

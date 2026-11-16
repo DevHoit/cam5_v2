@@ -187,6 +187,18 @@ Cada resultado sigue las reglas de un lote individual: `200`/`202` se retira de 
 
 Con `capabilities.heartbeatHealth: true`, el cuerpo del heartbeat puede ser `{"health":{…}}` con valores simples (hasta 40 claves): `version`, `uplink` (`wifi`, `4g`, `none`), `csq`, `rat`, `operator`, `lteMonth`, `lteMonthMb`, `devices`, `devicesOk`, `queue`, `uptimeS`, `memFreeKb`, `rootfsPct`, `reboots24h`. El portal guarda el último informe en `gateways.metadata.health` y lo muestra en **Provisionamiento → Equipos en terreno**. Las respuestas de `/api/v1/gateway/*` no llevan cabeceras de seguridad de navegador.
 
+Desde 1.3.0 el gateway agrega `updateState` (`installing`, `installed`, `rolled_back`, `failed`), `updateVersion` y `updateError` con el resultado de la última actualización remota.
+
+### Actualización remota
+
+Si el personal de HOIT asignó al gateway una versión distinta de la que informó, la respuesta del heartbeat incluye:
+
+```json
+"update": { "version": "1.3.1", "sha256": "…", "signature": "<Ed25519 en base64>", "size": 1531302, "attempt": "tom0f9" }
+```
+
+El gateway descarga el paquete con `GET /api/v1/gateway/update` (su propio token; `application/gzip`), comprueba tamaño, SHA-256 y la firma con la clave pública grabada en el binario y lanza `hoit_update.sh apply`. `attempt` cambia cada vez que se asigna la versión: una versión que falló o se revirtió en el equipo solo se reintenta cuando el personal la vuelve a asignar.
+
 ## Respuesta
 
 Un lote nuevo responde HTTP `202`:

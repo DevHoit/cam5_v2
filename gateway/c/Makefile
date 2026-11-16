@@ -16,7 +16,7 @@ OPTFLAGS  ?= -O2
 CFLAGS    += -std=c99 $(OPTFLAGS) -Wall -Wextra -Wpedantic -Wshadow -Wformat=2 -Wstrict-prototypes -Wmissing-prototypes -Wno-missing-field-initializers
 LDLIBS    ?=
 
-SRC = src/main.c src/util.c src/json.c src/modbus.c src/http.c src/queue.c
+SRC = src/main.c src/util.c src/json.c src/modbus.c src/http.c src/queue.c src/update.c
 HDR = $(wildcard src/*.h)
 BIN = cam5-gateway
 

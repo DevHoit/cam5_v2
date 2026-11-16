@@ -1,7 +1,8 @@
 import { after, type NextRequest } from "next/server";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { checkGatewayDataAlert } from "../../../../../db/gateway-data-plan";
-import { assets, devices, gateways, readingProfiles } from "../../../../../db/schema";
+import { releaseOffer } from "../../../../../db/gateway-releases";
+import { assets, devices, gatewayReleases, gateways, readingProfiles } from "../../../../../db/schema";
 import { apiErrorResponse } from "../../_lib/auth";
 import { requireGatewayCredential } from "../_lib/auth";
 
@@ -49,7 +50,7 @@ export async function POST(request: NextRequest) {
       .orderBy(asc(devices.unitId))
       .limit(1);
 
-    await db.update(gateways).set({
+    const [updated] = await db.update(gateways).set({
       state: "online",
       lastSeenAt: receivedAt,
       updatedAt: receivedAt,
@@ -57,7 +58,20 @@ export async function POST(request: NextRequest) {
         metadata: sql`coalesce(${gateways.metadata}, '{}'::jsonb) || ${JSON.stringify({ health: { ...health, receivedAt: receivedAt.toISOString() } })}::jsonb`,
         ...(typeof health.version === "string" ? { softwareVersion: health.version.slice(0, 80) } : {}),
       } : {}),
-    }).where(eq(gateways.id, credential.gatewayId));
+    }).where(eq(gateways.id, credential.gatewayId)).returning({
+      softwareVersion: gateways.softwareVersion,
+      targetReleaseId: gateways.targetReleaseId,
+      targetAssignedAt: gateways.targetAssignedAt,
+    });
+
+    // Actualización remota: si el personal asignó otra versión, el gateway la descarga de /gateway/update.
+    const [target] = updated?.targetReleaseId ? await db.select({
+      version: gatewayReleases.version,
+      sha256: gatewayReleases.sha256,
+      signature: gatewayReleases.signature,
+      sizeBytes: gatewayReleases.sizeBytes,
+    }).from(gatewayReleases).where(eq(gatewayReleases.id, updated.targetReleaseId)).limit(1) : [];
+    const update = releaseOffer(target ?? null, updated?.softwareVersion, updated?.targetAssignedAt ?? null);
 
     // Aviso de consumo 4G al personal de la plataforma, sin demorar la respuesta al gateway.
     if (typeof health?.lteMonthMb === "number") {
@@ -70,6 +84,7 @@ export async function POST(request: NextRequest) {
       status: "accepted",
       serverTime: receivedAt.toISOString(),
       nextHeartbeatInMs: (policy?.heartbeatIntervalSeconds ?? 30) * 1_000,
+      ...(update ? { update } : {}),
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return apiErrorResponse(error);

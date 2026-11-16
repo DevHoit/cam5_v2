@@ -266,6 +266,18 @@ adb shell "sh /cache/cam5-deploy/apply_hardening.sh /cache/cam5-deploy"
 - **Supervisor raíz**: `init` relanza `hoit_keeper.sh`, que levanta `hoit_health` y `hoit_conn` si se detienen (copia de `inittab` en `/etc/inittab.pre_hoit`).
 - **Otros**: hotspot en WPA2-CCMP (misma red y clave), `simcom_aliyun` desactivado, `sshd` con `MaxAuthTries 3` y `LoginGraceTime 30`, permisos 600 en `/etc/shadow` y `/etc/hostapd.conf`. Con `SSH_KEY_ONLY=1` y `/root/.ssh/authorized_keys` instalado, SSH queda solo con llave.
 
+## Actualización remota (1.3.0)
+
+El personal de HOIT publica versiones firmadas en Core y asigna a cada gateway la que debe tener. El equipo no consulta ningún repositorio: la orden llega en la respuesta del heartbeat con salud (cada 15 min), así que revisar no gasta datos. Una actualización completa pesa unos 1,5 MB.
+
+1. **Armar y firmar** (en el Mac, con Docker): subir `CAM5_VERSION` en `src/compat.h` y ejecutar `sh gateway/tools/release/build_release.sh 1.3.1`. Compila el binario estático, junta binario, scripts, init y portal en `dist/cam5-gateway-1.3.1.tar.gz` y lo firma (`.sig`) con la clave privada `~/.hoit/gateway-release-ed25519.pem`. **La clave privada no va al repositorio ni a Vercel: guárdala en un gestor de contraseñas.** Sin ella no se pueden publicar versiones; si se pierde o se filtra, hay que generar otra y reinstalar a mano en cada equipo un binario con la clave pública nueva (`RELEASE_PUBLIC_KEY` en `src/update.c` y `RELEASE_PUBLIC_KEY_BASE64` en `db/gateway-releases.ts`).
+2. **Publicar**: Core → Provisionamiento → **Versiones del gateway** → paquete + firma. Core rechaza paquetes sin firma válida, con rutas fuera de `/cache/cam5-gateway/`, `/data/hoit/bin/`, `/data/hoit/www/` y `/etc/init.d/`, o que reemplacen `gateway.env`.
+3. **Asignar**: en **Equipos en terreno**, elegir la versión del gateway y **Asignar**. Conviene probar primero en un equipo.
+4. **En el equipo**: `cam5-gateway` descarga el paquete, comprueba SHA-256 y firma, lo guarda en `/cache/cam5-update/` y lanza `hoit_update.sh apply`. El instalador copia solo los archivos que cambiaron, guarda los anteriores, reinicia lo afectado y deja la versión **pendiente**. `hoit_keeper` llama cada minuto a `hoit_update.sh confirm`: se confirma cuando el gateway nuevo entrega un lote a Core; si en 10 min con internet no lo logra, restaura los archivos anteriores y reinicia (sin internet espera hasta 6 h). Nunca toca `gateway.env` ni `hoit_conn.conf`.
+5. **Resultado**: el equipo lo informa en el heartbeat y Core muestra *Al día*, *Pendiente*, *Instalando*, *Revertida* o *Falló*. Una versión revertida no se reintenta sola: **Reintentar** la vuelve a asignar.
+
+Por consola: `hoit_update.sh status`, `hoit_update.sh rollback` (vuelve atrás una instalación pendiente) y el registro `/cache/cam5-update/update.log`. La primera instalación de 1.3.0 se hace a mano (copiar `hoit_update.sh` y ejecutar `hoit_update.sh apply PAQUETE 1.3.0`); desde ahí, todas por Core.
+
 ## Variables de entorno
 
 | Variable | Por defecto | Uso |
@@ -279,6 +291,8 @@ adb shell "sh /cache/cam5-deploy/apply_hardening.sh /cache/cam5-deploy"
 | `CAM5_LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING` |
 | `CAM5_QUEUE_MAX_MB` | `16` | tope de la cola; al superarlo se descartan los lotes más antiguos |
 | `CAM5_HTTP_TIMEOUT` | `20` | segundos por solicitud sobre 4G |
+| `CAM5_UPDATE_DIR` | `/cache/cam5-update` | paquetes descargados y resultado de la actualización remota |
+| `CAM5_UPDATE_SCRIPT` | `/data/hoit/bin/hoit_update.sh` | instalador que lanza el gateway |
 | `CAM5_TLS_GROUPS` | `X25519:P-256` | intercambio de claves TLS; ver «Consumo de datos» |
 | `CAM5_HEARTBEAT_IDLE_S` | intervalo del portal | segundos sin contacto antes de enviar un heartbeat (máx. 3600) |
 | `CAM5_CONFIG_REFRESH_MIN` | `60` | minutos entre consultas de configuración (5–1440) |
