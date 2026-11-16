@@ -22,7 +22,9 @@ import { Pagination } from "./pagination";
 type NoticeTone = "success" | "info" | "warning";
 type ConfirmRequest = { title: string; detail: string; confirmLabel: string; tone?: "default" | "danger"; onConfirm: () => void };
 type GatewayHealth = Partial<Record<"version" | "uplink" | "rat" | "operator" | "receivedAt" | "lteMonth", string>> & Partial<Record<"csq" | "lteMonthMb" | "queue" | "uptimeS" | "devices" | "devicesOk" | "memFreeKb" | "rootfsPct" | "reboots24h", number>>;
-type Gateway = { id: string; code: string; name: string; state: string; active: boolean; lastSeenAt: string | null; softwareVersion: string | null; ipAddress: string | null; activeCredentials: number; health: GatewayHealth | null };
+type DataPlan = { planMb: number; alertMb: number };
+type DataAlert = { month: string; alertMb: number; usedMb: number; sentAt: string; recipients: number };
+type Gateway = { id: string; code: string; name: string; state: string; active: boolean; lastSeenAt: string | null; softwareVersion: string | null; ipAddress: string | null; activeCredentials: number; health: GatewayHealth | null; dataPlan: DataPlan; dataAlert: DataAlert | null };
 
 const UPLINK_LABELS: Record<string, string> = { wifi: "Wi-Fi", "4g": "4G", none: "Sin salida" };
 
@@ -41,7 +43,56 @@ function sinceLabel(iso: string | null | undefined): string {
   return `hace ${Math.round(seconds / 86400)} días`;
 }
 
-function GatewayHealthPanel({ gateways }: { gateways: Gateway[] }) {
+function formatMb(value: number) {
+  return new Intl.NumberFormat("es-CL", { maximumFractionDigits: 1 }).format(value);
+}
+
+function DataPlanUsage({ gateway, canEdit, onSave }: { gateway: Gateway; canEdit: boolean; onSave: (plan: DataPlan) => Promise<void> }) {
+  const { planMb, alertMb } = gateway.dataPlan;
+  const used = gateway.health?.lteMonthMb;
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({ planMb: String(planMb), alertMb: String(alertMb) });
+  const [saving, setSaving] = useState(false);
+  const percent = used === undefined ? 0 : Math.min(100, (used / planMb) * 100);
+  const level = used === undefined ? "" : used >= planMb ? "over" : used >= alertMb ? "alert" : "";
+  const alert = gateway.dataAlert;
+  const alertedThisMonth = Boolean(alert && alert.month === gateway.health?.lteMonth && alert.alertMb === alertMb);
+  const planValue = Number(form.planMb);
+  const alertValue = Number(form.alertMb);
+  const invalid = !Number.isInteger(planValue) || planValue <= 0 || !Number.isInteger(alertValue) || alertValue <= 0 || alertValue > planValue;
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (invalid) return;
+    setSaving(true);
+    try {
+      await onSave({ planMb: planValue, alertMb: alertValue });
+      setEditing(false);
+    } catch {
+      // El aviso de error ya lo muestra la vista; el formulario queda abierto para corregir.
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return <div className="gateway-data-plan">
+    <div className="gateway-data-plan-head">
+      <span>Datos 4G del mes{gateway.health?.lteMonth ? ` · ${gateway.health.lteMonth}` : ""}</span>
+      {canEdit && !editing && <button type="button" className="gateway-data-plan-edit" onClick={() => { setForm({ planMb: String(planMb), alertMb: String(alertMb) }); setEditing(true); }}>Editar plan</button>}
+    </div>
+    <strong>{used === undefined ? "—" : `${formatMb(used)} MB`} <small>de {formatMb(planMb)} MB · aviso en {formatMb(alertMb)} MB</small></strong>
+    <div className={`gateway-data-plan-bar ${level}`} role="meter" aria-valuemin={0} aria-valuemax={planMb} aria-valuenow={used ?? 0} aria-label="Consumo 4G del mes"><span style={{ width: `${percent}%` }} /><i style={{ left: `${Math.min(100, (alertMb / planMb) * 100)}%` }} /></div>
+    {alertedThisMonth && alert && <small className="gateway-data-plan-note"><IconAlertTriangle size={13} /> Aviso enviado {formatDateTime(alert.sentAt)} al personal de HOIT</small>}
+    {editing && <form className="gateway-data-plan-form" onSubmit={submit}>
+      <label><span>Plan contratado (MB)</span><input type="number" min={1} step={1} required value={form.planMb} onChange={(event) => setForm({ ...form, planMb: event.target.value })} /></label>
+      <label><span>Avisar al llegar a (MB)</span><input type="number" min={1} step={1} required value={form.alertMb} onChange={(event) => setForm({ ...form, alertMb: event.target.value })} /></label>
+      {alertValue > planValue && <small className="gateway-data-plan-error">El aviso no puede superar el plan.</small>}
+      <div><button type="button" className="secondary-button" onClick={() => setEditing(false)} disabled={saving}>Cancelar</button><button className="primary-button" disabled={saving || invalid}>{saving ? "Guardando…" : "Guardar"}</button></div>
+    </form>}
+  </div>;
+}
+
+function GatewayHealthPanel({ gateways, canEditDataPlan, onSaveDataPlan }: { gateways: Gateway[]; canEditDataPlan: boolean; onSaveDataPlan: (gateway: Gateway, plan: DataPlan) => Promise<void> }) {
   const reporting = gateways.filter((gateway) => gateway.health);
   if (!reporting.length) return null;
   return <section className="panel gateway-health-panel" aria-label="Estado de los gateways en terreno">
@@ -50,10 +101,10 @@ function GatewayHealthPanel({ gateways }: { gateways: Gateway[] }) {
       const health = gateway.health!;
       return <article key={gateway.id}>
         <div className="gateway-health-title"><strong>{gateway.code}</strong><small>{gateway.name}</small><span className={`gateway-health-state ${gateway.state === "online" ? "online" : ""}`}>{gateway.state === "online" ? "En línea" : "Sin conexión"} · {sinceLabel(gateway.lastSeenAt)}</span></div>
+        <DataPlanUsage gateway={gateway} canEdit={canEditDataPlan} onSave={(plan) => onSaveDataPlan(gateway, plan)} />
         <dl>
           <div><dt>Salida</dt><dd>{UPLINK_LABELS[health.uplink ?? ""] ?? health.uplink ?? "—"}</dd></div>
           <div><dt>Señal 4G</dt><dd>{signalLabel(health.csq)}{health.rat ? ` · ${health.rat}` : ""}</dd></div>
-          <div><dt>Datos 4G del mes</dt><dd>{health.lteMonthMb !== undefined ? `${health.lteMonthMb.toFixed(1)} MB` : "—"}</dd></div>
           <div><dt>Controladores</dt><dd>{health.devices !== undefined ? `${health.devicesOk ?? 0}/${health.devices} respondiendo` : "—"}</dd></div>
           <div><dt>Cola</dt><dd>{health.queue ?? "—"} lote(s)</dd></div>
           <div><dt>Versión</dt><dd>{health.version ?? gateway.softwareVersion ?? "—"}</dd></div>
@@ -71,6 +122,7 @@ type ProvisioningResponse = {
   pageSize: number;
   total: number;
   totalPages: number;
+  canEditDataPlan?: boolean;
   summary: { gateways: number; onlineGateways: number; activeCredentials: number; usedCredentials: number; expiringCredentials: number; expiredCredentials: number };
   serverTime: string;
 };
@@ -180,6 +232,17 @@ export function GatewayProvisioningView({
     }, 250);
     return () => { active = false; window.clearTimeout(timeout); };
   }, [gatewayId, page, query, reload, status]);
+
+  const saveDataPlan = async (gateway: Gateway, plan: DataPlan) => {
+    try {
+      await requestProvisioning(`/api/v1/gateways/${gateway.id}/data-plan`, { method: "PUT", body: JSON.stringify(plan) });
+      notify(`Plan de ${gateway.code}: ${formatMb(plan.planMb)} MB, aviso en ${formatMb(plan.alertMb)} MB.`, "success");
+      setReload((value) => value + 1);
+    } catch (saveError) {
+      notify(saveError instanceof Error ? saveError.message : "No fue posible guardar el plan.", "warning");
+      throw saveError;
+    }
+  };
 
   const createCredential = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -307,7 +370,7 @@ export function GatewayProvisioningView({
       <article className={data.summary.expiringCredentials || data.summary.expiredCredentials ? "summary-attention" : ""}><span className="module-summary-icon amber"><IconClock size={19} /></span><div><small>Renovación requerida</small><strong>{data.summary.expiringCredentials + data.summary.expiredCredentials}</strong><span>{data.summary.expiredCredentials} vencidas · {data.summary.expiringCredentials} por vencer</span></div></article>
     </section>
 
-    <GatewayHealthPanel gateways={data.gateways} />
+    <GatewayHealthPanel gateways={data.gateways} canEditDataPlan={Boolean(data.canEditDataPlan)} onSaveDataPlan={saveDataPlan} />
 
     {secret && <div className="credential-secret-backdrop">
       <section className="panel credential-reveal credential-secret-dialog" role="alertdialog" aria-modal="true" aria-labelledby="gateway-token-title" aria-describedby="gateway-token-description">
