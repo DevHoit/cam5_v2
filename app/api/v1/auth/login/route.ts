@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { auditLogs } from "../../../../../db/schema";
-import { attemptLocalLogin, createPortalSession, LOGIN_LOCKOUT_MINUTES, normalizeEmail, resolvePortalSession, SESSION_COOKIE_NAME } from "../../../../../db/auth";
+import { attemptLocalLogin, createPortalSession, isBlockedBySuspendedClient, LOGIN_LOCKOUT_MINUTES, normalizeEmail, resolvePortalSession, SESSION_COOKIE_NAME } from "../../../../../db/auth";
 import { getDb } from "../../../../../db/index";
 import { apiErrorResponse, ApiError, requestMetadata } from "../../_lib/auth";
 
@@ -40,6 +40,23 @@ export async function POST(request: NextRequest) {
       throw new ApiError(401, "Correo, contraseña o estado de usuario inválido.");
     }
     const userId = attempt.userId;
+
+    // Cliente suspendido (p. ej. por falta de pago): se informa el motivo y no se crea sesión.
+    if (await isBlockedBySuspendedClient(db, userId)) {
+      await db.insert(auditLogs).values({
+        actorUserId: userId,
+        action: "auth.login",
+        resourceType: "session",
+        outcome: "denied",
+        ipAddress: metadata.ipAddress,
+        userAgent: metadata.userAgent,
+        metadata: { email: normalizeEmail(body.email).slice(0, 320), reason: "client_suspended" },
+      }).catch((error: unknown) => console.error("No fue posible auditar el intento de ingreso", error));
+      return Response.json(
+        { error: "El servicio de tu organización está suspendido. Contacta a HOIT para reactivarlo.", code: "client_suspended" },
+        { status: 403, headers: { "Cache-Control": "no-store" } },
+      );
+    }
 
     const session = await createPortalSession(db, userId, metadata);
     const user = await resolvePortalSession(db, session.token);

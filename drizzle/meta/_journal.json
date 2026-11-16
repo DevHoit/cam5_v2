@@ -99,6 +99,13 @@
       "when": 1794415425236,
       "tag": "0013_client_logo",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1794831121986,
+      "tag": "0014_client_suspension",
+      "breakpoints": true
     }
   ]
 }

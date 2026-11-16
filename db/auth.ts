@@ -43,6 +43,10 @@ export type AuthenticatedPortalUser = {
   clientName: string;
   /** Marca de versión del logo del cliente activo; null si el cliente no tiene logo. */
   clientLogoUpdatedAt: string | null;
+  /** El cliente activo está suspendido; solo el personal de la plataforma llega a verlo. */
+  clientSuspended: boolean;
+  /** Personal de la plataforma (HOIT): ve clientes suspendidos y puede suspender o reactivar. */
+  platformStaff: boolean;
   siteId: string;
   siteCode: string;
   siteName: string;
@@ -55,9 +59,36 @@ export type AuthenticatedPortalUser = {
     clientName: string;
     roleKey: AuthenticatedPortalUser["roleKey"];
     roleName: AuthenticatedPortalUser["roleName"];
+    clientSuspended: boolean;
   }>;
   permissions: string[];
 };
+
+/**
+ * Un cliente suspendido deja fuera a sus usuarios, pero no al personal de la plataforma.
+ * Requiere que la consulta tenga `users` y `clients` unidos.
+ */
+const clientOpenToUser = or(isNull(clients.suspendedAt), eq(users.platformStaff, true));
+
+/**
+ * Indica si un usuario quedó sin acceso solo porque todos sus clientes están suspendidos.
+ * Sirve para explicar el motivo al iniciar sesión en lugar de un rechazo genérico.
+ */
+export async function isBlockedBySuspendedClient(db: Cam5Database, userId: string, now = new Date()): Promise<boolean> {
+  const rows = await db
+    .select({ suspendedAt: clients.suspendedAt, platformStaff: users.platformStaff })
+    .from(userRoleAssignments)
+    .innerJoin(users, eq(users.id, userRoleAssignments.userId))
+    .innerJoin(sites, eq(sites.id, userRoleAssignments.siteId))
+    .innerJoin(clients, eq(clients.id, sites.clientId))
+    .where(and(
+      eq(userRoleAssignments.userId, userId),
+      eq(sites.active, true),
+      eq(clients.active, true),
+      or(isNull(userRoleAssignments.expiresAt), gt(userRoleAssignments.expiresAt, now)),
+    ));
+  return rows.length > 0 && rows.every((row) => row.suspendedAt !== null && !row.platformStaff);
+}
 
 export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
@@ -172,12 +203,14 @@ export async function createPortalSession(
   const [initialScope] = await db
     .select({ siteId: userRoleAssignments.siteId })
     .from(userRoleAssignments)
+    .innerJoin(users, eq(users.id, userRoleAssignments.userId))
     .innerJoin(sites, eq(sites.id, userRoleAssignments.siteId))
     .innerJoin(clients, eq(clients.id, sites.clientId))
     .where(and(
       eq(userRoleAssignments.userId, userId),
       eq(sites.active, true),
       eq(clients.active, true),
+      clientOpenToUser,
       or(isNull(userRoleAssignments.expiresAt), gt(userRoleAssignments.expiresAt, new Date())),
     ))
     .limit(1);
@@ -265,6 +298,7 @@ export async function switchPortalSessionSite(db: Cam5Database, token: string, s
     .select({ sessionId: authSessions.id })
     .from(authSessions)
     .innerJoin(userRoleAssignments, eq(userRoleAssignments.userId, authSessions.userId))
+    .innerJoin(users, eq(users.id, authSessions.userId))
     .innerJoin(sites, eq(sites.id, userRoleAssignments.siteId))
     .innerJoin(clients, eq(clients.id, sites.clientId))
     .where(and(
@@ -274,12 +308,21 @@ export async function switchPortalSessionSite(db: Cam5Database, token: string, s
       eq(userRoleAssignments.siteId, siteId),
       eq(sites.active, true),
       eq(clients.active, true),
+      clientOpenToUser,
       or(isNull(userRoleAssignments.expiresAt), gt(userRoleAssignments.expiresAt, new Date())),
     ))
     .limit(1);
   if (!allowed) return null;
   await db.update(authSessions).set({ activeSiteId: siteId, lastSeenAt: new Date() }).where(eq(authSessions.id, allowed.sessionId));
   return resolvePortalSession(db, token);
+}
+
+/** Usuario dueño de una sesión vigente, sin evaluar sus sitios. Sirve para explicar por qué se perdió el acceso. */
+export async function portalSessionUserId(db: Cam5Database, token: string): Promise<string | null> {
+  const [session] = await db.select({ userId: authSessions.userId }).from(authSessions)
+    .where(and(eq(authSessions.tokenHash, hashSessionToken(token)), isNull(authSessions.revokedAt), gt(authSessions.expiresAt, new Date())))
+    .limit(1);
+  return session?.userId ?? null;
 }
 
 export async function resolvePortalSession(db: Cam5Database, token: string): Promise<AuthenticatedPortalUser | null> {
@@ -293,6 +336,7 @@ export async function resolvePortalSession(db: Cam5Database, token: string): Pro
       email: users.email,
       displayName: users.displayName,
       status: users.status,
+      platformStaff: users.platformStaff,
       mustChangePassword: authIdentities.mustChangePassword,
     })
     .from(authSessions)
@@ -320,8 +364,10 @@ export async function resolvePortalSession(db: Cam5Database, token: string): Pro
       clientCode: clients.code,
       clientName: clients.name,
       clientLogoUpdatedAt: clients.logoUpdatedAt,
+      clientSuspendedAt: clients.suspendedAt,
     })
     .from(userRoleAssignments)
+    .innerJoin(users, eq(users.id, userRoleAssignments.userId))
     .innerJoin(roles, eq(roles.id, userRoleAssignments.roleId))
     .innerJoin(sites, eq(sites.id, userRoleAssignments.siteId))
     .innerJoin(clients, eq(clients.id, sites.clientId))
@@ -329,6 +375,7 @@ export async function resolvePortalSession(db: Cam5Database, token: string): Pro
       eq(userRoleAssignments.userId, session.userId),
       eq(sites.active, true),
       eq(clients.active, true),
+      clientOpenToUser,
       or(isNull(userRoleAssignments.expiresAt), gt(userRoleAssignments.expiresAt, now)),
     ))
     .orderBy(
@@ -375,6 +422,8 @@ export async function resolvePortalSession(db: Cam5Database, token: string): Pro
     clientCode: selected.clientCode,
     clientName: selected.clientName,
     clientLogoUpdatedAt: selected.clientLogoUpdatedAt?.toISOString() ?? null,
+    clientSuspended: selected.clientSuspendedAt !== null,
+    platformStaff: session.platformStaff,
     siteId: selected.siteId,
     siteCode: selected.siteCode,
     siteName: selected.siteName,
@@ -387,6 +436,7 @@ export async function resolvePortalSession(db: Cam5Database, token: string): Pro
       clientName: scope.clientName,
       roleKey: scope.roleKey as AuthenticatedPortalUser["roleKey"],
       roleName: scope.roleName as AuthenticatedPortalUser["roleName"],
+      clientSuspended: scope.clientSuspendedAt !== null,
     })),
     permissions: [...new Set(permissionRows.map((row) => row.code))],
   };
