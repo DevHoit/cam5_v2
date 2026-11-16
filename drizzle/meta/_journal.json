@@ -99,6 +99,13 @@
       "when": 1794415425236,
       "tag": "0013_client_logo",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1794833090136,
+      "tag": "0014_modbus_tcp_device_identity",
+      "breakpoints": true
     }
   ]
 }

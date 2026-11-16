@@ -159,7 +159,10 @@ export async function evaluateAlarmReadings(
     }
     const sameCondition = row.stateSeverity === observed.severity && row.stateKind === observed.kind;
     let breachCount = observed.severity === "normal" ? 0 : sameCondition ? (row.breachCount ?? 0) + 1 : 1;
-    let recoveryCount = observed.severity === "normal" && row.stateSeverity !== "normal" ? (row.recoveryCount ?? 0) + 1 : 0;
+    // Se cuenta mientras el canal tenga una alarma asociada. La primera muestra normal ya deja el estado en "normal",
+    // así que depender de stateSeverity reiniciaba el contador y la alarma nunca se resolvía. Si la alarma ya estaba
+    // resuelta o cerrada, el bloque siguiente lo detecta y vuelve el contador a 0.
+    let recoveryCount = observed.severity === "normal" && row.activeAlarmId ? (row.recoveryCount ?? 0) + 1 : 0;
     let activeAlarmId = row.activeAlarmId;
 
     if (observed.severity === "normal" && activeAlarmId && recoveryCount >= row.recoverySamples) {

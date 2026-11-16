@@ -51,3 +51,35 @@ test("describes communication outages with a readable duration", async () => {
   assert.equal(formatAge(14665), "4 h 4 min");
   assert.equal(formatAge(3 * 86400), "3 d");
 });
+
+test("opens a threshold alarm after the activation samples and resolves it after the recovery samples", async () => {
+  const { createMigratedTestDatabase } = await import("./helpers/database");
+  const { seedCam5Database } = await import("../db/seed");
+  const { evaluateAlarmReadings } = await import("../db/alarm-engine");
+  const schema = await import("../db/schema");
+  const { and, eq } = await import("drizzle-orm");
+  const { client, db } = await createMigratedTestDatabase();
+  try {
+    await seedCam5Database(db, { adminEmail: "admin@example.test", adminName: "Admin", adminPassword: "Cam5-Prueba-2026", log: false });
+    const [channel] = await db.select().from(schema.channels).where(eq(schema.channels.code, "T01")).limit(1);
+    const sample = (value: number) => [{ channelId: channel.id, value, quality: "good" as const, qualityFlags: [] }];
+    const at = (minute: number) => new Date(Date.UTC(2026, 10, 6, 12, minute));
+    const alarmStatus = async () => (await db.select().from(schema.alarms).where(and(eq(schema.alarms.channelId, channel.id))))[0]?.status;
+
+    for (const minute of [0, 1]) await evaluateAlarmReadings(db, channel.assetId, sample(81.2), at(minute));
+    assert.equal(await alarmStatus(), undefined, "two samples are below the activation threshold of 3");
+    await evaluateAlarmReadings(db, channel.assetId, sample(81.2), at(2));
+    assert.equal(await alarmStatus(), "open");
+
+    for (const minute of [3, 4]) await evaluateAlarmReadings(db, channel.assetId, sample(38.7), at(minute));
+    assert.equal(await alarmStatus(), "open", "two normal samples are not enough to recover");
+    const result = await evaluateAlarmReadings(db, channel.assetId, sample(38.7), at(5));
+    assert.equal(result.resolved, 1);
+    assert.equal(await alarmStatus(), "resolved");
+
+    const further = await evaluateAlarmReadings(db, channel.assetId, sample(38.5), at(6));
+    assert.equal(further.resolved, 0, "an already resolved alarm is not resolved again");
+  } finally {
+    await client.close();
+  }
+});

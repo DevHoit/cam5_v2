@@ -1,27 +1,22 @@
 import { and, eq, sql } from "drizzle-orm";
 import { pathToFileURL } from "node:url";
-import { cam5InputInventory, cam5OperationalChannels, cam5RegisterCatalog, cam5RelayDefaults } from "../app/cam5-model";
+import { cam5RegisterCatalog } from "../app/cam5-model";
 import { PORTAL_PERMISSIONS, PORTAL_ROLES } from "./access-control";
 import { hashPassword } from "./auth";
-import { COMMISSIONING_CHECKLIST } from "./commissioning-engine";
+import { provisionCam5Device } from "./cam5-provisioning";
 import { closeDb, getDb, type Cam5Database } from "./index";
 import { loadDatabaseEnvironment } from "./load-env";
 import {
-  alarmRules,
   assets,
   authIdentities,
-  channels,
-  commissioningItems,
   clients,
   deviceModels,
   devices,
   gateways,
   permissions,
-  physicalInputs,
   readingProfileRanges,
   readingProfiles,
   registerDefinitions,
-  relayConfigurations,
   reportTemplates,
   rolePermissions,
   roles,
@@ -32,8 +27,6 @@ import {
 } from "./schema";
 
 type RegisterMetric = typeof registerDefinitions.$inferInsert.metric;
-type InputKind = typeof physicalInputs.$inferInsert.kind;
-type ChannelMetric = typeof channels.$inferInsert.metric;
 
 function registerMetric(description: string): RegisterMetric {
   if (description.startsWith("Temperatura ambiente")) return "ambient_temperature";
@@ -47,30 +40,6 @@ function registerMetric(description: string): RegisterMetric {
   if (description.startsWith("Beta")) return "beta";
   if (description.startsWith("Phi")) return "phi";
   return "system";
-}
-
-function inputKind(kind: (typeof cam5InputInventory)[number]["kind"]): InputKind {
-  if (kind === "Temperatura SAW") return "temperature_saw";
-  if (kind === "Interfaz UHF") return "uhf";
-  return "humidity";
-}
-
-function channelMetric(metric: (typeof cam5OperationalChannels)[number]["metric"]): ChannelMetric {
-  if (metric === "ambient") return "ambient_temperature";
-  if (metric === "humidity") return "humidity";
-  if (metric === "pd") return "partial_discharge";
-  if (metric === "sd") return "surface_discharge";
-  return "temperature";
-}
-
-function portNumber(code: string): number {
-  const parsed = Number.parseInt(code.replace(/\D/g, ""), 10);
-  if (!Number.isFinite(parsed)) throw new Error(`Código de entrada inválido: ${code}`);
-  return parsed;
-}
-
-function physicalInputCode(sourceId: string): string {
-  return sourceId.startsWith("TEMP-") ? `T${sourceId.slice(5)}` : sourceId;
 }
 
 export async function seedCam5Database(
@@ -177,8 +146,8 @@ export async function seedCam5Database(
       unitId: 1,
       timeoutMs: 1000,
       retries: 2,
-    }).onConflictDoNothing({ target: [devices.gatewayId, devices.unitId] });
-    const [device] = await tx.select().from(devices).where(and(eq(devices.gatewayId, gateway.id), eq(devices.unitId, 1))).limit(1);
+    }).onConflictDoNothing({ target: [devices.gatewayId, devices.code] });
+    const [device] = await tx.select().from(devices).where(and(eq(devices.gatewayId, gateway.id), eq(devices.code, "CAM5-CTRL-01"))).limit(1);
     if (!device) throw new Error("No fue posible crear el equipo CAM5.");
 
     for (const definition of cam5RegisterCatalog) {
@@ -215,91 +184,7 @@ export async function seedCam5Database(
         },
       });
     }
-    const registerRows = await tx.select().from(registerDefinitions).where(eq(registerDefinitions.modelId, model.id));
-    if (registerRows.length !== 105) throw new Error(`El mapa CAM5 debe contener 105 registros; se encontraron ${registerRows.length}.`);
-    const registersByNative = new Map(registerRows.map((register) => [register.nativeRegister, register]));
-
-    for (const input of cam5InputInventory) {
-      const band = input.assignment.match(/(\d+) MHz/)?.[1];
-      const antenna = input.assignment.match(/Antena (\d+)/)?.[1];
-      const humidityIndex = input.kind === "Humedad" ? portNumber(input.id) - 1 : null;
-      await tx.insert(physicalInputs).values({
-        deviceId: device.id,
-        code: input.id,
-        kind: inputKind(input.kind),
-        portNumber: portNumber(input.id),
-        enabled: input.enabled,
-        assignment: input.assignment,
-        zone: input.location,
-        calibrationCode: input.calibration.startsWith("Código ") ? input.calibration.slice(7) : null,
-        frequencyBand: band ? `${band} MHz` : null,
-        antennaPort: antenna ? `Antena ${antenna}` : null,
-        humidityIndex: humidityIndex === null ? null : String(humidityIndex),
-        metadata: { registers: input.register, calibrationState: input.calibration, signalState: input.signal },
-        updatedAt: new Date(),
-      }).onConflictDoNothing({ target: [physicalInputs.deviceId, physicalInputs.code] });
-    }
-    const inputRows = await tx.select().from(physicalInputs).where(eq(physicalInputs.deviceId, device.id));
-    if (inputRows.length !== 24) throw new Error(`El CAM5 debe contener 24 entradas; se encontraron ${inputRows.length}.`);
-    const inputsByCode = new Map(inputRows.map((input) => [input.code, input]));
-
-    for (const [displayOrder, channel] of cam5OperationalChannels.entries()) {
-      const register = registersByNative.get(channel.nativeRegister);
-      const input = inputsByCode.get(physicalInputCode(channel.sourceId));
-      if (!register) throw new Error(`No existe el registro ${channel.nativeRegister} para ${channel.id}.`);
-      if (!input) throw new Error(`No existe la entrada física ${channel.sourceId} para ${channel.id}.`);
-      await tx.insert(channels).values({
-        deviceId: device.id,
-        assetId: asset.id,
-        physicalInputId: input.id,
-        registerDefinitionId: register.id,
-        code: channel.id,
-        name: channel.label,
-        zone: channel.zone,
-        metric: channelMetric(channel.metric),
-        unit: channel.unit,
-        enabled: channel.configured,
-        displayOrder,
-        metadata: { sourceId: channel.sourceId },
-      }).onConflictDoNothing({ target: [channels.deviceId, channels.code] });
-    }
-    const channelRows = await tx.select().from(channels).where(eq(channels.deviceId, device.id));
-    if (channelRows.length !== 36) throw new Error(`El portal debe exponer 36 señales operativas; se encontraron ${channelRows.length}.`);
-    const channelByCode = new Map(channelRows.map((channel) => [channel.code, channel]));
-
-    for (const channel of cam5OperationalChannels) {
-      const storedChannel = channelByCode.get(channel.id);
-      if (!storedChannel) continue;
-      await tx.insert(alarmRules).values({
-        channelId: storedChannel.id,
-        enabled: channel.configured,
-        warningThreshold: String(channel.warningDefault),
-        criticalThreshold: String(channel.criticalDefault),
-        hysteresis: channel.metric === "humidity" ? "2" : channel.metric === "pd" || channel.metric === "sd" ? "5" : "1",
-        activationSamples: 3,
-        recoverySamples: 3,
-        staleAfterSeconds: 180,
-      }).onConflictDoNothing({ target: alarmRules.channelId });
-    }
-
-    for (const relay of cam5RelayDefaults) {
-      await tx.insert(relayConfigurations).values({
-        deviceId: device.id,
-        relayNumber: relay.id,
-        name: relay.name,
-        sourceExpression: relay.source,
-        severity: relay.level === "Advertencia" ? "warning" : "critical",
-        enabled: relay.state === "Activo",
-        failsafe: true,
-      }).onConflictDoNothing({ target: [relayConfigurations.deviceId, relayConfigurations.relayNumber] });
-    }
-
-    for (const [itemKey, label] of COMMISSIONING_CHECKLIST) {
-      await tx.insert(commissioningItems).values({ deviceId: device.id, itemKey, label, status: "pending" }).onConflictDoUpdate({
-        target: [commissioningItems.deviceId, commissioningItems.itemKey],
-        set: { label },
-      });
-    }
+    await provisionCam5Device(tx, { id: device.id, assetId: asset.id, modelId: model.id });
 
     const templates = [
       { key: "condition-summary", name: "Resumen de condición", description: "Estado, alarmas y evolución de variables críticas.", definition: { sections: ["summary", "alarms", "trends"] } },
