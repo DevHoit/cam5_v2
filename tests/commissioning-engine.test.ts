@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { evaluateCommissioning, type CommissioningValidationInput } from "../db/commissioning-engine";
+import { evaluateCommissioning, evaluateIdentity, type CommissioningValidationInput } from "../db/commissioning-engine";
 
 const completeInput: CommissioningValidationInput = {
   serialNumber: "CAM5-001",
@@ -41,4 +41,13 @@ test("blocks commissioning when identity, register coverage or stability is inco
   assert.equal(results.find((result) => result.itemKey === "registers")?.status, "failed");
   assert.equal(results.find((result) => result.itemKey === "stability")?.status, "failed");
   assert.match(results.find((result) => result.itemKey === "stability")?.message ?? "", /24 horas/);
+});
+
+test("identity names what is missing and passes once serial and firmware are registered", () => {
+  const missing = evaluateIdentity({ serialNumber: null, firmwareVersion: " ", dataVersion: 1 });
+  assert.equal(missing.status, "failed");
+  assert.match(missing.message, /serie, firmware\./);
+  assert.match(missing.message, /placa o la pantalla/);
+  assert.equal(evaluateIdentity({ serialNumber: "CAM5-0187", firmwareVersion: "1.6.0", dataVersion: null }).message, "Falta versión de datos (registro 454).");
+  assert.equal(evaluateIdentity({ serialNumber: "CAM5-0187", firmwareVersion: "1.6.0", dataVersion: 1 }).status, "passed");
 });
