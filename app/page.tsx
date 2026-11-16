@@ -128,6 +128,10 @@ type PortalSessionUser = {
   clientCode: string;
   clientName: string;
   clientLogoUpdatedAt?: string | null;
+  /** El cliente activo está suspendido; solo el personal de HOIT llega a verlo. */
+  clientSuspended?: boolean;
+  /** Personal de HOIT: puede suspender y reactivar clientes. */
+  platformStaff?: boolean;
   siteId: string;
   siteCode: string;
   siteName: string;
@@ -136,7 +140,7 @@ type PortalSessionUser = {
 };
 type PortalHierarchy = {
   active: { clientId: string; clientCode: string; clientName: string; siteId: string; siteCode: string; siteName: string };
-  clients: Array<{ id: string; code: string; name: string; legalName: string | null; taxId: string | null; contactEmail: string | null; active: boolean; logoUpdatedAt: string | null; roleKey: PortalSessionUser["roleKey"]; roleName: UserRole }>;
+  clients: Array<{ id: string; code: string; name: string; legalName: string | null; taxId: string | null; contactEmail: string | null; active: boolean; logoUpdatedAt: string | null; suspendedAt: string | null; suspendedReason: string | null; roleKey: PortalSessionUser["roleKey"]; roleName: UserRole }>;
   sites: Array<PortalSiteScope & { description: string | null; timezone: string; active: boolean; pointCount: number; gatewayCount: number; controllerCount: number }>;
   points: Array<{ id: string; siteId: string; code: string; name: string; area: string | null; type: string; nominalVoltageKv: number | null; state: "normal" | "warning" | "critical" | "offline" | "maintenance"; active: boolean }>;
   gateways: Array<{ id: string; siteId: string; code: string; name: string; serialNumber: string | null; softwareVersion: string | null; state: "pending" | "online" | "degraded" | "offline"; active: boolean; lastSeenAt: string | null; ipAddress: string | null }>;
@@ -957,10 +961,53 @@ function ClientLogoField({ clientId, clientName, logoUpdatedAt, onChanged }: { c
   </div>;
 }
 
+/**
+ * Suspensión comercial del cliente (p. ej. por falta de pago). Sus usuarios dejan de entrar al portal,
+ * pero los gateways siguen enviando y la telemetría y las alarmas continúan. Solo para personal de HOIT.
+ */
+function ClientSuspensionField({ clientId, clientName, suspendedAt, suspendedReason, onChanged }: { clientId: string; clientName: string; suspendedAt: string | null; suspendedReason: string | null; onChanged: () => void }) {
+  const notify = useFeedback();
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (action: "suspend" | "resume") => {
+    setBusy(true);
+    try {
+      const response = await fetch(`/api/v1/clients/${encodeURIComponent(clientId)}/suspension`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, reason }) });
+      const payload = await response.json().catch(() => null) as { error?: string } | null;
+      if (!response.ok) throw new Error(payload?.error || "No fue posible cambiar el estado del servicio.");
+      notify(action === "suspend" ? `${clientName} quedó suspendido: sus usuarios ya no pueden entrar al portal.` : `${clientName} fue reactivado.`, "success");
+      setReason("");
+      onChanged();
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "No fue posible cambiar el estado del servicio.", "warning");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return <div className="client-logo-field field-wide">
+    <span className="client-logo-field-label">Servicio</span>
+    <div className="client-logo-field-body">
+      <div>
+        {suspendedAt
+          ? <p><strong>Suspendido desde el {new Date(suspendedAt).toLocaleDateString("es-CL", { day: "numeric", month: "long", year: "numeric" })}</strong> · Motivo: {suspendedReason || "sin indicar"}. Sus usuarios no pueden entrar al portal; los gateways siguen enviando y las alarmas continúan.</p>
+          : <p>Suspender impide que los usuarios de este cliente entren al portal, por ejemplo por falta de pago. Los gateways siguen enviando y la telemetría, el histórico y las alarmas continúan. El personal de HOIT mantiene el acceso.</p>}
+        <div className="client-logo-actions">
+          {suspendedAt
+            ? <button type="button" className="secondary-button" disabled={busy} onClick={() => void submit("resume")}>{busy ? "Reactivando…" : "Reactivar servicio"}</button>
+            : <><input aria-label="Motivo de la suspensión" placeholder="Motivo (p. ej. factura de octubre impaga)" maxLength={300} value={reason} onChange={(event) => setReason(event.target.value)} /><button type="button" className="secondary-button" disabled={busy || reason.trim().length < 3} onClick={() => void submit("suspend")}>{busy ? "Suspendiendo…" : "Suspender servicio"}</button></>}
+        </div>
+      </div>
+    </div>
+  </div>;
+}
+
 function OperationalHierarchyView({
   hierarchy,
   loading,
   permissions,
+  platformStaff,
   onReload,
   onSwitchSite,
   onClientLogoChanged,
@@ -968,6 +1015,7 @@ function OperationalHierarchyView({
   hierarchy: PortalHierarchy | null;
   loading: boolean;
   permissions: string[];
+  platformStaff: boolean;
   onReload: () => Promise<void>;
   onSwitchSite: (siteId: string) => Promise<void>;
   onClientLogoChanged: (clientId: string, logoUpdatedAt: string | null) => void;
@@ -1139,7 +1187,7 @@ function OperationalHierarchyView({
       {tab === "structure" && <div className="hierarchy-workspace">
         <nav className="organization-tree" aria-label="Clientes y sitios">
           {hierarchy.clients.map((client) => <section key={client.id} className={client.active ? "" : "inactive-resource"}>
-            <div className="organization-client"><span><Factory size={17} /></span><div><strong>{client.name}</strong><small>{client.code}{client.active ? "" : " · Desactivado"}</small></div>{canManageClients && <button className="resource-edit-button" onClick={() => openEditor("client", client)} aria-label={`Editar cliente ${client.name}`}><Pencil size={15} /></button>}</div>
+            <div className="organization-client"><span><Factory size={17} /></span><div><strong>{client.name}</strong><small>{client.code}{client.active ? "" : " · Desactivado"}{client.suspendedAt ? " · Suspendido" : ""}</small></div>{canManageClients && <button className="resource-edit-button" onClick={() => openEditor("client", client)} aria-label={`Editar cliente ${client.name}`}><Pencil size={15} /></button>}</div>
             <div className="organization-sites">{hierarchy.sites.filter((site) => site.clientId === client.id).map((site) => <div className={`organization-site-row ${site.active && client.active ? "" : "inactive-resource"}`} key={site.id}><button className={site.id === hierarchy.active.siteId ? "active" : ""} disabled={!site.active || !client.active} onClick={() => onSwitchSite(site.id)}><span><Building2 size={16} /></span><span><strong>{site.name}</strong><small>{!client.active ? "Cliente desactivado" : site.active ? `${site.pointCount} ${site.pointCount === 1 ? "punto" : "puntos"} · ${site.gatewayCount} ${site.gatewayCount === 1 ? "gateway" : "gateways"}` : "Sitio desactivado"}</small></span><ChevronRight size={15} /></button>{canManageClients && <button className="resource-edit-button" onClick={() => openEditor("site", site)} aria-label={`Editar sitio ${site.name}`}><Pencil size={15} /></button>}</div>)}{hierarchy.sites.every((site) => site.clientId !== client.id) && <p>Cliente sin sitios registrados.</p>}</div>
           </section>)}
         </nav>
@@ -1185,6 +1233,10 @@ function OperationalHierarchyView({
             <label className="field-wide"><span>Nombre</span><input required minLength={2} value={editor.name} onChange={(event) => setEditor({ ...editor, name: event.target.value })} /></label>
             {editor.resource === "client" && <><label className="field-wide"><span>Razón social</span><input value={editor.legalName} onChange={(event) => setEditor({ ...editor, legalName: event.target.value })} /></label><label><span>RUT / identificación tributaria</span><input value={editor.taxId} onChange={(event) => setEditor({ ...editor, taxId: event.target.value })} /></label><label><span>Correo de contacto</span><input type="email" value={editor.contactEmail} onChange={(event) => setEditor({ ...editor, contactEmail: event.target.value })} /></label></>}
             {editor.resource === "client" && <ClientLogoField key={editor.id} clientId={editor.id} clientName={editor.name} logoUpdatedAt={hierarchy.clients.find((client) => client.id === editor.id)?.logoUpdatedAt ?? null} onChanged={(logoUpdatedAt) => { onClientLogoChanged(editor.id, logoUpdatedAt); void onReload(); }} />}
+            {editor.resource === "client" && platformStaff && (() => {
+              const client = hierarchy.clients.find((item) => item.id === editor.id);
+              return <ClientSuspensionField key={`${editor.id}-${client?.suspendedAt ?? "active"}`} clientId={editor.id} clientName={editor.name} suspendedAt={client?.suspendedAt ?? null} suspendedReason={client?.suspendedReason ?? null} onChanged={() => void onReload()} />;
+            })()}
             {editor.resource === "site" && <><label className="field-wide"><span>Descripción</span><input value={editor.description} onChange={(event) => setEditor({ ...editor, description: event.target.value })} /></label><label className="field-wide"><span>Zona horaria</span><select value={editor.timezone} onChange={(event) => setEditor({ ...editor, timezone: event.target.value })}><option value="America/Santiago">America/Santiago</option><option value="UTC">UTC</option></select></label></>}
             {editor.resource === "point" && <><label><span>Área o sala</span><input value={editor.area} onChange={(event) => setEditor({ ...editor, area: event.target.value })} /></label><label><span>Tensión nominal (kV)</span><input type="number" min="0" step="0.1" value={editor.voltage} onChange={(event) => setEditor({ ...editor, voltage: event.target.value })} /></label></>}
             {editor.resource === "gateway" && <><label><span>Dirección IP</span><input value={editor.ipAddress} onChange={(event) => setEditor({ ...editor, ipAddress: event.target.value })} placeholder="10.0.0.20" /></label><label><span>Número de serie</span><input value={editor.serialNumber} onChange={(event) => setEditor({ ...editor, serialNumber: event.target.value })} /></label></>}
@@ -1752,7 +1804,7 @@ export default function Home() {
             {view === "trends" && <TrendsView assetId={activePoint?.id ?? ""} channels={sensors.map((sensor) => ({ id: sensor.id, label: sensor.label, zone: sensor.zone, unit: sensor.unit, state: sensor.state, enabled: sensor.enabled }))} period={period} setPeriod={setPeriod} selectedId={resolvedTrendSensorId} onSelectChannel={selectTrendChannel} rangeWindow={trendWindow} setRangeWindow={setTrendWindow} canExport={sessionUser.permissions.includes("history.export")} notify={notify} />}
             {view === "alarms" && <AlarmsView assetId={activePoint?.id ?? ""} permissions={sessionUser.permissions} onSummaryChange={setAlarmSummary} onOpenTrend={openAlarmTrend} />}
             {view === "history" && <HistoryView assetId={activePoint?.id ?? ""} canExport={sessionUser.permissions.includes("history.export")} notify={notify} onOpenTrend={openTrendRange} />}
-            {view === "assets" && <OperationalHierarchyView hierarchy={hierarchy} loading={hierarchyLoading} permissions={sessionUser.permissions} onReload={loadHierarchy} onSwitchSite={switchSite} onClientLogoChanged={(clientId, logoUpdatedAt) => setSessionUser((current) => current && current.clientId === clientId ? { ...current, clientLogoUpdatedAt: logoUpdatedAt } : current)} />}
+            {view === "assets" && <OperationalHierarchyView hierarchy={hierarchy} loading={hierarchyLoading} permissions={sessionUser.permissions} platformStaff={Boolean(sessionUser.platformStaff)} onReload={loadHierarchy} onSwitchSite={switchSite} onClientLogoChanged={(clientId, logoUpdatedAt) => setSessionUser((current) => current && current.clientId === clientId ? { ...current, clientLogoUpdatedAt: logoUpdatedAt } : current)} />}
             {view === "reports" && <DatabaseReportsView assetId={activePoint?.id ?? ""} assetLabel={activePoint ? `${activePoint.code} · ${activePoint.name}` : "Sin punto seleccionado"} timezone={hierarchy?.sites.find((site) => site.id === sessionUser.siteId)?.timezone ?? "America/Santiago"} canGenerate={sessionUser.permissions.includes("reports.generate")} canSchedule={sessionUser.permissions.includes("reports.schedule")} notify={notify} confirm={(request) => setConfirmRequest(request)} />}
             {view === "settings" && <DatabaseSettingsView assetId={activePoint?.id ?? ""} canWrite={sessionUser.permissions.includes("settings.write")} notify={notify} confirm={(request) => setConfirmRequest(request)} onReloadHierarchy={loadHierarchy} />}
             {view === "provisioning" && <GatewayProvisioningView canWrite={sessionUser.permissions.includes("settings.write")} notify={notify} confirm={(request) => setConfirmRequest(request)} />}

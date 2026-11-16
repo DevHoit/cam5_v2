@@ -64,6 +64,11 @@ export const clients = pgTable("clients", {
   logoData: text("logo_data"),
   logoContentType: varchar("logo_content_type", { length: 40 }),
   logoUpdatedAt: timestamp("logo_updated_at", { withTimezone: true }),
+  // Suspensión comercial (p. ej. falta de pago): los usuarios del cliente no pueden entrar al portal, pero
+  // sus gateways siguen enviando y la telemetría, las alarmas y el histórico continúan. Distinto de active=false.
+  suspendedAt: timestamp("suspended_at", { withTimezone: true }),
+  suspendedReason: varchar("suspended_reason", { length: 300 }),
+  suspendedBy: uuid("suspended_by"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
@@ -131,6 +136,8 @@ export const users = pgTable("users", {
   locale: varchar("locale", { length: 16 }).default("es-CL").notNull(),
   timezone: varchar("timezone", { length: 80 }).default("America/Santiago").notNull(),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
+  // Personal de la plataforma (HOIT): entra a clientes suspendidos y es el único que puede suspender o reactivar.
+  platformStaff: boolean("platform_staff").default(false).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [

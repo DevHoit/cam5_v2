@@ -228,7 +228,8 @@ export async function seedCam5Database(
       const configuredAdminName = options.adminName === undefined ? process.env.CAM5_ADMIN_NAME : options.adminName;
       const configuredAdminPassword = options.adminPassword === undefined ? process.env.CAM5_ADMIN_PASSWORD : options.adminPassword;
       const adminName = configuredAdminName?.trim() || "Administrador CAM5";
-      await tx.insert(users).values({ email: adminEmail, displayName: adminName, status: "active" }).onConflictDoNothing();
+      // El administrador inicial es personal de la plataforma (HOIT).
+      await tx.insert(users).values({ email: adminEmail, displayName: adminName, status: "active", platformStaff: true }).onConflictDoNothing();
       const [admin] = await tx.select().from(users).where(sql`lower(${users.email}) = ${adminEmail}`).limit(1);
       const [adminRole] = await tx.select().from(roles).where(eq(roles.key, "administrator")).limit(1);
       if (!admin || !adminRole) throw new Error("No fue posible asignar el administrador inicial.");
