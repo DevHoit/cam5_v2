@@ -34,8 +34,26 @@ export const COMMISSIONING_CHECKLIST = [
   ["stability", "Histórico y calidad verificados durante 24 horas"],
 ] as const;
 
+/**
+ * Identidad del CAM-5. La versión de datos se lee del registro 454; serie y firmware no están en el
+ * mapa Modbus 418–522 (R1.6), así que se registran en terreno desde la placa o la pantalla del equipo.
+ */
+export function evaluateIdentity(input: Pick<CommissioningValidationInput, "serialNumber" | "firmwareVersion" | "dataVersion">, validatedAt = new Date()): CommissioningValidation {
+  const hasSerial = Boolean(input.serialNumber?.trim());
+  const hasFirmware = Boolean(input.firmwareVersion?.trim());
+  const hasDataVersion = input.dataVersion !== null && Number.isInteger(input.dataVersion);
+  const missing = [!hasSerial && "serie", !hasFirmware && "firmware", !hasDataVersion && "versión de datos (registro 454)"].filter(Boolean) as string[];
+  return {
+    itemKey: "identity",
+    status: missing.length ? "failed" : "passed",
+    message: missing.length
+      ? `Falta ${missing.join(", ")}.${!hasSerial || !hasFirmware ? " Registra serie y firmware desde la placa o la pantalla del CAM-5." : ""}`
+      : "Identidad completa: versión de datos leída del controlador; serie y firmware registrados.",
+    evidence: { validatedAt: validatedAt.toISOString(), source: "database", serialNumber: input.serialNumber, firmwareVersion: input.firmwareVersion, dataVersion: input.dataVersion },
+  };
+}
+
 export function evaluateCommissioning(input: CommissioningValidationInput, validatedAt = new Date()): CommissioningValidation[] {
-  const identityReady = Boolean(input.serialNumber?.trim() && input.firmwareVersion?.trim() && input.dataVersion !== null && Number.isInteger(input.dataVersion));
   const registerReady = input.registerCount === 105 && input.minimumRegister === 418 && input.maximumRegister === 522 && Boolean(input.lastReadAt);
   const alarmReady = input.enabledChannelCount > 0 && input.configuredRuleCount === input.enabledChannelCount;
   const relayReady = input.relayCount === 6;
@@ -45,12 +63,7 @@ export function evaluateCommissioning(input: CommissioningValidationInput, valid
   const stabilityReady = stabilityHours >= 24 && qualityPercent !== null && qualityPercent >= 99;
   const common = { validatedAt: validatedAt.toISOString(), source: "database" };
   return [
-    {
-      itemKey: "identity",
-      status: identityReady ? "passed" : "failed",
-      message: identityReady ? "Identidad completa leída desde el controlador." : "Faltan serie, firmware o versión de datos del CAM-5.",
-      evidence: { ...common, serialNumber: input.serialNumber, firmwareVersion: input.firmwareVersion, dataVersion: input.dataVersion },
-    },
+    evaluateIdentity(input, validatedAt),
     {
       itemKey: "registers",
       status: registerReady ? "passed" : "failed",

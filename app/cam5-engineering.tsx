@@ -112,6 +112,7 @@ export function Cam5CommissioningView({ assetId, canExecute, notify, confirm, on
   const [manualStatus, setManualStatus] = useState<CheckStatus>("passed");
   const [manualNote, setManualNote] = useState("");
   const [saving, setSaving] = useState(false);
+  const [identity, setIdentity] = useState<{ itemId: string; serialNumber: string; firmwareVersion: string } | null>(null);
   const [reload, setReload] = useState(0);
 
   useEffect(() => {
@@ -153,6 +154,17 @@ export function Cam5CommissioningView({ assetId, canExecute, notify, confirm, on
       await requestJson("/api/v1/commissioning", { method: "PATCH", body: JSON.stringify({ assetId, itemId: editing.id, status: manualStatus, note: manualNote }) });
       notify("Evidencia de terreno guardada y auditada."); setEditing(null); setReload((value) => value + 1);
     } catch (saveError) { notify(saveError instanceof Error ? saveError.message : "No fue posible guardar la evidencia.", "warning"); }
+    finally { setSaving(false); }
+  };
+
+  const saveIdentity = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!identity) return;
+    setSaving(true);
+    try {
+      await requestJson("/api/v1/commissioning", { method: "PATCH", body: JSON.stringify({ assetId, itemId: identity.itemId, identity: { serialNumber: identity.serialNumber, firmwareVersion: identity.firmwareVersion } }) });
+      notify("Serie y firmware registrados y auditados."); setIdentity(null); setReload((value) => value + 1);
+    } catch (saveError) { notify(saveError instanceof Error ? saveError.message : "No fue posible guardar la identidad.", "warning"); }
     finally { setSaving(false); }
   };
 
@@ -241,7 +253,8 @@ export function Cam5CommissioningView({ assetId, canExecute, notify, confirm, on
               <span role="cell" className={`commissioning-measure ${measure ? measure.ok ? "ok" : "warning" : ""}`}>{measure ? measure.text : item.automatic ? "—" : "Confirmación manual"}</span>
               <span role="cell"><i className="commissioning-status-badge">{stateLabel(item.status)}</i></span>
               <span role="cell" className="commissioning-checked">{item.checkedAt ? <>{formatDateTime(item.checkedAt)}<small>{item.checkedByName || "Sistema"}</small></> : <small>Sin revisión</small>}</span>
-              <span role="cell">{!item.automatic && canExecute && <button className="ghost-button" onClick={() => openEvidence(item)} aria-label={`Registrar evidencia: ${item.label}`}><IconPencil size={14} aria-hidden="true" /> Registrar</button>}</span>
+              <span role="cell">{!item.automatic && canExecute && <button className="ghost-button" onClick={() => openEvidence(item)} aria-label={`Registrar evidencia: ${item.label}`}><IconPencil size={14} aria-hidden="true" /> Registrar</button>}
+                {item.itemKey === "identity" && canExecute && <button className="ghost-button" onClick={() => setIdentity({ itemId: item.id, serialNumber: data.device.serialNumber ?? "", firmwareVersion: data.device.firmwareVersion ?? "" })} aria-label="Registrar serie y firmware del CAM-5"><IconPencil size={14} aria-hidden="true" /> Registrar</button>}</span>
             </div>;
           })}
         </div>
@@ -249,6 +262,8 @@ export function Cam5CommissioningView({ assetId, canExecute, notify, confirm, on
 
       <footer className="commissioning-activation"><span className={data.device.state === "active" || summary.ready ? "ready" : "blocked"} aria-hidden="true">{data.device.state === "active" || summary.ready ? <IconCircleCheck size={20} /> : <IconShieldCheck size={20} />}</span><div><strong>{data.device.state === "active" ? "CAM-5 habilitado" : summary.ready ? "Expediente listo para habilitación" : "Habilitación bloqueada"}</strong><p>{data.device.state === "active" ? "Puedes generar el acta de puesta en marcha desde Reportes." : summary.ready ? "La activación cambiará el estado del controlador y del punto de medición." : "Completa todos los controles aplicables antes de habilitar el equipo."}</p></div>{data.device.state === "active" ? <button className="secondary-button" onClick={onOpenReports}><IconFileReport size={16} aria-hidden="true" /> Generar acta</button> : <button className="commissioning-activate-button" disabled={!summary.ready || !canExecute || activating} onClick={activate}>{activating ? "Habilitando…" : "Habilitar CAM-5"}</button>}</footer>
     </article>
+
+    {identity && <div className="commissioning-modal-backdrop" role="presentation" onMouseDown={() => setIdentity(null)}><form className="commissioning-evidence-dialog" role="dialog" aria-modal="true" aria-label="Identidad del CAM-5" onKeyDown={(event) => { if (event.key === "Escape") setIdentity(null); }} onSubmit={saveIdentity} onMouseDown={(event) => event.stopPropagation()}><div><span className="eyebrow">Identidad · {data.device.code}</span><h2>Serie y firmware del CAM-5</h2><p>El mapa Modbus del CAM-5 no los entrega: cópialos de la placa del equipo o de su pantalla de información. La versión de datos ({data.device.dataVersion ?? "sin leer"}) se lee sola del registro 454.</p></div><button type="button" className="dialog-close" onClick={() => setIdentity(null)} aria-label="Cerrar"><IconX size={18} aria-hidden="true" /></button><label><span>Número de serie</span><input required maxLength={120} value={identity.serialNumber} onChange={(event) => setIdentity({ ...identity, serialNumber: event.target.value })} placeholder="Ej.: CAM5-2304-0187" /></label><label><span>Versión de firmware</span><input required maxLength={80} value={identity.firmwareVersion} onChange={(event) => setIdentity({ ...identity, firmwareVersion: event.target.value })} placeholder="Ej.: 1.6.0" /></label><div className="commissioning-dialog-actions"><button type="button" className="secondary-button" onClick={() => setIdentity(null)}>Cancelar</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Guardando…" : "Guardar identidad"}</button></div></form></div>}
 
     {editing && <div className="commissioning-modal-backdrop" role="presentation" onMouseDown={() => setEditing(null)}><form className="commissioning-evidence-dialog" role="dialog" aria-modal="true" aria-label={`Evidencia de terreno: ${editing.label}`} onKeyDown={(event) => { if (event.key === "Escape") setEditing(null); }} onSubmit={saveEvidence} onMouseDown={(event) => event.stopPropagation()}><div><span className="eyebrow">Evidencia de terreno</span><h2>{editing.label}</h2><p>La decisión quedará asociada a tu usuario y registrada en auditoría.</p></div><button type="button" className="dialog-close" onClick={() => setEditing(null)} aria-label="Cerrar"><IconX size={18} aria-hidden="true" /></button><label><span>Resultado</span><select value={manualStatus} onChange={(event) => setManualStatus(event.target.value as CheckStatus)}><option value="passed">Aprobado</option><option value="failed">Con hallazgo</option><option value="pending">Pendiente</option><option value="not_applicable">No aplica</option></select></label><label><span>Nota de evidencia</span><textarea required={manualStatus === "passed" || manualStatus === "failed"} minLength={3} value={manualNote} onChange={(event) => setManualNote(event.target.value)} placeholder="Indica qué se verificó, instrumento utilizado o referencia del acta…" /></label><div className="commissioning-dialog-actions"><button type="button" className="secondary-button" onClick={() => setEditing(null)}>Cancelar</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Guardando…" : "Guardar evidencia"}</button></div></form></div>}
   </>;

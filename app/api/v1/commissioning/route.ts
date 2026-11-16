@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { and, count, eq, max, min, sql } from "drizzle-orm";
-import { evaluateCommissioning, type CommissioningValidationInput } from "../../../../db/commissioning-engine";
+import { evaluateCommissioning, evaluateIdentity, type CommissioningValidationInput } from "../../../../db/commissioning-engine";
 import type { Cam5Database } from "../../../../db/index";
 import {
   alarmRules,
@@ -191,6 +191,50 @@ export async function POST(request: NextRequest) {
   } catch (error) { return apiErrorResponse(error); }
 }
 
+function identityField(value: unknown, label: string, maxLength: number): string {
+  const text = typeof value === "string" ? value.trim() : "";
+  if (!text) throw new ApiError(400, `Ingresa ${label} del CAM-5.`);
+  if (text.length > maxLength || !/^[\p{L}\p{N}][\p{L}\p{N} ._\-/#:()]*$/u.test(text)) throw new ApiError(400, `${label[0].toUpperCase()}${label.slice(1)} tiene caracteres no permitidos o es demasiado largo.`);
+  return text;
+}
+
+/**
+ * Serie y firmware registrados en terreno (no están en el mapa Modbus). Se guardan en el controlador,
+ * quedan auditados y el control de identidad se vuelve a evaluar con la versión de datos leída.
+ */
+async function saveIdentity(
+  db: Cam5Database,
+  user: Awaited<ReturnType<typeof requireApiSession>>["user"],
+  context: Awaited<ReturnType<typeof requireCommissioningContext>>,
+  itemId: string,
+  raw: unknown,
+  metadata: ReturnType<typeof requestMetadata>,
+) {
+  const input = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
+  const serialNumber = identityField(input.serialNumber, "la serie", 120);
+  const firmwareVersion = identityField(input.firmwareVersion, "el firmware", 80);
+  const [current] = await db.select().from(commissioningItems).where(and(eq(commissioningItems.id, itemId), eq(commissioningItems.deviceId, context.deviceId))).limit(1);
+  if (!current || current.itemKey !== "identity") throw new ApiError(404, "El control de identidad no existe.");
+  const result = evaluateIdentity({ serialNumber, firmwareVersion, dataVersion: context.dataVersion });
+  const [updated] = await db.transaction(async (tx) => {
+    await tx.update(devices).set({ serialNumber, firmwareVersion, updatedAt: new Date() }).where(eq(devices.id, context.deviceId));
+    const items = await tx.update(commissioningItems).set({
+      status: result.status,
+      note: result.message,
+      evidence: { ...result.evidence, source: "field_confirmation" },
+      checkedBy: user.id,
+      checkedAt: new Date(),
+    }).where(eq(commissioningItems.id, current.id)).returning();
+    await tx.insert(auditLogs).values({
+      siteId: user.siteId, actorUserId: user.id, action: "commissioning.identity.update", resourceType: "device", resourceId: context.deviceId,
+      ipAddress: metadata.ipAddress, userAgent: metadata.userAgent,
+      before: { serialNumber: context.serialNumber, firmwareVersion: context.firmwareVersion }, after: { serialNumber, firmwareVersion, dataVersion: context.dataVersion, status: result.status },
+    });
+    return items;
+  });
+  return Response.json({ item: updated }, { headers: { "Cache-Control": "no-store" } });
+}
+
 export async function PATCH(request: NextRequest) {
   try {
     const { db, user } = await requireApiSession(request, "commissioning.execute");
@@ -198,6 +242,7 @@ export async function PATCH(request: NextRequest) {
     if (!body) throw new ApiError(400, "No se recibió la evidencia del control.");
     const context = await requireCommissioningContext(db, user, String(body.assetId ?? ""));
     const itemId = String(body.itemId ?? "");
+    if (body.identity !== undefined) return await saveIdentity(db, user, context, itemId, body.identity, requestMetadata(request));
     const status = String(body.status ?? "");
     const note = String(body.note ?? "").trim();
     if (!["pending", "passed", "failed", "not_applicable"].includes(status)) throw new ApiError(400, "El estado del control no es válido.");
