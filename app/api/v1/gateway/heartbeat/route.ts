@@ -1,5 +1,6 @@
-import type { NextRequest } from "next/server";
+import { after, type NextRequest } from "next/server";
 import { and, asc, eq, sql } from "drizzle-orm";
+import { checkGatewayDataAlert } from "../../../../../db/gateway-data-plan";
 import { assets, devices, gateways, readingProfiles } from "../../../../../db/schema";
 import { apiErrorResponse } from "../../_lib/auth";
 import { requireGatewayCredential } from "../_lib/auth";
@@ -57,6 +58,13 @@ export async function POST(request: NextRequest) {
         ...(typeof health.version === "string" ? { softwareVersion: health.version.slice(0, 80) } : {}),
       } : {}),
     }).where(eq(gateways.id, credential.gatewayId));
+
+    // Aviso de consumo 4G al personal de la plataforma, sin demorar la respuesta al gateway.
+    if (typeof health?.lteMonthMb === "number") {
+      after(() => checkGatewayDataAlert(db, credential.gatewayId).catch((error: unknown) => {
+        console.error("Aviso de consumo 4G no enviado:", error instanceof Error ? error.message : error);
+      }));
+    }
 
     return Response.json({
       status: "accepted",

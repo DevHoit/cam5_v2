@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { and, count, desc, eq, gt, ilike, isNotNull, isNull, lte, or, type SQL } from "drizzle-orm";
 import { createGatewayToken, gatewayTokenDisplayPrefix, hashGatewayToken } from "../../../../db/gateway-auth";
 import { auditLogs, gatewayApiCredentials, gateways } from "../../../../db/schema";
+import { readDataAlert, readDataPlan } from "../../../../db/gateway-data-plan";
 import { apiErrorResponse, ApiError, parsePage, requestMetadata, requireApiSession } from "../_lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -90,6 +91,8 @@ export async function GET(request: NextRequest) {
       gateways: gatewayRows.map(({ metadata, ...gateway }) => ({
         ...gateway,
         health: metadata && typeof metadata.health === "object" && metadata.health !== null ? metadata.health : null,
+        dataPlan: readDataPlan(metadata),
+        dataAlert: readDataAlert(metadata),
         lastSeenAt: gateway.lastSeenAt?.toISOString() ?? null,
         activeCredentials: statusRows.filter((credential) => credential.gatewayId === gateway.id && (credential.status === "active" || credential.status === "unused")).length,
       })),
@@ -116,6 +119,7 @@ export async function GET(request: NextRequest) {
         expiringCredentials,
         expiredCredentials,
       },
+      canEditDataPlan: user.platformStaff,
       serverTime: now.toISOString(),
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
