@@ -1,5 +1,5 @@
 {
-  "id": "5bb17f52-cc8f-47a4-91d7-1d26a6130953",
+  "id": "930eaa43-28e8-4c59-927f-b74ef0ad8d25",
   "prevId": "a9079884-b397-41cd-83e7-7ff0b2c4885d",
   "version": "7",
   "dialect": "postgresql",
@@ -1760,24 +1760,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "suspended_at": {
-          "name": "suspended_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "suspended_reason": {
-          "name": "suspended_reason",
-          "type": "varchar(300)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "suspended_by": {
-          "name": "suspended_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -2535,8 +2517,8 @@
         }
       },
       "indexes": {
-        "devices_gateway_unit_uidx": {
-          "name": "devices_gateway_unit_uidx",
+        "devices_gateway_endpoint_uidx": {
+          "name": "devices_gateway_endpoint_uidx",
           "columns": [
             {
               "expression": "gateway_id",
@@ -2545,7 +2527,40 @@
               "nulls": "last"
             },
             {
+              "expression": "host",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "port",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
               "expression": "unit_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "devices_gateway_code_uidx": {
+          "name": "devices_gateway_code_uidx",
+          "columns": [
+            {
+              "expression": "gateway_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "code",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -6607,13 +6622,6 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
-        },
-        "platform_staff": {
-          "name": "platform_staff",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
         },
         "created_at": {
           "name": "created_at",

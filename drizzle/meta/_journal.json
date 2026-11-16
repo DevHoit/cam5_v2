@@ -103,8 +103,15 @@
     {
       "idx": 14,
       "version": "7",
-      "when": 1794831121986,
-      "tag": "0014_client_suspension",
+      "when": 1794833090136,
+      "tag": "0014_modbus_tcp_device_identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1794837762011,
+      "tag": "0015_client_suspension",
       "breakpoints": true
     }
   ]
