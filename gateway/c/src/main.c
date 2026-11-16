@@ -24,6 +24,8 @@
  *   CAM5_QUEUE_MAX_MB      tope de la cola en flash (16)
  *   CAM5_HEARTBEAT_IDLE_S  segundos sin contacto antes de enviar heartbeat (intervalo del portal)
  *   CAM5_TLS_GROUPS        intercambio de claves TLS (X25519:P-256)
+ *   CAM5_UPDATE_DIR        paquetes y resultado de la actualización remota (/cache/cam5-update)
+ *   CAM5_UPDATE_SCRIPT     instalador (/data/hoit/bin/hoit_update.sh); ver update.h
  */
 #include "compat.h"
 
@@ -31,6 +33,7 @@
 #include "json.h"
 #include "modbus.h"
 #include "queue.h"
+#include "update.h"
 #include "util.h"
 
 #include <errno.h>
@@ -142,6 +145,8 @@ typedef struct {
     char log_file[512];
     char alive_file[512];
     char net_status_file[512];
+    char update_dir[512];
+    char update_script[512];
     int config_refresh_s;
     host_override overrides[32];
     int noverrides;
@@ -182,6 +187,7 @@ typedef struct {
     int cap_health;
     int bulk_disabled; /* el portal rechazó un envío agrupado: se vuelve a uno por solicitud */
     double next_health;
+    updater upd;
 } gateway;
 
 static volatile sig_atomic_t g_running = 1;
@@ -329,6 +335,8 @@ static int load_settings(settings *s)
     s->config_refresh_s = env_int("CAM5_CONFIG_REFRESH_MIN", 60, 5, 1440) * 60;
     copy_str(s->net_status_file, sizeof(s->net_status_file),
              env_or("CAM5_NET_STATUS_FILE", "/cache/hoit/gateway_status_current.json"));
+    copy_str(s->update_dir, sizeof(s->update_dir), env_or("CAM5_UPDATE_DIR", "/cache/cam5-update"));
+    copy_str(s->update_script, sizeof(s->update_script), env_or("CAM5_UPDATE_SCRIPT", "/data/hoit/bin/hoit_update.sh"));
     s->queue_max_bytes = (uint64_t) env_int("CAM5_QUEUE_MAX_MB", 16, 1, 4096) * 1024 * 1024;
     return 0;
 }
@@ -1069,6 +1077,7 @@ static void health_json(gateway *gw, strbuf *sb)
         json_free(net);
     }
     free(text);
+    update_health(&gw->upd, sb);
     sb_puts(sb, "}}");
 }
 
@@ -1097,6 +1106,7 @@ static void heartbeat(gateway *gw, int with_health)
         double next = json_number_or(json_get(root, "nextHeartbeatInMs"), gw->heartbeat_s * 1000);
         if (next >= 5000)
             gw->heartbeat_s = next / 1000.0;
+        update_offer(&gw->upd, &gw->http, gw->cfg.token, json_get(root, "update"));
         json_free(root);
         gw->last_contact = mono_now();
         gw->retry_index = 0;
@@ -1517,6 +1527,7 @@ int main(int argc, char **argv)
         LOGE("No se pudo generar el bootId (/dev/urandom)");
         return 2;
     }
+    update_init(&gw->upd, gw->cfg.update_dir, gw->cfg.update_script);
     gw->started = mono_now();
     gw->heartbeat_s = 30;
     LOGI("HoitLive CAM5 Gateway %s (C, %s) boot %s; %lu lote(s) pendientes en %s",

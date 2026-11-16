@@ -4,7 +4,7 @@ La base está diseñada para PostgreSQL 15 o superior y soporta una estructura m
 
 ## Componentes incluidos
 
-Las migraciones crean 44 tablas agrupadas de esta forma:
+Las migraciones crean 45 tablas agrupadas de esta forma:
 
 - Identidad y acceso: usuarios, identidades, sesiones, invitaciones, perfiles, permisos y alcances por cliente, sitio y punto.
 - Inventario OT: clientes, sitios, puntos de medición, gateways, modelos CAM5, equipos, entradas físicas y señales operativas.
@@ -100,6 +100,8 @@ El host `192.168.10.42` del seed es provisional. Debe reemplazarse por la direcc
 - Las alarmas de comunicación se revisan al recibir telemetría, al consultar el centro de alarmas y mediante el endpoint protegido `/api/v1/alarms/evaluate` para un programador externo.
 - La cola de notificaciones se procesa mediante `/api/v1/notifications/process`, protegido con `CRON_SECRET`; los fallos se reintentan con espera exponencial hasta cuatro veces y también pueden reintentarse de forma auditada desde el portal.
 - Plan de datos 4G por gateway (`db/gateway-data-plan.ts`): plan y tope de aviso en `gateways.metadata.dataPlan` (500 MB y 450 MB por omisión), editables solo por el personal de la plataforma desde Provisionamiento → Equipos en terreno (`PUT /api/v1/gateways/:id/data-plan`, auditado). Cuando el consumo del mes informado en el heartbeat llega al tope, se envía un correo (Resend, `NOTIFICATION_FROM_EMAIL`) solo a los usuarios activos con `platform_staff`, una vez por mes y tope; subir el tope a mitad de mes vuelve a armar el aviso. La marca queda en `gateways.metadata.dataAlert`.
+- Actualización remota del gateway (`db/gateway-releases.ts`): paquetes firmados con Ed25519 en `gateway_releases` (bytea, hasta 4 MB; Core verifica la firma y las rutas al publicar) y versión asignada en `gateways.target_release_id`/`target_assigned_at`. Solo el personal de la plataforma publica, elimina y asigna (`/api/v1/gateway-releases`, `PUT /api/v1/gateways/:id/release`, auditados). El heartbeat ofrece la versión cuando difiere de la informada y el equipo la descarga de `/api/v1/gateway/update`.
+- Migraciones en el despliegue: el build de producción de Vercel (`npm run vercel-build`) ejecuta `db/migrate-on-deploy.ts` antes de `next build`; si falla, el despliegue se cancela y sigue en línea la versión anterior. Las vistas previas no migran.
 - Cada cinco minutos, el proceso programado genera agregados de 1 minuto, 5 minutos, 1 hora y 1 día, y elimina datos crudos o agregados vencidos según el perfil asignado al controlador.
 - Las acciones de configuración, usuarios, alarmas y relés generan un registro inmutable en `audit_logs`.
 - Contraseñas, tokens y secretos externos se almacenan como hashes o referencias a un gestor de secretos; nunca como texto plano.

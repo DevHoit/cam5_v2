@@ -27,5 +27,9 @@ while :; do
         log "$SVC no está en ejecución: iniciando"
         /etc/init.d/"$SVC" start >/dev/null 2>&1
     done
+    # Actualización remota sin confirmar: se confirma cuando el gateway nuevo entrega datos,
+    # o se revierte si no lo logra (ver hoit_update.sh).
+    [ -f /cache/cam5-update/pending ] && [ -x /data/hoit/bin/hoit_update.sh ] &&
+        /data/hoit/bin/hoit_update.sh confirm >/dev/null 2>&1
     sleep "$INTERVAL"
 done

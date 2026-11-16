@@ -21,10 +21,11 @@ import { Pagination } from "./pagination";
 
 type NoticeTone = "success" | "info" | "warning";
 type ConfirmRequest = { title: string; detail: string; confirmLabel: string; tone?: "default" | "danger"; onConfirm: () => void };
-type GatewayHealth = Partial<Record<"version" | "uplink" | "rat" | "operator" | "receivedAt" | "lteMonth", string>> & Partial<Record<"csq" | "lteMonthMb" | "queue" | "uptimeS" | "devices" | "devicesOk" | "memFreeKb" | "rootfsPct" | "reboots24h", number>>;
+type GatewayHealth = Partial<Record<"version" | "uplink" | "rat" | "operator" | "receivedAt" | "lteMonth" | "updateState" | "updateVersion" | "updateError", string>> & Partial<Record<"csq" | "lteMonthMb" | "queue" | "uptimeS" | "devices" | "devicesOk" | "memFreeKb" | "rootfsPct" | "reboots24h", number>>;
 type DataPlan = { planMb: number; alertMb: number };
 type DataAlert = { month: string; alertMb: number; usedMb: number; sentAt: string; recipients: number };
-type Gateway = { id: string; code: string; name: string; state: string; active: boolean; lastSeenAt: string | null; softwareVersion: string | null; ipAddress: string | null; activeCredentials: number; health: GatewayHealth | null; dataPlan: DataPlan; dataAlert: DataAlert | null };
+type Gateway = { id: string; code: string; name: string; state: string; active: boolean; lastSeenAt: string | null; softwareVersion: string | null; ipAddress: string | null; activeCredentials: number; health: GatewayHealth | null; dataPlan: DataPlan; dataAlert: DataAlert | null; targetReleaseId: string | null; targetVersion: string | null; targetAssignedAt: string | null };
+type GatewayRelease = { id: string; version: string; sha256: string; sizeBytes: number; notes: string | null; createdAt: string; assignedGateways: number };
 
 const UPLINK_LABELS: Record<string, string> = { wifi: "Wi-Fi", "4g": "4G", none: "Sin salida" };
 
@@ -92,7 +93,84 @@ function DataPlanUsage({ gateway, canEdit, onSave }: { gateway: Gateway; canEdit
   </div>;
 }
 
-function GatewayHealthPanel({ gateways, canEditDataPlan, onSaveDataPlan }: { gateways: Gateway[]; canEditDataPlan: boolean; onSaveDataPlan: (gateway: Gateway, plan: DataPlan) => Promise<void> }) {
+function formatKb(bytes: number) {
+  return `${new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 }).format(bytes / 1024)} KB`;
+}
+
+/** Estado de la actualización remota: lo que el equipo informa frente a lo que se le asignó. */
+function softwareStatus(gateway: Gateway): { label: string; tone: "" | "ok" | "warn" | "err"; retry: boolean } {
+  const running = gateway.health?.version ?? gateway.softwareVersion;
+  const target = gateway.targetVersion;
+  const state = gateway.health?.updateState;
+  const sameVersion = gateway.health?.updateVersion === target;
+  if (!target) return { label: "Sin actualización asignada", tone: "", retry: false };
+  if (running === target) return { label: "Al día", tone: "ok", retry: false };
+  if (sameVersion && state === "installing") return { label: `Instalando ${target}…`, tone: "warn", retry: false };
+  if (sameVersion && (state === "rolled_back" || state === "failed")) {
+    const reason = gateway.health?.updateError ? `: ${gateway.health.updateError}` : "";
+    return { label: `${state === "rolled_back" ? "Revertida" : "Falló"} ${target}${reason}`, tone: "err", retry: true };
+  }
+  return { label: `Pendiente ${target}: el equipo la descarga en su próximo informe (≤ 15 min)`, tone: "warn", retry: false };
+}
+
+function GatewaySoftware({ gateway, releases, canManage, onAssign }: { gateway: Gateway; releases: GatewayRelease[]; canManage: boolean; onAssign: (releaseId: string | null) => Promise<void> }) {
+  const [choice, setChoice] = useState(gateway.targetReleaseId ?? "");
+  const [saving, setSaving] = useState(false);
+  const status = softwareStatus(gateway);
+  const assign = async (releaseId: string | null) => {
+    setSaving(true);
+    try { await onAssign(releaseId); } catch { /* el aviso lo muestra la vista */ } finally { setSaving(false); }
+  };
+  return <div className="gateway-software">
+    <div className="gateway-software-head">
+      <span>Software</span>
+      <strong>{gateway.health?.version ?? gateway.softwareVersion ?? "—"}</strong>
+      <small className={`gateway-software-status ${status.tone}`}>{status.label}</small>
+    </div>
+    {canManage && releases.length > 0 && <div className="gateway-software-form">
+      <select value={choice} onChange={(event) => setChoice(event.target.value)} aria-label={`Versión para ${gateway.code}`} disabled={saving}>
+        <option value="">No actualizar</option>
+        {releases.map((release) => <option key={release.id} value={release.id}>{release.version}</option>)}
+      </select>
+      {status.retry && choice === gateway.targetReleaseId
+        ? <button type="button" className="secondary-button" disabled={saving} onClick={() => void assign(choice)}>Reintentar</button>
+        : <button type="button" className="primary-button" disabled={saving || choice === (gateway.targetReleaseId ?? "")} onClick={() => void assign(choice || null)}>{saving ? "Guardando…" : "Asignar"}</button>}
+    </div>}
+  </div>;
+}
+
+function GatewayReleasesPanel({ releases, onUpload, onDelete }: { releases: GatewayRelease[]; onUpload: (form: FormData) => Promise<void>; onDelete: (release: GatewayRelease) => void }) {
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
+  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      await onUpload(new FormData(event.currentTarget));
+      formRef.current?.reset();
+      setOpen(false);
+    } catch { /* el aviso lo muestra la vista */ } finally { setSaving(false); }
+  };
+  return <section className="panel gateway-releases-panel" aria-label="Versiones del software del gateway">
+    <header><IconDownload size={18} /><div><h2>Versiones del gateway</h2><p>Paquetes firmados con la clave de HOIT. Cada equipo descarga la versión que se le asigne y vuelve a la anterior si no logra enviar datos.</p></div>
+      {!open && <button type="button" className="secondary-button" onClick={() => setOpen(true)}><IconPlus size={15} /> Publicar versión</button>}</header>
+    {open && <form ref={formRef} className="gateway-release-form" onSubmit={(event) => void submit(event)}>
+      <label><span>Paquete (.tar.gz)</span><input name="bundle" type="file" accept=".gz,.tgz,application/gzip" required /></label>
+      <label><span>Firma (.sig)</span><input name="signature" type="file" accept=".sig,text/plain" required /></label>
+      <label className="wide"><span>Notas (opcional)</span><input name="notes" type="text" maxLength={500} placeholder="Qué cambia en esta versión" /></label>
+      <div><button type="button" className="secondary-button" onClick={() => setOpen(false)} disabled={saving}>Cancelar</button><button className="primary-button" disabled={saving}>{saving ? "Publicando…" : "Publicar"}</button></div>
+    </form>}
+    {releases.length === 0 ? <p className="gateway-releases-empty">Todavía no hay versiones publicadas.</p> : <ul className="gateway-release-list">{releases.map((release) => <li key={release.id}>
+      <strong>{release.version}</strong>
+      <span>{formatKb(release.sizeBytes)} · {formatDateTime(release.createdAt)} · {release.assignedGateways} gateway(s){release.notes ? ` · ${release.notes}` : ""}</span>
+      <code title={release.sha256}>{release.sha256.slice(0, 12)}…</code>
+      <button type="button" className="ghost-button" disabled={release.assignedGateways > 0} title={release.assignedGateways > 0 ? "Está asignada a un gateway" : "Eliminar versión"} onClick={() => onDelete(release)}><IconTrash size={15} /></button>
+    </li>)}</ul>}
+  </section>;
+}
+
+function GatewayHealthPanel({ gateways, canEditDataPlan, onSaveDataPlan, releases, canManageReleases, onAssignRelease }: { gateways: Gateway[]; canEditDataPlan: boolean; onSaveDataPlan: (gateway: Gateway, plan: DataPlan) => Promise<void>; releases: GatewayRelease[]; canManageReleases: boolean; onAssignRelease: (gateway: Gateway, releaseId: string | null) => Promise<void> }) {
   const reporting = gateways.filter((gateway) => gateway.health);
   if (!reporting.length) return null;
   return <section className="panel gateway-health-panel" aria-label="Estado de los gateways en terreno">
@@ -102,12 +180,12 @@ function GatewayHealthPanel({ gateways, canEditDataPlan, onSaveDataPlan }: { gat
       return <article key={gateway.id}>
         <div className="gateway-health-title"><strong>{gateway.code}</strong><small>{gateway.name}</small><span className={`gateway-health-state ${gateway.state === "online" ? "online" : ""}`}>{gateway.state === "online" ? "En línea" : "Sin conexión"} · {sinceLabel(gateway.lastSeenAt)}</span></div>
         <DataPlanUsage gateway={gateway} canEdit={canEditDataPlan} onSave={(plan) => onSaveDataPlan(gateway, plan)} />
+        <GatewaySoftware key={`${gateway.id}:${gateway.targetReleaseId ?? ""}:${gateway.targetAssignedAt ?? ""}`} gateway={gateway} releases={releases} canManage={canManageReleases} onAssign={(releaseId) => onAssignRelease(gateway, releaseId)} />
         <dl>
           <div><dt>Salida</dt><dd>{UPLINK_LABELS[health.uplink ?? ""] ?? health.uplink ?? "—"}</dd></div>
           <div><dt>Señal 4G</dt><dd>{signalLabel(health.csq)}{health.rat ? ` · ${health.rat}` : ""}</dd></div>
           <div><dt>Controladores</dt><dd>{health.devices !== undefined ? `${health.devicesOk ?? 0}/${health.devices} respondiendo` : "—"}</dd></div>
           <div><dt>Cola</dt><dd>{health.queue ?? "—"} lote(s)</dd></div>
-          <div><dt>Versión</dt><dd>{health.version ?? gateway.softwareVersion ?? "—"}</dd></div>
         </dl>
         <small className="gateway-health-foot">Informe {sinceLabel(health.receivedAt)}{health.uptimeS !== undefined ? ` · encendido hace ${Math.round(health.uptimeS / 3600)} h` : ""}{health.reboots24h ? ` · ${health.reboots24h} reinicio(s) en 24 h` : ""}</small>
       </article>;
@@ -123,6 +201,7 @@ type ProvisioningResponse = {
   total: number;
   totalPages: number;
   canEditDataPlan?: boolean;
+  canManageReleases?: boolean;
   summary: { gateways: number; onlineGateways: number; activeCredentials: number; usedCredentials: number; expiringCredentials: number; expiredCredentials: number };
   serverTime: string;
 };
@@ -206,7 +285,18 @@ export function GatewayProvisioningView({
   const [renewalAccepted, setRenewalAccepted] = useState(false);
   const [renewing, setRenewing] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [releases, setReleases] = useState<GatewayRelease[]>([]);
   const copyButtonRef = useRef<HTMLButtonElement>(null);
+  const canManageReleases = Boolean(data?.canManageReleases);
+
+  useEffect(() => {
+    if (!canManageReleases) return;
+    let active = true;
+    requestProvisioning<{ releases: GatewayRelease[] }>("/api/v1/gateway-releases")
+      .then((result) => { if (active) setReleases(result.releases); })
+      .catch(() => { if (active) setReleases([]); });
+    return () => { active = false; };
+  }, [canManageReleases, reload]);
 
   useEffect(() => {
     if (secret) copyButtonRef.current?.focus();
@@ -232,6 +322,44 @@ export function GatewayProvisioningView({
     }, 250);
     return () => { active = false; window.clearTimeout(timeout); };
   }, [gatewayId, page, query, reload, status]);
+
+  const uploadRelease = async (form: FormData) => {
+    try {
+      const response = await fetch("/api/v1/gateway-releases", { method: "POST", body: form, credentials: "include" });
+      const payload = await response.json().catch(() => null) as { error?: string; release?: GatewayRelease } | null;
+      if (!response.ok) throw new Error(payload?.error ?? "No fue posible publicar la versión.");
+      notify(`Versión ${payload?.release?.version ?? ""} publicada. Asígnala a un gateway para instalarla.`, "success");
+      setReload((value) => value + 1);
+    } catch (uploadError) {
+      notify(uploadError instanceof Error ? uploadError.message : "No fue posible publicar la versión.", "warning");
+      throw uploadError;
+    }
+  };
+
+  const deleteRelease = (release: GatewayRelease) => confirm({
+    title: `Eliminar la versión ${release.version}`,
+    detail: "El paquete se borra de Core. Los gateways que ya la instalaron no cambian.",
+    confirmLabel: "Eliminar",
+    tone: "danger",
+    onConfirm: () => {
+      void requestProvisioning(`/api/v1/gateway-releases/${release.id}`, { method: "DELETE" })
+        .then(() => { notify(`Versión ${release.version} eliminada.`, "success"); setReload((value) => value + 1); })
+        .catch((deleteError: unknown) => notify(deleteError instanceof Error ? deleteError.message : "No fue posible eliminar la versión.", "warning"));
+    },
+  });
+
+  const assignRelease = async (gateway: Gateway, releaseId: string | null) => {
+    try {
+      const result = await requestProvisioning<{ targetVersion: string | null }>(`/api/v1/gateways/${gateway.id}/release`, { method: "PUT", body: JSON.stringify({ releaseId }) });
+      notify(result.targetVersion
+        ? `${gateway.code} instalará ${result.targetVersion} en su próximo informe (≤ 15 min) y volverá a la versión anterior si no logra enviar datos.`
+        : `${gateway.code} no recibirá actualizaciones.`, "success");
+      setReload((value) => value + 1);
+    } catch (assignError) {
+      notify(assignError instanceof Error ? assignError.message : "No fue posible asignar la versión.", "warning");
+      throw assignError;
+    }
+  };
 
   const saveDataPlan = async (gateway: Gateway, plan: DataPlan) => {
     try {
@@ -370,7 +498,8 @@ export function GatewayProvisioningView({
       <article className={data.summary.expiringCredentials || data.summary.expiredCredentials ? "summary-attention" : ""}><span className="module-summary-icon amber"><IconClock size={19} /></span><div><small>Renovación requerida</small><strong>{data.summary.expiringCredentials + data.summary.expiredCredentials}</strong><span>{data.summary.expiredCredentials} vencidas · {data.summary.expiringCredentials} por vencer</span></div></article>
     </section>
 
-    <GatewayHealthPanel gateways={data.gateways} canEditDataPlan={Boolean(data.canEditDataPlan)} onSaveDataPlan={saveDataPlan} />
+    <GatewayHealthPanel gateways={data.gateways} canEditDataPlan={Boolean(data.canEditDataPlan)} onSaveDataPlan={saveDataPlan} releases={releases} canManageReleases={canManageReleases} onAssignRelease={assignRelease} />
+    {canManageReleases && <GatewayReleasesPanel releases={releases} onUpload={uploadRelease} onDelete={deleteRelease} />}
 
     {secret && <div className="credential-secret-backdrop">
       <section className="panel credential-reveal credential-secret-dialog" role="alertdialog" aria-modal="true" aria-labelledby="gateway-token-title" aria-describedby="gateway-token-description">

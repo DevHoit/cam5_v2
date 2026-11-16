@@ -1,9 +1,11 @@
 import { sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   bigint,
   bigserial,
   boolean,
   check,
+  customType,
   index,
   integer,
   jsonb,
@@ -121,6 +123,9 @@ export const gateways = pgTable("gateways", {
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
   ipAddress: varchar("ip_address", { length: 64 }),
   metadata: jsonb("metadata").$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
+  // Actualización remota: versión que debe tener el equipo (la asigna el personal de HOIT).
+  targetReleaseId: uuid("target_release_id").references((): AnyPgColumn => gatewayReleases.id, { onDelete: "set null" }),
+  targetAssignedAt: timestamp("target_assigned_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
@@ -192,6 +197,24 @@ export const gatewayApiCredentials = pgTable("gateway_api_credentials", {
 }, (table) => [
   uniqueIndex("gateway_api_credentials_token_hash_uidx").on(table.tokenHash),
   index("gateway_api_credentials_gateway_idx").on(table.gatewayId, table.revokedAt),
+]);
+
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" });
+
+// Paquetes firmados de software del gateway (binario + scripts). Se sirven a los equipos por
+// /api/v1/gateway/update; la firma Ed25519 la verifica el propio gateway antes de instalar.
+export const gatewayReleases = pgTable("gateway_releases", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  version: varchar("version", { length: 40 }).notNull(),
+  sha256: varchar("sha256", { length: 64 }).notNull(),
+  signature: varchar("signature", { length: 120 }).notNull(),
+  sizeBytes: integer("size_bytes").notNull(),
+  bundle: bytea("bundle").notNull(),
+  notes: varchar("notes", { length: 500 }),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  uniqueIndex("gateway_releases_version_uidx").on(table.version),
 ]);
 
 export const roles = pgTable("roles", {
