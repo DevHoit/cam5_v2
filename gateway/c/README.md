@@ -232,11 +232,12 @@ adb shell "sh /cache/cam5-deploy/apply_cam5_only.sh /cache/cam5-deploy"
 1. Prueba Wi-Fi y 4G por separado (`ping -I` y HTTPS al portal con `--interface`). Si el 4G es la salida activa y recibe tráfico, no gasta datos en probarlo; en reserva se prueba cada 5 ciclos.
 2. Lee el módem por AT con bloqueo del puerto: SIM, registro, tecnología, operador, señal.
 3. 4G con falla: a los 3 ciclos reactiva el contexto PDP; a los 8 reinicia la radio (`CFUN=4` → `CFUN=1`) y luego lo repite cada 30 ciclos. Con la SIM ausente o bloqueada solo reintenta la radio cada 30 ciclos.
-4. Sin **ninguna** salida durante 45 ciclos reinicia el equipo, como máximo 3 veces en 24 h y nunca antes de 30 min de encendido.
-5. Cortafuegos: aplica `hoit_firewall.sh` (ver «Seguridad y vigilancia»).
-6. Escribe `/cache/hoit/gateway_status_current.json`, que muestra la página Conectividad.
+4. Salida principal según `UPLINK_PRIORITY`: `wifi` (por omisión: Wi-Fi con métrica 100 y 4G de respaldo con 600) o `lte` (4G con métrica 50 y Wi-Fi de respaldo). Con `lte`, si el 4G pasa 2 ciclos sin tráfico (`LTE_DEMOTE_AFTER`), su ruta baja a 600 y el Wi-Fi toma la salida; vuelve a ser la principal en cuanto una prueba por la propia interfaz 4G pasa. `hoit_wifi_manager` lee la métrica vigente de `/var/run/hoit_netwatch/lte_metric` para no deshacerla. Al cambiar de salida, la conexión HTTPS abierta del gateway tarda hasta ~3 min en reconectarse por la nueva; los lotes quedan en cola y no se pierden.
+5. Sin **ninguna** salida durante 45 ciclos reinicia el equipo, como máximo 3 veces en 24 h y nunca antes de 30 min de encendido.
+6. Cortafuegos: aplica `hoit_firewall.sh` (ver «Seguridad y vigilancia»).
+7. Escribe `/cache/hoit/gateway_status_current.json`, que muestra la página Conectividad.
 
-Los umbrales se ajustan en `/data/hoit/config/hoit_conn.conf` (`PDP_RESET_AFTER`, `RADIO_RESET_AFTER`, `RADIO_RESET_EVERY`, `REBOOT_AFTER`, `REBOOT_MAX_PER_DAY`). El APN se cambia desde la página Conectividad del portal.
+Los umbrales se ajustan en `/data/hoit/config/hoit_conn.conf` (`UPLINK_PRIORITY`, `LTE_DEMOTE_AFTER`, `PDP_RESET_AFTER`, `RADIO_RESET_AFTER`, `RADIO_RESET_EVERY`, `REBOOT_AFTER`, `REBOOT_MAX_PER_DAY`); `hoit_conn` relee el archivo en cada ciclo. El APN se cambia desde la página Conectividad del portal.
 
 **Hora** (`hoit_time`, `/data/hoit/config/hoit_time.conf`). El reloj del sistema queda en UTC; la zona solo afecta lo que muestra el portal.
 

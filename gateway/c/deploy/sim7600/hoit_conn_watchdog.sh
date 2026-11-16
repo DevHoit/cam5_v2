@@ -16,8 +16,10 @@
 #      luego repetir el reinicio de radio cada RADIO_RESET_EVERY ciclos.
 #   4. Si no hay NINGUNA salida durante REBOOT_AFTER ciclos, reinicia el equipo
 #      (máximo REBOOT_MAX_PER_DAY veces en 24 h y nunca antes de MIN_UPTIME_FOR_REBOOT).
-#   5. Mantiene el cortafuegos: bloquea ADB por red y la administración por 4G.
-#   6. Escribe /cache/hoit/gateway_status_current.json (formato que lee el portal).
+#   5. Mantiene la ruta 4G según UPLINK_PRIORITY: de respaldo (wifi) o principal (lte), y en
+#      este caso cede la salida al Wi-Fi mientras el 4G no curse tráfico.
+#   6. Mantiene el cortafuegos: bloquea ADB por red y la administración por 4G.
+#   7. Escribe /cache/hoit/gateway_status_current.json (formato que lee el portal).
 
 CONF="/data/hoit/config/hoit_conn.conf"
 [ -f "$CONF" ] && . "$CONF"
@@ -47,6 +49,15 @@ FIREWALL="${FIREWALL:-1}"
 # cable del CAM-5 está conectado al arrancar, y eso deja al equipo sin salida).
 NO_DEFAULT_IFS="${NO_DEFAULT_IFS:-eth0}"
 LTE_METRIC="${LTE_METRIC:-600}"
+# Salida principal: "wifi" (Wi-Fi primero, 4G de respaldo) o "lte" (4G primero, Wi-Fi de respaldo).
+# Con "lte" la ruta 4G usa LTE_PRIMARY_METRIC (menor que la del Wi-Fi, 100); si el 4G pasa
+# LTE_DEMOTE_AFTER ciclos sin tráfico, vuelve a LTE_METRIC y el Wi-Fi queda como salida hasta
+# que una prueba por la propia interfaz 4G vuelva a pasar.
+UPLINK_PRIORITY="${UPLINK_PRIORITY:-wifi}"
+LTE_PRIMARY_METRIC="${LTE_PRIMARY_METRIC:-50}"
+LTE_DEMOTE_AFTER="${LTE_DEMOTE_AFTER:-2}"
+# hoit_wifi_manager lee aquí la métrica vigente para no deshacer la del watchdog.
+LTE_METRIC_FILE="${LTE_METRIC_FILE:-/var/run/hoit_netwatch/lte_metric}"
 # hoit_wifi_manager reconstruye la ruta 4G con este archivo cada 15 s: debe tener la puerta actual.
 LTE_GW_FILE="${LTE_GW_FILE:-/data/hoit/state/lte.gateway}"
 CACHE_DIR="${CACHE_DIR:-/cache/hoit}"
@@ -238,7 +249,8 @@ ensure_routes() {
     done
 }
 
-# Ruta de respaldo por 4G (métrica alta: el Wi-Fi, con métrica 100, tiene prioridad).
+# Ruta por 4G. Con UPLINK_PRIORITY=wifi (o con el 4G sin tráfico) usa una métrica alta y el Wi-Fi,
+# con métrica 100, tiene prioridad; con UPLINK_PRIORITY=lte usa una menor y el Wi-Fi es el respaldo.
 # El enlace rmnet es un /30 punto a punto: la puerta es la otra dirección del bloque.
 lte_peer() {
     ip -4 addr show dev "$WAN_IF" 2>/dev/null | awk '/inet /{
@@ -248,17 +260,28 @@ lte_peer() {
         print o[1] "." o[2] "." o[3] "." peer; exit }'
 }
 
+lte_target_metric() {
+    if [ "$UPLINK_PRIORITY" = "lte" ] && [ "$(get_n lte_fail)" -lt "$LTE_DEMOTE_AFTER" ]; then
+        echo "$LTE_PRIMARY_METRIC"
+    else
+        echo "$LTE_METRIC"
+    fi
+}
+
 ensure_lte_route() {
+    METRIC="$(lte_target_metric)"
+    [ "$(cat "$LTE_METRIC_FILE" 2>/dev/null)" = "$METRIC" ] || echo "$METRIC" > "$LTE_METRIC_FILE"
     [ -n "$LTE_IP" ] || return 0
     GW="$(lte_peer)"
     [ -n "$GW" ] || return 0
     [ "$(cat "$LTE_GW_FILE" 2>/dev/null)" = "$GW" ] || echo "$GW" > "$LTE_GW_FILE"
-    if ! ip route show 2>/dev/null | grep -qE "^default via $GW dev $WAN_IF +metric $LTE_METRIC"; then
+    if ! ip route show 2>/dev/null | grep -qE "^default via $GW dev $WAN_IF +metric $METRIC( |$)"; then
         while ip route show 2>/dev/null | grep -qE "^default .*dev $WAN_IF( |$)"; do
             ip route del default dev "$WAN_IF" 2>/dev/null || break
         done
-        ip route add default via "$GW" dev "$WAN_IF" metric "$LTE_METRIC" 2>/dev/null &&
-            log "Ruta de respaldo 4G: default via $GW dev $WAN_IF metric $LTE_METRIC"
+        if [ "$METRIC" = "$LTE_PRIMARY_METRIC" ] && [ "$UPLINK_PRIORITY" = "lte" ]; then ROLE="principal"; else ROLE="de respaldo"; fi
+        ip route add default via "$GW" dev "$WAN_IF" metric "$METRIC" 2>/dev/null &&
+            log "Ruta 4G $ROLE: default via $GW dev $WAN_IF metric $METRIC"
     fi
 }
 
@@ -363,6 +386,7 @@ write_status() {
     "last_action": "$(json_escape "$(get_s last_action)")",
     "reboots_24h": $(reboots_last_day),
     "check_interval_s": $CHECK_INTERVAL,
+    "uplink_priority": "$(json_escape "$UPLINK_PRIORITY")",
     "lte_month": "$(json_escape "$(get_s lte_month)")",
     "lte_month_bytes": $(get_n lte_month_bytes)
   }
@@ -427,6 +451,8 @@ single_cycle() {
             *) LTE_STATE="sim_no_lista" ;;
         esac
         [ "$F" -eq 1 ] && log "4G con falla: $LTE_STATE (SIM $SIM, $RAT, ${OPERATOR:-sin operador}, CSQ ${RSSI:-?}, IP ${LTE_IP:-ninguna}${CEER:+, red: $CEER})"
+        [ "$UPLINK_PRIORITY" = "lte" ] && [ "$F" -eq "$LTE_DEMOTE_AFTER" ] &&
+            log "4G sin salida hace $F ciclo(s): el Wi-Fi queda como salida hasta que el 4G se recupere"
         if [ "$LTE_STATE" = "rechazado_por_red" ] && [ "$(get_s last_ceer)" != "$CEER" ]; then
             log "4G: la red rechaza la sesión de datos: \"$CEER\". Revisar plan/APN de la SIM (APN=$APN)"
         fi
@@ -440,6 +466,9 @@ single_cycle() {
             radio_reset
         fi
     fi
+
+    # Con UPLINK_PRIORITY=lte, cede la salida al Wi-Fi o la recupera en este mismo ciclo.
+    ensure_lte_route
 
     if [ "$WIFI_OK" = "1" ] || [ "$LTE_OK" = "1" ]; then
         [ "$(get_n no_uplink)" -gt 0 ] && log "Salida a internet restablecida (Wi-Fi=$WIFI_OK, 4G=$LTE_OK)"

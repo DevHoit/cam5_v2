@@ -9,6 +9,7 @@ fi
 
 . "$CONF"
 
+LTE_METRIC_FILE="${LTE_METRIC_FILE:-/var/run/hoit_netwatch/lte_metric}"
 MANAGER_PID="$STATE_DIR/hoit_wifi_manager.pid"
 LTE_GW_FILE="$STATE_DIR/lte.gateway"
 LAST_STATE_FILE="$STATE_DIR/hoit_wifi.last_state"
@@ -111,13 +112,23 @@ capture_lte_gateway() {
     fi
 }
 
+# Métrica vigente de la ruta 4G: la decide hoit_conn_watchdog según UPLINK_PRIORITY (4G principal
+# o de respaldo) y la deja en LTE_METRIC_FILE; si no está, se usa LTE_METRIC de la configuración.
+lte_metric() {
+    M="$(cat "$LTE_METRIC_FILE" 2>/dev/null)"
+    case "$M" in
+        ''|*[!0-9]*) echo "$LTE_METRIC" ;;
+        *) echo "$M" ;;
+    esac
+}
+
 normalize_lte_route() {
     LTE_GW="$(cat "$LTE_GW_FILE" 2>/dev/null)"
     LTE_IP="$(ip -4 addr show dev "$LTE_IF" 2>/dev/null |
         awk '/inet / {print $2; exit}')"
 
     if [ -n "$LTE_GW" ] && [ -n "$LTE_IP" ]; then
-        ensure_metric_route "$LTE_IF" "$LTE_GW" "$LTE_METRIC"
+        ensure_metric_route "$LTE_IF" "$LTE_GW" "$(lte_metric)"
     fi
 }
 
@@ -250,7 +261,7 @@ write_status() {
   "wifi_metric": $WIFI_METRIC,
   "lte_interface": "$(json_escape "$LTE_IF")",
   "lte_gateway": "$(json_escape "$LTE_GW")",
-  "lte_metric": $LTE_METRIC,
+  "lte_metric": $(lte_metric),
   "updated_epoch": ${NOW:-0}
 }
 JSON
