@@ -1,12 +1,11 @@
 import type { NextRequest } from "next/server";
-import { and, count, desc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
-import { COMMISSIONING_CHECKLIST } from "../../../../db/commissioning-engine";
+import { and, count, desc, eq, gt, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { provisionCam5Device, type Cam5Executor } from "../../../../db/cam5-provisioning";
 import {
   alarms,
   assets,
   auditLogs,
   clients,
-  commissioningItems,
   deviceModels,
   devices,
   gatewayApiCredentials,
@@ -49,6 +48,27 @@ function parseResource(body: Record<string, unknown>) {
     throw new ApiError(400, "El tipo de elemento no es válido.");
   }
   return resource as ResourceType;
+}
+
+/**
+ * Un gateway no puede tener dos controladores en la misma IP, puerto y Unit ID, ni dos con el mismo código.
+ * Se valida antes de escribir para responder 409 con el motivo y no un error genérico de la base.
+ */
+async function assertControllerAvailable(
+  tx: Cam5Executor,
+  target: { gatewayId: string; host: string; port: number; unitId: number; code?: string; excludeId?: string },
+) {
+  const exclude = target.excludeId ? ne(devices.id, target.excludeId) : undefined;
+  const [sameEndpoint] = await tx.select({ code: devices.code }).from(devices)
+    .where(and(eq(devices.gatewayId, target.gatewayId), eq(devices.host, target.host), eq(devices.port, target.port), eq(devices.unitId, target.unitId), exclude))
+    .limit(1);
+  if (sameEndpoint) throw new ApiError(409, `El controlador ${sameEndpoint.code} ya usa ${target.host}:${target.port} con Unit ID ${target.unitId} en este gateway.`);
+  if (target.code) {
+    const [sameCode] = await tx.select({ id: devices.id }).from(devices)
+      .where(and(eq(devices.gatewayId, target.gatewayId), eq(devices.code, target.code), exclude))
+      .limit(1);
+    if (sameCode) throw new ApiError(409, `El código ${target.code} ya está en uso en este gateway.`);
+  }
 }
 
 export async function GET(request: NextRequest) {
@@ -248,6 +268,9 @@ export async function POST(request: NextRequest) {
         await requireAssetInScope(db, user.id, point.id);
         if (!model) throw new ApiError(409, "El modelo CAM5 no está configurado.");
         const host = textField(body, "host", "La dirección del controlador");
+        const port = typeof body.port === "number" ? body.port : 502;
+        const unitId = typeof body.unitId === "number" ? body.unitId : 1;
+        await assertControllerAvailable(tx, { gatewayId: gateway.id, host, port, unitId, code });
         const [row] = await tx.insert(devices).values({
           assetId: point.id,
           gatewayId: gateway.id,
@@ -256,11 +279,12 @@ export async function POST(request: NextRequest) {
           code,
           name,
           host,
-          port: typeof body.port === "number" ? body.port : 502,
-          unitId: typeof body.unitId === "number" ? body.unitId : 1,
+          port,
+          unitId,
           state: "commissioning",
         }).returning();
-        await tx.insert(commissioningItems).values(COMMISSIONING_CHECKLIST.map(([itemKey, label]) => ({ deviceId: row.id, itemKey, label, status: "pending" as const })));
+        // Entradas, canales, reglas de alarma, relés y checklist estándar del CAM5.
+        await provisionCam5Device(tx, { id: row.id, assetId: row.assetId, modelId: row.modelId });
         record = row;
       }
 
@@ -342,11 +366,20 @@ export async function PATCH(request: NextRequest) {
           updatedAt: new Date(),
         }).where(eq(gateways.id, id)).returning();
       } else {
-        const [current] = await tx.select({ siteId: assets.siteId, assetId: assets.id }).from(devices).innerJoin(assets, eq(assets.id, devices.assetId)).where(eq(devices.id, id)).limit(1);
+        const [current] = await tx.select({ siteId: assets.siteId, assetId: assets.id, gatewayId: devices.gatewayId, host: devices.host, port: devices.port, unitId: devices.unitId }).from(devices).innerJoin(assets, eq(assets.id, devices.assetId)).where(eq(devices.id, id)).limit(1);
         if (!current) throw new ApiError(404, "El controlador no existe.");
         assertSiteAccess(siteIds, current.siteId);
         await requireSitePermission(db, user, current.siteId, "settings.write");
         await requireAssetInScope(db, user.id, current.assetId);
+        if (typeof body.host === "string" || typeof body.port === "number" || typeof body.unitId === "number") {
+          await assertControllerAvailable(tx, {
+            gatewayId: current.gatewayId,
+            host: typeof body.host === "string" ? textField(body, "host", "La dirección del controlador") : current.host,
+            port: typeof body.port === "number" ? body.port : current.port,
+            unitId: typeof body.unitId === "number" ? body.unitId : current.unitId,
+            excludeId: id,
+          });
+        }
         [record] = await tx.update(devices).set({
           ...(typeof body.name === "string" ? { name: textField(body, "name", "El nombre") } : {}),
           ...(typeof body.host === "string" ? { host: textField(body, "host", "La dirección del controlador") } : {}),

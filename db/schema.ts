@@ -357,7 +357,10 @@ export const devices = pgTable("devices", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
-  uniqueIndex("devices_gateway_unit_uidx").on(table.gatewayId, table.unitId),
+  // Modbus TCP: el Unit ID solo distingue equipos dentro de una misma IP y puerto.
+  uniqueIndex("devices_gateway_endpoint_uidx").on(table.gatewayId, table.host, table.port, table.unitId),
+  // La ingestión identifica el controlador por su código dentro del gateway.
+  uniqueIndex("devices_gateway_code_uidx").on(table.gatewayId, table.code),
   uniqueIndex("devices_asset_code_uidx").on(table.assetId, table.code),
   index("devices_gateway_state_idx").on(table.gatewayId, table.state),
   check("devices_port_chk", sql`${table.port} BETWEEN 1 AND 65535`),
