@@ -10,6 +10,7 @@ import { HistoryView } from "./history-view";
 import { NotificationsView as DatabaseNotificationsView } from "./notifications-view";
 import { ReportsView as DatabaseReportsView } from "./reports-view";
 import { SettingsView as DatabaseSettingsView } from "./settings-view";
+import { SiteOverviewView } from "./site-overview-view";
 import { TrendsView } from "./trends-view";
 import {
   IconActivity as Activity,
@@ -36,6 +37,7 @@ import {
   IconHierarchy3 as Hierarchy,
   IconKey as Key,
   IconLayoutDashboard as LayoutDashboard,
+  IconLayoutGrid as LayoutGrid,
   IconMail as Mail,
   IconMapPin as MapPin,
   IconMenu2 as Menu,
@@ -60,7 +62,7 @@ import {
   IconX as X,
 } from "@tabler/icons-react";
 
-type View = "overview" | "cabinet" | "diagnostics" | "commissioning" | "trends" | "alarms" | "history" | "assets" | "reports" | "settings" | "provisioning" | "users" | "notifications" | "account";
+type View = "site" | "overview" | "cabinet" | "diagnostics" | "commissioning" | "trends" | "alarms" | "history" | "assets" | "reports" | "settings" | "provisioning" | "users" | "notifications" | "account";
 type Severity = "critical" | "warning" | "info";
 type SensorState = "normal" | "warning" | "critical";
 type UserRole = "Administrador" | "Ingeniero" | "Operador" | "Solo lectura";
@@ -337,6 +339,7 @@ const navGroups = [
     index: "01",
     label: "Supervisión",
     items: [
+      { id: "site" as View, label: "Vista del sitio", description: "Todos los puntos", icon: LayoutGrid },
       { id: "overview" as View, label: "Resumen operativo", description: "Condición general", icon: LayoutDashboard },
       { id: "cabinet" as View, label: "Mapa de condición", description: "Sensores y cabina", icon: CircuitBoard },
     ],
@@ -374,6 +377,7 @@ const navGroups = [
 ];
 
 const viewTitles: Record<View, { title: string; description: string }> = {
+  site: { title: "Vista del sitio", description: "Todos los puntos de medición del sitio, lo más grave primero. Entra a uno para ver el detalle." },
   overview: { title: "Resumen de condición", description: "Condición de los activos críticos en tiempo real." },
   cabinet: { title: "Mapa de condición", description: "Ubicación, lectura y estado de cada canal instrumentado." },
   diagnostics: { title: "Diagnóstico de comunicación", description: "Comprobación de la cadena Controlador → Gateway → HoitLive Core." },
@@ -1509,6 +1513,17 @@ export default function Home() {
   const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null);
   const [visibilityOpen, setVisibilityOpen] = useState(false);
   const noticeTimer = useRef<number | null>(null);
+  // Si se entró sin ?view=, un sitio con varios puntos abre la vista del sitio en vez del primer punto.
+  const routeHadView = useRef<boolean | null>(null);
+  const applyDefaultView = (points: PortalHierarchy["points"]) => {
+    if (routeHadView.current !== false) return;
+    routeHadView.current = true;
+    if (points.filter((point) => point.active).length < 2) return;
+    setView("site");
+    const url = new URL(window.location.href);
+    url.searchParams.set("view", "site");
+    window.history.replaceState({}, "", url);
+  };
 
   const notify = (message: string, tone: NoticeTone = "success") => {
     if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
@@ -1540,6 +1555,7 @@ export default function Home() {
           if (active) {
             setHierarchy(data);
             setActivePointId(data.points.find((point) => point.active)?.id ?? "");
+            applyDefaultView(data.points);
           }
         } catch {
           if (active) setHierarchy(null);
@@ -1605,6 +1621,7 @@ export default function Home() {
       const data = await portalRequest<PortalHierarchy>("/api/v1/hierarchy");
       setHierarchy(data);
       setActivePointId((current) => data.points.some((point) => point.id === current && point.active) ? current : data.points.find((point) => point.active)?.id ?? "");
+      applyDefaultView(data.points);
     } catch (requestError) {
       notify(requestError instanceof Error ? requestError.message : "No fue posible cargar la estructura operacional.", "warning");
     } finally {
@@ -1634,6 +1651,7 @@ export default function Home() {
         setPeriod("24 h");
       }
     };
+    if (routeHadView.current === null) routeHadView.current = new URLSearchParams(window.location.search).has("view");
     if (!new URLSearchParams(window.location.search).has("view")) {
       const url = new URL(window.location.href);
       url.searchParams.set("view", "overview");
@@ -1795,8 +1813,9 @@ export default function Home() {
 
         <div className="content-scroll">
           <div className="page-content">
-            {systemMode !== "normal" && <section className={`operational-banner banner-${systemMode}`} role={systemMode === "offline" || systemMode === "error" ? "alert" : "status"} aria-live="polite"><span>{systemMode === "offline" ? <PlugConnected size={19} /> : systemMode === "loading" ? <Refresh className="spin" size={19} /> : systemMode === "error" ? <AlertTriangle size={19} /> : <Clock3 size={19} />}</span><div><strong>{systemMessage.title}</strong><p>{systemMessage.detail}</p></div>{systemMode !== "loading" && <button onClick={() => { setTelemetryState({ status: "loading", data: null }); setSystemMode("loading"); setTelemetryRefreshKey((current) => current + 1); notify("Consultando nuevamente la telemetría.", "info"); }}><Refresh size={15} /> Reintentar</button>}</section>}
-            <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> Gestión de activos críticos</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{(view === "overview" || view === "cabinet") && <button className="secondary-button" onClick={() => setVisibilityOpen(true)} disabled={!activePoint || !sensors.some((sensor) => sensor.enabled)} aria-label="Personalizar canales" title="Personalizar canales"><AdjustmentsHorizontal size={16} aria-hidden="true" /><span>Personalizar canales</span></button>}{view !== "assets" && view !== "settings" && view !== "provisioning" && view !== "users" && view !== "notifications" && view !== "account" && view !== "reports" && view !== "diagnostics" && view !== "commissioning" && view !== "trends" && view !== "history" && <button className="secondary-button" onClick={exportCsv} aria-label="Exportar" title="Exportar"><Download size={16} aria-hidden="true" /><span>Exportar</span></button>}{view !== "alarms" && <button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{alarmSummary.critical + alarmSummary.warning} alertas activas</button>}</div></section>
+            {systemMode !== "normal" && view !== "site" && <section className={`operational-banner banner-${systemMode}`} role={systemMode === "offline" || systemMode === "error" ? "alert" : "status"} aria-live="polite"><span>{systemMode === "offline" ? <PlugConnected size={19} /> : systemMode === "loading" ? <Refresh className="spin" size={19} /> : systemMode === "error" ? <AlertTriangle size={19} /> : <Clock3 size={19} />}</span><div><strong>{systemMessage.title}</strong><p>{systemMessage.detail}</p></div>{systemMode !== "loading" && <button onClick={() => { setTelemetryState({ status: "loading", data: null }); setSystemMode("loading"); setTelemetryRefreshKey((current) => current + 1); notify("Consultando nuevamente la telemetría.", "info"); }}><Refresh size={15} /> Reintentar</button>}</section>}
+            <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> Gestión de activos críticos</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{(view === "overview" || view === "cabinet") && <button className="secondary-button" onClick={() => setVisibilityOpen(true)} disabled={!activePoint || !sensors.some((sensor) => sensor.enabled)} aria-label="Personalizar canales" title="Personalizar canales"><AdjustmentsHorizontal size={16} aria-hidden="true" /><span>Personalizar canales</span></button>}{view !== "site" && view !== "assets" && view !== "settings" && view !== "provisioning" && view !== "users" && view !== "notifications" && view !== "account" && view !== "reports" && view !== "diagnostics" && view !== "commissioning" && view !== "trends" && view !== "history" && <button className="secondary-button" onClick={exportCsv} aria-label="Exportar" title="Exportar"><Download size={16} aria-hidden="true" /><span>Exportar</span></button>}{view !== "alarms" && <button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{alarmSummary.critical + alarmSummary.warning} alertas activas</button>}</div></section>
+            {view === "site" && <SiteOverviewView siteName={sessionUser.siteName} onOpenPoint={(pointId) => { if (pointId !== activePointId) { setTelemetryState({ status: "loading", data: null }); setSystemMode("loading"); setActivePointId(pointId); } navigate("overview"); }} />}
             {view === "overview" && <Overview onNavigate={navigate} onOpenTrend={openChannelTrend} onAcknowledge={acknowledge} activeAlarms={alarmPreview} alarmSummary={alarmSummary} point={activePoint} />}
             {view === "cabinet" && <CabinetView onOpenTrend={openChannelTrend} />}
             {view === "diagnostics" && <DatabaseDiagnosticsView assetId={activePoint?.id ?? ""} canExecute={sessionUser.permissions.includes("diagnostics.execute")} notify={notify} />}
