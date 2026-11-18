@@ -14,6 +14,10 @@
 #      con bloqueo para no chocar con otros procesos que usan el mismo puerto.
 #   3. Si el 4G falla, escala: reactivar el contexto PDP → reiniciar la radio (CFUN 4/1),
 #      luego repetir el reinicio de radio cada RADIO_RESET_EVERY ciclos.
+#      Si la SIM no está lista (p. ej. se cambió con el equipo encendido y el módem quedó en
+#      "SIM failure"), reinicia el módem completo (CFUN 0/1) para que vuelva a leerla: tras
+#      SIM_RESET_AFTER ciclos, luego cada SIM_RESET_EVERY ciclos los primeros SIM_RESET_FAST
+#      intentos y después cada RADIO_RESET_EVERY.
 #   4. Si no hay NINGUNA salida durante REBOOT_AFTER ciclos, reinicia el equipo
 #      (máximo REBOOT_MAX_PER_DAY veces en 24 h y nunca antes de MIN_UPTIME_FOR_REBOOT).
 #   5. Mantiene la ruta 4G según UPLINK_PRIORITY: de respaldo (wifi) o principal (lte), y en
@@ -41,6 +45,9 @@ LTE_STANDBY_PROBE="${LTE_STANDBY_PROBE:-5}"
 PDP_RESET_AFTER="${PDP_RESET_AFTER:-3}"
 RADIO_RESET_AFTER="${RADIO_RESET_AFTER:-8}"
 RADIO_RESET_EVERY="${RADIO_RESET_EVERY:-30}"
+SIM_RESET_AFTER="${SIM_RESET_AFTER:-2}"
+SIM_RESET_EVERY="${SIM_RESET_EVERY:-5}"
+SIM_RESET_FAST="${SIM_RESET_FAST:-6}"
 REBOOT_AFTER="${REBOOT_AFTER:-45}"
 REBOOT_MAX_PER_DAY="${REBOOT_MAX_PER_DAY:-3}"
 MIN_UPTIME_FOR_REBOOT="${MIN_UPTIME_FOR_REBOOT:-1800}"
@@ -203,6 +210,13 @@ read_modem() {
         at_cmd 'AT+CGSN' | grep -E '^[0-9]{14,}' | head -1 > "$RUN_DIR/imei"
         at_cmd 'AT+CIMI' | grep -E '^[0-9]{10,}' | head -1 | cut -c1-6 > "$RUN_DIR/imsi_prefix"
     fi
+    # SIM de vuelta tras estar ausente o con falla: reinicia la escalada para la sesión de datos.
+    if [ "$SIM" = "READY" ] && [ -f "$RUN_DIR/sim_missing" ]; then
+        rm -f "$RUN_DIR/sim_missing"
+        set_n sim_resets 0
+        set_n lte_fail 0
+        log "4G: SIM detectada (ICCID $(get_s iccid))"
+    fi
 }
 
 ensure_apn() {
@@ -222,6 +236,16 @@ pdp_reset() {
     sleep 3
     at_cmd "AT+CGACT=1,$PROFILE_ID" 30 >/dev/null
     set_s last_action "pdp_reset"
+}
+
+sim_reset() {
+    log "4G: SIM no lista ($SIM): reiniciando el módem para volver a leerla (CFUN=0 → CFUN=1)"
+    at_cmd 'AT+CFUN=0' 15 >/dev/null
+    sleep 3
+    at_cmd 'AT+CFUN=1' 15 >/dev/null
+    inc_n sim_resets
+    set_s last_action "sim_reset"
+    set_n last_radio_reset "$(get_n cycle)"
 }
 
 radio_reset() {
@@ -458,8 +482,15 @@ single_cycle() {
         fi
         set_s last_ceer "$CEER"
         if [ "$LTE_STATE" = "sim_no_lista" ]; then
-            # Sin SIM utilizable: solo reintentar la radio de vez en cuando.
-            [ "$SINCE_RADIO" -ge "$RADIO_RESET_EVERY" ] && radio_reset
+            # Sin SIM utilizable: CFUN 4/1 no vuelve a leer la SIM, hay que reiniciar el módem
+            # completo. Rápido al principio (SIM cambiada en caliente) y luego espaciado.
+            : > "$RUN_DIR/sim_missing"
+            SIM_RESETS="$(get_n sim_resets)"
+            SIM_WAIT="$SIM_RESET_EVERY"
+            [ "$SIM_RESETS" -ge "$SIM_RESET_FAST" ] && SIM_WAIT="$RADIO_RESET_EVERY"
+            if [ "$F" -ge "$SIM_RESET_AFTER" ] && { [ "$SIM_RESETS" -eq 0 ] || [ "$SINCE_RADIO" -ge "$SIM_WAIT" ]; }; then
+                sim_reset
+            fi
         elif [ "$F" -eq "$PDP_RESET_AFTER" ] && [ "$REGISTERED" = "1" ]; then
             pdp_reset
         elif [ "$F" -eq "$RADIO_RESET_AFTER" ] || { [ "$F" -gt "$RADIO_RESET_AFTER" ] && [ "$SINCE_RADIO" -ge "$RADIO_RESET_EVERY" ]; }; then
