@@ -76,7 +76,7 @@ export async function GET(request: NextRequest) {
     const { db, user } = await requireApiSession(request, "assets.read");
     const now = new Date();
     const [clientRows, siteMembershipRows] = await Promise.all([
-      db.select({ id: clients.id, code: clients.code, name: clients.name, legalName: clients.legalName, taxId: clients.taxId, contactEmail: clients.contactEmail, active: clients.active, logoUpdatedAt: clients.logoUpdatedAt, suspendedAt: clients.suspendedAt, suspendedReason: clients.suspendedReason, roleKey: roles.key, roleName: roles.name })
+      db.select({ id: clients.id, code: clients.code, name: clients.name, legalName: clients.legalName, taxId: clients.taxId, contactEmail: clients.contactEmail, active: clients.active, logoUpdatedAt: clients.logoUpdatedAt, suspendedAt: clients.suspendedAt, suspendedReason: clients.suspendedReason, userLicenseLimit: clients.userLicenseLimit, partnerName: clients.partnerName, partnerLicenseLimit: clients.partnerLicenseLimit, roleKey: roles.key, roleName: roles.name })
         .from(userClientAssignments)
         .innerJoin(clients, eq(clients.id, userClientAssignments.clientId))
         .innerJoin(roles, eq(roles.id, userClientAssignments.roleId))

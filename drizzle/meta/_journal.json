@@ -120,6 +120,13 @@
       "when": 1794856276449,
       "tag": "0016_gateway_releases",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1795042588844,
+      "tag": "0017_client_licenses",
+      "breakpoints": true
     }
   ]
 }

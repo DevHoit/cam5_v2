@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { and, count, eq, ilike, inArray, isNull } from "drizzle-orm";
 import { hashPassword, normalizeEmail } from "../../../../../db/auth";
+import { assertLicensesAvailable, isLicenseKind, statusUsesLicense, type LicenseKind } from "../../../../../db/licenses";
 import {
   auditLogs,
   authIdentities,
@@ -58,6 +59,8 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     const status = typeof body.status === "string" ? body.status : target.status;
     const roleKey = typeof body.role === "string" ? body.role : target.roleKey ?? "viewer";
     const password = typeof body.password === "string" ? body.password : "";
+    const requestedLicenseKind = body.licenseKind === undefined ? null : body.licenseKind;
+    if (requestedLicenseKind !== null && !isLicenseKind(requestedLicenseKind)) throw new ApiError(400, "El tipo de licencia no es válido.");
     const actorSiteIds = actor.sites.filter((site) => site.roleKey === "administrator").map((site) => site.id);
     const currentScopeRows = await db.select({ siteId: userRoleAssignments.siteId, roleKey: roles.key })
       .from(userRoleAssignments)
@@ -103,10 +106,31 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       await tx.insert(userRoleAssignments).values(requestedSiteIds.map((siteId) => ({ userId: id, roleId: role.id, siteId, grantedBy: actor.id })));
       const actorClientIds = [...new Set(actor.sites.filter((site) => site.roleKey === "administrator").map((site) => site.clientId))];
       const selectedClientIds = [...new Set(selectedSites.map((site) => site.clientId))];
+      // Licencias: el usuario pasa a ocupar una en cada cliente donde antes no la ocupaba (reactivado,
+      // agregado a un cliente nuevo o cambiado de tipo de licencia). El personal de HOIT no ocupa licencia.
+      const [targetFlags] = await tx.select({ platformStaff: users.platformStaff }).from(users).where(eq(users.id, id)).limit(1);
+      const currentAssignments = await tx.select({ clientId: userClientAssignments.clientId, licenseKind: userClientAssignments.licenseKind })
+        .from(userClientAssignments).where(eq(userClientAssignments.userId, id));
+      const kindFor = (clientId: string): LicenseKind => {
+        const current = currentAssignments.find((item) => item.clientId === clientId)?.licenseKind;
+        if (requestedLicenseKind && actor.platformStaff) return requestedLicenseKind;
+        return isLicenseKind(current) ? current : "client";
+      };
+      if (requestedLicenseKind && !actor.platformStaff && selectedClientIds.some((clientId) => kindFor(clientId) !== requestedLicenseKind)) {
+        throw new ApiError(403, "Solo el personal de HOIT puede cambiar el tipo de licencia.");
+      }
+      if (!targetFlags?.platformStaff && statusUsesLicense(status)) {
+        const newlyCounted = selectedClientIds.filter((clientId) => {
+          const current = currentAssignments.find((item) => item.clientId === clientId);
+          return !(statusUsesLicense(target.status) && current && current.licenseKind === kindFor(clientId));
+        });
+        await assertLicensesAvailable(tx, newlyCounted.map((clientId) => ({ clientId, kind: kindFor(clientId) })), id);
+      }
       for (const clientId of actorClientIds) {
         if (selectedClientIds.includes(clientId)) {
-          await tx.insert(userClientAssignments).values({ userId: id, clientId, roleId: role.id, grantedBy: actor.id })
-            .onConflictDoUpdate({ target: [userClientAssignments.userId, userClientAssignments.clientId], set: { roleId: role.id, grantedBy: actor.id, grantedAt: new Date() } });
+          const licenseKind = kindFor(clientId);
+          await tx.insert(userClientAssignments).values({ userId: id, clientId, roleId: role.id, grantedBy: actor.id, licenseKind })
+            .onConflictDoUpdate({ target: [userClientAssignments.userId, userClientAssignments.clientId], set: { roleId: role.id, grantedBy: actor.id, grantedAt: new Date(), licenseKind } });
         } else {
           const [remainingInClient] = await tx.select({ value: count() }).from(userRoleAssignments)
             .innerJoin(sites, eq(sites.id, userRoleAssignments.siteId))
@@ -126,7 +150,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         ipAddress: metadata.ipAddress,
         userAgent: metadata.userAgent,
         before: { email: target.email, displayName: target.displayName, status: target.status, role: target.roleKey },
-        after: { email, displayName, status, role: roleKey, siteIds: requestedSiteIds, passwordChanged: Boolean(passwordHash), passwordChangeRequired: passwordHash ? true : target.mustChangePassword },
+        after: { email, displayName, status, role: roleKey, siteIds: requestedSiteIds, ...(requestedLicenseKind ? { licenseKind: requestedLicenseKind } : {}), passwordChanged: Boolean(passwordHash), passwordChangeRequired: passwordHash ? true : target.mustChangePassword },
       });
       return { ...record, role: { key: role.key, name: role.name } };
     });

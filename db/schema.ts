@@ -71,11 +71,19 @@ export const clients = pgTable("clients", {
   suspendedAt: timestamp("suspended_at", { withTimezone: true }),
   suspendedReason: varchar("suspended_reason", { length: 300 }),
   suspendedBy: uuid("suspended_by"),
+  // Licencias contratadas. null = sin límite. Ocupan licencia los usuarios activos o invitados que no son
+  // personal de HOIT. userLicenseLimit: usuarios del propio cliente. partnerLicenseLimit: usuarios del
+  // integrador que administra al cliente (partnerName, p. ej. el contratista que vendió el proyecto).
+  userLicenseLimit: integer("user_license_limit"),
+  partnerName: varchar("partner_name", { length: 180 }),
+  partnerLicenseLimit: integer("partner_license_limit"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("clients_code_uidx").on(table.code),
   index("clients_active_idx").on(table.active),
+  check("clients_user_license_limit_chk", sql`${table.userLicenseLimit} IS NULL OR ${table.userLicenseLimit} >= 0`),
+  check("clients_partner_license_limit_chk", sql`${table.partnerLicenseLimit} IS NULL OR ${table.partnerLicenseLimit} >= 0`),
 ]);
 
 export const sites = pgTable("sites", {
@@ -249,8 +257,11 @@ export const userClientAssignments = pgTable("user_client_assignments", {
   roleId: uuid("role_id").notNull().references(() => roles.id, { onDelete: "restrict" }),
   grantedBy: uuid("granted_by").references(() => users.id, { onDelete: "set null" }),
   grantedAt: timestamp("granted_at", { withTimezone: true }).defaultNow().notNull(),
+  // Licencia que ocupa en el cliente: "client" (del propio cliente) o "partner" (del integrador).
+  licenseKind: varchar("license_kind", { length: 20 }).default("client").notNull(),
 }, (table) => [
   uniqueIndex("user_client_assignments_scope_uidx").on(table.userId, table.clientId),
+  check("user_client_assignments_license_kind_chk", sql`${table.licenseKind} IN ('client', 'partner')`),
   index("user_client_assignments_client_idx").on(table.clientId, table.userId),
 ]);
 

@@ -296,16 +296,20 @@ ensure_lte_route() {
     METRIC="$(lte_target_metric)"
     [ "$(cat "$LTE_METRIC_FILE" 2>/dev/null)" = "$METRIC" ] || echo "$METRIC" > "$LTE_METRIC_FILE"
     [ -n "$LTE_IP" ] || return 0
+    # Con una red /30 la ruta va por el otro extremo; con otra máscara (p. ej. /28, según el operador) el
+    # módem no informa la puerta de enlace y, como rmnet es IP pura sin ARP, basta una ruta por la interfaz.
+    # En ese caso se deja vacío LTE_GW_FILE para que el gestor de Wi-Fi no reinstale una ruta "via" vieja.
     GW="$(lte_peer)"
-    [ -n "$GW" ] || return 0
     [ "$(cat "$LTE_GW_FILE" 2>/dev/null)" = "$GW" ] || echo "$GW" > "$LTE_GW_FILE"
-    if ! ip route show 2>/dev/null | grep -qE "^default via $GW dev $WAN_IF +metric $METRIC( |$)"; then
+    if [ -n "$GW" ]; then VIA="via $GW "; else VIA=""; fi
+    if ! ip route show 2>/dev/null | grep -qE "^default ${VIA}dev $WAN_IF( .*)? metric $METRIC( |$)"; then
         while ip route show 2>/dev/null | grep -qE "^default .*dev $WAN_IF( |$)"; do
             ip route del default dev "$WAN_IF" 2>/dev/null || break
         done
         if [ "$METRIC" = "$LTE_PRIMARY_METRIC" ] && [ "$UPLINK_PRIORITY" = "lte" ]; then ROLE="principal"; else ROLE="de respaldo"; fi
-        ip route add default via "$GW" dev "$WAN_IF" metric "$METRIC" 2>/dev/null &&
-            log "Ruta 4G $ROLE: default via $GW dev $WAN_IF metric $METRIC"
+        # shellcheck disable=SC2086
+        ip route add default ${VIA}dev "$WAN_IF" metric "$METRIC" 2>/dev/null &&
+            log "Ruta 4G $ROLE: default ${VIA}dev $WAN_IF metric $METRIC"
     fi
 }
 

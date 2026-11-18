@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { and, countDistinct, desc, eq, ilike, inArray, or, type SQL } from "drizzle-orm";
 import { hashPassword, normalizeEmail } from "../../../../db/auth";
+import { assertLicensesAvailable, isLicenseKind, loadClientLicenses, statusUsesLicense } from "../../../../db/licenses";
 import {
   auditLogs,
   authIdentities,
@@ -38,11 +39,14 @@ export async function GET(request: NextRequest) {
         mustChangePassword: authIdentities.mustChangePassword,
         roleKey: roles.key,
         roleName: roles.name,
+        platformStaff: users.platformStaff,
+        licenseKind: userClientAssignments.licenseKind,
       })
         .from(users)
         .innerJoin(userRoleAssignments, eq(userRoleAssignments.userId, users.id))
         .innerJoin(roles, eq(roles.id, userRoleAssignments.roleId))
         .leftJoin(authIdentities, and(eq(authIdentities.userId, users.id), eq(authIdentities.provider, "local")))
+        .leftJoin(userClientAssignments, and(eq(userClientAssignments.userId, users.id), eq(userClientAssignments.clientId, user.clientId)))
         .where(where)
         .orderBy(desc(users.createdAt))
         .limit(pageSize)
@@ -56,6 +60,7 @@ export async function GET(request: NextRequest) {
     ]);
 
     const total = Number(countRows[0]?.total ?? 0);
+    const [licenses] = await loadClientLicenses(db, [user.clientId]);
     const uniqueSummary = [...new Map(summaryRows.map((row) => [row.id, row])).values()];
     const recordIds = records.map((record) => record.id);
     const manageableSiteIds = user.sites.filter((site) => site.roleKey === "administrator").map((site) => site.id);
@@ -75,6 +80,8 @@ export async function GET(request: NextRequest) {
         createdAt: record.createdAt.toISOString(),
         mustChangePassword: record.mustChangePassword ?? false,
         role: { key: record.roleKey ?? "viewer", name: record.roleName ?? "Solo lectura" },
+        platformStaff: record.platformStaff,
+        licenseKind: record.licenseKind ?? "client",
         siteIds: [...new Set(scopeRows.filter((scope) => scope.userId === record.id).map((scope) => scope.siteId).filter((siteId): siteId is string => Boolean(siteId)))],
       })),
       page,
@@ -87,6 +94,8 @@ export async function GET(request: NextRequest) {
         administrators: uniqueSummary.filter((row) => row.roleKey === "administrator").length,
         invited: uniqueSummary.filter((row) => row.status === "invited").length,
       },
+      licenses: licenses ?? null,
+      canAssignPartnerLicense: user.platformStaff,
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return apiErrorResponse(error);
@@ -102,6 +111,10 @@ export async function POST(request: NextRequest) {
     const password = typeof body?.password === "string" ? body.password : "";
     const roleKey = typeof body?.role === "string" ? body.role : "viewer";
     const status = typeof body?.status === "string" ? body.status : "active";
+    // Solo el personal de HOIT asigna licencias de integrador; el resto crea usuarios del propio cliente.
+    const licenseKind = body?.licenseKind === undefined ? "client" : body.licenseKind;
+    if (!isLicenseKind(licenseKind)) throw new ApiError(400, "El tipo de licencia no es válido.");
+    if (licenseKind === "partner" && !actor.platformStaff) throw new ApiError(403, "Solo el personal de HOIT puede asignar licencias de integrador.");
     const requestedSiteIds = Array.isArray(body?.siteIds)
       ? [...new Set(body.siteIds.filter((siteId): siteId is string => typeof siteId === "string"))]
       : [actor.siteId];
@@ -121,7 +134,8 @@ export async function POST(request: NextRequest) {
       const [newUser] = await tx.insert(users).values({ email, displayName, status: status as typeof VALID_STATUSES[number] }).returning();
       await tx.insert(authIdentities).values({ userId: newUser.id, provider: "local", providerSubject: email, passwordHash, mustChangePassword: true });
       const selectedClientIds = [...new Set(selectedSites.map((site) => site.clientId))];
-      await tx.insert(userClientAssignments).values(selectedClientIds.map((clientId) => ({ userId: newUser.id, clientId, roleId: role.id, grantedBy: actor.id })));
+      if (statusUsesLicense(status)) await assertLicensesAvailable(tx, selectedClientIds.map((clientId) => ({ clientId, kind: licenseKind })));
+      await tx.insert(userClientAssignments).values(selectedClientIds.map((clientId) => ({ userId: newUser.id, clientId, roleId: role.id, grantedBy: actor.id, licenseKind })));
       await tx.insert(userRoleAssignments).values(requestedSiteIds.map((siteId) => ({ userId: newUser.id, roleId: role.id, siteId, grantedBy: actor.id })));
       const metadata = requestMetadata(request);
       await tx.insert(auditLogs).values({
@@ -132,7 +146,7 @@ export async function POST(request: NextRequest) {
         resourceId: newUser.id,
         ipAddress: metadata.ipAddress,
         userAgent: metadata.userAgent,
-        after: { email, displayName, status, role: roleKey, siteIds: requestedSiteIds },
+        after: { email, displayName, status, role: roleKey, siteIds: requestedSiteIds, licenseKind },
       });
       return { ...newUser, role: { key: role.key, name: role.name } };
     });
@@ -147,6 +161,8 @@ export async function POST(request: NextRequest) {
       mustChangePassword: true,
       role: created.role,
       siteIds: requestedSiteIds,
+      licenseKind,
+      platformStaff: false,
     }, { status: 201, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return apiErrorResponse(error);
