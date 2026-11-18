@@ -81,7 +81,7 @@ export async function GET(request: NextRequest) {
         mustChangePassword: record.mustChangePassword ?? false,
         role: { key: record.roleKey ?? "viewer", name: record.roleName ?? "Solo lectura" },
         platformStaff: record.platformStaff,
-        licenseKind: record.licenseKind ?? "client",
+        licenseKind: record.licenseKind ?? null,
         siteIds: [...new Set(scopeRows.filter((scope) => scope.userId === record.id).map((scope) => scope.siteId).filter((siteId): siteId is string => Boolean(siteId)))],
       })),
       page,
