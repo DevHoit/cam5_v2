@@ -576,7 +576,7 @@ applyLang();
     setText('connLteSignal', csqText(modem.rssi));
     setText('connLteRat', `${ratText(modem.rat)}${modem.ber ? ` · BER ${modem.ber}` : ''}`);
     setText('connLteIp', lte.ip || connection.ip_address);
-    setText('connLteRoute', `${lte.active ? (lang?'In use':'En uso') : (lang?'Standby':'Respaldo')} · gateway ${safe(lte.gateway)} · metric ${safe(lte.metric)}`);
+    setText('connLteRoute', `${lte.active ? (lang?'In use':'En uso') : (lang?'Standby':'Respaldo')} · gateway ${lte.gateway || (lte.ip ? (lang?'direct':'directa') : '—')} · metric ${safe(lte.metric)}`);
     const config = lte.configuration || {};
     setValue('connLteIccid', modem.iccid);
     setValue('connLteImei', modem.imei);
@@ -584,6 +584,9 @@ applyLang();
     setValue('connLteApn', config.apn || connection.apn || 'Automático (operador)');
     setValue('connLteProfile', config.profile_id || connection.profile_id);
     setValue('connLteMetric', lte.metric);
+    const netwatch = gateway.netwatch || {};
+    const usageBytes = Number(netwatch.lte_month_bytes);
+    setValue('connLteUsage', Number.isFinite(usageBytes) && netwatch.lte_month ? `${(usageBytes / 1048576).toFixed(1)} MB · ${netwatch.lte_month}` : '—');
 
     window.HOIT_LTE_CURRENT_CONFIG = config;
     window.dispatchEvent(new CustomEvent('hoit:lte-config', {detail:config}));

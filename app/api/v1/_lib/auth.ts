@@ -3,6 +3,7 @@ import { and, eq, gt, isNull, or } from "drizzle-orm";
 import { getDb, type Cam5Database } from "../../../../db/index";
 import { isBlockedBySuspendedClient, portalSessionUserId, resolvePortalSession, SESSION_COOKIE_NAME, type AuthenticatedPortalUser } from "../../../../db/auth";
 import type { PortalPermission } from "../../../../db/access-control";
+import { LicenseLimitError } from "../../../../db/licenses";
 import { permissions, rolePermissions, userAssetScopes, userClientAssignments, userRoleAssignments } from "../../../../db/schema";
 
 export class ApiError extends Error {
@@ -97,6 +98,9 @@ export async function userHasAccessOutsideAdministration(db: Cam5Database, actor
 export function apiErrorResponse(error: unknown) {
   if (error instanceof ApiError) {
     return Response.json({ error: error.message }, { status: error.status, headers: { "Cache-Control": "no-store" } });
+  }
+  if (error instanceof LicenseLimitError) {
+    return Response.json({ error: error.message }, { status: 409, headers: { "Cache-Control": "no-store" } });
   }
   if (typeof error === "object" && error && "code" in error && error.code === "23505") {
     return Response.json({ error: "Ya existe un elemento con ese código o identificador en el mismo nivel." }, { status: 409, headers: { "Cache-Control": "no-store" } });
