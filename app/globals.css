@@ -2075,6 +2075,7 @@ button.module-table-row { width: 100%; }
 .module-summary-strip .license-full { color: #b45309; }
 .module-summary-strip .license-full strong { color: #b45309; }
 .users-create-action { display: flex; align-items: center; gap: 10px; }
+.users-create-action .primary-button:disabled { opacity: .5; cursor: not-allowed; }
 .users-create-action small { max-width: 300px; color: #b45309; font-size: var(--text-xs); line-height: 1.35; text-align: right; }
 .user-role-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
 .user-role-cell small { color: #64748b; font-size: var(--text-xs); }

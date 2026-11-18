@@ -992,7 +992,7 @@ function ClientSuspensionField({ clientId, clientName, suspendedAt, suspendedRea
 
   return <div className="client-logo-field field-wide">
     <span className="client-logo-field-label">Servicio</span>
-    <div className="client-logo-field-body">
+    <div className="client-logo-field-body client-license-body">
       <div>
         {suspendedAt
           ? <p><strong>Suspendido desde el {new Date(suspendedAt).toLocaleDateString("es-CL", { day: "numeric", month: "long", year: "numeric" })}</strong> · Motivo: {suspendedReason || "sin indicar"}. Sus usuarios no pueden entrar al portal; los gateways siguen enviando y las alarmas continúan.</p>

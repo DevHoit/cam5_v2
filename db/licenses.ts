@@ -93,10 +93,10 @@ export async function assertLicensesAvailable(tx: Cam5Executor, requests: Array<
     if (limit === null) continue;
     const used = Number(usage.find((item) => item.clientId === clientId && item.kind === kind)?.used ?? 0);
     if (used >= limit) {
-      const plural = limit === 1 ? "licencia" : "licencias";
+      const seats = limit === 0 ? "no tiene licencias" : limit === 1 ? "ya usa su única licencia" : `ya usa sus ${limit} licencias`;
       throw new LicenseLimitError(kind === "client"
-        ? `${client.name} ya usa sus ${limit} ${plural} de usuario. Suspende o quita un usuario para liberar una, o solicita más licencias a HOIT.`
-        : `${client.partnerName} ya usa sus ${limit} ${plural} de integrador en ${client.name}. Suspende o quita uno de sus usuarios, o solicita más licencias a HOIT.`);
+        ? `${client.name} ${seats} de usuario. Suspende o quita un usuario para liberar una, o solicita más licencias a HOIT.`
+        : `${client.partnerName} ${seats} de integrador en ${client.name}. Suspende o quita uno de sus usuarios, o solicita más licencias a HOIT.`);
     }
   }
 }

@@ -46,7 +46,7 @@ test("client and partner licenses cap the users that can be added, ignoring susp
     await addUser("admin@integrador.test", "active", "partner");
     await assert.rejects(
       db.transaction((tx) => assertLicensesAvailable(tx, [{ clientId: customer.id, kind: "partner" }])),
-      (error: unknown) => error instanceof LicenseLimitError && /Integrador SpA ya usa sus 1 licencia/.test(error.message),
+      (error: unknown) => error instanceof LicenseLimitError && /Integrador SpA ya usa su única licencia de integrador/.test(error.message),
     );
 
     // Suspender a un usuario libera su licencia.
