@@ -61,6 +61,15 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     const password = typeof body.password === "string" ? body.password : "";
     const requestedLicenseKind = body.licenseKind === undefined ? null : body.licenseKind;
     if (requestedLicenseKind !== null && !isLicenseKind(requestedLicenseKind)) throw new ApiError(400, "El tipo de licencia no es válido.");
+    // Marca de personal de HOIT: solo la cambia otro miembro del personal (nunca la propia). Quitarla hace
+    // que el usuario pase a ocupar licencia y pierda el acceso a clientes suspendidos.
+    const [targetFlags] = await db.select({ platformStaff: users.platformStaff }).from(users).where(eq(users.id, id)).limit(1);
+    const currentStaff = Boolean(targetFlags?.platformStaff);
+    const platformStaff = typeof body.platformStaff === "boolean" ? body.platformStaff : currentStaff;
+    if (platformStaff !== currentStaff) {
+      if (!actor.platformStaff) throw new ApiError(403, "Solo el personal de HOIT puede cambiar esta marca.");
+      if (actor.id === id) throw new ApiError(409, "No puedes cambiar tu propia marca de personal de HOIT.");
+    }
     const actorSiteIds = actor.sites.filter((site) => site.roleKey === "administrator").map((site) => site.id);
     const currentScopeRows = await db.select({ siteId: userRoleAssignments.siteId, roleKey: roles.key })
       .from(userRoleAssignments)
@@ -83,7 +92,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     // usuario. Solo se pueden cambiar si todo su acceso está bajo la administración del actor;
     // de lo contrario un administrador de un sitio podría tomar la cuenta de alguien con
     // acceso a otros clientes.
-    const identityChanged = email !== normalizeEmail(target.email) ||displayName !== target.displayName || status !== target.status || Boolean(password);
+    const identityChanged = email !== normalizeEmail(target.email) ||displayName !== target.displayName || status !== target.status || platformStaff !== currentStaff || Boolean(password);
     if (identityChanged && actor.id !== id && await userHasAccessOutsideAdministration(db, actor, id)) {
       throw new ApiError(403, "Este usuario también tiene acceso a sitios fuera de tu administración: solo puedes cambiar su perfil y sus sitios dentro de tu alcance.");
     }
@@ -99,7 +108,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       if (duplicate && duplicate.id !== id) throw new ApiError(409, "Ya existe un usuario con ese correo.");
       const [role] = await tx.select().from(roles).where(eq(roles.key, roleKey)).limit(1);
       if (!role) throw new ApiError(400, "El perfil seleccionado no existe.");
-      const [record] = await tx.update(users).set({ displayName, email, status: status as typeof VALID_STATUSES[number], updatedAt: new Date() }).where(eq(users.id, id)).returning();
+      const [record] = await tx.update(users).set({ displayName, email, status: status as typeof VALID_STATUSES[number], platformStaff, updatedAt: new Date() }).where(eq(users.id, id)).returning();
       await tx.update(authIdentities).set({ providerSubject: email, ...(passwordHash ? { passwordHash, mustChangePassword: true, failedLoginCount: 0, lastFailedLoginAt: null, lockedUntil: null } : {}), updatedAt: new Date() }).where(and(eq(authIdentities.userId, id), eq(authIdentities.provider, "local")));
       if (passwordHash) await tx.update(authSessions).set({ revokedAt: new Date() }).where(and(eq(authSessions.userId, id), isNull(authSessions.revokedAt)));
       await tx.delete(userRoleAssignments).where(and(eq(userRoleAssignments.userId, id), inArray(userRoleAssignments.siteId, actorSiteIds)));
@@ -108,7 +117,6 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       const selectedClientIds = [...new Set(selectedSites.map((site) => site.clientId))];
       // Licencias: el usuario pasa a ocupar una en cada cliente donde antes no la ocupaba (reactivado,
       // agregado a un cliente nuevo o cambiado de tipo de licencia). El personal de HOIT no ocupa licencia.
-      const [targetFlags] = await tx.select({ platformStaff: users.platformStaff }).from(users).where(eq(users.id, id)).limit(1);
       const currentAssignments = await tx.select({ clientId: userClientAssignments.clientId, licenseKind: userClientAssignments.licenseKind })
         .from(userClientAssignments).where(eq(userClientAssignments.userId, id));
       const kindFor = (clientId: string): LicenseKind => {
@@ -119,10 +127,10 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       if (requestedLicenseKind && !actor.platformStaff && selectedClientIds.some((clientId) => kindFor(clientId) !== requestedLicenseKind)) {
         throw new ApiError(403, "Solo el personal de HOIT puede cambiar el tipo de licencia.");
       }
-      if (!targetFlags?.platformStaff && statusUsesLicense(status)) {
+      if (!platformStaff && statusUsesLicense(status)) {
         const newlyCounted = selectedClientIds.filter((clientId) => {
           const current = currentAssignments.find((item) => item.clientId === clientId);
-          return !(statusUsesLicense(target.status) && current && current.licenseKind === kindFor(clientId));
+          return !(!currentStaff && statusUsesLicense(target.status) && current && current.licenseKind === kindFor(clientId));
         });
         await assertLicensesAvailable(tx, newlyCounted.map((clientId) => ({ clientId, kind: kindFor(clientId) })), id);
       }
@@ -150,7 +158,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         ipAddress: metadata.ipAddress,
         userAgent: metadata.userAgent,
         before: { email: target.email, displayName: target.displayName, status: target.status, role: target.roleKey },
-        after: { email, displayName, status, role: roleKey, siteIds: requestedSiteIds, ...(requestedLicenseKind ? { licenseKind: requestedLicenseKind } : {}), passwordChanged: Boolean(passwordHash), passwordChangeRequired: passwordHash ? true : target.mustChangePassword },
+        after: { email, displayName, status, role: roleKey, siteIds: requestedSiteIds, ...(requestedLicenseKind ? { licenseKind: requestedLicenseKind } : {}), ...(platformStaff !== currentStaff ? { platformStaff } : {}), passwordChanged: Boolean(passwordHash), passwordChangeRequired: passwordHash ? true : target.mustChangePassword },
       });
       return { ...record, role: { key: role.key, name: role.name } };
     });
