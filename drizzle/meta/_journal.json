@@ -127,6 +127,13 @@
       "when": 1795042588844,
       "tag": "0017_client_licenses",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1795055284078,
+      "tag": "0018_site_reports",
+      "breakpoints": true
     }
   ]
 }

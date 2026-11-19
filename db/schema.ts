@@ -774,6 +774,9 @@ export const reportRuns = pgTable("report_runs", {
   id: uuid("id").defaultRandom().primaryKey(),
   templateId: uuid("template_id").notNull().references(() => reportTemplates.id, { onDelete: "restrict" }),
   assetId: uuid("asset_id").references(() => assets.id, { onDelete: "set null" }),
+  // Informes de subestación (semanal o mensual): el alcance es el sitio completo, no un punto.
+  siteId: uuid("site_id").references(() => sites.id, { onDelete: "cascade" }),
+  kind: varchar("kind", { length: 20 }),
   requestedBy: uuid("requested_by").references(() => users.id, { onDelete: "set null" }),
   title: varchar("title", { length: 220 }).notNull(),
   format: varchar("format", { length: 12 }).default("pdf").notNull(),
@@ -789,6 +792,33 @@ export const reportRuns = pgTable("report_runs", {
   index("report_runs_status_created_idx").on(table.status, table.createdAt),
   check("report_runs_period_chk", sql`${table.periodEnd} > ${table.periodStart}`),
   check("report_runs_format_chk", sql`${table.format} IN ('pdf', 'csv')`),
+]);
+
+export type SiteReportRecipient = { email: string; name?: string | null; userId?: string | null };
+
+/** Envío programado de informes de subestación por correo (semanal: lunes; mensual: día 1). */
+export const siteReportSchedules = pgTable("site_report_schedules", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  siteId: uuid("site_id").notNull().references(() => sites.id, { onDelete: "cascade" }),
+  kind: varchar("kind", { length: 20 }).notNull(),
+  hour: integer("hour").default(8).notNull(),
+  recipients: jsonb("recipients").$type<SiteReportRecipient[]>().default(sql`'[]'::jsonb`).notNull(),
+  attachPdf: boolean("attach_pdf").default(true).notNull(),
+  onlyIfFindings: boolean("only_if_findings").default(false).notNull(),
+  active: boolean("active").default(true).notNull(),
+  nextRunAt: timestamp("next_run_at", { withTimezone: true }),
+  lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+  lastStatus: varchar("last_status", { length: 20 }),
+  lastError: text("last_error"),
+  lastReportId: uuid("last_report_id").references(() => reportRuns.id, { onDelete: "set null" }),
+  createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("site_report_schedules_due_idx").on(table.active, table.nextRunAt),
+  index("site_report_schedules_site_idx").on(table.siteId),
+  check("site_report_schedules_kind_chk", sql`${table.kind} IN ('weekly', 'monthly')`),
+  check("site_report_schedules_hour_chk", sql`${table.hour} BETWEEN 0 AND 23`),
 ]);
 
 export const notificationEndpoints = pgTable("notification_endpoints", {

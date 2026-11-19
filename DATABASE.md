@@ -4,14 +4,14 @@ La base está diseñada para PostgreSQL 15 o superior y soporta una estructura m
 
 ## Componentes incluidos
 
-Las migraciones crean 45 tablas agrupadas de esta forma:
+Las migraciones crean 46 tablas agrupadas de esta forma:
 
 - Identidad y acceso: usuarios, identidades, sesiones, invitaciones, perfiles, permisos y alcances por cliente, sitio y punto.
 - Inventario OT: clientes, sitios, puntos de medición, gateways, modelos CAM5, equipos, entradas físicas y señales operativas.
 - Adquisición: perfiles de lectura, rangos Modbus, lotes de ingestión y catálogo de 105 registros.
 - Telemetría: histórico crudo, última lectura por señal y agregados temporales.
 - Condición: reglas, estado persistente del motor, alarmas, eventos de alarma y configuración de seis relés.
-- Operación: puesta en marcha, respaldos, órdenes de trabajo, reportes, notificaciones, integraciones y auditoría.
+- Operación: puesta en marcha, respaldos, órdenes de trabajo, reportes (por punto y de subestación, con su envío programado por correo en `site_report_schedules`), notificaciones, integraciones y auditoría.
 
 ```text
 Cliente
