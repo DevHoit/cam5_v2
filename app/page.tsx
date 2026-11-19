@@ -249,12 +249,17 @@ function formatDateTime(value?: string | null) {
   return new Intl.DateTimeFormat("es-CL", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(value));
 }
 
+/** Tiempo transcurrido legible: "12 s", "5 min", "3 h", "9 días". */
+function humanAge(totalSeconds: number) {
+  const seconds = Math.max(0, Math.round(totalSeconds));
+  if (seconds < 60) return `${seconds} s`;
+  if (seconds < 3_600) return `${Math.round(seconds / 60)} min`;
+  if (seconds < 172_800) return `${Math.round(seconds / 3_600)} h`;
+  return `${Math.round(seconds / 86_400)} días`;
+}
+
 function formatRelativeTime(value: string) {
-  const seconds = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 1000));
-  if (seconds < 60) return `Hace ${seconds} s`;
-  if (seconds < 3_600) return `Hace ${Math.round(seconds / 60)} min`;
-  if (seconds < 86_400) return `Hace ${Math.round(seconds / 3_600)} h`;
-  return `Hace ${Math.round(seconds / 86_400)} d`;
+  return `Hace ${humanAge((Date.now() - new Date(value).getTime()) / 1000)}`;
 }
 
 function formatDurationSeconds(totalSeconds: number) {
@@ -264,7 +269,7 @@ function formatDurationSeconds(totalSeconds: number) {
   if (totalMinutes < 60) return `${totalMinutes} min`;
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
-  if (hours >= 48) return `${Math.round(totalMinutes / 1440)} d`;
+  if (hours >= 48) return `${Math.round(totalMinutes / 1440)} días`;
   return minutes ? `${hours} h ${minutes} min` : `${hours} h`;
 }
 
@@ -277,8 +282,7 @@ function alarmValue(alarm: PortalAlarm) {
 function telemetryAge(recordedAt: string | null) {
   if (!recordedAt) return "Sin lecturas recibidas";
   const seconds = Math.max(0, Math.round((Date.now() - new Date(recordedAt).getTime()) / 1000));
-  if (seconds < 60) return `Actualizado hace ${seconds} s`;
-  return `Actualizado hace ${Math.round(seconds / 60)} min`;
+  return `Actualizado hace ${humanAge(seconds)}`;
 }
 
 function formatTelemetryValue(value: number | null, unit: string) {
@@ -336,60 +340,50 @@ function useSensorData(override?: PortalTelemetryState) {
 
 const navGroups = [
   {
-    index: "01",
     label: "Supervisión",
     items: [
-      { id: "site" as View, label: "Vista del sitio", description: "Todos los puntos", icon: LayoutGrid },
-      { id: "overview" as View, label: "Resumen operativo", description: "Condición general", icon: LayoutDashboard },
+      { id: "site" as View, label: "Vista del sitio", description: "Todos los puntos de medición", icon: LayoutGrid },
+      { id: "overview" as View, label: "Resumen del punto", description: "Condición del punto de medición", icon: LayoutDashboard },
       { id: "cabinet" as View, label: "Mapa de condición", description: "Sensores y cabina", icon: CircuitBoard },
-    ],
-  },
-  {
-    index: "02",
-    label: "Diagnóstico",
-    items: [
-      { id: "diagnostics" as View, label: "Diagnóstico", description: "Controlador, Modbus y gateway", icon: Radio },
-      { id: "commissioning" as View, label: "Puesta en marcha", description: "Conectar y validar CAM-5", icon: ClipboardCheck },
+      { id: "alarms" as View, label: "Alertas", description: "Triage y seguimiento", icon: BellRing },
       { id: "trends" as View, label: "Tendencias", description: "Evolución por canal", icon: History },
-      { id: "alarms" as View, label: "Centro de alertas", description: "Triage y seguimiento", icon: BellRing },
       { id: "history" as View, label: "Histórico", description: "Mediciones y trazabilidad", icon: Database },
-    ],
-  },
-  {
-    index: "03",
-    label: "Gestión",
-    items: [
-      { id: "assets" as View, label: "Estructura operacional", description: "Clientes, sitios y medición", icon: Factory },
       { id: "reports" as View, label: "Reportes", description: "Informes y programación", icon: FileReport },
     ],
   },
   {
-    index: "04",
+    label: "Diagnóstico",
+    items: [
+      { id: "diagnostics" as View, label: "Comunicación", description: "Controlador, Modbus y gateway", icon: Radio },
+      { id: "commissioning" as View, label: "Puesta en marcha", description: "Conectar y validar CAM-5", icon: ClipboardCheck },
+    ],
+  },
+  {
     label: "Administración",
     items: [
+      { id: "assets" as View, label: "Estructura", description: "Clientes, sitios y medición", icon: Factory },
       { id: "settings" as View, label: "Configuración", description: "Activo, Modbus y gateway", icon: Settings },
-      { id: "provisioning" as View, label: "Provisionamiento", description: "Credenciales y conexión", icon: Key },
-      { id: "users" as View, label: "Usuarios y roles", description: "Acceso y permisos", icon: Users },
+      { id: "provisioning" as View, label: "Gateways", description: "Credenciales, versiones y conexión", icon: Key },
+      { id: "users" as View, label: "Usuarios", description: "Acceso, permisos y licencias", icon: Users },
       { id: "notifications" as View, label: "Notificaciones", description: "Canales y escalamiento", icon: Mail },
-      { id: "account" as View, label: "Mi cuenta", description: "Perfil, contraseña y sesiones", icon: ShieldCheck },
     ],
   },
 ];
 
 const viewTitles: Record<View, { title: string; description: string }> = {
   site: { title: "Vista del sitio", description: "Todos los puntos de medición del sitio, lo más grave primero. Entra a uno para ver el detalle." },
-  overview: { title: "Resumen de condición", description: "Condición de los activos críticos en tiempo real." },
+  overview: { title: "Resumen del punto", description: "Condición de los activos críticos en tiempo real." },
   cabinet: { title: "Mapa de condición", description: "Ubicación, lectura y estado de cada canal instrumentado." },
   diagnostics: { title: "Diagnóstico de comunicación", description: "Comprobación de la cadena Controlador → Gateway → HoitLive Core." },
   commissioning: { title: "Puesta en marcha CAM-5", description: "Identidad, entradas, registros, alarmas y controles previos a la conexión productiva." },
   trends: { title: "Tendencias", description: "Evolución térmica, descarga parcial y humedad ambiental." },
-  alarms: { title: "Centro de alertas", description: "Triage operativo, reconocimiento y trazabilidad de eventos." },
+  alarms: { title: "Alertas", description: "Triage operativo, reconocimiento y trazabilidad de eventos." },
   history: { title: "Histórico", description: "Mediciones, alarmas y cambios administrativos en una sola trazabilidad." },
   assets: { title: "Estructura operacional", description: "Clientes, sitios, puntos de medición, gateways y controladores asociados." },
   reports: { title: "Reportes", description: "Informes de condición, eventos y cumplimiento para operación y confiabilidad." },
   settings: { title: "Configuración", description: "Parámetros del activo, canales de adquisición y comunicaciones." },
-  provisioning: { title: "Provisionamiento del gateway", description: "Credenciales seguras, configuración inicial y verificación de conexión." },
-  users: { title: "Usuarios y roles", description: "Control de acceso y permisos para la operación técnica." },
+  provisioning: { title: "Gateways", description: "Credenciales seguras, configuración inicial y verificación de conexión." },
+  users: { title: "Usuarios", description: "Control de acceso y permisos para la operación técnica." },
   notifications: { title: "Notificaciones", description: "Canales de entrega, reglas de escalamiento y trazabilidad." },
   account: { title: "Mi cuenta", description: "Perfil personal, credenciales y sesiones activas del portal." },
 };
@@ -1805,8 +1799,21 @@ export default function Home() {
   const gatewayState = telemetryState.data?.gateway?.state;
   const gatewayCode = telemetryState.data?.gateway?.code ?? activeGateway?.code;
   const acquisitionMode = telemetryState.status === "loading" ? "loading" : telemetryState.status === "error" ? "unknown" : gatewayState === "online" ? "normal" : "offline";
-  const acquisitionTitle = acquisitionMode === "loading" ? "Sincronizando adquisición" : acquisitionMode === "unknown" ? "Estado no verificado" : acquisitionMode === "normal" ? "Adquisición operativa" : "Adquisición sin comunicación";
   const acquisitionDetail = acquisitionMode === "loading" ? `${gatewayCode ?? "Gateway"} · verificando estado` : acquisitionMode === "unknown" ? `${gatewayCode ?? "Gateway"} · consulta no disponible` : gatewayCode ? `${gatewayCode} · ${gatewayState === "online" ? "en línea" : "sin telemetría"}` : "Gateway no configurado";
+  // Un solo estado en la barra superior: distingue el gateway de los equipos de medición, para no
+  // mostrar "en línea" mientras los puntos no entregan datos.
+  const siteStatus = acquisitionMode === "loading" || systemMode === "loading"
+    ? { tone: "loading", title: "Sincronizando", detail: acquisitionDetail }
+    : acquisitionMode === "unknown" || systemMode === "error"
+      ? { tone: "unknown", title: "Estado no verificado", detail: "La consulta al servidor falló." }
+      : acquisitionMode === "offline"
+        ? { tone: "offline", title: "Gateway sin comunicación", detail: acquisitionDetail }
+        : systemMode === "stale"
+          ? { tone: "stale", title: "Sin datos recientes", detail: `${gatewayCode ?? "Gateway"} en línea; los equipos de medición no entregan lecturas vigentes.` }
+          : systemMode === "waiting"
+            ? { tone: "stale", title: "Esperando lecturas", detail: `${gatewayCode ?? "Gateway"} en línea; aún no llegan mediciones.` }
+            : { tone: "normal", title: "En línea", detail: acquisitionDetail };
+  const activeAlertCount = alarmSummary.critical + alarmSummary.warning;
   const systemMessage = systemMode === "loading"
     ? { title: "Sincronizando datos", detail: "Solicitando la configuración, el estado del gateway, las lecturas y los eventos disponibles." }
     : systemMode === "waiting"
@@ -1839,16 +1846,16 @@ export default function Home() {
         <nav className="sidebar-nav" aria-label="Navegación principal">
           {navGroups.map((group) => (
             <div className="nav-group" key={group.label}>
-              <div className="nav-group-heading"><span>{group.index}</span><p>{group.label}</p><i /></div>
+              <div className="nav-group-heading"><p>{group.label}</p></div>
               <div className="nav-items">
                 {group.items.map((item) => {
                   const Icon = item.icon;
                   const badgeCount = item.id === "alarms" ? alarmSummary.critical + alarmSummary.warning : null;
                   return (
-                    <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)} aria-current={view === item.id ? "page" : undefined}>
-                      <span className="nav-item-icon"><Icon size={19} strokeWidth={1.8} /></span>
-                      <span className="nav-item-copy"><strong>{item.label}</strong><small>{item.description}</small></span>
-                      {badgeCount !== null && badgeCount > 0 ? <b>{badgeCount}</b> : <ChevronRight className="nav-chevron" size={16} />}
+                    <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)} aria-current={view === item.id ? "page" : undefined} title={item.description}>
+                      <Icon className="nav-icon" size={17} strokeWidth={1.8} aria-hidden="true" />
+                      <span className="nav-item-label">{item.label}</span>
+                      {badgeCount !== null && badgeCount > 0 && <b>{badgeCount}</b>}
                     </button>
                   );
                 })}
@@ -1857,22 +1864,22 @@ export default function Home() {
           ))}
         </nav>
         <div className="sidebar-status">
-          <button className="user-card" onClick={() => navigate("account")} aria-label="Abrir mi cuenta"><span className="user-avatar">{sessionUser.displayName.split(" ").map((part) => part[0]).slice(0, 2).join("").toUpperCase()}</span><span className="user-copy"><strong>{sessionUser.displayName}</strong><small>{sessionUser.roleName}</small></span><ChevronRight size={16} /></button>
-          <button className="sidebar-logout" onClick={logout}><LogOut size={17} /> Cerrar sesión</button>
+          <button className={`user-card ${view === "account" ? "active" : ""}`} onClick={() => navigate("account")} aria-label="Abrir mi cuenta" title="Mi cuenta"><span className="user-avatar">{sessionUser.displayName.split(" ").map((part) => part[0]).slice(0, 2).join("").toUpperCase()}</span><span className="user-copy"><strong>{sessionUser.displayName}</strong><small>{sessionUser.roleName}</small></span></button>
+          <button className="sidebar-logout" onClick={logout} aria-label="Cerrar sesión" title="Cerrar sesión"><LogOut size={17} /></button>
         </div>
       </aside>
 
       <main className="main-shell" id="contenido-principal" tabIndex={-1}>
         <header className="topbar">
           <div className="topbar-left"><button className="menu-button" aria-label="Abrir navegación" onClick={() => setMenuOpen(true)}><Menu size={22} /></button>{sessionUser.clientLogoUpdatedAt ? <span className="mobile-brand mobile-client-logo"><ClientLogoImage clientId={sessionUser.clientId} version={sessionUser.clientLogoUpdatedAt} alt={sessionUser.clientName} /></span> : <span className="mobile-brand"><Zap size={18} fill="currentColor" /></span>}<div className="operational-context"><Building2 size={17} />{clientContextSelect}<ChevronRight size={14} />{siteContextSelect}<ChevronRight size={14} /><label><span>Punto de medición</span><select value={activePoint?.id ?? ""} onChange={(event) => { setTelemetryState({ status: "loading", data: null }); setSystemMode("loading"); setActivePointId(event.target.value); }} aria-label="Punto de medición activo"><option value="">Sin punto seleccionado</option>{hierarchy?.points.filter((point) => point.active).map((point) => <option key={point.id} value={point.id}>{point.code} · {point.name}</option>)}</select></label></div></div>
-          <div className="topbar-right"><span className="authenticated-role"><ShieldCheck size={15} /><span><small>Sesión activa</small><strong>{sessionUser.roleName}</strong></span></span><div className={`live-state live-${acquisitionMode}`} aria-live="polite"><span /><div><strong>{acquisitionTitle}</strong><small>{acquisitionDetail}</small></div></div><button className="topbar-logout" onClick={logout} aria-label="Cerrar sesión"><LogOut size={18} /></button></div>
+          <div className="topbar-right"><div className={`live-state live-${siteStatus.tone}`} aria-live="polite" title={siteStatus.detail}><span /><strong>{siteStatus.title}</strong></div><button className={`topbar-alerts ${activeAlertCount ? "has-alerts" : ""}`} onClick={() => navigate("alarms")} aria-label={activeAlertCount ? `${activeAlertCount} ${activeAlertCount === 1 ? "alerta activa" : "alertas activas"}` : "Sin alertas activas"} title="Alertas"><BellRing size={17} />{activeAlertCount > 0 && <b>{activeAlertCount}</b>}</button></div>
         </header>
 
         <div className="content-scroll">
           <div className="page-content">
             {systemMode !== "normal" && view !== "site" && <section className={`operational-banner banner-${systemMode}`} role={systemMode === "offline" || systemMode === "error" ? "alert" : "status"} aria-live="polite"><span>{systemMode === "offline" ? <PlugConnected size={19} /> : systemMode === "loading" ? <Refresh className="spin" size={19} /> : systemMode === "error" ? <AlertTriangle size={19} /> : <Clock3 size={19} />}</span><div><strong>{systemMessage.title}</strong><p>{systemMessage.detail}</p></div>{systemMode !== "loading" && <button onClick={() => { setTelemetryState({ status: "loading", data: null }); setSystemMode("loading"); setTelemetryRefreshKey((current) => current + 1); notify("Consultando nuevamente la telemetría.", "info"); }}><Refresh size={15} /> Reintentar</button>}</section>}
-            <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> Gestión de activos críticos</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{(view === "overview" || view === "cabinet") && <button className="secondary-button" onClick={() => setVisibilityOpen(true)} disabled={!activePoint || !sensors.some((sensor) => sensor.enabled)} aria-label="Personalizar canales" title="Personalizar canales"><AdjustmentsHorizontal size={16} aria-hidden="true" /><span>Personalizar canales</span></button>}{view !== "site" && view !== "assets" && view !== "settings" && view !== "provisioning" && view !== "users" && view !== "notifications" && view !== "account" && view !== "reports" && view !== "diagnostics" && view !== "commissioning" && view !== "trends" && view !== "history" && <button className="secondary-button" onClick={exportCsv} aria-label="Exportar" title="Exportar"><Download size={16} aria-hidden="true" /><span>Exportar</span></button>}{view !== "alarms" && <button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{alarmSummary.critical + alarmSummary.warning} alertas activas</button>}</div></section>
-            {view === "site" && <SiteOverviewView siteName={sessionUser.siteName} onOpenPoint={(pointId) => { if (pointId !== activePointId) { setTelemetryState({ status: "loading", data: null }); setSystemMode("loading"); setActivePointId(pointId); } navigate("overview"); }} />}
+            <section className="page-heading"><div><h1 title={viewTitles[view].description}>{viewTitles[view].title}</h1></div><div className="heading-actions">{(view === "overview" || view === "cabinet") && <button className="secondary-button" onClick={() => setVisibilityOpen(true)} disabled={!activePoint || !sensors.some((sensor) => sensor.enabled)} aria-label="Personalizar canales" title="Personalizar canales"><AdjustmentsHorizontal size={16} aria-hidden="true" /><span>Personalizar canales</span></button>}{view !== "site" && view !== "assets" && view !== "settings" && view !== "provisioning" && view !== "users" && view !== "notifications" && view !== "account" && view !== "reports" && view !== "diagnostics" && view !== "commissioning" && view !== "trends" && view !== "history" && <button className="secondary-button" onClick={exportCsv} aria-label="Exportar" title="Exportar"><Download size={16} aria-hidden="true" /><span>Exportar</span></button>}</div></section>
+            {view === "site" && <SiteOverviewView siteName={sessionUser.siteName} onOpenPoint={(pointId) => { if (pointId !== activePointId) { setTelemetryState({ status: "loading", data: null }); setSystemMode("loading"); setActivePointId(pointId); } navigate("overview"); }} onDiagnose={() => navigate("diagnostics")} />}
             {view === "overview" && <Overview onNavigate={navigate} onOpenTrend={openChannelTrend} onAcknowledge={acknowledge} activeAlarms={alarmPreview} alarmSummary={alarmSummary} point={activePoint} />}
             {view === "cabinet" && <CabinetView onOpenTrend={openChannelTrend} />}
             {view === "diagnostics" && <DatabaseDiagnosticsView assetId={activePoint?.id ?? ""} canExecute={sessionUser.permissions.includes("diagnostics.execute")} notify={notify} />}

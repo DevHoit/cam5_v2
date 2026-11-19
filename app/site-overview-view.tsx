@@ -4,13 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import {
   IconAlertTriangle,
-  IconBolt,
   IconChevronRight,
   IconCircleCheck,
   IconPlugConnectedX,
   IconRefresh,
-  IconRouter,
-  IconTemperature,
 } from "@tabler/icons-react";
 
 type Severity = "normal" | "warning" | "critical";
@@ -30,14 +27,14 @@ const GROUPS: Array<{ key: Group; label: string; short: string }> = [
 const PERIODS = [{ hours: 24, label: "24 h" }, { hours: 168, label: "7 días" }, { hours: 720, label: "30 días" }];
 const STATUS: Record<PointStatus, { label: string; icon: typeof IconCircleCheck }> = {
   critical: { label: "Crítico", icon: IconAlertTriangle },
-  warning: { label: "Alerta", icon: IconAlertTriangle },
+  warning: { label: "Advertencia", icon: IconAlertTriangle },
   offline: { label: "Sin comunicación", icon: IconPlugConnectedX },
   normal: { label: "Normal", icon: IconCircleCheck },
 };
 // Color y trazo siguen al punto (orden por código), nunca a su posición en el ranking.
 const SERIES = [
   { color: "#2a78d6", dash: "" },
-  { color: "#eb6834", dash: "7 4" },
+  { color: "#7c3aed", dash: "7 4" },
   { color: "#1baf7a", dash: "2 3" },
   { color: "#c98500", dash: "10 3 2 3" },
   { color: "#d55181", dash: "" },
@@ -66,7 +63,7 @@ function since(iso: string | null, now: number): string {
   return `hace ${Math.round(seconds / 86400)} días`;
 }
 
-export function SiteOverviewView({ siteName, onOpenPoint }: { siteName: string; onOpenPoint: (pointId: string) => void }) {
+export function SiteOverviewView({ siteName, onOpenPoint, onDiagnose }: { siteName: string; onOpenPoint: (pointId: string) => void; onDiagnose?: () => void }) {
   const [data, setData] = useState<Overview | null>(null);
   const [error, setError] = useState("");
   const [group, setGroup] = useState<Group>("temperature");
@@ -100,40 +97,57 @@ export function SiteOverviewView({ siteName, onOpenPoint }: { siteName: string; 
   }
   const now = new Date(data.serverTime).getTime();
   const { summary } = data;
-  const highestTemp = summary.highest.temperature;
-  const highestUhf = summary.highest.discharge;
+
+  const offline = summary.total - summary.online;
+  const lastRead = data.points.reduce<string | null>((latest, point) => point.lastReadAt && (!latest || point.lastReadAt > latest) ? point.lastReadAt : latest, null);
+  const fact = (label: string, highest: Highest) => highest ? <span>{label} <b>{formatValue(highest.value, highest.unit)}</b> <small>{highest.pointCode}{highest.channelCode ? ` · ${highest.channelCode}` : ""}</small></span> : null;
+  // Un solo aviso con lo más importante: primero la falta de datos, después las alarmas.
+  const incident = summary.total > 0 && offline === summary.total
+    ? { tone: "critical", title: summary.total === 1 ? "El punto de medición no entrega datos" : `Ninguno de los ${summary.total} puntos entrega datos`, detail: lastRead ? `Última lectura ${since(lastRead, now)}. Revisa la comunicación entre el gateway y los equipos de medición.` : "Aún no llegan lecturas. Revisa la comunicación entre el gateway y los equipos de medición." }
+    : offline > 0
+      ? { tone: "warning", title: `${offline} de ${summary.total} puntos sin datos recientes`, detail: "Los demás puntos comunican con normalidad." }
+      : summary.withAlarms > 0
+        ? { tone: "warning", title: summary.withAlarms === 1 ? "1 punto con alarma abierta" : `${summary.withAlarms} puntos con alarmas abiertas`, detail: "Aparecen primero en la tabla." }
+        : null;
 
   return <>
-    <section className="module-summary-grid site-summary-grid" aria-label={`Resumen de ${siteName}`}>
-      <article><span className="module-summary-icon blue"><IconRouter size={19} /></span><div><small>Puntos en línea</small><strong>{summary.online}<em> de {summary.total}</em></strong><span>{summary.total - summary.online ? `${summary.total - summary.online} sin comunicación` : "todos comunicando"}</span></div></article>
-      <article className={summary.withAlarms ? "summary-attention" : ""}><span className="module-summary-icon amber"><IconAlertTriangle size={19} /></span><div><small>Con alarma</small><strong>{summary.withAlarms}</strong><span>{summary.withAlarms ? "revisar primero" : "sin alarmas abiertas"}</span></div></article>
-      <article><span className="module-summary-icon green"><IconTemperature size={19} /></span><div><small>Temp. máx. del sitio</small><strong>{highestTemp ? formatValue(highestTemp.value, highestTemp.unit) : "—"}</strong><span>{highestTemp ? `${highestTemp.pointCode}${highestTemp.channelCode ? ` · ${highestTemp.channelCode}` : ""}` : "sin lecturas"}</span></div></article>
-      <article><span className="module-summary-icon blue"><IconBolt size={19} /></span><div><small>Peor descarga UHF</small><strong>{highestUhf ? formatValue(highestUhf.value, highestUhf.unit) : "—"}</strong><span>{highestUhf ? `${highestUhf.pointCode}${highestUhf.channelCode ? ` · ${highestUhf.channelCode}` : ""}` : "sin lecturas"}</span></div></article>
+    {incident && <section className={`site-incident ${incident.tone}`} role={incident.tone === "critical" ? "alert" : "status"}>
+      {incident.tone === "critical" ? <IconPlugConnectedX size={18} aria-hidden="true" /> : <IconAlertTriangle size={18} aria-hidden="true" />}
+      <div><strong>{incident.title}</strong><p>{incident.detail}</p></div>
+      {onDiagnose && offline > 0 && <button type="button" onClick={onDiagnose}>Diagnosticar</button>}
+    </section>}
+    <section className="site-facts" aria-label={`Resumen de ${siteName}`}>
+      <span><b>{summary.online}</b> de {summary.total} en línea</span>
+      <span><b>{summary.withAlarms}</b> con alarma</span>
+      {fact("Temp. máx.", summary.highest.temperature)}
+      {fact("Humedad máx.", summary.highest.humidity)}
+      {fact("UHF máx.", summary.highest.discharge)}
+      <small className="site-facts-time">Actualizado {new Intl.DateTimeFormat("es-CL", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date(data.serverTime))}</small>
     </section>
 
     <article className="panel site-points" aria-label="Puntos de medición del sitio">
-      <header><div><h2>Puntos de medición</h2><p>Lo más grave primero. Cada valor es el máximo vigente del grupo, con el color de su umbral. Entra a un punto para ver cada sensor.</p></div><small>Actualiza cada 30 s · {new Intl.DateTimeFormat("es-CL", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date(data.serverTime))}</small></header>
+      <header><div><h2>Puntos de medición</h2><p>Lo más grave primero. Cada valor es el máximo vigente; se colorea solo si supera un umbral.</p></div></header>
       {error && <p className="site-points-stale"><IconAlertTriangle size={14} /> {error} Se muestran los últimos datos recibidos.</p>}
       {data.points.length === 0 ? <p className="site-points-empty">El sitio no tiene puntos de medición activos a los que tengas acceso.</p> : <div className="site-points-table" role="table">
         <div className="site-points-row site-points-head" role="row">
           <span role="columnheader">Punto · equipo</span>
           {GROUPS.map((item) => <span role="columnheader" key={item.key}>{item.short}</span>)}
-          <span role="columnheader">Alarmas</span><span role="columnheader">Lectura</span><span role="columnheader" aria-hidden="true" />
+          <span role="columnheader">Alarmas</span><span role="columnheader">Última lectura</span><span role="columnheader" aria-hidden="true" />
         </div>
         {data.points.map((point) => {
           const status = STATUS[point.status];
           const StatusIcon = status.icon;
           const offline = point.status === "offline";
           return <button type="button" role="row" key={point.id} className={`site-points-row status-${point.status}`} onClick={() => onOpenPoint(point.id)} aria-label={`Abrir ${point.code} · ${point.name}: ${status.label}`}>
-            <span role="cell" className="site-point-name"><strong>{point.code}</strong><small>{point.name}{point.deviceCode ? ` · ${point.deviceCode}` : ""}</small><i className={`site-point-status ${point.status}`}><StatusIcon size={13} aria-hidden="true" /> {status.label}</i></span>
+            <span role="cell" className="site-point-name"><strong>{point.code}</strong><small>{point.name}{point.deviceCode ? ` · ${point.deviceCode}` : ""}</small><i className={`site-point-status ${point.status}`}><StatusIcon size={13} aria-hidden="true" /> {offline ? point.lastReadAt ? `Sin datos · ${since(point.lastReadAt, now).replace(/^hace /, "")}` : "Nunca reportó" : status.label}</i></span>
             {GROUPS.map((item) => {
               const cell = point.groups[item.key];
               return <span role="cell" key={item.key} className="site-point-cell" data-label={item.short}>
-                <b className={offline || cell.value === null ? "empty" : cell.severity} title={cell.channelName ?? undefined}>{offline ? "—" : formatValue(cell.value, cell.unit)}</b>
+                <b className={offline || cell.value === null ? "empty" : cell.severity === "normal" ? "plain" : cell.severity} title={cell.channelName ?? undefined}>{offline ? "—" : formatValue(cell.value, cell.unit)}</b>
                 {!offline && cell.channelCode && <small>{cell.channelCode}</small>}
               </span>;
             })}
-            <span role="cell" className="site-point-cell" data-label="Alarmas"><b className={point.openAlarms ? point.alarmSeverity ?? "warning" : "normal"}>{point.openAlarms}</b></span>
+            <span role="cell" className="site-point-cell" data-label="Alarmas"><b className={point.openAlarms ? point.alarmSeverity ?? "warning" : "empty"}>{point.openAlarms || "—"}</b></span>
             <span role="cell" className={`site-point-read ${offline ? "late" : ""}`} data-label="Lectura">{since(point.lastReadAt, now)}</span>
             <span role="cell" className="site-point-go" aria-hidden="true"><IconChevronRight size={17} /></span>
           </button>;
@@ -143,7 +157,7 @@ export function SiteOverviewView({ siteName, onOpenPoint }: { siteName: string; 
 
     <article className="panel site-compare" aria-label="Comparación entre puntos">
       <header>
-        <div><h2>Comparar puntos</h2><p>Máximo de la variable en cada punto. La línea discontinua es el umbral de alerta más bajo del sitio.</p></div>
+        <div><h2>Comparar puntos</h2><p>Máximo de la variable en cada punto.</p></div>
         <div className="site-compare-controls">
           <div role="radiogroup" aria-label="Variable">{GROUPS.map((item) => <button key={item.key} type="button" role="radio" aria-checked={group === item.key} className={group === item.key ? "active" : ""} onClick={() => setGroup(item.key)}>{item.short}</button>)}</div>
           <div role="radiogroup" aria-label="Periodo">{PERIODS.map((item) => <button key={item.hours} type="button" role="radio" aria-checked={hours === item.hours} className={hours === item.hours ? "active" : ""} onClick={() => setHours(item.hours)}>{item.label}</button>)}</div>
@@ -154,6 +168,25 @@ export function SiteOverviewView({ siteName, onOpenPoint }: { siteName: string; 
   </>;
 }
 
+function niceStep(raw: number) {
+  const power = 10 ** Math.floor(Math.log10(Math.max(raw, 1e-9)));
+  const fraction = raw / power;
+  return (fraction <= 1 ? 1 : fraction <= 2 ? 2 : fraction <= 5 ? 5 : 10) * power;
+}
+
+/** Marcas de tiempo en horas o días redondos (00:00, 04:00… o un día por marca). */
+function timeTicks(from: number, to: number, hours: number) {
+  const stepMs = (hours <= 24 ? 4 : hours <= 168 ? 24 : 120) * 3_600_000;
+  const first = new Date(from);
+  if (hours <= 24) first.setMinutes(0, 0, 0); else first.setHours(0, 0, 0, 0);
+  let tick = first.getTime();
+  while (tick < from) tick += hours <= 24 ? 3_600_000 : 86_400_000;
+  if (hours <= 24) while (new Date(tick).getHours() % 4 !== 0) tick += 3_600_000;
+  const ticks: number[] = [];
+  for (; tick <= to; tick += stepMs) ticks.push(tick);
+  return ticks;
+}
+
 function CompareChart({ trend }: { trend: Trend }) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [hover, setHover] = useState<number | null>(null);
@@ -162,17 +195,21 @@ function CompareChart({ trend }: { trend: Trend }) {
   const unit = trend.unit === "%RH" ? "%" : trend.unit ?? "";
   const lines = trend.points.map((point, index) => ({ ...point, style: SERIES[index % SERIES.length], values: point.series.map(([iso, value]) => [new Date(iso).getTime(), value] as [number, number]) }));
   const all = lines.flatMap((line) => line.values.map(([, value]) => value));
-  const reference = trend.warningThreshold;
-  const scaleValues = reference === null ? all : [...all, reference];
-  let low = scaleValues.length ? Math.min(...scaleValues) : 0, high = scaleValues.length ? Math.max(...scaleValues) : 1;
+  // La escala sigue a los datos. El umbral se dibuja solo si queda cerca; si no, se indica en la leyenda
+  // (antes estiraba la escala y aplastaba las líneas contra el borde).
+  const threshold = trend.warningThreshold;
+  let low = all.length ? Math.min(...all) : 0, high = all.length ? Math.max(...all) : 1;
   if (high - low < 1) { low -= 1; high += 1; }
-  const min = Math.floor(low - (high - low) * 0.08), max = Math.ceil(high + (high - low) * 0.08);
+  const reference = threshold !== null && threshold >= low - (high - low) * 0.6 && threshold <= high + (high - low) * 0.6 ? threshold : null;
+  if (reference !== null) { low = Math.min(low, reference); high = Math.max(high, reference); }
+  const step = niceStep((high - low) / 4);
+  const min = Math.floor(low / step) * step, max = Math.ceil(high / step) * step;
   const x = (time: number) => left + (time - from) / Math.max(1, to - from) * (width - left - right);
   const y = (value: number) => top + (max - value) / Math.max(1e-9, max - min) * (height - top - bottom);
   const gap = trend.bucketSeconds * 1000 * 2.5;
   const path = (values: Array<[number, number]>) => values.map(([time, value], index) => `${index === 0 || time - values[index - 1][0] > gap ? "M" : "L"}${x(time).toFixed(1)},${y(value).toFixed(1)}`).join(" ");
-  const ticksY = Array.from({ length: 5 }, (_, index) => min + (max - min) * index / 4);
-  const ticksX = Array.from({ length: 6 }, (_, index) => from + (to - from) * index / 5);
+  const ticksY = Array.from({ length: Math.round((max - min) / step) + 1 }, (_, index) => min + step * index);
+  const ticksX = timeTicks(from, to, trend.hours);
   const timeLabel = (time: number) => new Intl.DateTimeFormat("es-CL", trend.hours <= 24 ? { hour: "2-digit", minute: "2-digit" } : { day: "numeric", month: "short" }).format(time);
   const hasData = all.length > 0;
 
@@ -190,11 +227,12 @@ function CompareChart({ trend }: { trend: Trend }) {
   };
 
   return <div className="site-compare-chart">
-    <ul className="site-compare-legend">
-      {lines.map((line) => <li key={line.id}><svg width="22" height="8" aria-hidden="true"><line x1="1" y1="4" x2="21" y2="4" stroke={line.style.color} strokeWidth="2.5" strokeDasharray={line.style.dash} strokeLinecap="round" /></svg>{line.code}{line.values.length ? "" : " · sin datos"}</li>)}
-      {reference !== null && <li><svg width="22" height="8" aria-hidden="true"><line x1="1" y1="4" x2="21" y2="4" stroke="#b45309" strokeWidth="1.2" strokeDasharray="4 3" /></svg>Umbral de alerta {number(reference)} {unit}</li>}
-    </ul>
-    {!hasData ? <p className="site-points-empty">Todavía no hay datos de este periodo. Los resúmenes se generan cada 5 minutos.</p> :
+    {hasData && <ul className="site-compare-legend">
+      {lines.filter((line) => line.values.length).map((line) => <li key={line.id}><svg width="22" height="8" aria-hidden="true"><line x1="1" y1="4" x2="21" y2="4" stroke={line.style.color} strokeWidth="2.5" strokeDasharray={line.style.dash} strokeLinecap="round" /></svg>{line.code}</li>)}
+      {threshold !== null && <li className="threshold"><svg width="22" height="8" aria-hidden="true"><line x1="1" y1="4" x2="21" y2="4" stroke="#b45309" strokeWidth="1.2" strokeDasharray="4 3" /></svg>Advertencia {number(threshold)} {unit}{reference === null ? " (fuera de escala)" : ""}</li>}
+      {lines.some((line) => !line.values.length) && <li className="muted">Sin datos en el periodo: {lines.filter((line) => !line.values.length).map((line) => line.code).join(", ")}</li>}
+    </ul>}
+    {!hasData ? <p className="site-points-empty">Sin datos en este periodo. Los resúmenes se generan cada 5 minutos a partir de las lecturas.</p> :
       <div className="site-compare-canvas">
         <svg ref={svgRef} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Comparación de ${GROUPS.find((item) => item.key === trend.group)?.label ?? ""} entre ${lines.length} puntos`} onPointerMove={onMove} onPointerLeave={() => setHover(null)}>
           {ticksY.map((tick) => <g key={tick}><line x1={left} x2={width - right} y1={y(tick)} y2={y(tick)} className="grid" /><text x={left - 8} y={y(tick) + 4} textAnchor="end" className="axis">{number(tick, 0)}</text></g>)}
