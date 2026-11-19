@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { AccountView } from "./account-view";
 import { Cam5CommissioningView } from "./cam5-engineering";
 import { DiagnosticsView as DatabaseDiagnosticsView } from "./diagnostics-view";
@@ -40,6 +40,8 @@ import {
   IconMapPin as MapPin,
   IconMenu2 as Menu,
   IconLogout as LogOut,
+  IconMoon as Moon,
+  IconSun as Sun,
   IconPencil as Pencil,
   IconPlugConnected as PlugConnected,
   IconPlus as Plus,
@@ -332,6 +334,13 @@ function useSensorData(override?: PortalTelemetryState) {
       recordedAt: live.recordedAt,
     };
   });
+}
+
+// Tema claro u oscuro: lo fija el script de layout.tsx antes de pintar y el botón de la barra lateral.
+function readTheme(): "light" | "dark" { return document.documentElement.dataset.theme === "dark" ? "dark" : "light"; }
+function subscribeTheme(callback: () => void) {
+  window.addEventListener("hoit-theme", callback);
+  return () => window.removeEventListener("hoit-theme", callback);
 }
 
 // Vistas de un punto de medición: se recorren con las pestañas del encabezado del punto.
@@ -1577,6 +1586,13 @@ export default function Home() {
   const activeSensorRouteKey = sensors.filter((sensor) => sensor.enabled).map((sensor) => sensor.id).join(",");
   const [view, setView] = useState<View>("overview");
   const [menuOpen, setMenuOpen] = useState(false);
+  const theme = useSyncExternalStore(subscribeTheme, readTheme, () => "light");
+  const toggleTheme = () => {
+    const next = theme === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem("hoit-theme", next); } catch { /* sin almacenamiento: el tema dura la sesión */ }
+    window.dispatchEvent(new Event("hoit-theme"));
+  };
   const [period, setPeriod] = useState("24 h");
   const [trendSensorId, setTrendSensorId] = useState("");
   const [trendWindow, setTrendWindow] = useState<TrendWindow | null>(null);
@@ -1906,6 +1922,7 @@ export default function Home() {
         </nav>
         <div className="sidebar-status">
           <button className={`user-card ${view === "account" ? "active" : ""}`} onClick={() => navigate("account")} aria-label="Abrir mi cuenta" title="Mi cuenta"><span className="user-avatar">{sessionUser.displayName.split(" ").map((part) => part[0]).slice(0, 2).join("").toUpperCase()}</span><span className="user-copy"><strong>{sessionUser.displayName}</strong><small>{sessionUser.roleName}</small></span></button>
+          <button className="sidebar-logout" onClick={toggleTheme} aria-label={theme === "dark" ? "Usar tema claro" : "Usar tema oscuro"} title={theme === "dark" ? "Tema claro" : "Tema oscuro"}>{theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}</button>
           <button className="sidebar-logout" onClick={logout} aria-label="Cerrar sesión" title="Cerrar sesión"><LogOut size={17} /></button>
         </div>
       </aside>

@@ -27,7 +27,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="es">
+    <html lang="es" suppressHydrationWarning>
+      <head>
+        {/* Aplica el tema guardado antes de pintar, para no mostrar un destello claro en modo oscuro. */}
+        <script dangerouslySetInnerHTML={{ __html: "try{var t=localStorage.getItem('hoit-theme');if(t==='dark'||(!t&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.dataset.theme='dark'}catch(e){}" }} />
+      </head>
       <body className={`${inter.variable} ${plexMono.variable} antialiased`}>
         {children}
       </body>
