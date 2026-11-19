@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import {
   IconAlertTriangle,
-  IconChevronRight,
   IconCircleCheck,
   IconPlugConnectedX,
   IconRefresh,
@@ -17,12 +16,13 @@ type GroupCell = { value: number | null; unit: string | null; channelCode: strin
 type SitePoint = { id: string; code: string; name: string; deviceCode: string | null; status: PointStatus; lastReadAt: string | null; openAlarms: number; alarmSeverity: Severity | null; groups: Record<Group, GroupCell> };
 type Highest = { value: number; unit: string | null; pointCode: string; channelCode: string | null } | null;
 type Overview = { serverTime: string; points: SitePoint[]; summary: { total: number; online: number; withAlarms: number; highest: Record<Group, Highest> } };
+type SiteEvent = { id: string; title: string; severity: string; status: string; openedAt: string; assetName: string | null; channelName: string | null; assignedToName: string | null };
 type Trend = { group: Group; hours: number; bucketSeconds: number; from: string; to: string; unit: string | null; warningThreshold: number | null; criticalThreshold: number | null; points: Array<{ id: string; code: string; name: string; series: Array<[string, number]> }> };
 
-const GROUPS: Array<{ key: Group; label: string; short: string }> = [
-  { key: "temperature", label: "Temperatura máx.", short: "Temp. máx." },
-  { key: "humidity", label: "Humedad máx.", short: "Humedad máx." },
-  { key: "discharge", label: "Descarga UHF máx.", short: "UHF máx." },
+const GROUPS: Array<{ key: Group; label: string; short: string; name: string }> = [
+  { key: "temperature", label: "Temperatura máxima", short: "Temp. máx.", name: "Temperatura" },
+  { key: "humidity", label: "Humedad máxima", short: "Humedad máx.", name: "Humedad" },
+  { key: "discharge", label: "Descarga UHF máxima", short: "UHF máx.", name: "UHF" },
 ];
 const PERIODS = [{ hours: 24, label: "24 h" }, { hours: 168, label: "7 días" }, { hours: 720, label: "30 días" }];
 const STATUS: Record<PointStatus, { label: string; icon: typeof IconCircleCheck }> = {
@@ -63,7 +63,7 @@ function since(iso: string | null, now: number): string {
   return `hace ${Math.round(seconds / 86400)} días`;
 }
 
-export function SiteOverviewView({ siteName, onOpenPoint, onDiagnose }: { siteName: string; onOpenPoint: (pointId: string) => void; onDiagnose?: () => void }) {
+export function SiteOverviewView({ siteName, onOpenPoint, onDiagnose, onOpenAlarms }: { siteName: string; onOpenPoint: (pointId: string) => void; onDiagnose?: () => void; onOpenAlarms?: () => void }) {
   const [data, setData] = useState<Overview | null>(null);
   const [error, setError] = useState("");
   const [group, setGroup] = useState<Group>("temperature");
@@ -89,6 +89,33 @@ export function SiteOverviewView({ siteName, onOpenPoint, onDiagnose }: { siteNa
       .catch((loadError: unknown) => { if (active) setTrendError(loadError instanceof Error ? loadError.message : "No fue posible cargar la comparación."); });
     return () => { active = false; };
   }, [group, hours, tick]);
+  const [sparks, setSparks] = useState<Record<Group, Map<string, number[]>> | null>(null);
+  const [thresholds, setThresholds] = useState<Record<Group, number | null>>({ temperature: null, humidity: null, discharge: null });
+  const [events, setEvents] = useState<SiteEvent[] | null>(null);
+
+  // Mini-gráficas de 24 h por punto y variable, y los últimos eventos del sitio; se refrescan con la vista.
+  useEffect(() => {
+    let active = true;
+    Promise.all(GROUPS.map((item) => getJson<Trend>(`/api/v1/site-overview/trend?group=${item.key}&hours=24`)))
+      .then((results) => {
+        if (!active) return;
+        const next = {} as Record<Group, Map<string, number[]>>;
+        const limits = {} as Record<Group, number | null>;
+        results.forEach((result, index) => {
+          const key = GROUPS[index].key;
+          next[key] = new Map(result.points.map((point) => [point.id, point.series.map(([, value]) => value)]));
+          limits[key] = result.warningThreshold;
+        });
+        setSparks(next);
+        setThresholds(limits);
+      })
+      .catch(() => undefined);
+    getJson<{ items: SiteEvent[] }>("/api/v1/alarms?page=1&pageSize=6&status=all")
+      .then((result) => { if (active) setEvents(result.items); })
+      .catch(() => { if (active) setEvents([]); });
+    return () => { active = false; };
+  }, [tick]);
+
 
   if (!data) {
     return error
@@ -97,75 +124,104 @@ export function SiteOverviewView({ siteName, onOpenPoint, onDiagnose }: { siteNa
   }
   const now = new Date(data.serverTime).getTime();
   const { summary } = data;
-
+  const nameByCode = new Map(data.points.map((point) => [point.code, point.name]));
   const offline = summary.total - summary.online;
+  const warn = data.points.filter((point) => point.status === "warning" || point.status === "critical").length;
   const lastRead = data.points.reduce<string | null>((latest, point) => point.lastReadAt && (!latest || point.lastReadAt > latest) ? point.lastReadAt : latest, null);
-  const fact = (label: string, highest: Highest) => highest ? <span>{label} <b>{formatValue(highest.value, highest.unit)}</b> <small>{highest.pointCode}{highest.channelCode ? ` · ${highest.channelCode}` : ""}</small></span> : null;
-  // Un solo aviso con lo más importante: primero la falta de datos, después las alarmas.
-  const incident = summary.total > 0 && offline === summary.total
-    ? { tone: "critical", title: summary.total === 1 ? "El punto de medición no entrega datos" : `Ninguno de los ${summary.total} puntos entrega datos`, detail: lastRead ? `Última lectura ${since(lastRead, now)}. Revisa la comunicación entre el gateway y los equipos de medición.` : "Aún no llegan lecturas. Revisa la comunicación entre el gateway y los equipos de medición." }
-    : offline > 0
-      ? { tone: "warning", title: `${offline} de ${summary.total} puntos sin datos recientes`, detail: "Los demás puntos comunican con normalidad." }
-      : summary.withAlarms > 0
-        ? { tone: "warning", title: summary.withAlarms === 1 ? "1 punto con alarma abierta" : `${summary.withAlarms} puntos con alarmas abiertas`, detail: "Aparecen primero en la tabla." }
-        : null;
+  const highest = (label: string, item: Highest) => item ? <span>{label} <b>{formatValue(item.value, item.unit)}</b> · {nameByCode.get(item.pointCode) ?? item.pointCode}</span> : null;
 
   return <>
-    {incident && <section className={`site-incident ${incident.tone}`} role={incident.tone === "critical" ? "alert" : "status"}>
-      {incident.tone === "critical" ? <IconPlugConnectedX size={18} aria-hidden="true" /> : <IconAlertTriangle size={18} aria-hidden="true" />}
-      <div><strong>{incident.title}</strong><p>{incident.detail}</p></div>
-      {onDiagnose && offline > 0 && <button type="button" onClick={onDiagnose}>Diagnosticar</button>}
+    {summary.total > 0 && offline === summary.total && <section className="site-incident critical" role="alert">
+      <IconPlugConnectedX size={18} aria-hidden="true" />
+      <div><strong>{summary.total === 1 ? "El punto de medición no entrega datos" : `Ninguno de los ${summary.total} puntos entrega datos`}</strong><p>{lastRead ? `Última lectura ${since(lastRead, now)}.` : "Aún no llegan lecturas."} Revisa la comunicación entre el gateway y los equipos de medición.</p></div>
+      {onDiagnose && <button type="button" onClick={onDiagnose}>Diagnosticar</button>}
     </section>}
-    <section className="site-facts" aria-label={`Resumen de ${siteName}`}>
-      <span><b>{summary.online}</b> de {summary.total} en línea</span>
-      <span><b>{summary.withAlarms}</b> con alarma</span>
-      {fact("Temp. máx.", summary.highest.temperature)}
-      {fact("Humedad máx.", summary.highest.humidity)}
-      {fact("UHF máx.", summary.highest.discharge)}
-      <small className="site-facts-time">Actualizado {new Intl.DateTimeFormat("es-CL", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date(data.serverTime))}</small>
+
+    <section className="site-strip" aria-label={`Resumen de ${siteName}`}>
+      <span><i className="dot normal" /><b>{summary.total - offline - warn}</b> {summary.total - offline - warn === 1 ? "normal" : "normales"}</span>
+      <span><i className="dot warning" /><b>{warn}</b> con alarma</span>
+      <span><i className="dot offline" /><b>{offline}</b> sin datos</span>
+      <span className="site-strip-fill" />
+      {highest("Temp. máx.", summary.highest.temperature)}
+      {highest("UHF máx.", summary.highest.discharge)}
     </section>
 
-    <article className="panel site-points" aria-label="Puntos de medición del sitio">
-      <header><div><h2>Puntos de medición</h2><p>Lo más grave primero. Cada valor es el máximo vigente; se colorea solo si supera un umbral.</p></div></header>
-      {error && <p className="site-points-stale"><IconAlertTriangle size={14} /> {error} Se muestran los últimos datos recibidos.</p>}
-      {data.points.length === 0 ? <p className="site-points-empty">El sitio no tiene puntos de medición activos a los que tengas acceso.</p> : <div className="site-points-table" role="table">
-        <div className="site-points-row site-points-head" role="row">
-          <span role="columnheader">Punto · equipo</span>
-          {GROUPS.map((item) => <span role="columnheader" key={item.key}>{item.short}</span>)}
-          <span role="columnheader">Alarmas</span><span role="columnheader">Última lectura</span><span role="columnheader" aria-hidden="true" />
-        </div>
-        {data.points.map((point) => {
-          const status = STATUS[point.status];
-          const StatusIcon = status.icon;
-          const offline = point.status === "offline";
-          return <button type="button" role="row" key={point.id} className={`site-points-row status-${point.status}`} onClick={() => onOpenPoint(point.id)} aria-label={`Abrir ${point.code} · ${point.name}: ${status.label}`}>
-            <span role="cell" className="site-point-name"><strong>{point.code}</strong><small>{point.name}{point.deviceCode ? ` · ${point.deviceCode}` : ""}</small><i className={`site-point-status ${point.status}`}><StatusIcon size={13} aria-hidden="true" /> {offline ? point.lastReadAt ? `Sin datos · ${since(point.lastReadAt, now).replace(/^hace /, "")}` : "Nunca reportó" : status.label}</i></span>
-            {GROUPS.map((item) => {
-              const cell = point.groups[item.key];
-              return <span role="cell" key={item.key} className="site-point-cell" data-label={item.short}>
-                <b className={offline || cell.value === null ? "empty" : cell.severity === "normal" ? "plain" : cell.severity} title={cell.channelName ?? undefined}>{offline ? "—" : formatValue(cell.value, cell.unit)}</b>
-                {!offline && cell.channelCode && <small>{cell.channelCode}</small>}
-              </span>;
-            })}
-            <span role="cell" className="site-point-cell" data-label="Alarmas"><b className={point.openAlarms ? point.alarmSeverity ?? "warning" : "empty"}>{point.openAlarms || "—"}</b></span>
-            <span role="cell" className={`site-point-read ${offline ? "late" : ""}`} data-label="Lectura">{since(point.lastReadAt, now)}</span>
-            <span role="cell" className="site-point-go" aria-hidden="true"><IconChevronRight size={17} /></span>
-          </button>;
-        })}
-      </div>}
-    </article>
+    {error && <p className="site-points-stale"><IconAlertTriangle size={14} /> {error} Se muestran los últimos datos recibidos.</p>}
+    {data.points.length === 0
+      ? <article className="panel site-overview-message"><div><strong>Sin puntos de medición</strong><p>El sitio no tiene puntos activos a los que tengas acceso.</p></div></article>
+      : <div className="site-cards">{data.points.map((point) => <PointCard key={point.id} point={point} now={now} sparks={sparks} thresholds={thresholds} onOpen={() => onOpenPoint(point.id)} onDiagnose={onDiagnose} />)}</div>}
 
-    <article className="panel site-compare" aria-label="Comparación entre puntos">
-      <header>
-        <div><h2>Comparar puntos</h2><p>Máximo de la variable en cada punto.</p></div>
-        <div className="site-compare-controls">
-          <div role="radiogroup" aria-label="Variable">{GROUPS.map((item) => <button key={item.key} type="button" role="radio" aria-checked={group === item.key} className={group === item.key ? "active" : ""} onClick={() => setGroup(item.key)}>{item.short}</button>)}</div>
-          <div role="radiogroup" aria-label="Periodo">{PERIODS.map((item) => <button key={item.hours} type="button" role="radio" aria-checked={hours === item.hours} className={hours === item.hours ? "active" : ""} onClick={() => setHours(item.hours)}>{item.label}</button>)}</div>
-        </div>
-      </header>
-      {trendError && !trend ? <p className="site-points-empty">{trendError}</p> : trend ? <CompareChart trend={trend} /> : <p className="site-points-empty"><IconRefresh className="spin" size={15} /> Cargando la comparación…</p>}
-    </article>
+    <div className="site-bottom">
+      <article className="panel site-compare" aria-label="Comparación entre puntos">
+        <header>
+          <h2>{GROUPS.find((item) => item.key === group)?.label} por punto</h2>
+          <div className="site-compare-controls">
+            <div role="radiogroup" aria-label="Variable">{GROUPS.map((item) => <button key={item.key} type="button" role="radio" aria-checked={group === item.key} className={group === item.key ? "active" : ""} onClick={() => setGroup(item.key)}>{item.name}</button>)}</div>
+            <div role="radiogroup" aria-label="Periodo">{PERIODS.map((item) => <button key={item.hours} type="button" role="radio" aria-checked={hours === item.hours} className={hours === item.hours ? "active" : ""} onClick={() => setHours(item.hours)}>{item.label}</button>)}</div>
+          </div>
+        </header>
+        {trendError && !trend ? <p className="site-points-empty">{trendError}</p> : trend ? <CompareChart trend={trend} /> : <p className="site-points-empty"><IconRefresh className="spin" size={15} /> Cargando la comparación…</p>}
+      </article>
+      <article className="panel site-events" aria-label="Eventos recientes">
+        <header><h2>Eventos recientes</h2>{onOpenAlarms && <button type="button" className="site-link" onClick={onOpenAlarms}>Ver alertas</button>}</header>
+        {events === null ? <p className="site-points-empty"><IconRefresh className="spin" size={15} /> Cargando…</p> : events.length === 0 ? <p className="site-points-empty">Sin eventos en el sitio.</p> : <ul>{events.map((event) => <li key={event.id}>
+          <i className={`dot ${event.status === "resolved" || event.status === "closed" ? "normal" : event.severity === "critical" ? "critical" : event.severity === "warning" ? "warning" : "offline"}`} />
+          <span><strong>{event.title}</strong><small>{[event.assetName, event.channelName, event.assignedToName ?? (event.status === "open" ? "sin asignar" : null)].filter(Boolean).join(" · ")}</small></span>
+          <time dateTime={event.openedAt}>{clock(event.openedAt, now)}</time>
+        </li>)}</ul>}
+      </article>
+    </div>
   </>;
+}
+
+function clock(iso: string, now: number) {
+  const date = new Date(iso);
+  const sameDay = new Date(now).toDateString() === date.toDateString();
+  return new Intl.DateTimeFormat("es-CL", sameDay ? { hour: "2-digit", minute: "2-digit" } : { day: "numeric", month: "short" }).format(date);
+}
+
+function Sparkline({ values, threshold, tone }: { values: number[]; threshold: number | null; tone: string }) {
+  if (values.length < 2) return <svg className="site-spark" viewBox="0 0 120 30" aria-hidden="true"><line x1="0" x2="120" y1="29" y2="29" className="spark-empty" /></svg>;
+  let low = Math.min(...values), high = Math.max(...values);
+  const near = threshold !== null && threshold <= high + (high - low || 1) * 1.5 && threshold >= low - (high - low || 1) * 1.5;
+  if (near && threshold !== null) { low = Math.min(low, threshold); high = Math.max(high, threshold); }
+  if (high - low < 0.5) { low -= 0.5; high += 0.5; }
+  const y = (value: number) => 28 - (value - low) / (high - low) * 26;
+  const points = values.map((value, index) => `${(index / (values.length - 1) * 120).toFixed(1)},${y(value).toFixed(1)}`).join(" ");
+  return <svg className="site-spark" viewBox="0 0 120 30" preserveAspectRatio="none" aria-hidden="true">
+    {near && threshold !== null && <line x1="0" x2="120" y1={y(threshold)} y2={y(threshold)} className="spark-threshold" />}
+    <polyline points={points} className={`spark-line ${tone}`} />
+  </svg>;
+}
+
+function PointCard({ point, now, sparks, thresholds, onOpen, onDiagnose }: { point: SitePoint; now: number; sparks: Record<Group, Map<string, number[]>> | null; thresholds: Record<Group, number | null>; onOpen: () => void; onDiagnose?: () => void }) {
+  const offline = point.status === "offline";
+  const badge = offline ? point.lastReadAt ? `Sin datos · ${since(point.lastReadAt, now).replace(/^hace /, "")}` : "Nunca reportó" : STATUS[point.status].label;
+  return <article className={`site-card status-${point.status}`}>
+    <button type="button" className="site-card-open" onClick={onOpen} aria-label={`Abrir ${point.name}: ${badge}`} />
+    <header>
+      <i className={`dot ${offline ? "offline" : point.status}`} />
+      <span><strong>{point.name}</strong>{point.deviceCode && <small>{point.deviceCode}</small>}</span>
+      <em className={`site-badge ${point.status}`}>{badge}</em>
+    </header>
+    {offline && <p className="site-card-offline"><span>{point.lastReadAt ? `Sin lecturas desde ${clock(point.lastReadAt, now)}.` : "El equipo aún no envía lecturas."} Revisa la comunicación con el equipo.</span>{onDiagnose && <button type="button" onClick={onDiagnose}>Diagnosticar</button>}</p>}
+    <div className="site-card-metrics">
+      {GROUPS.map((item) => {
+        const cell = point.groups[item.key];
+        const tone = offline || cell.value === null ? "muted" : cell.severity;
+        return <div key={item.key} className="site-metric">
+          <span className="site-metric-label">{item.name}</span>
+          <span className={`site-metric-value ${tone}`}>{offline || cell.value === null ? "—" : number(cell.value, item.key === "temperature" ? 1 : 0)}<small>{offline || cell.value === null ? "" : cell.unit === "%RH" ? "%" : cell.unit ?? ""}</small></span>
+          <Sparkline values={sparks?.[item.key].get(point.id) ?? []} threshold={thresholds[item.key]} tone={tone} />
+          <span className="site-metric-note">{!offline && cell.channelCode ? [cell.channelCode, cell.channelName].filter(Boolean).join(" ") : "Sin lectura vigente"}</span>
+        </div>;
+      })}
+    </div>
+    <footer>
+      <span>{offline ? point.lastReadAt ? `Última lectura ${clock(point.lastReadAt, now)}` : "Sin lecturas" : `Última lectura ${since(point.lastReadAt, now)}`}</span>
+      <span className={point.openAlarms ? `alarms ${point.alarmSeverity ?? "warning"}` : "alarms none"}>{point.openAlarms ? `${point.openAlarms} ${point.openAlarms === 1 ? "alarma abierta" : "alarmas abiertas"}` : "Sin alarmas"}</span>
+    </footer>
+  </article>;
 }
 
 function niceStep(raw: number) {
@@ -228,9 +284,9 @@ function CompareChart({ trend }: { trend: Trend }) {
 
   return <div className="site-compare-chart">
     {hasData && <ul className="site-compare-legend">
-      {lines.filter((line) => line.values.length).map((line) => <li key={line.id}><svg width="22" height="8" aria-hidden="true"><line x1="1" y1="4" x2="21" y2="4" stroke={line.style.color} strokeWidth="2.5" strokeDasharray={line.style.dash} strokeLinecap="round" /></svg>{line.code}</li>)}
+      {lines.filter((line) => line.values.length).map((line) => <li key={line.id}><svg width="22" height="8" aria-hidden="true"><line x1="1" y1="4" x2="21" y2="4" stroke={line.style.color} strokeWidth="2.5" strokeDasharray={line.style.dash} strokeLinecap="round" /></svg>{line.name}</li>)}
       {threshold !== null && <li className="threshold"><svg width="22" height="8" aria-hidden="true"><line x1="1" y1="4" x2="21" y2="4" stroke="#b45309" strokeWidth="1.2" strokeDasharray="4 3" /></svg>Advertencia {number(threshold)} {unit}{reference === null ? " (fuera de escala)" : ""}</li>}
-      {lines.some((line) => !line.values.length) && <li className="muted">Sin datos en el periodo: {lines.filter((line) => !line.values.length).map((line) => line.code).join(", ")}</li>}
+      {lines.some((line) => !line.values.length) && <li className="muted">Sin datos en el periodo: {lines.filter((line) => !line.values.length).map((line) => line.name).join(", ")}</li>}
     </ul>}
     {!hasData ? <p className="site-points-empty">Sin datos en este periodo. Los resúmenes se generan cada 5 minutos a partir de las lecturas.</p> :
       <div className="site-compare-canvas">
@@ -249,7 +305,7 @@ function CompareChart({ trend }: { trend: Trend }) {
         </svg>
         {hover !== null && <div className="site-compare-tooltip" style={{ left: `${Math.min(78, Math.max(4, (x(hover) / width) * 100))}%` }}>
           <strong>{new Intl.DateTimeFormat("es-CL", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(hover)}</strong>
-          {lines.map((line) => { const point = nearest(line.values, hover); return <span key={line.id}><i style={{ background: line.style.color }} />{line.code}<b>{point ? `${number(point[1])} ${unit}` : "—"}</b></span>; })}
+          {lines.map((line) => { const point = nearest(line.values, hover); return <span key={line.id}><i style={{ background: line.style.color }} />{line.name}<b>{point ? `${number(point[1])} ${unit}` : "—"}</b></span>; })}
         </div>}
       </div>}
   </div>;
