@@ -220,7 +220,7 @@ export function NotificationsView({
           : { url: endpointForm.url, destination: endpointForm.destination };
       await requestJson(editingEndpointId ? `/api/v1/notification-endpoints/${editingEndpointId}` : "/api/v1/notification-endpoints", { method: editingEndpointId ? "PATCH" : "POST", body: JSON.stringify({ name: endpointForm.name, kind: endpointForm.kind, configuration, secretReference: endpointForm.secretReference || null, enabled: endpointForm.enabled }) });
       setShowEndpointForm(false);
-      notify(editingEndpointId ? "Canal actualizado y auditado." : "Canal creado en PostgreSQL.");
+      notify(editingEndpointId ? "Canal actualizado y auditado." : "Canal creado.");
       refresh();
     } catch (saveError) { notify(saveError instanceof Error ? saveError.message : "No fue posible guardar el canal.", "warning"); }
     finally { setSaving(false); }

@@ -205,18 +205,11 @@ export function Cam5CommissioningView({ assetId, canExecute, notify, confirm, on
   const detail = summary.ready ? (data.device.state === "active" ? "El equipo está incorporado a la supervisión productiva." : "El expediente está listo para habilitar el equipo.")
     : [summary.failed ? `${summary.failed} con hallazgo` : "", summary.pending ? `${summary.pending} ${summary.pending === 1 ? "pendiente" : "pendientes"}` : ""].filter(Boolean).join(" · ");
   return <>
-    <section className="module-summary-strip commissioning-summary" aria-label="Resumen de puesta en marcha">
-      <span><IconCircuitCell size={15} aria-hidden="true" /><strong>{data.device.code}</strong> · {data.device.modelCode}</span>
-      <span className={gatewayFresh ? "is-ok" : "is-warning"}><IconRouter size={15} aria-hidden="true" />Gateway {data.gateway.code}: <strong>{gatewayFresh ? "comunicando" : "sin comunicación"}</strong></span>
-      <span><IconDatabase size={15} aria-hidden="true" />Última lectura: <strong>{cam5Fresh ? formatDateTime(data.device.lastReadAt) : "sin lecturas"}</strong></span>
-      <span className={`commissioning-state state-${data.device.state}`}><i aria-hidden="true" /> {deviceStateLabel(data.device.state)}</span>
-    </section>
-
     <article className="panel commissioning-module">
       {error && <div className="validation-summary"><IconAlertTriangle size={17} aria-hidden="true" /><div><strong>Los datos podrían estar desactualizados</strong><p>{error}</p></div></div>}
       <header className="commissioning-head">
         <div className="commissioning-head-text">
-          <span className="eyebrow">Expediente · {data.asset.code} · {data.asset.name}</span>
+          <span className="eyebrow">Expediente de puesta en marcha · {data.device.code} · <span className={`commissioning-state state-${data.device.state}`}>{deviceStateLabel(data.device.state)}</span></span>
           <h2>{headline}</h2>
           {detail && <p>{detail}</p>}
           <div className="commissioning-progress" role="progressbar" aria-label="Avance de la puesta en marcha" aria-valuemin={0} aria-valuemax={100} aria-valuenow={summary.percentage}><i style={{ width: `${summary.percentage}%` }} className={summary.ready ? "ready" : summary.failed ? "warning" : ""} /></div>

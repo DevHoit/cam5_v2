@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { AccountView } from "./account-view";
 import { Cam5CommissioningView } from "./cam5-engineering";
 import { DiagnosticsView as DatabaseDiagnosticsView } from "./diagnostics-view";
@@ -24,7 +24,6 @@ import {
   IconChevronRight as ChevronRight,
   IconCircleCheck as CheckCircle2,
   IconCircuitCell as CircuitBoard,
-  IconClipboardCheck as ClipboardCheck,
   IconClock as Clock3,
   IconDatabase as Database,
   IconDeviceFloppy as Save,
@@ -33,7 +32,6 @@ import {
   IconEye as Eye,
   IconEyeOff as EyeOff,
   IconFileReport as FileReport,
-  IconHistory as History,
   IconHierarchy3 as Hierarchy,
   IconKey as Key,
   IconLayoutDashboard as LayoutDashboard,
@@ -42,17 +40,17 @@ import {
   IconMapPin as MapPin,
   IconMenu2 as Menu,
   IconLogout as LogOut,
+  IconMoon as Moon,
+  IconSun as Sun,
   IconPencil as Pencil,
   IconPlugConnected as PlugConnected,
   IconPlus as Plus,
-  IconRadio as Radio,
   IconRefresh as Refresh,
   IconSearch as Search,
   IconServer as Server,
   IconSettings as Settings,
   IconShieldCheck as ShieldCheck,
   IconTemperature as Thermometer,
-  IconTimeline as Timeline,
   IconTrash as Trash,
   IconUpload as Upload,
   IconTrendingUp as TrendingUp,
@@ -249,12 +247,17 @@ function formatDateTime(value?: string | null) {
   return new Intl.DateTimeFormat("es-CL", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(value));
 }
 
+/** Tiempo transcurrido legible: "12 s", "5 min", "3 h", "9 días". */
+function humanAge(totalSeconds: number) {
+  const seconds = Math.max(0, Math.round(totalSeconds));
+  if (seconds < 60) return `${seconds} s`;
+  if (seconds < 3_600) return `${Math.round(seconds / 60)} min`;
+  if (seconds < 172_800) return `${Math.round(seconds / 3_600)} h`;
+  return `${Math.round(seconds / 86_400)} días`;
+}
+
 function formatRelativeTime(value: string) {
-  const seconds = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 1000));
-  if (seconds < 60) return `Hace ${seconds} s`;
-  if (seconds < 3_600) return `Hace ${Math.round(seconds / 60)} min`;
-  if (seconds < 86_400) return `Hace ${Math.round(seconds / 3_600)} h`;
-  return `Hace ${Math.round(seconds / 86_400)} d`;
+  return `Hace ${humanAge((Date.now() - new Date(value).getTime()) / 1000)}`;
 }
 
 function formatDurationSeconds(totalSeconds: number) {
@@ -264,7 +267,7 @@ function formatDurationSeconds(totalSeconds: number) {
   if (totalMinutes < 60) return `${totalMinutes} min`;
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
-  if (hours >= 48) return `${Math.round(totalMinutes / 1440)} d`;
+  if (hours >= 48) return `${Math.round(totalMinutes / 1440)} días`;
   return minutes ? `${hours} h ${minutes} min` : `${hours} h`;
 }
 
@@ -277,8 +280,7 @@ function alarmValue(alarm: PortalAlarm) {
 function telemetryAge(recordedAt: string | null) {
   if (!recordedAt) return "Sin lecturas recibidas";
   const seconds = Math.max(0, Math.round((Date.now() - new Date(recordedAt).getTime()) / 1000));
-  if (seconds < 60) return `Actualizado hace ${seconds} s`;
-  return `Actualizado hace ${Math.round(seconds / 60)} min`;
+  return `Actualizado hace ${humanAge(seconds)}`;
 }
 
 function formatTelemetryValue(value: number | null, unit: string) {
@@ -334,62 +336,60 @@ function useSensorData(override?: PortalTelemetryState) {
   });
 }
 
+// Tema claro u oscuro: lo fija el script de layout.tsx antes de pintar y el botón de la barra lateral.
+function readTheme(): "light" | "dark" { return document.documentElement.dataset.theme === "dark" ? "dark" : "light"; }
+function subscribeTheme(callback: () => void) {
+  window.addEventListener("hoit-theme", callback);
+  return () => window.removeEventListener("hoit-theme", callback);
+}
+
+// Vistas de un punto de medición: se recorren con las pestañas del encabezado del punto.
+const pointViews: View[] = ["overview", "cabinet", "trends", "diagnostics", "commissioning", "settings"];
+const pointTabs: Array<{ id: View; label: string }> = [
+  { id: "overview", label: "Resumen" },
+  { id: "cabinet", label: "Mapa de la celda" },
+  { id: "trends", label: "Tendencias" },
+  { id: "diagnostics", label: "Comunicación" },
+  { id: "commissioning", label: "Puesta en marcha" },
+  { id: "settings", label: "Configuración" },
+];
+
 const navGroups = [
   {
-    index: "01",
     label: "Supervisión",
     items: [
-      { id: "site" as View, label: "Vista del sitio", description: "Todos los puntos", icon: LayoutGrid },
-      { id: "overview" as View, label: "Resumen operativo", description: "Condición general", icon: LayoutDashboard },
-      { id: "cabinet" as View, label: "Mapa de condición", description: "Sensores y cabina", icon: CircuitBoard },
-    ],
-  },
-  {
-    index: "02",
-    label: "Diagnóstico",
-    items: [
-      { id: "diagnostics" as View, label: "Diagnóstico", description: "Controlador, Modbus y gateway", icon: Radio },
-      { id: "commissioning" as View, label: "Puesta en marcha", description: "Conectar y validar CAM-5", icon: ClipboardCheck },
-      { id: "trends" as View, label: "Tendencias", description: "Evolución por canal", icon: History },
-      { id: "alarms" as View, label: "Centro de alertas", description: "Triage y seguimiento", icon: BellRing },
+      { id: "site" as View, label: "Vista del sitio", description: "Todos los puntos de medición", icon: LayoutGrid },
+      { id: "overview" as View, label: "Puntos de medición", description: "Resumen, mapa, tendencias y comunicación de cada punto", icon: LayoutDashboard },
+      { id: "alarms" as View, label: "Alertas", description: "Triage y seguimiento", icon: BellRing },
       { id: "history" as View, label: "Histórico", description: "Mediciones y trazabilidad", icon: Database },
-    ],
-  },
-  {
-    index: "03",
-    label: "Gestión",
-    items: [
-      { id: "assets" as View, label: "Estructura operacional", description: "Clientes, sitios y medición", icon: Factory },
       { id: "reports" as View, label: "Reportes", description: "Informes y programación", icon: FileReport },
     ],
   },
   {
-    index: "04",
     label: "Administración",
     items: [
-      { id: "settings" as View, label: "Configuración", description: "Activo, Modbus y gateway", icon: Settings },
-      { id: "provisioning" as View, label: "Provisionamiento", description: "Credenciales y conexión", icon: Key },
-      { id: "users" as View, label: "Usuarios y roles", description: "Acceso y permisos", icon: Users },
+      { id: "assets" as View, label: "Estructura", description: "Clientes, sitios y medición", icon: Factory },
+      { id: "provisioning" as View, label: "Gateways", description: "Credenciales, versiones y conexión", icon: Key },
+      { id: "users" as View, label: "Usuarios", description: "Acceso, permisos y licencias", icon: Users },
       { id: "notifications" as View, label: "Notificaciones", description: "Canales y escalamiento", icon: Mail },
-      { id: "account" as View, label: "Mi cuenta", description: "Perfil, contraseña y sesiones", icon: ShieldCheck },
     ],
   },
 ];
 
 const viewTitles: Record<View, { title: string; description: string }> = {
   site: { title: "Vista del sitio", description: "Todos los puntos de medición del sitio, lo más grave primero. Entra a uno para ver el detalle." },
-  overview: { title: "Resumen de condición", description: "Condición de los activos críticos en tiempo real." },
+  overview: { title: "Resumen del punto", description: "Condición de los activos críticos en tiempo real." },
   cabinet: { title: "Mapa de condición", description: "Ubicación, lectura y estado de cada canal instrumentado." },
   diagnostics: { title: "Diagnóstico de comunicación", description: "Comprobación de la cadena Controlador → Gateway → HoitLive Core." },
   commissioning: { title: "Puesta en marcha CAM-5", description: "Identidad, entradas, registros, alarmas y controles previos a la conexión productiva." },
   trends: { title: "Tendencias", description: "Evolución térmica, descarga parcial y humedad ambiental." },
-  alarms: { title: "Centro de alertas", description: "Triage operativo, reconocimiento y trazabilidad de eventos." },
+  alarms: { title: "Alertas", description: "Triage operativo, reconocimiento y trazabilidad de eventos." },
   history: { title: "Histórico", description: "Mediciones, alarmas y cambios administrativos en una sola trazabilidad." },
   assets: { title: "Estructura operacional", description: "Clientes, sitios, puntos de medición, gateways y controladores asociados." },
   reports: { title: "Reportes", description: "Informes de condición, eventos y cumplimiento para operación y confiabilidad." },
   settings: { title: "Configuración", description: "Parámetros del activo, canales de adquisición y comunicaciones." },
-  provisioning: { title: "Provisionamiento del gateway", description: "Credenciales seguras, configuración inicial y verificación de conexión." },
-  users: { title: "Usuarios y roles", description: "Control de acceso y permisos para la operación técnica." },
+  provisioning: { title: "Gateways", description: "Credenciales seguras, configuración inicial y verificación de conexión." },
+  users: { title: "Usuarios", description: "Control de acceso y permisos para la operación técnica." },
   notifications: { title: "Notificaciones", description: "Canales de entrega, reglas de escalamiento y trazabilidad." },
   account: { title: "Mi cuenta", description: "Perfil personal, credenciales y sesiones activas del portal." },
 };
@@ -538,39 +538,33 @@ function CabinetDiagram({ selectedId, onSelect }: { selectedId?: string; onSelec
   );
 }
 
-function OverviewChannelRow({ sensor, onOpenTrend }: { sensor: PortalSensor; onOpenTrend: (id: string) => void }) {
-  const displayState: SensorState | "offline" = sensor.quality === "Válida" ? sensor.state : "offline";
-  const stateLabel = displayState === "critical" ? "Crítico" : displayState === "warning" ? "Advertencia" : displayState === "normal" ? "Normal" : sensor.quality;
-  const reference = sensor.critical ?? sensor.warning;
-  const risk = sensor.numericValue !== null && reference !== null && reference > 0 ? sensor.numericValue / reference * 100 : null;
-  const progress = risk === null ? 0 : Math.max(0, Math.min(100, risk));
-  const thresholdLabel = sensor.critical === null
-    ? sensor.warning === null ? "Sin umbrales" : `Advertencia ${sensor.warning} ${sensor.unit}`
-    : risk === null ? `Crítico ${sensor.critical} ${sensor.unit}`
-      : risk >= 100 ? `Supera el crítico en ${formatTelemetryValue(sensor.numericValue! - sensor.critical, sensor.unit)} ${sensor.unit}`
-        : `${Math.round(risk)}% del umbral crítico`;
-  const Icon = sensor.metric === "temperature" || sensor.metric === "ambient" ? Thermometer : sensor.metric === "humidity" ? Droplets : Activity;
-
-  const fresh = sensor.quality === "Válida";
-  const age = sensor.trend.replace(/^Actualizado /, "");
-  const note = fresh ? thresholdLabel : `Sin dato vigente · ${age}`;
-  return <button type="button" className={`overview-channel-card channel-${displayState}${fresh ? "" : " is-stale"}`} onClick={() => onOpenTrend(sensor.id)} title={`${sensor.label} · ${sensor.zone}. Abrir tendencia`} aria-label={`${sensor.id} ${sensor.label}, ${sensor.zone}: ${sensor.value} ${sensor.unit}, ${stateLabel}. ${note}. Abrir tendencia`}>
-    <span className="overview-channel-top"><span className="overview-channel-name"><Icon size={14} aria-hidden="true" /><b>{sensor.id}</b><strong>{sensor.label}</strong></span><i className={`overview-channel-state state-${displayState}`}><b />{stateLabel}</i></span>
-    <span className="overview-channel-reading"><strong>{sensor.value}</strong><small>{sensor.unit}</small><span className="overview-channel-note">{note}</span><TrendingUp className="overview-channel-open" size={15} aria-hidden="true" /></span>
-    <i className="overview-channel-bar" aria-hidden="true"><b style={{ width: `${fresh ? progress : 0}%` }} /></i>
-  </button>;
-}
-
 function Overview({ onNavigate, onOpenTrend, onAcknowledge, activeAlarms, alarmSummary, point }: { onNavigate: (view: View) => void; onOpenTrend: (id: string) => void; onAcknowledge: (id: string) => void; activeAlarms: PortalAlarm[]; alarmSummary: { critical: number; warning: number }; point?: PortalHierarchy["points"][number] }) {
   const telemetryState = useContext(TelemetryContext);
   const telemetry = telemetryState.data;
   const sensors = useSensorData();
-  if (!telemetry && telemetryState.status !== "ready") return <div className="operational-overview" aria-live="polite" aria-busy={telemetryState.status === "loading"}><section className={`panel telemetry-state-panel telemetry-state-${telemetryState.status}`}><span><Refresh className={telemetryState.status === "loading" ? "spin" : ""} size={26} /></span><div><span className="eyebrow">{point ? `${point.code} · ${point.name}` : "Contexto operacional"}</span><h2>{telemetryState.status === "loading" ? "Cargando estado operativo" : "Estado operativo no disponible"}</h2><p>{telemetryState.status === "loading" ? "Estamos verificando el gateway, el controlador CAM-5, las lecturas vigentes y las alertas. No mostraremos indicadores hasta contar con una respuesta confiable." : "La consulta no pudo completarse. Esto no significa que el gateway esté desconectado; su estado permanece sin verificar hasta una nueva consulta."}</p><div className="telemetry-check-list"><span><Server size={16} /> Gateway <b>Verificando</b></span><span><CircuitBoard size={16} /> CAM-5 <b>Verificando</b></span><span><Database size={16} /> Canales <b>Verificando</b></span></div></div></section></div>;
+  const pointId = telemetry?.point.id ?? point?.id ?? "";
+  const channelCodes = sensors.filter((sensor) => sensor.enabled).map((sensor) => sensor.id).join(",");
+  const [series, setSeries] = useState<Record<string, number[]>>({});
+  // Mini-gráficas de 24 h de cada canal a 5 min; la API compara hasta 4 canales por consulta, así que van en
+  // lotes de 4. Se renuevan cada 5 minutos.
+  useEffect(() => {
+    if (!pointId || !channelCodes) return;
+    let active = true;
+    const codes = channelCodes.split(",");
+    const batches = Array.from({ length: Math.ceil(codes.length / 4) }, (_, index) => codes.slice(index * 4, index * 4 + 4));
+    const load = () => Promise.all(batches.map((batch) => portalRequest<{ series: Array<{ code: string; points: Array<{ value: number | null }> }> }>(`/api/v1/trends?assetId=${encodeURIComponent(pointId)}&channels=${encodeURIComponent(batch.join(","))}&resolution=300`)
+      .then((result) => result.series)
+      .catch(() => [])))
+      .then((results) => { if (active) setSeries(Object.fromEntries(results.flat().map((item) => [item.code, item.points.map((entry) => entry.value).filter((value): value is number => value !== null)]))); });
+    void load();
+    const timer = window.setInterval(() => { void load(); }, 300_000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [pointId, channelCodes]);
+  if (!telemetry && telemetryState.status !== "ready") return <div className="operational-overview" aria-live="polite" aria-busy={telemetryState.status === "loading"}><section className={`panel telemetry-state-panel telemetry-state-${telemetryState.status}`}><span><Refresh className={telemetryState.status === "loading" ? "spin" : ""} size={26} /></span><div><span className="eyebrow">{point ? point.name : "Contexto operacional"}</span><h2>{telemetryState.status === "loading" ? "Cargando estado operativo" : "Estado operativo no disponible"}</h2><p>{telemetryState.status === "loading" ? "Estamos verificando el gateway, el controlador CAM-5, las lecturas vigentes y las alertas. No mostraremos indicadores hasta contar con una respuesta confiable." : "La consulta no pudo completarse. Esto no significa que el gateway esté desconectado; su estado permanece sin verificar hasta una nueva consulta."}</p><div className="telemetry-check-list"><span><Server size={16} /> Gateway <b>Verificando</b></span><span><CircuitBoard size={16} /> CAM-5 <b>Verificando</b></span><span><Database size={16} /> Canales <b>Verificando</b></span></div></div></section></div>;
   const activeSensors = sensors.filter((sensor) => sensor.enabled);
   const visibleSensors = activeSensors.filter((sensor) => sensor.visible);
   const readableSensors = activeSensors.filter((sensor) => sensor.numericValue !== null && sensor.recordedAt !== null);
   const freshSensors = readableSensors.filter((sensor) => sensor.quality === "Válida");
-  const unavailableCount = activeSensors.length - freshSensors.length;
   const activeInputCount = telemetry?.inputSummary.assigned ?? new Set(activeSensors.map((sensor) => sensor.sourceId).filter((source) => source !== "Sin entrada")).size;
   const totalInputCount = telemetry?.inputSummary.total ?? 0;
   const riskRatio = (sensor: PortalSensor) => {
@@ -579,61 +573,101 @@ function Overview({ onNavigate, onOpenTrend, onAcknowledge, activeAlarms, alarmS
   };
   const sensorPriority = (sensor: PortalSensor) => sensor.quality !== "Válida" ? 3 : sensor.state === "critical" ? 4 : sensor.state === "warning" ? 2 : 1;
   const rankedSensors = [...visibleSensors].sort((left, right) => sensorPriority(right) - sensorPriority(left) || riskRatio(right) - riskRatio(left) || left.displayOrder - right.displayOrder);
-  const conditionCounts = {
-    critical: freshSensors.filter((sensor) => sensor.state === "critical").length,
-    warning: freshSensors.filter((sensor) => sensor.state === "warning").length,
-    normal: freshSensors.filter((sensor) => sensor.state === "normal").length,
-  };
-  const visibleConditionCounts = {
-    critical: visibleSensors.filter((sensor) => sensor.quality === "Válida" && sensor.state === "critical").length,
-    warning: visibleSensors.filter((sensor) => sensor.quality === "Válida" && sensor.state === "warning").length,
-    normal: visibleSensors.filter((sensor) => sensor.quality === "Válida" && sensor.state === "normal").length,
-  };
-  const conditionState: SensorState = conditionCounts.critical ? "critical" : conditionCounts.warning ? "warning" : "normal";
   const severityRank: Record<PortalAlarm["severity"], number> = { critical: 3, warning: 2, normal: 1 };
   const rankedAlarms = [...activeAlarms].sort((left, right) => severityRank[right.severity] - severityRank[left.severity] || new Date(right.openedAt).getTime() - new Date(left.openedAt).getTime());
-  const priorityAlarm = rankedAlarms[0] ?? null;
   const alarmTotal = alarmSummary.critical + alarmSummary.warning;
   const gatewayOnline = telemetry?.gateway?.state === "online";
-  const alarmCondition = priorityAlarm?.severity === "critical" ? "critical" : priorityAlarm?.severity === "warning" ? "warning" : conditionState;
-  const overallState: SensorState | "waiting" | "stale" | "offline" = !gatewayOnline ? "offline" : !readableSensors.length ? "waiting" : !freshSensors.length ? "stale" : alarmCondition;
   const pointRecord = telemetry?.point ?? point;
   const latestReadingAt = readableSensors.reduce<string | null>((latest, sensor) => !latest || new Date(sensor.recordedAt!).getTime() > new Date(latest).getTime() ? sensor.recordedAt : latest, null);
-  const statusTitle = priorityAlarm?.title ?? (!gatewayOnline ? "Adquisición sin comunicación" : !readableSensors.length ? "Esperando las primeras lecturas" : !freshSensors.length ? "Las lecturas están atrasadas" : conditionState === "critical" ? "Hay señales en condición crítica" : conditionState === "warning" ? "Hay señales que requieren atención" : "Operación sin eventos activos");
-  const statusDetail = priorityAlarm ? priorityAlarm.detail || "Existe un evento activo que requiere revisión en el Centro de alertas." : !gatewayOnline ? "La consulta confirmó que el gateway no mantiene comunicación activa." : !readableSensors.length ? "El gateway está en línea y el portal espera el primer conjunto de mediciones del controlador." : !freshSensors.length ? "Las últimas mediciones superan el tiempo de frescura configurado y no se presentan como actuales." : "Los canales vigentes se encuentran dentro de sus reglas operacionales configuradas.";
-  const highestRiskSensor = [...freshSensors].sort((left, right) => riskRatio(right) - riskRatio(left))[0] ?? null;
-  const highestRiskPercent = highestRiskSensor && riskRatio(highestRiskSensor) >= 0 ? Math.round(riskRatio(highestRiskSensor) * 100) : null;
 
-  return <div className="operational-overview">
-    <section className={`panel overview-statusbar overview-command-${overallState}`} title={statusDetail}>
-      <span className="overview-statusbar-icon">{overallState === "normal" ? <CheckCircle2 size={22} /> : overallState === "waiting" || overallState === "stale" ? <Clock3 size={22} /> : <AlertTriangle size={22} />}</span>
-      <div className="overview-statusbar-asset"><span className="eyebrow">{pointRecord ? `${pointRecord.code} · ${pointRecord.name}` : "Punto sin seleccionar"}</span><strong>{statusTitle}</strong><small>{pointRecord?.nominalVoltageKv ? `${pointRecord.nominalVoltageKv} kV · ` : ""}{telemetry?.point.area || "Ubicación no informada"}</small></div>
-      <div className="overview-statusbar-health"><StatusPill state={overallState}>{overallState === "offline" ? "Sin comunicación" : overallState === "waiting" ? "Esperando datos" : overallState === "stale" ? "Datos atrasados" : overallState === "critical" ? "Condición crítica" : overallState === "warning" ? "Atención requerida" : "Operación normal"}</StatusPill><span><Wifi size={15} />{telemetry?.gateway?.code ?? "Sin gateway"} · {telemetryAge(telemetry?.gateway?.lastSeenAt ?? null)}</span></div>
-      {priorityAlarm && <strong className="overview-priority-value">{alarmValue(priorityAlarm)}</strong>}
-      <div className="overview-statusbar-actions"><button onClick={() => onNavigate("alarms")}>Alertas <ChevronRight size={15} /></button><button onClick={() => onNavigate("cabinet")}>Mapa <ChevronRight size={15} /></button></div>
-    </section>
+  const metricGroups: Array<{ key: string; title: string; metrics: PortalSensor["metric"][] }> = [
+    { key: "temperature", title: "Temperatura", metrics: ["temperature", "ambient"] },
+    { key: "humidity", title: "Humedad", metrics: ["humidity"] },
+    { key: "discharge", title: "Descarga parcial UHF", metrics: ["pd", "sd"] },
+    { key: "other", title: "Otras variables", metrics: ["other"] },
+  ];
+  const groupedSections = metricGroups.map((group) => {
+    const rows = rankedSensors.filter((sensor) => group.metrics.includes(sensor.metric));
+    const fresh = rows.filter((sensor) => sensor.quality === "Válida" && sensor.numericValue !== null);
+    const top = fresh.reduce<PortalSensor | null>((best, sensor) => !best || (sensor.numericValue ?? 0) > (best.numericValue ?? 0) ? sensor : best, null);
+    return { ...group, rows, summary: `${rows.length} ${rows.length === 1 ? "sensor" : "sensores"}${top ? ` · máximo ${top.value} ${top.unit}` : ""}` };
+  }).filter((group) => group.rows.length);
+  const device = telemetry?.device;
 
-    <section className="overview-metric-grid" aria-label="Indicadores operativos">
-      <article className={alarmSummary.critical ? "metric-critical" : "metric-normal"}><span><AlertTriangle size={19} /></span><div><small>Alertas activas</small><strong>{alarmTotal}</strong><p><b>{alarmSummary.critical} críticas</b> · {alarmSummary.warning} advertencias</p></div></article>
-      <article className={unavailableCount ? "metric-warning" : "metric-normal"}><span><Activity size={19} /></span><div><small>Canales vigentes</small><strong>{freshSensors.length}<i> / {activeSensors.length}</i></strong><p>{unavailableCount ? `${unavailableCount} requieren revisión` : "Cobertura de datos completa"}</p></div></article>
-      <article className={!highestRiskSensor ? "metric-info" : highestRiskSensor.state === "critical" ? "metric-critical" : highestRiskSensor.state === "warning" ? "metric-warning" : "metric-normal"}><span><Timeline size={19} /></span><div><small>Mayor exigencia</small><strong>{highestRiskPercent === null ? "—" : `${highestRiskPercent}%`}</strong><p>{highestRiskSensor ? `${highestRiskSensor.id} · ${highestRiskSensor.label}` : "Sin datos comparables"}</p></div></article>
-      <article className={latestReadingAt ? "metric-info" : "metric-warning"}><span><Clock3 size={19} /></span><div><small>Última muestra</small><strong className="metric-time">{latestReadingAt ? formatRelativeTime(latestReadingAt) : "Sin datos"}</strong><p>{telemetry?.device?.code ?? "Controlador no configurado"}</p></div></article>
-    </section>
+  return <div className="point-overview">
+    <div className="point-overview-main">
+      {groupedSections.map((group) => <section className="panel point-group" key={group.key} aria-label={group.title}>
+        <header><h2>{group.title}</h2><span>{group.summary}</span><button type="button" className="point-link" onClick={() => onNavigate("trends")}>Tendencia</button></header>
+        <div className="point-table" role="table">
+          <div className="point-row point-head" role="row"><span role="columnheader">Canal</span><span role="columnheader">Últimas 24 h</span><span role="columnheader" className="num">Valor</span><span role="columnheader">Respecto del umbral</span><span role="columnheader">Estado</span></div>
+          {group.rows.map((sensor) => <PointChannelRow key={sensor.id} sensor={sensor} series={series[sensor.id]} onOpen={() => onOpenTrend(sensor.id)} />)}
+        </div>
+      </section>)}
+      {!groupedSections.length && <section className="panel point-group"><TableEmptyState title="No hay canales visibles" detail="Usa Personalizar canales para elegir las variables de este resumen." /></section>}
+    </div>
 
-    <section className="overview-workbench">
-      <article className="panel overview-channels-panel">
-        <header className="panel-header"><div><span className="eyebrow">Supervisión en tiempo real</span><h2>Variables visibles</h2><p>{visibleSensors.length} de {activeSensors.length} canales monitoreados · ordenados por prioridad operacional.</p></div><button className="secondary-button" onClick={() => onNavigate("trends")}><TrendingUp size={16} /> Comparar tendencias</button></header>
-        <div className="overview-channel-grid">{rankedSensors.map((sensor) => <OverviewChannelRow key={sensor.id} sensor={sensor} onOpenTrend={onOpenTrend} />)}{!rankedSensors.length && <TableEmptyState title="No seleccionaste canales visibles" detail="Usa Personalizar canales para elegir las variables que quieres ver en este resumen." />}</div>
-        <footer className="overview-channel-footer"><span><i className="critical" />{visibleConditionCounts.critical} críticos</span><span><i className="warning" />{visibleConditionCounts.warning} advertencias</span><span><i className="normal" />{visibleConditionCounts.normal} normales</span><span><i className="offline" />{activeSensors.length - visibleSensors.length} ocultos</span><button onClick={() => onNavigate("cabinet")}>Ver distribución en la cabina <ChevronRight size={15} /></button></footer>
-      </article>
+    <aside className="point-overview-side">
+      <section className="panel point-side">
+        <header><h2>{rankedAlarms.length === 1 ? "Alerta activa" : "Alertas activas"}</h2>{alarmTotal > 0 && <button type="button" className="point-link" onClick={() => onNavigate("alarms")}>Ver todas</button>}</header>
+        {rankedAlarms.length === 0 ? <p className="point-empty">Sin alertas activas en este punto.</p> : rankedAlarms.slice(0, 3).map((alarm) => <article className={`point-alert ${alarm.severity}`} key={alarm.id}>
+          <span className="point-alert-kind">{alarm.severity === "critical" ? "Crítica" : "Advertencia"} · {alarm.channelCode ? alarm.channelName ?? alarm.channelCode : "Comunicación"}</span>
+          <strong>{alarm.title}</strong>
+          <small>{[alarmValue(alarm) !== "—" ? alarmValue(alarm) : null, formatRelativeTime(alarm.openedAt).toLowerCase().replace(/^hace/, "abierta hace"), alarm.assignedToName ?? "sin asignar"].filter(Boolean).join(" · ")}</small>
+          {alarm.status === "open" ? <div><button type="button" className="primary-button small" onClick={() => onAcknowledge(alarm.id)}>Reconocer</button><button type="button" className="secondary-button small" onClick={() => onNavigate("alarms")}>Asignar</button></div> : <em>Reconocida</em>}
+        </article>)}
+      </section>
 
-      <div className="overview-side-column">
-        <article className="panel overview-alerts-panel"><header className="panel-header compact"><div><span className="eyebrow">Atención requerida</span><h2>Eventos prioritarios</h2><p>Primero los críticos, luego los más recientes.</p></div><StatusPill state={priorityAlarm?.severity ?? "normal"}>{alarmTotal ? `${alarmTotal} activos` : "Sin pendientes"}</StatusPill></header><div className="overview-alert-list">{rankedAlarms.slice(0, 4).map((alarm) => { const value = alarmValue(alarm); return <article className={`overview-alert overview-alert-${alarm.severity}`} key={alarm.id}><div className="overview-alert-main"><span className="overview-alert-meta"><i aria-hidden="true" />{alarm.severity === "critical" ? "Crítica" : "Advertencia"} · {alarm.channelCode ?? "Comunicación"} · {alarm.assetCode}</span><strong>{alarm.title}</strong><small>{formatRelativeTime(alarm.openedAt)}{alarm.assignedToName ? ` · ${alarm.assignedToName}` : " · Sin asignar"}</small></div><div className="overview-alert-side">{value !== "—" && <b>{value}</b>}{alarm.status === "open" ? <button onClick={() => onAcknowledge(alarm.id)}>Reconocer</button> : <i>Reconocida</i>}</div></article>; })}{activeAlarms.length === 0 && <TableEmptyState title="Sin alertas activas" detail="No hay eventos abiertos o reconocidos para este punto de medición." />}</div><button className="text-action" onClick={() => onNavigate("alarms")}>Gestionar todas las alertas <span>→</span></button></article>
+      <section className="panel point-side">
+        <header><h2>Cadena de adquisición</h2><button type="button" className="point-link" onClick={() => onNavigate("diagnostics")}>Diagnóstico</button></header>
+        <ul className="point-chain">
+          <li><i className={`dot ${device ? freshSensors.length ? "normal" : "warning" : "offline"}`} /><span><strong>{device?.code ?? "Controlador"}</strong><small>{device ? `${activeInputCount} de ${totalInputCount} entradas asignadas` : "No configurado"}</small></span><b>{latestReadingAt ? formatRelativeTime(latestReadingAt).replace(/^Hace /, "hace ") : "sin datos"}</b></li>
+          <li><i className={`dot ${gatewayOnline ? "normal" : "critical"}`} /><span><strong>{telemetry?.gateway?.code ?? "Gateway"}</strong><small>{gatewayOnline ? "En línea" : "Sin comunicación"}</small></span><b>{telemetryAge(telemetry?.gateway?.lastSeenAt ?? null).replace("Actualizado ", "")}</b></li>
+          <li><i className={`dot ${freshSensors.length ? "normal" : "offline"}`} /><span><strong>HoitLive Core</strong><small>{freshSensors.length} de {activeSensors.length} canales vigentes</small></span><b>vigencia {telemetry?.staleAfterSeconds ?? 30} s</b></li>
+        </ul>
+      </section>
 
-        <article className="panel overview-acquisition-panel"><header><span className="overview-acquisition-icon"><Radio size={20} /></span><div><span className="eyebrow">Cadena de adquisición</span><h2>{gatewayOnline && freshSensors.length ? "Telemetría disponible" : "Revisión necesaria"}</h2></div></header><div className="overview-data-path"><span className={gatewayOnline ? "healthy" : "offline"}><i><Server size={17} /></i><b>Gateway</b><small>{telemetry?.gateway?.code ?? "No configurado"}</small></span><ChevronRight size={16} /><span className={telemetry?.device ? "healthy" : "offline"}><i><CircuitBoard size={17} /></i><b>CAM-5</b><small>{telemetry?.device?.code ?? "No configurado"}</small></span><ChevronRight size={16} /><span className={freshSensors.length ? "healthy" : "offline"}><i><Database size={17} /></i><b>Core</b><small>{freshSensors.length ? "Recibiendo" : "Sin datos"}</small></span></div><dl><div><dt>Entradas asignadas</dt><dd>{activeInputCount} / {totalInputCount}</dd></div><div><dt>Ventana de vigencia</dt><dd>{telemetry?.staleAfterSeconds ?? 30} s</dd></div><div><dt>Último contacto</dt><dd>{telemetryAge(telemetry?.gateway?.lastSeenAt ?? null).replace("Actualizado ", "")}</dd></div></dl><button onClick={() => onNavigate("diagnostics")}>Abrir diagnóstico técnico <ChevronRight size={16} /></button></article>
-      </div>
-    </section>
+      <section className="panel point-side">
+        <header><h2>Equipo</h2></header>
+        <dl className="point-facts">
+          <dt>Controlador</dt><dd>{device?.code ?? "No configurado"}</dd>
+          {pointRecord?.nominalVoltageKv ? <><dt>Tensión</dt><dd>{pointRecord.nominalVoltageKv} kV</dd></> : null}
+          <dt>Ubicación</dt><dd>{telemetry?.point.area || "No informada"}</dd>
+          <dt>Canales</dt><dd>{activeSensors.length} activos · {visibleSensors.length} visibles</dd>
+        </dl>
+      </section>
+    </aside>
   </div>;
+}
+
+function MiniSparkline({ values, threshold, tone }: { values: number[]; threshold: number | null; tone: string }) {
+  if (values.length < 2) return <svg className="point-spark" viewBox="0 0 120 26" aria-hidden="true"><line x1="0" x2="120" y1="25" y2="25" className="spark-empty" /></svg>;
+  let low = Math.min(...values), high = Math.max(...values);
+  const span = high - low || 1;
+  const near = threshold !== null && threshold <= high + span * 1.5 && threshold >= low - span * 1.5;
+  if (near && threshold !== null) { low = Math.min(low, threshold); high = Math.max(high, threshold); }
+  if (high - low < 0.5) { low -= 0.5; high += 0.5; }
+  const y = (value: number) => 24 - (value - low) / (high - low) * 22;
+  return <svg className="point-spark" viewBox="0 0 120 26" preserveAspectRatio="none" aria-hidden="true">
+    {near && threshold !== null && <line x1="0" x2="120" y1={y(threshold)} y2={y(threshold)} className="spark-threshold" />}
+    <polyline points={values.map((value, index) => `${(index / (values.length - 1) * 120).toFixed(1)},${y(value).toFixed(1)}`).join(" ")} className={`spark-line ${tone}`} />
+  </svg>;
+}
+
+function PointChannelRow({ sensor, series, onOpen }: { sensor: PortalSensor; series?: number[]; onOpen: () => void }) {
+  const fresh = sensor.quality === "Válida" && sensor.numericValue !== null;
+  const tone = !fresh ? "muted" : sensor.state;
+  const reference = sensor.critical ?? sensor.warning;
+  const percent = fresh && reference ? Math.round(sensor.numericValue! / reference * 100) : null;
+  const warningPercent = sensor.warning !== null && reference ? sensor.warning / reference * 100 : null;
+  const limits = [sensor.warning !== null ? `Advertencia ${sensor.warning}` : null, sensor.critical !== null ? `Crítico ${sensor.critical}` : null].filter(Boolean).join(" · ") || "Sin umbrales";
+  const state = !fresh ? (sensor.recordedAt ? `Sin dato · ${formatRelativeTime(sensor.recordedAt).replace(/^Hace /, "")}` : "Sin lecturas") : sensor.state === "critical" ? "Crítico" : sensor.state === "warning" ? "Advertencia" : "Normal";
+  return <button type="button" role="row" className={`point-row tone-${tone}`} onClick={onOpen} aria-label={`${sensor.id} ${sensor.label}: ${fresh ? `${sensor.value} ${sensor.unit}` : "sin dato vigente"}, ${state}. Abrir tendencia`}>
+    <span role="cell" className="point-channel"><strong>{sensor.id} <span>{sensor.label}</span></strong><small>{sensor.zone}</small></span>
+    <span role="cell"><MiniSparkline values={series ?? []} threshold={sensor.warning} tone={tone} /></span>
+    <span role="cell" className={`num point-value ${tone}`}>{fresh ? sensor.value : "—"}<small>{fresh ? sensor.unit : ""}</small></span>
+    <span role="cell" className="point-limit"><span className="point-bar">{percent !== null && <i className={percent >= 100 ? "critical" : warningPercent !== null && percent >= warningPercent ? "warning" : percent >= 85 ? "near" : ""} style={{ width: `${Math.min(100, Math.max(2, percent))}%` }} />}{warningPercent !== null && warningPercent < 100 && <b style={{ left: `${warningPercent}%` }} />}</span><small>{limits}</small></span>
+    <span role="cell" className={`point-state ${tone}`}>{state}</span>
+  </button>;
 }
 
 function CabinetView({ onOpenTrend }: { onOpenTrend: (id: string) => void }) {
@@ -667,7 +701,7 @@ function CabinetView({ onOpenTrend }: { onOpenTrend: (id: string) => void }) {
   return (
     <section className="cabinet-view-grid">
       <article className="panel cabinet-full-panel">
-        <div className="panel-header"><div><span className="eyebrow">Mapa de condición de la cabina</span><h2>{telemetry?.point ? `${telemetry.point.code} · ${telemetry.point.name}` : "Punto de medición"}</h2><p>{visibleSensors.length} canales en {zoneCount} {zoneCount === 1 ? "zona" : "zonas"}{hiddenChannels ? ` · ${hiddenChannels} ocultos por tu selección` : ""}{telemetry?.point.nominalVoltageKv ? ` · ${telemetry.point.nominalVoltageKv} kV` : ""}</p></div><StatusPill state={overallState}>{statusText}</StatusPill></div>
+        <div className="panel-header"><div><h2>Distribución en la celda</h2><p>{visibleSensors.length} canales en {zoneCount} {zoneCount === 1 ? "zona" : "zonas"}{hiddenChannels ? ` · ${hiddenChannels} ocultos por tu selección` : ""}{telemetry?.point.nominalVoltageKv ? ` · ${telemetry.point.nominalVoltageKv} kV` : ""}</p></div><StatusPill state={overallState}>{statusText}</StatusPill></div>
         <CabinetDiagram selectedId={selected?.id} onSelect={selectChannel} />
         <div className="diagram-legend"><span><i className="dot-normal" />Normal</span><span><i className="dot-warning" />Advertencia</span><span><i className="dot-critical" />Crítico</span><span><i className="dot-disabled" />Sin dato vigente</span><small>Selecciona un canal para ver su detalle.</small></div>
       </article>
@@ -870,9 +904,9 @@ function AlarmsView({ assetId, permissions, onSummaryChange, onOpenTrend }: { as
       </section>
       <article className="panel alarm-table-panel">
         <div className="alarm-toolbar"><label className="search-field"><Search size={17} /><input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="Buscar código, canal, activo o mensaje…" /></label><div className="alarm-filters"><label className="status-filter"><span>Estado</span><select value={workflowStatus} onChange={(event) => { setWorkflowStatus(event.target.value as typeof workflowStatus); setPage(1); }}><option value="all">Todos</option><option value="open">Abiertas</option><option value="acknowledged">Reconocidas</option><option value="resolved">Atendidas</option><option value="closed">Cerradas</option></select><ChevronDown size={13} /></label><div className="segmented">{(["all", "critical", "warning", "normal"] as const).map((item) => <button key={item} className={severity === item ? "active" : ""} onClick={() => { setSeverity(item); setPage(1); }}>{item === "all" ? "Todas" : item === "critical" ? "Críticas" : item === "warning" ? "Advertencias" : "Informativas"}</button>)}</div></div></div>
-        {error ? <div className="load-error"><AlertTriangle size={18} />{error}<button onClick={() => void loadAlarms()}>Reintentar</button></div> : <div className="alarm-table-wrap"><div className="alarm-table"><div className="alarm-table-head"><span>Severidad</span><span>Evento</span><span>Abierta</span><span>Valor</span><span>Estado</span></div>{loading ? <TableEmptyState title="Cargando eventos" detail="Consultando alarmas y trazabilidad del punto activo." /> : result?.items.map((alarm) => <div className={`alarm-table-row ${selectedId === alarm.id ? "selected" : ""}`} key={alarm.id}><span><StatusPill state={alarm.severity === "normal" ? "info" : alarm.severity}>{alarm.severity === "critical" ? "Crítica" : alarm.severity === "warning" ? "Advertencia" : "Informativa"}</StatusPill></span><span className="event-cell"><strong>{alarm.title}</strong><small>{alarm.code} · {alarm.assetCode}{alarm.channelCode ? ` · ${alarm.channelCode}` : ""}</small></span><span>{formatRelativeTime(alarm.openedAt)}</span><span><strong>{alarmValue(alarm)}</strong></span><span className={`workflow-state workflow-${alarm.status}`}>{statusText(alarm.status)}</span><button type="button" className="alarm-row-select" aria-pressed={selectedId === alarm.id} aria-label={`Gestionar ${alarm.title}`} onClick={() => selectAlarm(alarm.id)} /></div>)}{!loading && !result?.items.length && <TableEmptyState title="No hay eventos con estos filtros" detail="El motor conservará aquí las alarmas que genere la telemetría." />}</div></div>}
+        {error ? <div className="load-error"><AlertTriangle size={18} />{error}<button onClick={() => void loadAlarms()}>Reintentar</button></div> : <div className="alarm-table-wrap"><div className="alarm-table"><div className="alarm-table-head"><span>Severidad</span><span>Evento</span><span>Abierta</span><span>Valor</span><span>Estado</span></div>{loading ? <TableEmptyState title="Cargando eventos" detail="Consultando alarmas y trazabilidad del punto activo." /> : result?.items.map((alarm) => <div className={`alarm-table-row ${selectedId === alarm.id ? "selected" : ""}`} key={alarm.id}><span><StatusPill state={alarm.severity === "normal" ? "info" : alarm.severity}>{alarm.severity === "critical" ? "Crítica" : alarm.severity === "warning" ? "Advertencia" : "Informativa"}</StatusPill></span><span className="event-cell"><strong>{alarm.title}</strong><small>{alarm.assetName}{alarm.channelName ? ` · ${alarm.channelName}` : ""}</small></span><span>{formatRelativeTime(alarm.openedAt)}</span><span><strong>{alarmValue(alarm)}</strong></span><span className={`workflow-state workflow-${alarm.status}`}>{statusText(alarm.status)}</span><button type="button" className="alarm-row-select" aria-pressed={selectedId === alarm.id} aria-label={`Gestionar ${alarm.title}`} onClick={() => selectAlarm(alarm.id)} /></div>)}{!loading && !result?.items.length && <TableEmptyState title="No hay eventos con estos filtros" detail="El motor conservará aquí las alarmas que genere la telemetría." />}</div></div>}
         {result && <Pagination page={result.page} totalPages={result.totalPages} total={result.total} pageSize={result.pageSize} onPageChange={setPage} itemLabel="eventos" />}
-        {selected && <section className={`event-detail-panel event-${selected.severity}`}><div className="event-detail-header"><span className="event-detail-icon"><AlertTriangle size={20} /></span><div><span className="eyebrow">{selected.kind === "communication" ? "Comunicación" : selected.kind === "data_quality" ? "Calidad de datos" : "Umbral"} · {selected.code}</span><h2>{selected.title}</h2><p>{selected.detail || `${selected.assetCode} · ${selected.channelName ?? "Punto de medición"}`}</p></div><span className={`workflow-badge workflow-${selected.status}`}>{statusText(selected.status)}</span></div><div className="event-workspace"><div className="event-management"><dl className="event-facts"><div><dt>Valor detectado</dt><dd>{alarmValue(selected)}</dd></div><div><dt>Última observación</dt><dd>{formatDateTime(selected.lastObservedAt)}</dd></div><div><dt>Responsable</dt><dd><select aria-label="Responsable" disabled={!canOperate || busyAction !== ""} value={selected.assignedToId ?? ""} onChange={(event) => void updateAlarm("assign", { assignedTo: event.target.value || null })}><option value="">Sin asignar</option>{result?.assignees.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</select></dd></div></dl><div className="event-actions">{selected.channelCode && <button className="secondary-button" onClick={() => onOpenTrend(selected.channelCode!, selected.openedAt)}><TrendingUp size={15} /> Ver tendencia de origen</button>}{selected.status === "open" && canOperate && <button className="primary-button" disabled={busyAction !== ""} onClick={() => void updateAlarm("acknowledge")}><CheckCircle2 size={15} /> Reconocer</button>}{selected.status !== "closed" && selected.status !== "resolved" && canClose && <button className="secondary-button" disabled={busyAction !== ""} onClick={() => void updateAlarm("resolve")}><ShieldCheck size={15} /> Marcar atendida</button>}{(selected.status === "closed" || selected.status === "resolved") && canClose && <button className="secondary-button" disabled={busyAction !== ""} onClick={() => void updateAlarm("reopen")}>Reabrir</button>}</div>{!canOperate && !canClose && <p className="permission-note"><ShieldCheck size={15} /> Tu perfil puede consultar la trazabilidad, sin modificarla.</p>}</div><div className="event-timeline"><h3>Línea de tiempo</h3>{detailLoading ? <p>Cargando trazabilidad…</p> : events.map((event) => <div key={event.id}><span className={`timeline-dot ${event.type.includes("resolved") || event.type === "closed" ? "normal" : event.type === "opened" ? selected.severity : "info"}`} /><p><strong>{eventText(event.type)}</strong><small>{formatDateTime(event.createdAt)} · {event.actorName}{event.note ? ` · ${event.note}` : ""}</small></p></div>)}</div></div>{(canOperate || (selected.status === "resolved" && canClose)) && <form className={`event-note-form ${selected.status === "resolved" ? "closing" : ""}`} onSubmit={(event) => { event.preventDefault(); if (selected.status === "resolved") requestAlarmClose(); else if (noteInput.trim().length >= 3) void updateAlarm("add_note", { note: noteInput.trim() }); }}><label className="event-note-field" htmlFor="alarm-note"><span>{selected.status === "resolved" ? "Nota de cierre obligatoria" : "Nota de seguimiento"}</span><input ref={closeNoteRef} id="alarm-note" value={noteInput} onChange={(event) => setNoteInput(event.target.value)} placeholder={selected.status === "resolved" ? "Ej.: Comunicación restablecida y verificada" : "Describe la acción o evidencia…"} />{selected.status === "resolved" && <small>Escribe al menos 3 caracteres. La nota quedará registrada en la línea de tiempo.</small>}</label><button type="submit" disabled={busyAction !== "" || (selected.status !== "resolved" && noteInput.trim().length < 3)}>{busyAction === "close" ? <Refresh className="spin" size={15} /> : selected.status === "resolved" ? <ShieldCheck size={15} /> : null}{selected.status === "resolved" ? "Cerrar evento" : "Agregar nota"}</button></form>}</section>}
+        {selected && <section className={`event-detail-panel event-${selected.severity}`}><div className="event-detail-header"><span className="event-detail-icon"><AlertTriangle size={20} /></span><div><span className="eyebrow">{selected.kind === "communication" ? "Comunicación" : selected.kind === "data_quality" ? "Calidad de datos" : "Umbral"}</span><h2>{selected.title}</h2><p>{selected.detail || `${selected.assetName} · ${selected.channelName ?? "Punto de medición"}`}</p></div><span className={`workflow-badge workflow-${selected.status}`}>{statusText(selected.status)}</span></div><div className="event-workspace"><div className="event-management"><dl className="event-facts"><div><dt>Valor detectado</dt><dd>{alarmValue(selected)}</dd></div><div><dt>Última observación</dt><dd>{formatDateTime(selected.lastObservedAt)}</dd></div><div><dt>Responsable</dt><dd><select aria-label="Responsable" disabled={!canOperate || busyAction !== ""} value={selected.assignedToId ?? ""} onChange={(event) => void updateAlarm("assign", { assignedTo: event.target.value || null })}><option value="">Sin asignar</option>{result?.assignees.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</select></dd></div></dl><div className="event-actions">{selected.channelCode && <button className="secondary-button" onClick={() => onOpenTrend(selected.channelCode!, selected.openedAt)}><TrendingUp size={15} /> Ver tendencia de origen</button>}{selected.status === "open" && canOperate && <button className="primary-button" disabled={busyAction !== ""} onClick={() => void updateAlarm("acknowledge")}><CheckCircle2 size={15} /> Reconocer</button>}{selected.status !== "closed" && selected.status !== "resolved" && canClose && <button className="secondary-button" disabled={busyAction !== ""} onClick={() => void updateAlarm("resolve")}><ShieldCheck size={15} /> Marcar atendida</button>}{(selected.status === "closed" || selected.status === "resolved") && canClose && <button className="secondary-button" disabled={busyAction !== ""} onClick={() => void updateAlarm("reopen")}>Reabrir</button>}</div>{!canOperate && !canClose && <p className="permission-note"><ShieldCheck size={15} /> Tu perfil puede consultar la trazabilidad, sin modificarla.</p>}</div><div className="event-timeline"><h3>Línea de tiempo</h3>{detailLoading ? <p>Cargando trazabilidad…</p> : events.map((event) => <div key={event.id}><span className={`timeline-dot ${event.type.includes("resolved") || event.type === "closed" ? "normal" : event.type === "opened" ? selected.severity : "info"}`} /><p><strong>{eventText(event.type)}</strong><small>{formatDateTime(event.createdAt)} · {event.actorName}{event.note ? ` · ${event.note}` : ""}</small></p></div>)}</div></div>{(canOperate || (selected.status === "resolved" && canClose)) && <form className={`event-note-form ${selected.status === "resolved" ? "closing" : ""}`} onSubmit={(event) => { event.preventDefault(); if (selected.status === "resolved") requestAlarmClose(); else if (noteInput.trim().length >= 3) void updateAlarm("add_note", { note: noteInput.trim() }); }}><label className="event-note-field" htmlFor="alarm-note"><span>{selected.status === "resolved" ? "Nota de cierre obligatoria" : "Nota de seguimiento"}</span><input ref={closeNoteRef} id="alarm-note" value={noteInput} onChange={(event) => setNoteInput(event.target.value)} placeholder={selected.status === "resolved" ? "Ej.: Comunicación restablecida y verificada" : "Describe la acción o evidencia…"} />{selected.status === "resolved" && <small>Escribe al menos 3 caracteres. La nota quedará registrada en la línea de tiempo.</small>}</label><button type="submit" disabled={busyAction !== "" || (selected.status !== "resolved" && noteInput.trim().length < 3)}>{busyAction === "close" ? <Refresh className="spin" size={15} /> : selected.status === "resolved" ? <ShieldCheck size={15} /> : null}{selected.status === "resolved" ? "Cerrar evento" : "Agregar nota"}</button></form>}</section>}
       </article>
     </> : <article className="panel alarm-rules-panel"><div className="alarm-rule-summary"><div><span>Reglas configuradas</span><strong>{ruleResult?.summary.total ?? 0}</strong></div><div><span>Activas</span><strong>{ruleResult?.summary.enabled ?? 0}</strong></div><div><span>Evaluadas por telemetría</span><strong>{ruleResult?.summary.evaluating ?? 0}</strong></div><div><span>En estado crítico</span><strong>{ruleResult?.summary.critical ?? 0}</strong></div></div><div className="alarm-toolbar"><label className="search-field"><Search size={17} /><input value={ruleQuery} onChange={(event) => { setRuleQuery(event.target.value); setRulePage(1); }} placeholder="Buscar canal, nombre o zona…" /></label><label className="status-filter"><span>Regla</span><select value={ruleEnabled} onChange={(event) => { setRuleEnabled(event.target.value as typeof ruleEnabled); setRulePage(1); }}><option value="all">Todas</option><option value="true">Activas</option><option value="false">Desactivadas</option></select><ChevronDown size={13} /></label></div><div className="alarm-rule-table-wrap"><div className="alarm-rule-table"><div className="alarm-rule-head"><span>Canal</span><span>Estado</span><span>Advertencia</span><span>Crítico</span><span>Histéresis</span><span>Activación</span><span>Recuperación</span><span>Dato atrasado</span><span>Acción</span></div>{ruleLoading ? <TableEmptyState title="Cargando reglas" detail="Consultando umbrales persistentes." /> : ruleResult?.items.map((rule) => { const draft = ruleDrafts[rule.id]; if (!draft) return null; return <div className="alarm-rule-row" key={rule.id}><span className="rule-channel"><strong>{rule.channelCode}</strong><small>{rule.channelName} · {rule.zone ?? rule.assetCode}</small></span><span><label className="rule-switch"><input type="checkbox" checked={draft.enabled} disabled={!canConfigure} onChange={(event) => updateRuleDraft(rule.id, "enabled", event.target.checked)} /><i /><small>{draft.enabled ? "Activa" : "Inactiva"}</small></label></span><span><input type="number" step="0.1" value={draft.warningThreshold} disabled={!canConfigure} onChange={(event) => updateRuleDraft(rule.id, "warningThreshold", Number(event.target.value))} /><small>{rule.unit}</small></span><span><input type="number" step="0.1" value={draft.criticalThreshold} disabled={!canConfigure} onChange={(event) => updateRuleDraft(rule.id, "criticalThreshold", Number(event.target.value))} /><small>{rule.unit}</small></span><span><input type="number" step="0.1" min="0" value={draft.hysteresis} disabled={!canConfigure} onChange={(event) => updateRuleDraft(rule.id, "hysteresis", Number(event.target.value))} /></span><span><input type="number" min="1" max="100" value={draft.activationSamples} disabled={!canConfigure} onChange={(event) => updateRuleDraft(rule.id, "activationSamples", Number(event.target.value))} /><small>muestras</small></span><span><input type="number" min="1" max="100" value={draft.recoverySamples} disabled={!canConfigure} onChange={(event) => updateRuleDraft(rule.id, "recoverySamples", Number(event.target.value))} /><small>muestras</small></span><span><input type="number" min="1" max="86400" value={draft.staleAfterSeconds} disabled={!canConfigure} onChange={(event) => updateRuleDraft(rule.id, "staleAfterSeconds", Number(event.target.value))} /><small>segundos</small></span><span><button className="ghost-button" disabled={!canConfigure || savingRule === rule.id} onClick={() => void saveRule(rule)}>{savingRule === rule.id ? <Refresh className="spin" size={15} /> : <Save size={15} />} Guardar</button></span></div>})}{!ruleLoading && !ruleResult?.items.length && <TableEmptyState title="No hay reglas configuradas" detail="Configura los canales del punto antes de habilitar alarmas." />}</div></div>{ruleResult && <Pagination page={ruleResult.page} totalPages={ruleResult.totalPages} total={ruleResult.total} pageSize={ruleResult.pageSize} onPageChange={setRulePage} itemLabel="reglas" />}<div className="alarm-rule-note"><ShieldCheck size={18} /><p><strong>Control contra falsos positivos</strong><span>La regla exige muestras consecutivas, aplica histéresis para recuperar y conserva el estado del motor en la base de datos.</span></p></div></article>}
   </>;
@@ -1552,6 +1586,14 @@ export default function Home() {
   const activeSensorRouteKey = sensors.filter((sensor) => sensor.enabled).map((sensor) => sensor.id).join(",");
   const [view, setView] = useState<View>("overview");
   const [menuOpen, setMenuOpen] = useState(false);
+  const theme = useSyncExternalStore(subscribeTheme, readTheme, () => "light");
+  const toggleTheme = () => {
+    const next = theme === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    // Preferencia de este navegador (cookie de un año): no viaja a otros equipos ni se guarda en la base.
+    document.cookie = `hoit-theme=${next}; path=/; max-age=31536000; SameSite=Lax; Secure`;
+    window.dispatchEvent(new Event("hoit-theme"));
+  };
   const [period, setPeriod] = useState("24 h");
   const [trendSensorId, setTrendSensorId] = useState("");
   const [trendWindow, setTrendWindow] = useState<TrendWindow | null>(null);
@@ -1805,8 +1847,31 @@ export default function Home() {
   const gatewayState = telemetryState.data?.gateway?.state;
   const gatewayCode = telemetryState.data?.gateway?.code ?? activeGateway?.code;
   const acquisitionMode = telemetryState.status === "loading" ? "loading" : telemetryState.status === "error" ? "unknown" : gatewayState === "online" ? "normal" : "offline";
-  const acquisitionTitle = acquisitionMode === "loading" ? "Sincronizando adquisición" : acquisitionMode === "unknown" ? "Estado no verificado" : acquisitionMode === "normal" ? "Adquisición operativa" : "Adquisición sin comunicación";
   const acquisitionDetail = acquisitionMode === "loading" ? `${gatewayCode ?? "Gateway"} · verificando estado` : acquisitionMode === "unknown" ? `${gatewayCode ?? "Gateway"} · consulta no disponible` : gatewayCode ? `${gatewayCode} · ${gatewayState === "online" ? "en línea" : "sin telemetría"}` : "Gateway no configurado";
+  // Un solo estado en la barra superior: distingue el gateway de los equipos de medición, para no
+  // mostrar "en línea" mientras los puntos no entregan datos.
+  const siteStatus = acquisitionMode === "loading" || systemMode === "loading"
+    ? { tone: "loading", title: "Sincronizando", detail: acquisitionDetail }
+    : acquisitionMode === "unknown" || systemMode === "error"
+      ? { tone: "unknown", title: "Estado no verificado", detail: "La consulta al servidor falló." }
+      : acquisitionMode === "offline"
+        ? { tone: "offline", title: "Gateway sin comunicación", detail: acquisitionDetail }
+        : systemMode === "stale"
+          ? { tone: "stale", title: "Sin datos recientes", detail: `${gatewayCode ?? "Gateway"} en línea; los equipos de medición no entregan lecturas vigentes.` }
+          : systemMode === "waiting"
+            ? { tone: "stale", title: "Esperando lecturas", detail: `${gatewayCode ?? "Gateway"} en línea; aún no llegan mediciones.` }
+            : { tone: "normal", title: "En línea", detail: acquisitionDetail };
+  const activeAlertCount = alarmSummary.critical + alarmSummary.warning;
+  const isPointView = pointViews.includes(view);
+  const isActiveNav = (id: View) => view === id || (id === "overview" && isPointView);
+  const pointStatus = systemMode === "offline" ? { tone: "critical", label: "Gateway sin comunicación" }
+    : systemMode === "stale" ? { tone: "offline", label: "Sin datos recientes" }
+      : systemMode === "waiting" ? { tone: "offline", label: "Esperando lecturas" }
+        : systemMode === "loading" ? { tone: "offline", label: "Cargando" }
+          : alarmSummary.critical ? { tone: "critical", label: "Crítico" }
+            : alarmSummary.warning ? { tone: "warning", label: "Advertencia" }
+              : { tone: "normal", label: "Normal" };
+  const pointMeta = [telemetryState.data?.device?.code, activePoint?.nominalVoltageKv ? `${activePoint.nominalVoltageKv} kV` : null, gatewayCode ? `Gateway ${gatewayCode}` : null, activePoint?.area].filter(Boolean).join(" · ");
   const systemMessage = systemMode === "loading"
     ? { title: "Sincronizando datos", detail: "Solicitando la configuración, el estado del gateway, las lecturas y los eventos disponibles." }
     : systemMode === "waiting"
@@ -1839,16 +1904,16 @@ export default function Home() {
         <nav className="sidebar-nav" aria-label="Navegación principal">
           {navGroups.map((group) => (
             <div className="nav-group" key={group.label}>
-              <div className="nav-group-heading"><span>{group.index}</span><p>{group.label}</p><i /></div>
+              <div className="nav-group-heading"><p>{group.label}</p></div>
               <div className="nav-items">
                 {group.items.map((item) => {
                   const Icon = item.icon;
                   const badgeCount = item.id === "alarms" ? alarmSummary.critical + alarmSummary.warning : null;
                   return (
-                    <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)} aria-current={view === item.id ? "page" : undefined}>
-                      <span className="nav-item-icon"><Icon size={19} strokeWidth={1.8} /></span>
-                      <span className="nav-item-copy"><strong>{item.label}</strong><small>{item.description}</small></span>
-                      {badgeCount !== null && badgeCount > 0 ? <b>{badgeCount}</b> : <ChevronRight className="nav-chevron" size={16} />}
+                    <button key={item.id} className={isActiveNav(item.id) ? "active" : ""} onClick={() => navigate(item.id)} aria-current={isActiveNav(item.id) ? "page" : undefined} title={item.description}>
+                      <Icon className="nav-icon" size={17} strokeWidth={1.8} aria-hidden="true" />
+                      <span className="nav-item-label">{item.label}</span>
+                      {badgeCount !== null && badgeCount > 0 && <b>{badgeCount}</b>}
                     </button>
                   );
                 })}
@@ -1857,22 +1922,27 @@ export default function Home() {
           ))}
         </nav>
         <div className="sidebar-status">
-          <button className="user-card" onClick={() => navigate("account")} aria-label="Abrir mi cuenta"><span className="user-avatar">{sessionUser.displayName.split(" ").map((part) => part[0]).slice(0, 2).join("").toUpperCase()}</span><span className="user-copy"><strong>{sessionUser.displayName}</strong><small>{sessionUser.roleName}</small></span><ChevronRight size={16} /></button>
-          <button className="sidebar-logout" onClick={logout}><LogOut size={17} /> Cerrar sesión</button>
+          <button className={`user-card ${view === "account" ? "active" : ""}`} onClick={() => navigate("account")} aria-label="Abrir mi cuenta" title="Mi cuenta"><span className="user-avatar">{sessionUser.displayName.split(" ").map((part) => part[0]).slice(0, 2).join("").toUpperCase()}</span><span className="user-copy"><strong>{sessionUser.displayName}</strong><small>{sessionUser.roleName}</small></span></button>
+          <button className="sidebar-logout" onClick={toggleTheme} aria-label={theme === "dark" ? "Usar tema claro" : "Usar tema oscuro"} title={theme === "dark" ? "Tema claro" : "Tema oscuro"}>{theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}</button>
+          <button className="sidebar-logout" onClick={logout} aria-label="Cerrar sesión" title="Cerrar sesión"><LogOut size={17} /></button>
         </div>
       </aside>
 
       <main className="main-shell" id="contenido-principal" tabIndex={-1}>
         <header className="topbar">
-          <div className="topbar-left"><button className="menu-button" aria-label="Abrir navegación" onClick={() => setMenuOpen(true)}><Menu size={22} /></button>{sessionUser.clientLogoUpdatedAt ? <span className="mobile-brand mobile-client-logo"><ClientLogoImage clientId={sessionUser.clientId} version={sessionUser.clientLogoUpdatedAt} alt={sessionUser.clientName} /></span> : <span className="mobile-brand"><Zap size={18} fill="currentColor" /></span>}<div className="operational-context"><Building2 size={17} />{clientContextSelect}<ChevronRight size={14} />{siteContextSelect}<ChevronRight size={14} /><label><span>Punto de medición</span><select value={activePoint?.id ?? ""} onChange={(event) => { setTelemetryState({ status: "loading", data: null }); setSystemMode("loading"); setActivePointId(event.target.value); }} aria-label="Punto de medición activo"><option value="">Sin punto seleccionado</option>{hierarchy?.points.filter((point) => point.active).map((point) => <option key={point.id} value={point.id}>{point.code} · {point.name}</option>)}</select></label></div></div>
-          <div className="topbar-right"><span className="authenticated-role"><ShieldCheck size={15} /><span><small>Sesión activa</small><strong>{sessionUser.roleName}</strong></span></span><div className={`live-state live-${acquisitionMode}`} aria-live="polite"><span /><div><strong>{acquisitionTitle}</strong><small>{acquisitionDetail}</small></div></div><button className="topbar-logout" onClick={logout} aria-label="Cerrar sesión"><LogOut size={18} /></button></div>
+          <div className="topbar-left"><button className="menu-button" aria-label="Abrir navegación" onClick={() => setMenuOpen(true)}><Menu size={22} /></button>{sessionUser.clientLogoUpdatedAt ? <span className="mobile-brand mobile-client-logo"><ClientLogoImage clientId={sessionUser.clientId} version={sessionUser.clientLogoUpdatedAt} alt={sessionUser.clientName} /></span> : <span className="mobile-brand"><Zap size={18} fill="currentColor" /></span>}<div className="operational-context"><Building2 size={17} />{clientContextSelect}<ChevronRight size={14} />{siteContextSelect}<ChevronRight size={14} /><label><span>Punto de medición</span><select value={activePoint?.id ?? ""} onChange={(event) => { setTelemetryState({ status: "loading", data: null }); setSystemMode("loading"); setActivePointId(event.target.value); }} aria-label="Punto de medición activo"><option value="">Sin punto seleccionado</option>{hierarchy?.points.filter((point) => point.active).map((point) => <option key={point.id} value={point.id}>{point.name}</option>)}</select></label></div></div>
+          <div className="topbar-right"><div className={`live-state live-${siteStatus.tone}`} aria-live="polite" title={siteStatus.detail}><span /><strong>{siteStatus.title}</strong></div><button className={`topbar-alerts ${activeAlertCount ? "has-alerts" : ""}`} onClick={() => navigate("alarms")} aria-label={activeAlertCount ? `${activeAlertCount} ${activeAlertCount === 1 ? "alerta activa" : "alertas activas"}` : "Sin alertas activas"} title="Alertas"><BellRing size={17} />{activeAlertCount > 0 && <b>{activeAlertCount}</b>}</button></div>
         </header>
 
         <div className="content-scroll">
           <div className="page-content">
-            {systemMode !== "normal" && view !== "site" && <section className={`operational-banner banner-${systemMode}`} role={systemMode === "offline" || systemMode === "error" ? "alert" : "status"} aria-live="polite"><span>{systemMode === "offline" ? <PlugConnected size={19} /> : systemMode === "loading" ? <Refresh className="spin" size={19} /> : systemMode === "error" ? <AlertTriangle size={19} /> : <Clock3 size={19} />}</span><div><strong>{systemMessage.title}</strong><p>{systemMessage.detail}</p></div>{systemMode !== "loading" && <button onClick={() => { setTelemetryState({ status: "loading", data: null }); setSystemMode("loading"); setTelemetryRefreshKey((current) => current + 1); notify("Consultando nuevamente la telemetría.", "info"); }}><Refresh size={15} /> Reintentar</button>}</section>}
-            <section className="page-heading"><div><span className="eyebrow"><Activity size={13} /> Gestión de activos críticos</span><h1>{viewTitles[view].title}</h1><p>{viewTitles[view].description}</p></div><div className="heading-actions">{(view === "overview" || view === "cabinet") && <button className="secondary-button" onClick={() => setVisibilityOpen(true)} disabled={!activePoint || !sensors.some((sensor) => sensor.enabled)} aria-label="Personalizar canales" title="Personalizar canales"><AdjustmentsHorizontal size={16} aria-hidden="true" /><span>Personalizar canales</span></button>}{view !== "site" && view !== "assets" && view !== "settings" && view !== "provisioning" && view !== "users" && view !== "notifications" && view !== "account" && view !== "reports" && view !== "diagnostics" && view !== "commissioning" && view !== "trends" && view !== "history" && <button className="secondary-button" onClick={exportCsv} aria-label="Exportar" title="Exportar"><Download size={16} aria-hidden="true" /><span>Exportar</span></button>}{view !== "alarms" && <button className="primary-button" onClick={() => navigate("alarms")}><BellRing size={16} />{alarmSummary.critical + alarmSummary.warning} alertas activas</button>}</div></section>
-            {view === "site" && <SiteOverviewView siteName={sessionUser.siteName} onOpenPoint={(pointId) => { if (pointId !== activePointId) { setTelemetryState({ status: "loading", data: null }); setSystemMode("loading"); setActivePointId(pointId); } navigate("overview"); }} />}
+            {/* Datos atrasados o en espera ya se ven en el estado de la barra superior y del punto; el aviso queda para fallas. */}
+            {(systemMode === "offline" || systemMode === "error") && view !== "site" && <section className={`operational-banner banner-${systemMode}`} role={systemMode === "offline" || systemMode === "error" ? "alert" : "status"} aria-live="polite"><span>{systemMode === "offline" ? <PlugConnected size={19} />  : <AlertTriangle size={19} />}</span><div><strong>{systemMessage.title}</strong><p>{systemMessage.detail}</p></div>{<button onClick={() => { setTelemetryState({ status: "loading", data: null }); setSystemMode("loading"); setTelemetryRefreshKey((current) => current + 1); notify("Consultando nuevamente la telemetría.", "info"); }}><Refresh size={15} /> Reintentar</button>}</section>}
+            {isPointView && activePoint ? <section className="point-heading">
+              <div className="point-heading-top"><div><div className="point-heading-title"><h1>{activePoint.name}</h1><em className={`site-badge ${pointStatus.tone}`}>{pointStatus.label}</em></div>{pointMeta && <p>{pointMeta}</p>}</div><div className="heading-actions">{(view === "overview" || view === "cabinet") && <button className="secondary-button" onClick={() => setVisibilityOpen(true)} disabled={!activePoint || !sensors.some((sensor) => sensor.enabled)} aria-label="Personalizar canales" title="Personalizar canales"><AdjustmentsHorizontal size={16} aria-hidden="true" /><span>Personalizar canales</span></button>}{view !== "site" && view !== "assets" && view !== "settings" && view !== "provisioning" && view !== "users" && view !== "notifications" && view !== "account" && view !== "reports" && view !== "diagnostics" && view !== "commissioning" && view !== "trends" && view !== "history" && <button className="secondary-button" onClick={exportCsv} aria-label="Exportar" title="Exportar"><Download size={16} aria-hidden="true" /><span>Exportar</span></button>}</div></div>
+              <nav className="point-tabs" aria-label="Secciones del punto">{pointTabs.map((tab) => <button key={tab.id} type="button" className={view === tab.id ? "active" : ""} aria-current={view === tab.id ? "page" : undefined} onClick={() => navigate(tab.id)}>{tab.label}</button>)}</nav>
+            </section> :             <section className="page-heading"><div><h1 title={viewTitles[view].description}>{viewTitles[view].title}</h1></div><div className="heading-actions">{(view === "overview" || view === "cabinet") && <button className="secondary-button" onClick={() => setVisibilityOpen(true)} disabled={!activePoint || !sensors.some((sensor) => sensor.enabled)} aria-label="Personalizar canales" title="Personalizar canales"><AdjustmentsHorizontal size={16} aria-hidden="true" /><span>Personalizar canales</span></button>}{view !== "site" && view !== "assets" && view !== "settings" && view !== "provisioning" && view !== "users" && view !== "notifications" && view !== "account" && view !== "reports" && view !== "diagnostics" && view !== "commissioning" && view !== "trends" && view !== "history" && <button className="secondary-button" onClick={exportCsv} aria-label="Exportar" title="Exportar"><Download size={16} aria-hidden="true" /><span>Exportar</span></button>}</div></section>}
+            {view === "site" && <SiteOverviewView siteName={sessionUser.siteName} onOpenPoint={(pointId) => { if (pointId !== activePointId) { setTelemetryState({ status: "loading", data: null }); setSystemMode("loading"); setActivePointId(pointId); } navigate("overview"); }} onDiagnose={() => navigate("diagnostics")} onOpenAlarms={() => navigate("alarms")} />}
             {view === "overview" && <Overview onNavigate={navigate} onOpenTrend={openChannelTrend} onAcknowledge={acknowledge} activeAlarms={alarmPreview} alarmSummary={alarmSummary} point={activePoint} />}
             {view === "cabinet" && <CabinetView onOpenTrend={openChannelTrend} />}
             {view === "diagnostics" && <DatabaseDiagnosticsView assetId={activePoint?.id ?? ""} canExecute={sessionUser.permissions.includes("diagnostics.execute")} notify={notify} />}

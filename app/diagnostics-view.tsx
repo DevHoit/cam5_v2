@@ -5,14 +5,11 @@ import {
   IconActivity,
   IconAlertTriangle,
   IconBolt,
-  IconCheck,
   IconCircleCheck,
   IconCircuitCell,
-  IconClock,
   IconDatabase,
   IconRefresh,
   IconRouter,
-  IconShieldCheck,
 } from "@tabler/icons-react";
 import { Pagination } from "./pagination";
 
@@ -49,7 +46,8 @@ function relativeAge(value: string | null) {
   const seconds = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 1000));
   if (seconds < 60) return `Hace ${seconds} s`;
   if (seconds < 3_600) return `Hace ${Math.round(seconds / 60)} min`;
-  return `Hace ${Math.round(seconds / 3_600)} h`;
+  if (seconds < 172_800) return `Hace ${Math.round(seconds / 3_600)} h`;
+  return `Hace ${Math.round(seconds / 86_400)} días`;
 }
 
 function percent(value: number | null) {
@@ -122,38 +120,60 @@ export function DiagnosticsView({ assetId, canExecute, notify }: { assetId: stri
   if (!data) return null;
 
   const overall = data.summary.state;
-  const statusIcon = overall === "healthy" ? <IconCircleCheck size={17} /> : <IconAlertTriangle size={17} />;
+  const tone = overall === "healthy" ? "normal" : overall === "warning" ? "warning" : "critical";
+  const stat = (label: string, value: string, note: string) => <div className="diag-stat"><span>{label}</span><strong>{value}</strong><small>{note}</small></div>;
 
-  return <>
-    <section className="module-summary-grid diagnostic-summary-grid">
-      <article><span className={`module-summary-icon ${overall === "healthy" ? "green" : "amber"}`}><IconRouter size={19} /></span><div><small>Cadena de adquisición</small><strong>{stateLabel(overall)}</strong><span>{data.device.code} → {data.gateway.code} → Core</span></div></article>
-      <article><span className="module-summary-icon blue"><IconClock size={19} /></span><div><small>Ciclo configurado</small><strong>{data.profile.cycleIntervalMs === null ? "—" : `${(data.profile.cycleIntervalMs / 1000).toFixed(1)} s`}</strong><span>{data.profile.ranges.length} bloques · {data.profile.registerCount} registros</span></div></article>
-      <article><span className={`module-summary-icon ${data.summary.failedBatches ? "amber" : "green"}`}><IconCheck size={19} /></span><div><small>Éxito últimas 24 h</small><strong>{percent(data.summary.successRate)}</strong><span>{data.summary.failedBatches} ciclos con error</span></div></article>
+  return <div className="diag">
+    <section className={`site-incident diag-result ${tone}`} aria-live="polite">
+      {running ? <IconRefresh className="spin" size={18} aria-hidden="true" /> : overall === "healthy" ? <IconCircleCheck size={18} aria-hidden="true" /> : <IconAlertTriangle size={18} aria-hidden="true" />}
+      <div><strong>{running ? "Recalculando el estado de la cadena" : overall === "healthy" ? "La cadena de adquisición funciona" : overall === "warning" ? "La cadena tiene errores o datos incompletos" : "No hay comunicación reciente"}</strong><p>Últimas 24 h · calculado {formatDateTime(data.serverTime)}</p></div>
+      <button type="button" onClick={refreshDiagnostic} disabled={running || !canExecute}>{running ? "Recalculando…" : "Actualizar"}</button>
     </section>
 
-    <article className="panel module-panel diagnostics-module">
-      <div className="diagnostics-toolbar"><div><span className="eyebrow">Diagnóstico basado en telemetría</span><h2>Estado de extremo a extremo</h2><p>Consolida evidencia real recibida del gateway durante las últimas 24 horas.</p></div><button className={`diagnostic-run-button ${running ? "running" : overall === "healthy" ? "success" : ""}`} onClick={refreshDiagnostic} disabled={running || !canExecute}>{running ? <><IconRefresh className="spin" size={16} /> Recalculando…</> : <><IconActivity size={16} /> Actualizar diagnóstico</>}</button></div>
-
-      <div className={`diagnostic-chain ${overall}`} aria-live="polite">
-        {data.stages.flatMap((stage, index) => {
+    <section className="panel diag-chain-panel" aria-label="Cadena de adquisición">
+      <header><h2>Cadena de adquisición</h2><span>Una lectura se considera atrasada después de {data.profile.staleAfterSeconds} s</span></header>
+      <ol className="diag-chain">
+        {data.stages.map((stage) => {
           const Icon = stageIcons[stage.key];
-          return [<article className={`stage-${stage.state}`} key={stage.key}><span><Icon size={21} /></span><small>Etapa {String(index + 1).padStart(2, "0")}</small><strong>{stage.label}</strong><p>{stage.detail}</p><i>{stage.evidence}</i></article>, ...(index < data.stages.length - 1 ? [<b key={`${stage.key}-arrow`}>→</b>] : [])];
+          return <li key={stage.key} className={`diag-stage ${stage.state}`}>
+            <span className="diag-stage-icon"><Icon size={18} aria-hidden="true" /></span>
+            <div><strong>{stage.label}</strong><p>{stage.detail}</p><small>{stage.evidence}</small></div>
+            <i className={`dot ${stage.state === "healthy" ? "normal" : stage.state === "warning" ? "warning" : "critical"}`} aria-label={stateLabel(stage.state)} />
+          </li>;
         })}
-      </div>
+      </ol>
+    </section>
 
-      <div className={`diagnostics-result-bar result-${overall}`}><span>{running ? <IconRefresh className="spin" size={16} /> : statusIcon}</span><div><strong>{running ? "Recalculando el estado de la cadena" : overall === "healthy" ? "La cadena tiene evidencia reciente y completa" : overall === "warning" ? "La cadena presenta evidencia incompleta o errores" : "No existe comunicación reciente"}</strong><p>Calculado {formatDateTime(data.serverTime)} · ventana de 24 horas</p></div><small>Una lectura se considera atrasada después de {data.profile.staleAfterSeconds} s</small></div>
+    <div className="diag-grid">
+      <section className="panel diag-panel" aria-label="Indicadores de las últimas 24 horas">
+        <header><h2>Indicadores · 24 h</h2></header>
+        <div className="diag-stats">
+          {stat("Ciclos correctos", percent(data.summary.successRate), `${data.summary.successfulBatches} de ${data.summary.totalBatches}`)}
+          {stat("Latencia promedio", data.summary.averageLatencyMs === null ? "—" : `${data.summary.averageLatencyMs} ms`, data.summary.p95LatencyMs === null ? "P95 —" : `P95 ${data.summary.p95LatencyMs} ms`)}
+          {stat("Calidad de registros", percent(data.summary.qualityRate), `${data.summary.goodSamples} de ${data.summary.totalSamples}`)}
+          {stat("Registros inválidos", String(data.summary.badSamples + data.summary.staleSamples), `${data.summary.badSamples} malos · ${data.summary.staleSamples} atrasados`)}
+          {stat("Última lectura CAM-5", relativeAge(data.device.lastReadAt), formatDateTime(data.device.lastReadAt))}
+          {stat("Último enlace gateway", relativeAge(data.gateway.lastSeenAt), gatewayStateLabel(data.gateway.state))}
+        </div>
+      </section>
+      <section className="panel diag-panel" aria-label="Configuración de lectura">
+        <header><h2>Configuración de lectura</h2></header>
+        <dl className="point-facts">
+          <dt>Controlador</dt><dd>{data.device.modelName} · {data.device.code}</dd>
+          <dt>Conexión</dt><dd>{data.device.protocol === "modbus_tcp" ? "Modbus TCP" : data.device.protocol === "modbus_rtu" ? "Modbus RTU" : data.device.protocol} {data.device.host}:{data.device.port} · ID {data.device.unitId}</dd>
+          <dt>Mapa de registros</dt><dd>{data.device.registerMapVersion} · {data.profile.enabledChannelCount} canales activos</dd>
+          <dt>Ciclo</dt><dd>{data.profile.cycleIntervalMs === null ? "—" : `${(data.profile.cycleIntervalMs / 1000).toFixed(1)} s`} · {data.profile.ranges.length} bloques · {data.profile.registerCount} registros</dd>
+          <dt>Política Modbus</dt><dd>{data.device.timeoutMs} ms · {data.device.retries} reintentos</dd>
+          <dt>Gateway</dt><dd>{data.gateway.code}{data.gateway.address ? ` · ${data.gateway.address}` : ""}</dd>
+          <dt>Perfil</dt><dd>{data.profile.name}</dd>
+        </dl>
+      </section>
+    </div>
 
-      <div className="diagnostic-profile-strip">
-        <div><small>Perfil</small><strong>{data.profile.name}</strong></div><div><small>Controlador</small><strong>{data.device.modelName}</strong><span>{data.device.host}:{data.device.port} · ID {data.device.unitId}</span></div><div><small>Mapa</small><strong>{data.device.registerMapVersion}</strong><span>{data.profile.enabledChannelCount} canales activos</span></div><div><small>Política Modbus</small><strong>{data.device.timeoutMs} ms</strong><span>{data.device.retries} reintentos máximos</span></div>
-      </div>
-
-      <div className="diagnostics-grid">
-        <section className="diagnostic-health-card"><div className="report-library-head"><div><span className="eyebrow">Salud de comunicación</span><h2>Indicadores medidos</h2></div><span className={`diagnostic-status status-${overall}`}><i />{stateLabel(overall)}</span></div><dl><div><dt>Latencia Modbus promedio</dt><dd>{data.summary.averageLatencyMs === null ? "—" : `${data.summary.averageLatencyMs} ms`}<small>24 h</small></dd></div><div><dt>Latencia Modbus P95</dt><dd>{data.summary.p95LatencyMs === null ? "—" : `${data.summary.p95LatencyMs} ms`}<small>24 h</small></dd></div><div><dt>Última lectura CAM-5</dt><dd>{relativeAge(data.device.lastReadAt)}<small>{formatDateTime(data.device.lastReadAt)}</small></dd></div><div><dt>Último enlace gateway</dt><dd>{relativeAge(data.gateway.lastSeenAt)}<small>{gatewayStateLabel(data.gateway.state)}</small></dd></div><div><dt>Calidad de registros</dt><dd>{percent(data.summary.qualityRate)}<small>{data.summary.goodSamples}/{data.summary.totalSamples}</small></dd></div><div><dt>Registros inválidos</dt><dd>{data.summary.badSamples + data.summary.staleSamples}<small>{data.summary.badSamples} malos · {data.summary.staleSamples} atrasados</small></dd></div></dl></section>
-
-        <section className="diagnostic-transactions"><div className="report-library-head"><div><span className="eyebrow">Evidencia persistida</span><h2>Últimos ciclos de adquisición</h2></div><span>{data.summary.totalBatches} ciclos / 24 h</span></div><div className="module-table-wrap" role="region" aria-label="Últimos ciclos de adquisición" tabIndex={0}><div className="diagnostic-transaction-table"><div className="module-table-head"><span>Fecha y hora</span><span>Registros</span><span>Resultado</span><span>Latencia</span></div>{data.transactions.map((transaction) => <div className="module-table-row" key={transaction.id} title={`Lote ${transaction.batchKey}`}><span>{formatDateTime(transaction.startedAt)}</span><span className="mono-cell">{transaction.receivedRegisters}/{transaction.expectedRegisters}</span><span className={transaction.success ? "quality-ok" : "quality-error"}>{transaction.success ? <IconCircleCheck size={14} /> : <IconAlertTriangle size={14} />} <span>{transaction.success ? "Completo" : transaction.errorMessage || "Incompleto"}</span></span><span className="mono-cell">{transaction.latencyMs === null ? "—" : `${transaction.latencyMs} ms`}</span></div>)}{!data.transactions.length && <div className="diagnostic-table-empty"><IconDatabase size={20} /><span>No existen ciclos recibidos durante las últimas 24 horas.</span></div>}</div></div><Pagination page={data.pagination.page} totalPages={data.pagination.totalPages} total={data.pagination.total} pageSize={data.pagination.pageSize} onPageChange={setPage} itemLabel="ciclos" /></section>
-      </div>
-
-      <div className="configuration-note diagnostics-note"><IconShieldCheck size={17} /><p><strong>Diagnóstico basado en datos reales.</strong> Se calcula con los envíos que el gateway ya realizó: errores, latencia y calidad. Para ejecutar pruebas a pedido, el gateway tendría que poder recibir comandos desde el portal.</p></div>
-    </article>
-  </>;
+    <section className="panel diag-panel" aria-label="Últimos ciclos de adquisición">
+      <header><h2>Últimos ciclos</h2><span>{data.summary.totalBatches} ciclos en 24 h</span></header>
+      <div className="module-table-wrap" role="region" aria-label="Últimos ciclos de adquisición" tabIndex={0}><div className="diagnostic-transaction-table"><div className="module-table-head"><span>Fecha y hora</span><span>Registros</span><span>Resultado</span><span>Latencia</span></div>{data.transactions.map((transaction) => <div className="module-table-row" key={transaction.id} title={`Lote ${transaction.batchKey}`}><span>{formatDateTime(transaction.startedAt)}</span><span>{transaction.receivedRegisters}/{transaction.expectedRegisters}</span><span className={transaction.success ? "quality-ok" : "quality-error"}>{transaction.success ? <IconCircleCheck size={14} /> : <IconAlertTriangle size={14} />} <span>{transaction.success ? "Completo" : transaction.errorMessage || "Incompleto"}</span></span><span>{transaction.latencyMs === null ? "—" : `${transaction.latencyMs} ms`}</span></div>)}{!data.transactions.length && <div className="diagnostic-table-empty"><IconDatabase size={20} /><span>Sin ciclos recibidos en las últimas 24 horas.</span></div>}</div></div>
+      <Pagination page={data.pagination.page} totalPages={data.pagination.totalPages} total={data.pagination.total} pageSize={data.pagination.pageSize} onPageChange={setPage} itemLabel="ciclos" />
+    </section>
+  </div>;
 }

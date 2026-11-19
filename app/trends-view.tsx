@@ -92,21 +92,24 @@ function pathSegments(series: TrendSeries, fromMs: number, toMs: number, yMin: n
   const segments: string[] = [];
   let current: string[] = [];
   let previousTime: number | null = null;
+  // Un punto aislado se dibuja como un trazo mínimo (con extremo redondo se ve como un punto).
+  const close = () => { if (current.length) segments.push(current.length === 1 ? `${current[0]} l 0.01 0` : current.join(" ")); current = []; };
   for (const point of series.points) {
     const time = new Date(point.timestamp).getTime();
-    const isGap = point.value === null || point.quality === "bad" || (previousTime !== null && time - previousTime > expectedStepMs * 2.5);
-    if (isGap) {
-      if (current.length) segments.push(current.join(" "));
-      current = [];
+    if (point.value === null || point.quality === "bad") {
+      close();
       previousTime = time;
       continue;
     }
+    // Un salto de tiempo corta la línea, pero la lectura que llega después se conserva y abre el tramo
+    // siguiente (antes se descartaba, y con lecturas espaciadas el gráfico quedaba vacío).
+    if (previousTime !== null && time - previousTime > expectedStepMs * 2.5) close();
     const x = Math.max(0, Math.min(1000, (time - fromMs) / Math.max(1, toMs - fromMs) * 1000));
-    const y = 300 - (point.value! - yMin) / Math.max(.0001, yMax - yMin) * 270;
+    const y = 300 - (point.value - yMin) / Math.max(.0001, yMax - yMin) * 270;
     current.push(`${current.length ? "L" : "M"} ${x.toFixed(2)} ${y.toFixed(2)}`);
     previousTime = time;
   }
-  if (current.length) segments.push(current.join(" "));
+  close();
   return segments;
 }
 
