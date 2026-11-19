@@ -9,6 +9,7 @@ import { Pagination, useClientPagination } from "./pagination";
 import { HistoryView } from "./history-view";
 import { NotificationsView as DatabaseNotificationsView } from "./notifications-view";
 import { ReportsView as DatabaseReportsView } from "./reports-view";
+import { SiteReportsView } from "./site-reports-view";
 import { SettingsView as DatabaseSettingsView } from "./settings-view";
 import { SiteOverviewView } from "./site-overview-view";
 import { TrendsView } from "./trends-view";
@@ -1951,7 +1952,7 @@ export default function Home() {
             {view === "alarms" && <AlarmsView assetId={activePoint?.id ?? ""} permissions={sessionUser.permissions} onSummaryChange={setAlarmSummary} onOpenTrend={openAlarmTrend} />}
             {view === "history" && <HistoryView assetId={activePoint?.id ?? ""} canExport={sessionUser.permissions.includes("history.export")} notify={notify} onOpenTrend={openTrendRange} />}
             {view === "assets" && <OperationalHierarchyView hierarchy={hierarchy} loading={hierarchyLoading} permissions={sessionUser.permissions} platformStaff={Boolean(sessionUser.platformStaff)} onReload={loadHierarchy} onSwitchSite={switchSite} onClientLogoChanged={(clientId, logoUpdatedAt) => setSessionUser((current) => current && current.clientId === clientId ? { ...current, clientLogoUpdatedAt: logoUpdatedAt } : current)} />}
-            {view === "reports" && <DatabaseReportsView assetId={activePoint?.id ?? ""} assetLabel={activePoint ? `${activePoint.code} · ${activePoint.name}` : "Sin punto seleccionado"} timezone={hierarchy?.sites.find((site) => site.id === sessionUser.siteId)?.timezone ?? "America/Santiago"} canGenerate={sessionUser.permissions.includes("reports.generate")} canSchedule={sessionUser.permissions.includes("reports.schedule")} notify={notify} confirm={(request) => setConfirmRequest(request)} />}
+            {view === "reports" && <SiteReportsView canGenerate={sessionUser.permissions.includes("reports.generate")} canSchedule={sessionUser.permissions.includes("reports.schedule")} notify={notify} confirm={(request) => setConfirmRequest(request)} pointReports=<DatabaseReportsView assetId={activePoint?.id ?? ""} assetLabel={activePoint ? `${activePoint.code} · ${activePoint.name}` : "Sin punto seleccionado"} timezone={hierarchy?.sites.find((site) => site.id === sessionUser.siteId)?.timezone ?? "America/Santiago"} canGenerate={sessionUser.permissions.includes("reports.generate")} canSchedule={sessionUser.permissions.includes("reports.schedule")} notify={notify} confirm={(request) => setConfirmRequest(request)} /> />}
             {view === "settings" && <DatabaseSettingsView assetId={activePoint?.id ?? ""} canWrite={sessionUser.permissions.includes("settings.write")} notify={notify} confirm={(request) => setConfirmRequest(request)} onReloadHierarchy={loadHierarchy} />}
             {view === "provisioning" && <GatewayProvisioningView canWrite={sessionUser.permissions.includes("settings.write")} notify={notify} confirm={(request) => setConfirmRequest(request)} />}
             {view === "users" && <UsersView currentUserId={sessionUser.id} sites={sessionUser.sites} activeSiteId={sessionUser.siteId} />}
