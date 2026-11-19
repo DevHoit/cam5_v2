@@ -3144,3 +3144,8 @@ button.point-row:hover { background: var(--surface-2); }
 
 /* <small> sin tamaño propio: 12 px (el navegador lo reduciría al 80 %). */
 :where(.app-shell) small { font-size: var(--text-xs); }
+
+/* Logo del cliente en tema oscuro: placa clara para que los logos oscuros se lean (en tema claro va sin fondo). */
+:root[data-theme="dark"] .client-logo-frame { height: 48px; padding: 6px 10px; justify-content: center; background: #ffffff; border-radius: 8px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.06); }
+:root[data-theme="dark"] .client-logo-frame img { object-position: center; }
+:root[data-theme="dark"] .mobile-brand.mobile-client-logo { background: #ffffff; }
