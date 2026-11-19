@@ -30,7 +30,7 @@ export default function RootLayout({
     <html lang="es" suppressHydrationWarning>
       <head>
         {/* Aplica el tema guardado antes de pintar, para no mostrar un destello claro en modo oscuro. */}
-        <script dangerouslySetInnerHTML={{ __html: "try{var t=localStorage.getItem('hoit-theme');if(t==='dark'||(!t&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.dataset.theme='dark'}catch(e){}" }} />
+        <script dangerouslySetInnerHTML={{ __html: "try{var m=document.cookie.match(/(?:^|; )hoit-theme=(light|dark)/),t=m&&m[1];if(t==='dark'||(!t&&matchMedia('(prefers-color-scheme: dark)').matches))document.documentElement.dataset.theme='dark'}catch(e){}" }} />
       </head>
       <body className={`${inter.variable} ${plexMono.variable} antialiased`}>
         {children}

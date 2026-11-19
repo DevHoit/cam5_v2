@@ -1590,7 +1590,8 @@ export default function Home() {
   const toggleTheme = () => {
     const next = theme === "dark" ? "light" : "dark";
     document.documentElement.dataset.theme = next;
-    try { localStorage.setItem("hoit-theme", next); } catch { /* sin almacenamiento: el tema dura la sesión */ }
+    // Preferencia de este navegador (cookie de un año): no viaja a otros equipos ni se guarda en la base.
+    document.cookie = `hoit-theme=${next}; path=/; max-age=31536000; SameSite=Lax; Secure`;
     window.dispatchEvent(new Event("hoit-theme"));
   };
   const [period, setPeriod] = useState("24 h");
