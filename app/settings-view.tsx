@@ -299,7 +299,7 @@ export function SettingsView({
   };
 
   const saveAsset = async () => {
-    await patchConfiguration({ section: "asset", name: assetForm.name, area: assetForm.area, nominalVoltageKv: assetForm.nominalVoltageKv || null }, "Identificación actualizada en PostgreSQL");
+    await patchConfiguration({ section: "asset", name: assetForm.name, area: assetForm.area, nominalVoltageKv: assetForm.nominalVoltageKv || null }, "Identificación actualizada");
     await onReloadHierarchy();
   };
 
@@ -375,9 +375,8 @@ export function SettingsView({
             <label><span>Sitio</span><input value={`${data.asset.siteCode} · ${data.asset.siteName}`} readOnly /></label>
             <label><span>Zona horaria del sitio</span><input value={data.asset.siteTimezone} readOnly /></label>
           </div>
-          <aside className="configuration-status-card"><span className={`configuration-status-dot status-${data.asset.state}`} /><small>Estado operacional</small><strong>{data.asset.state === "normal" ? "Normal" : data.asset.state === "offline" ? "Sin telemetría" : data.asset.state}</strong><p>El código y el sitio se administran en Estructura operacional para proteger las relaciones históricas.</p></aside>
+          <aside className="configuration-status-card"><span className={`configuration-status-dot status-${data.asset.state}`} /><small>Estado operacional</small><strong>{({ normal: "Normal", warning: "Advertencia", critical: "Crítico", offline: "Sin telemetría", maintenance: "En mantenimiento" } as Record<string, string>)[data.asset.state] ?? data.asset.state}</strong><p>El código y el sitio se administran en Estructura operacional para proteger las relaciones históricas.</p></aside>
         </div>
-        <div className="configuration-note"><IconShieldCheck size={17} /><p><strong>Persistencia real.</strong> Los cambios quedan en PostgreSQL, generan auditoría y una versión técnica cuando existe un controlador asociado.</p></div>
       </div>}
 
       {tab === "acquisition" && <div className="settings-content acquisition-settings">
