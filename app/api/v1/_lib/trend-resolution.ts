@@ -65,12 +65,13 @@ export function inferTrendStepSeconds(
   bucketSeconds: number,
   fallbackSeconds = 300,
 ) {
-  if (bucketSeconds > 0) return bucketSeconds;
+  // El paso esperado es el mayor entre el tamaño del grupo y el intervalo real (mediana) de los datos:
+  // lecturas guardadas cada 5 min en grupos de 1 min no son "huecos".
   const deltas = series.flatMap(({ points }) => points.slice(1).map((point, index) =>
     new Date(point.timestamp).getTime() - new Date(points[index].timestamp).getTime(),
   )).filter((delta) => Number.isFinite(delta) && delta > 0).sort((a, b) => a - b);
-  if (!deltas.length) return fallbackSeconds;
+  if (!deltas.length) return bucketSeconds > 0 ? bucketSeconds : fallbackSeconds;
   const middle = Math.floor(deltas.length / 2);
   const medianMs = deltas.length % 2 ? deltas[middle] : (deltas[middle - 1] + deltas[middle]) / 2;
-  return Math.max(1, Math.round(medianMs / 1000));
+  return Math.max(1, bucketSeconds, Math.round(medianMs / 1000));
 }

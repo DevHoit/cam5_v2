@@ -36,7 +36,9 @@ test("infers the real gateway cadence for short raw trends", () => {
     { timestamp: "2026-09-05T11:55:00.000Z" },
   ] }];
   assert.equal(inferTrendStepSeconds(series, 0), 300);
-  assert.equal(inferTrendStepSeconds(series, 60), 60);
+  assert.equal(inferTrendStepSeconds(series, 60), 300, "5-minute samples grouped by the minute are not gaps");
+  assert.equal(inferTrendStepSeconds(series, 900), 900);
+  assert.equal(inferTrendStepSeconds([{ points: [] }], 60), 60);
   assert.equal(inferTrendStepSeconds([{ points: [] }], 0), 300);
 });
 
