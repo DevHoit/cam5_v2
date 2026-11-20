@@ -78,7 +78,7 @@ export function remainsInsideAlarmHysteresis(
   return Number.isFinite(previousThreshold) && value > recoveryBoundary;
 }
 
-function alarmCopy(input: {
+export function alarmCopy(input: {
   kind: AlarmKind;
   severity: AlarmSeverity;
   channelCode: string;
@@ -101,9 +101,11 @@ function alarmCopy(input: {
     };
   }
   const level = input.severity === "critical" ? "Umbral crítico" : "Umbral de advertencia";
+  // Los valores escalados (raw × 0,1) arrastran error de coma flotante: 798 × 0,1 = 79.80000000000001.
+  const shown = (value: number | null | undefined) => value === null || value === undefined || !Number.isFinite(value) ? "—" : String(Number(value.toFixed(2)));
   return {
     title: `${level} superado · ${input.channelCode}`,
-    detail: `${input.channelName} · ${input.zone || "Sin zona"}. Valor ${input.value ?? "—"} ${input.unit}; umbral ${input.threshold ?? "—"} ${input.unit}.`,
+    detail: `${input.channelName} · ${input.zone || "Sin zona"}. Valor ${shown(input.value)} ${input.unit}; umbral ${shown(input.threshold)} ${input.unit}.`,
   };
 }
 

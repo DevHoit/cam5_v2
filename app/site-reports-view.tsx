@@ -248,7 +248,7 @@ function ScheduleEditor({ schedule, users, canSchedule, notify, confirm, onSaved
 
   const addDraft = () => {
     const email = draft.trim().toLowerCase();
-    if (!EMAIL_PATTERN.test(email)) { setDraftError("Escribe un correo válido, por ejemplo nombre@saesa.cl."); return; }
+    if (!EMAIL_PATTERN.test(email)) { setDraftError("Escribe un correo válido, por ejemplo nombre@empresa.cl."); return; }
     if (has(email)) { setDraftError("Ese correo ya está en la lista."); return; }
     if (recipients.length >= 20) { setDraftError("Puedes agregar hasta 20 destinatarios."); return; }
     setRecipients([...recipients, { email }]);
@@ -315,7 +315,7 @@ function ScheduleEditor({ schedule, users, canSchedule, notify, confirm, onSaved
           {!recipients.length && <span className="sr-muted">Aún no hay destinatarios.</span>}
         </div>
         {canSchedule && <div className="sr-add">
-          <label><span>Agregar destinatario</span><input type="email" value={draft} placeholder="nombre@saesa.cl" onChange={(event) => { setDraft(event.target.value); setDraftError(""); }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addDraft(); } }} aria-invalid={Boolean(draftError)} /></label>
+          <label><span>Agregar destinatario</span><input type="email" value={draft} placeholder="nombre@empresa.cl" onChange={(event) => { setDraft(event.target.value); setDraftError(""); }} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addDraft(); } }} aria-invalid={Boolean(draftError)} /></label>
           <button type="button" className="secondary-button" onClick={addDraft}><IconPlus size={15} aria-hidden="true" /> Agregar</button>
         </div>}
         {draftError && <small className="field-error">{draftError}</small>}
