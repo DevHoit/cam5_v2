@@ -59,3 +59,9 @@ test("energy today is the counter difference since local midnight and demand pea
   assert.equal(today.peakAt, at(600).toISOString());
   assert.equal(today.kwh, 250.5, "a counter that resets adds nothing");
 });
+
+test("a cold room bucket takes the sensor farthest outside the range, below the minimum too", () => {
+  const freezing = buildHistory([bucket(10, 3), { channelId: "b", start: new Date(from.getTime() + 10 * step), avg: -1, min: -2, max: -0.5, first: -1, last: -1 }], cold, from, now);
+  assert.equal(freezing.values[10], -2);
+  assert.equal(freezing.excursions, 1);
+});

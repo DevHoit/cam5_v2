@@ -1,6 +1,7 @@
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { evaluateAlarmReadings, evaluateStaleCommunications } from "./alarm-engine";
 import type { Cam5Database } from "./index";
+import { evaluatePointRanges } from "./point-range-alarm";
 import {
   assets,
   channels,
@@ -366,6 +367,11 @@ export async function ingestMeasurements(
       result.alarms.updated += evaluation.updated;
       result.alarms.resolved += evaluation.resolved;
     }
+    // Rango objetivo del punto (p. ej. cámara de frío) con su tolerancia antes de alarmar.
+    const ranges = await evaluatePointRanges(db, [...evaluations.keys()], receivedAt);
+    result.alarms.opened += ranges.opened;
+    result.alarms.updated += ranges.escalated;
+    result.alarms.resolved += ranges.resolved;
     if (evaluations.size) await evaluateStaleCommunications(db, gateway.siteId, receivedAt);
   } catch (error) {
     console.error("No fue posible evaluar las alarmas de las mediciones", error);
