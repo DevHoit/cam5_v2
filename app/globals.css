@@ -3259,3 +3259,12 @@ button.point-row:hover { background: var(--surface-2); }
 .sr-editor > footer { padding: 12px 16px; display: flex; gap: 8px; align-items: center; background: var(--surface-2); border-top: 1px solid var(--line); }
 .sr-editor > footer > span { flex: 1; }
 @media (max-width: 1000px) { .sr-layout, .sr-sched, .sr-top, .sr-grid { grid-template-columns: minmax(0, 1fr); } .sr-editor-grid { grid-template-columns: minmax(0, 1fr); } }
+
+/* En el teléfono, 100vh incluye la barra del navegador: el pie del menú (cuenta, tema y cerrar sesión)
+   quedaba escondido bajo ella. 100dvh usa el alto visible real. */
+@supports (height: 100dvh) {
+  .app-shell, .sidebar, .main-shell { height: 100dvh; }
+}
+@media (max-width: 820px) {
+  .sidebar-status { padding-bottom: max(10px, env(safe-area-inset-bottom)); }
+}
