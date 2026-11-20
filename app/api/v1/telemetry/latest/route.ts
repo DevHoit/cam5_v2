@@ -7,6 +7,7 @@ import {
   devices,
   gateways,
   latestReadings,
+  measurementQuantities,
   physicalInputs,
   readingProfiles,
   registerDefinitions,
@@ -56,6 +57,8 @@ export async function GET(request: NextRequest) {
       name: channels.name,
       zone: channels.zone,
       metric: channels.metric,
+      metricName: measurementQuantities.name,
+      decimals: measurementQuantities.decimals,
       unit: channels.unit,
       enabled: channels.enabled,
       displayOrder: channels.displayOrder,
@@ -78,6 +81,7 @@ export async function GET(request: NextRequest) {
       visiblePreference: userChannelPreferences.visible,
     }).from(channels)
       .innerJoin(registerDefinitions, eq(registerDefinitions.id, channels.registerDefinitionId))
+      .leftJoin(measurementQuantities, eq(measurementQuantities.key, channels.metric))
       .leftJoin(physicalInputs, eq(physicalInputs.id, channels.physicalInputId))
       .leftJoin(latestReadings, eq(latestReadings.channelId, channels.id))
       .leftJoin(alarmRules, eq(alarmRules.channelId, channels.id))

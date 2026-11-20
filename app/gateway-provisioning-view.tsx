@@ -17,6 +17,7 @@ import {
   IconShieldCheck,
   IconTrash,
 } from "@tabler/icons-react";
+import { DetectedDevicesPanel } from "./detected-devices-panel";
 import { Pagination } from "./pagination";
 
 type NoticeTone = "success" | "info" | "warning";
@@ -499,6 +500,7 @@ export function GatewayProvisioningView({
     </section>
 
     <GatewayHealthPanel gateways={data.gateways} canEditDataPlan={Boolean(data.canEditDataPlan)} onSaveDataPlan={saveDataPlan} releases={releases} canManageReleases={canManageReleases} onAssignRelease={assignRelease} />
+    <DetectedDevicesPanel canWrite={canWrite} notify={notify} confirm={confirm} />
     {canManageReleases && <GatewayReleasesPanel releases={releases} onUpload={uploadRelease} onDelete={deleteRelease} />}
 
     {secret && <div className="credential-secret-backdrop">

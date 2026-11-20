@@ -28,7 +28,8 @@ export const assetStateEnum = pgEnum("asset_state", ["normal", "warning", "criti
 export const gatewayStateEnum = pgEnum("gateway_state", ["pending", "online", "degraded", "offline"]);
 export const deviceStateEnum = pgEnum("device_state", ["draft", "commissioning", "active", "offline", "maintenance", "decommissioned"]);
 export const inputKindEnum = pgEnum("input_kind", ["temperature_saw", "uhf", "humidity"]);
-export const channelMetricEnum = pgEnum("channel_metric", [
+/** Claves de magnitud que existían como enum fijo; hoy viven en la tabla measurement_quantities. */
+export const BUILTIN_CAM5_METRICS = [
   "temperature",
   "ambient_temperature",
   "humidity",
@@ -40,7 +41,7 @@ export const channelMetricEnum = pgEnum("channel_metric", [
   "beta",
   "phi",
   "system",
-]);
+] as const;
 export const registerDataTypeEnum = pgEnum("register_data_type", ["int16", "uint16"]);
 export const dataQualityEnum = pgEnum("data_quality", ["good", "stale", "bad", "disabled"]);
 export const severityEnum = pgEnum("severity", ["normal", "warning", "critical"]);
@@ -319,6 +320,24 @@ export const userInvitations = pgTable("user_invitations", {
   check("user_invitations_expiry_chk", sql`${table.expiresAt} > ${table.createdAt}`),
 ]);
 
+/**
+ * Catálogo abierto de magnitudes (temperatura, humedad, voltaje, energía, señal, estados…).
+ * gauge: valor instantáneo (promedio/mín/máx) · counter: acumulado (consumo por período) · state: estado discreto.
+ */
+export const measurementQuantities = pgTable("measurement_quantities", {
+  key: varchar("key", { length: 60 }).primaryKey(),
+  name: varchar("name", { length: 120 }).notNull(),
+  unit: varchar("unit", { length: 40 }).notNull(),
+  decimals: smallint("decimals").default(1).notNull(),
+  kind: varchar("kind", { length: 16 }).default("gauge").notNull(),
+  builtin: boolean("builtin").default(false).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  check("measurement_quantities_key_chk", sql`${table.key} ~ '^[a-z][a-z0-9_]{1,59}$'`),
+  check("measurement_quantities_kind_chk", sql`${table.kind} IN ('gauge', 'counter', 'state')`),
+  check("measurement_quantities_decimals_chk", sql`${table.decimals} BETWEEN 0 AND 6`),
+]);
+
 export const readingProfiles = pgTable("reading_profiles", {
   id: uuid("id").defaultRandom().primaryKey(),
   key: varchar("key", { length: 60 }).notNull(),
@@ -364,6 +383,9 @@ export const deviceModels = pgTable("device_models", {
   manufacturer: varchar("manufacturer", { length: 100 }).default("IntelliSAW").notNull(),
   name: varchar("name", { length: 160 }).notNull(),
   registerMapVersion: varchar("register_map_version", { length: 40 }).notNull(),
+  // Cómo llegan los datos: "modbus_tcp" (registros crudos que decodifica el portal) o "ble"
+  // (mediciones ya decodificadas por el gateway, identificadas por clave).
+  protocol: varchar("protocol", { length: 24 }).default("modbus_tcp").notNull(),
   capabilities: jsonb("capabilities").$type<{
     temperatureInputs: number;
     uhfInputs: number;
@@ -381,6 +403,8 @@ export const devices = pgTable("devices", {
   readingProfileId: uuid("reading_profile_id").references(() => readingProfiles.id, { onDelete: "set null" }),
   code: varchar("code", { length: 60 }).notNull(),
   name: varchar("name", { length: 160 }).notNull(),
+  // Identidad con la que el gateway reporta el equipo cuando no es Modbus (MAC de un beacon BLE, n.º de serie…).
+  externalId: varchar("external_id", { length: 120 }),
   serialNumber: varchar("serial_number", { length: 120 }),
   firmwareVersion: varchar("firmware_version", { length: 80 }),
   dataVersion: integer("data_version"),
@@ -403,6 +427,7 @@ export const devices = pgTable("devices", {
   // La ingestión identifica el controlador por su código dentro del gateway.
   uniqueIndex("devices_gateway_code_uidx").on(table.gatewayId, table.code),
   uniqueIndex("devices_asset_code_uidx").on(table.assetId, table.code),
+  uniqueIndex("devices_gateway_external_uidx").on(table.gatewayId, table.externalId),
   index("devices_gateway_state_idx").on(table.gatewayId, table.state),
   check("devices_port_chk", sql`${table.port} BETWEEN 1 AND 65535`),
   check("devices_unit_id_chk", sql`${table.unitId} BETWEEN 0 AND 247`),
@@ -413,12 +438,14 @@ export const devices = pgTable("devices", {
 export const registerDefinitions = pgTable("register_definitions", {
   id: uuid("id").defaultRandom().primaryKey(),
   modelId: uuid("model_id").notNull().references(() => deviceModels.id, { onDelete: "cascade" }),
-  nativeRegister: integer("native_register").notNull(),
+  // Modbus: registro nativo + tipo de dato. Equipos que envían mediciones ya decodificadas: sourceKey.
+  nativeRegister: integer("native_register"),
+  sourceKey: varchar("source_key", { length: 60 }),
   humanReference: varchar("human_reference", { length: 20 }).notNull(),
   name: varchar("name", { length: 160 }).notNull(),
   registerGroup: varchar("register_group", { length: 60 }).notNull(),
-  metric: channelMetricEnum("metric").notNull(),
-  dataType: registerDataTypeEnum("data_type").notNull(),
+  metric: varchar("metric", { length: 60 }).notNull().references(() => measurementQuantities.key, { onDelete: "restrict" }),
+  dataType: registerDataTypeEnum("data_type"),
   scaleFactor: numeric("scale_factor", { precision: 16, scale: 6 }).default("1").notNull(),
   scaleNote: varchar("scale_note", { length: 80 }),
   unit: varchar("unit", { length: 40 }).notNull(),
@@ -428,6 +455,8 @@ export const registerDefinitions = pgTable("register_definitions", {
   writable: boolean("writable").default(false).notNull(),
 }, (table) => [
   uniqueIndex("register_model_native_uidx").on(table.modelId, table.nativeRegister),
+  uniqueIndex("register_model_source_key_uidx").on(table.modelId, table.sourceKey),
+  check("register_source_chk", sql`(${table.nativeRegister} IS NOT NULL AND ${table.dataType} IS NOT NULL) OR ${table.sourceKey} IS NOT NULL`),
   index("register_model_group_idx").on(table.modelId, table.registerGroup),
   check("register_native_nonnegative_chk", sql`${table.nativeRegister} >= 0`),
 ]);
@@ -463,7 +492,7 @@ export const channels = pgTable("channels", {
   code: varchar("code", { length: 40 }).notNull(),
   name: varchar("name", { length: 180 }).notNull(),
   zone: varchar("zone", { length: 160 }),
-  metric: channelMetricEnum("metric").notNull(),
+  metric: varchar("metric", { length: 60 }).notNull().references(() => measurementQuantities.key, { onDelete: "restrict" }),
   unit: varchar("unit", { length: 40 }).notNull(),
   enabled: boolean("enabled").default(false).notNull(),
   displayOrder: integer("display_order").default(0).notNull(),
@@ -476,6 +505,22 @@ export const channels = pgTable("channels", {
   index("channels_asset_enabled_idx").on(table.assetId, table.enabled),
   index("channels_input_idx").on(table.physicalInputId),
   check("channels_display_order_nonnegative_chk", sql`${table.displayOrder} >= 0`),
+]);
+
+/** Equipos que un gateway reporta pero que nadie ha asignado aún (p. ej. beacons BLE nuevos). */
+export const detectedDevices = pgTable("detected_devices", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  gatewayId: uuid("gateway_id").notNull().references(() => gateways.id, { onDelete: "cascade" }),
+  externalId: varchar("external_id", { length: 120 }).notNull(),
+  firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).defaultNow().notNull(),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).defaultNow().notNull(),
+  seenCount: integer("seen_count").default(1).notNull(),
+  lastRssi: smallint("last_rssi"),
+  lastValues: jsonb("last_values").$type<Record<string, number>>().default(sql`'{}'::jsonb`).notNull(),
+  dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
+}, (table) => [
+  uniqueIndex("detected_devices_gateway_external_uidx").on(table.gatewayId, table.externalId),
+  index("detected_devices_gateway_seen_idx").on(table.gatewayId, table.lastSeenAt),
 ]);
 
 export const userChannelPreferences = pgTable("user_channel_preferences", {
