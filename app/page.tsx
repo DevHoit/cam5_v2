@@ -160,11 +160,13 @@ type PortalLiveTelemetry = {
     name: string;
     zone: string | null;
     metric: string;
+    metricName: string | null;
+    decimals: number | null;
     unit: string;
     enabled: boolean;
     visible: boolean;
     displayOrder: number;
-    register: number;
+    register: number | null;
     humanReference: string;
     physicalInputId: string | null;
     inputCode: string | null;
@@ -199,7 +201,7 @@ type PortalSensor = {
   threshold: string;
   warning: number | null;
   critical: number | null;
-  nativeRegister: number;
+  nativeRegister: number | null;
   register: string;
   quality: string;
   enabled: boolean;
@@ -293,8 +295,9 @@ function telemetryAge(recordedAt: string | null) {
   return `Actualizado hace ${humanAge(seconds)}`;
 }
 
-function formatTelemetryValue(value: number | null, unit: string) {
+function formatTelemetryValue(value: number | null, unit: string, decimals?: number | null) {
   if (value === null || !Number.isFinite(value)) return "—";
+  if (decimals !== null && decimals !== undefined) return value.toFixed(decimals);
   return unit === "°C" || unit === "%RH" ? value.toFixed(1) : Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
@@ -307,7 +310,7 @@ function useSensorData(override?: PortalTelemetryState) {
         : live.metric === "humidity" ? { type: "Humedad", metric: "humidity" as const }
           : live.metric === "partial_discharge" ? { type: "Descarga parcial", metric: "pd" as const }
             : live.metric === "surface_discharge" ? { type: "Descarga superficial", metric: "sd" as const }
-              : { type: "Señal CAM-5", metric: "other" as const };
+              : { type: live.metricName ?? "Medición", metric: "other" as const };
     const activeThreshold = live.severity === "critical" ? live.criticalThreshold : live.warningThreshold;
     const quality = !live.enabled
       ? "Deshabilitado"
@@ -326,7 +329,7 @@ function useSensorData(override?: PortalTelemetryState) {
       sourceId: live.inputCode ?? "Sin entrada",
       label: live.name,
       zone: live.zone ?? live.inputAssignment ?? "Sin asignar",
-      value: formatTelemetryValue(live.value, live.unit),
+      value: formatTelemetryValue(live.value, live.unit, live.decimals),
       numericValue: live.value,
       unit: live.unit,
       ...presentation,
@@ -720,7 +723,7 @@ function CabinetView({ onOpenTrend }: { onOpenTrend: (id: string) => void }) {
           <div className="selected-sensor-head"><span className="selected-sensor-icon"><SelectedIcon size={21} /></span><div><small>Canal seleccionado</small><strong>{selected.id} · {selected.type}</strong></div><StatusPill state={selectedDisplayState}>{selectedStateLabel}</StatusPill></div>
           <div className="selected-sensor-value">{selected.value}<span>{selected.unit}</span></div>
           <p>{selected.label} · {selected.zone}</p>
-          <dl><div><dt>Última lectura</dt><dd>{selected.trend.replace(/^Actualizado /, "")}</dd></div><div><dt>Umbrales</dt><dd>{thresholdText(selected)}</dd></div><div><dt>Registro CAM-5</dt><dd>{selected.nativeRegister} · {selected.register}</dd></div><div><dt>Calidad</dt><dd>{selected.quality}</dd></div></dl>
+          <dl><div><dt>Última lectura</dt><dd>{selected.trend.replace(/^Actualizado /, "")}</dd></div><div><dt>Umbrales</dt><dd>{thresholdText(selected)}</dd></div><div><dt>{selected.nativeRegister === null ? "Origen" : "Registro CAM-5"}</dt><dd>{selected.nativeRegister === null ? selected.register : `${selected.nativeRegister} · ${selected.register}`}</dd></div><div><dt>Calidad</dt><dd>{selected.quality}</dd></div></dl>
           <button type="button" onClick={() => onOpenTrend(selected.id)}>Abrir tendencia del canal <TrendingUp size={16} /></button>
         </div> : <div className="selected-sensor-empty"><EyeOff size={25} /><strong>{telemetryState.status === "loading" ? "Cargando canales" : telemetryState.status === "error" ? "Estado no verificado" : "No seleccionaste canales visibles"}</strong><p>{telemetryState.status === "loading" ? "Esperando la respuesta del gateway y del controlador CAM-5." : telemetryState.status === "error" ? "No fue posible consultar la telemetría. Esto no confirma una desconexión del equipo." : "Usa Personalizar canales para elegir las variables que quieres revisar."}</p></div>}
       </article>

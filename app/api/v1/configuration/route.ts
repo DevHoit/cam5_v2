@@ -317,7 +317,8 @@ export async function GET(request: NextRequest) {
       && registers[0]?.nativeRegister === 418
       && registers.at(-1)?.nativeRegister === 522
       && new Set(registers.map((register) => register.nativeRegister)).size === registers.length;
-    if (controller && !mapValid) warnings.push("El catálogo Modbus no coincide con el mapa CAM5 R1.6 esperado.");
+    // El mapa de 105 registros solo aplica a controladores CAM5; un beacon BLE trae su propia plantilla de mediciones.
+    if (controller && controller.modelCode === "CAM5-TPH-XDCW" && !mapValid) warnings.push("El catálogo Modbus no coincide con el mapa CAM5 R1.6 esperado.");
 
     return Response.json({
       asset: { ...asset, nominalVoltageKv: asset.nominalVoltageKv === null ? null : Number(asset.nominalVoltageKv) },

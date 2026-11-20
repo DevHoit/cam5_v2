@@ -6,12 +6,23 @@ import { getDb } from "../../../../../db/index";
 import { clients, gatewayApiCredentials, gateways, sites } from "../../../../../db/schema";
 import { ApiError } from "../../_lib/auth";
 
-export async function requireGatewayCredential(request: NextRequest) {
-  const authorization = request.headers.get("authorization") ?? "";
-  const [scheme, token, ...extra] = authorization.trim().split(/\s+/);
-  if (scheme?.toLowerCase() !== "bearer" || !token || extra.length || !token.startsWith("cam5gw_")) {
-    throw new ApiError(401, "Credencial de gateway inválida.");
+/**
+ * Token del gateway: "Authorization: Bearer cam5gw_…" (gateways Linux) o "X-HOIT-Token: cam5gw_…"
+ * (mini gateways ESP32, que ya envían ese encabezado).
+ */
+export function gatewayTokenFrom(request: Pick<NextRequest, "headers">): string | null {
+  const authorization = (request.headers.get("authorization") ?? "").trim();
+  if (authorization) {
+    const [scheme, token, ...extra] = authorization.split(/\s+/);
+    return scheme?.toLowerCase() === "bearer" && token?.startsWith("cam5gw_") && !extra.length ? token : null;
   }
+  const header = (request.headers.get("x-hoit-token") ?? "").trim();
+  return header.startsWith("cam5gw_") && !/\s/.test(header) ? header : null;
+}
+
+export async function requireGatewayCredential(request: NextRequest) {
+  const token = gatewayTokenFrom(request);
+  if (!token) throw new ApiError(401, "Credencial de gateway inválida.");
 
   const db = getDb();
   const now = new Date();

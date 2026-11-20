@@ -134,6 +134,13 @@
       "when": 1795055284078,
       "tag": "0018_site_reports",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1795210361257,
+      "tag": "0019_measurement_quantities_ble",
+      "breakpoints": true
     }
   ]
 }

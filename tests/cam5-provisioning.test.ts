@@ -12,7 +12,7 @@ test("provisions a second CAM5 controller with the standard inputs, channels, ru
     await seedCam5Database(db, { adminEmail: "admin@example.test", adminName: "Admin", adminPassword: "Cam5-Prueba-2026", log: false });
     const [site] = await db.select().from(schema.sites).limit(1);
     const [gateway] = await db.select().from(schema.gateways).limit(1);
-    const [model] = await db.select().from(schema.deviceModels).limit(1);
+    const [model] = await db.select().from(schema.deviceModels).where(eq(schema.deviceModels.code, "CAM5-TPH-XDCW")).limit(1);
     const [point] = await db.insert(schema.assets).values({ siteId: site.id, code: "EQ-02", name: "Equipo 2" }).returning();
     const [device] = await db.insert(schema.devices).values({ assetId: point.id, gatewayId: gateway.id, modelId: model.id, code: "CAM5-CTRL-02", name: "CAM5 Equipo 2", host: "10.0.0.2", unitId: 1 }).returning();
     // Mismo gateway y Unit ID 1 que el equipo del seed, pero otra IP: son dos CAM5 distintos.
