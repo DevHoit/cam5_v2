@@ -58,6 +58,9 @@ export async function GET(request: NextRequest) {
       zone: channels.zone,
       metric: channels.metric,
       metricName: measurementQuantities.name,
+      role: channels.role,
+      deviceId: channels.deviceId,
+      devicePosition: devices.position,
       decimals: measurementQuantities.decimals,
       unit: channels.unit,
       enabled: channels.enabled,
@@ -82,6 +85,7 @@ export async function GET(request: NextRequest) {
     }).from(channels)
       .innerJoin(registerDefinitions, eq(registerDefinitions.id, channels.registerDefinitionId))
       .leftJoin(measurementQuantities, eq(measurementQuantities.key, channels.metric))
+      .innerJoin(devices, eq(devices.id, channels.deviceId))
       .leftJoin(physicalInputs, eq(physicalInputs.id, channels.physicalInputId))
       .leftJoin(latestReadings, eq(latestReadings.channelId, channels.id))
       .leftJoin(alarmRules, eq(alarmRules.channelId, channels.id))

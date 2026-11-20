@@ -5,12 +5,14 @@ import {
   alarms,
   assets,
   auditLogs,
+  channels,
   clients,
   deviceModels,
   devices,
   gatewayApiCredentials,
   gateways,
   ingestionBatches,
+  pointTypes,
   readingProfiles,
   roles,
   sites,
@@ -69,6 +71,13 @@ async function assertControllerAvailable(
       .limit(1);
     if (sameCode) throw new ApiError(409, `El código ${target.code} ya está en uso en este gateway.`);
   }
+}
+
+/** Valida el tipo de punto contra el catálogo para responder 400 y no un error de clave foránea. */
+async function pointTypeKey(tx: Cam5Executor, key: string) {
+  const [type] = await tx.select({ key: pointTypes.key }).from(pointTypes).where(eq(pointTypes.key, key)).limit(1);
+  if (!type) throw new ApiError(400, "El tipo de punto no existe.");
+  return type.key;
 }
 
 export async function GET(request: NextRequest) {
@@ -141,6 +150,8 @@ export async function GET(request: NextRequest) {
         state: devices.state,
         active: devices.active,
         protocol: devices.protocol,
+        position: devices.position,
+        externalId: devices.externalId,
         host: devices.host,
         port: devices.port,
         unitId: devices.unitId,
@@ -172,6 +183,7 @@ export async function GET(request: NextRequest) {
       points: pointRows.map((point) => ({ ...point, nominalVoltageKv: point.nominalVoltageKv ? Number(point.nominalVoltageKv) : null })),
       gateways: gatewayRows.map((gateway) => ({ ...gateway, lastSeenAt: gateway.lastSeenAt?.toISOString() ?? null })),
       controllers: controllerRows.map((controller) => ({ ...controller, lastReadAt: controller.lastReadAt?.toISOString() ?? null })),
+      pointTypes: await db.select({ key: pointTypes.key, name: pointTypes.name, system: pointTypes.system }).from(pointTypes).orderBy(pointTypes.displayOrder),
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return apiErrorResponse(error);
@@ -234,7 +246,7 @@ export async function POST(request: NextRequest) {
           code,
           name,
           area: optionalText(body, "area"),
-          assetType: optionalText(body, "type") ?? "switchgear_cabinet",
+          assetType: await pointTypeKey(tx, optionalText(body, "type") ?? "switchgear_cabinet"),
           nominalVoltageKv: typeof body.nominalVoltageKv === "number" ? String(body.nominalVoltageKv) : null,
           state: "offline",
         }).returning();
@@ -350,6 +362,7 @@ export async function PATCH(request: NextRequest) {
           ...(typeof body.name === "string" ? { name: textField(body, "name", "El nombre") } : {}),
           ...(typeof body.area === "string" ? { area: optionalText(body, "area") } : {}),
           ...(typeof body.nominalVoltageKv === "number" || body.nominalVoltageKv === null ? { nominalVoltageKv: body.nominalVoltageKv === null ? null : String(body.nominalVoltageKv) } : {}),
+          ...(typeof body.type === "string" ? { assetType: await pointTypeKey(tx, body.type) } : {}),
           ...(typeof body.active === "boolean" ? { active: body.active, state: body.active ? "offline" : "maintenance" } : {}),
           updatedAt: new Date(),
         }).where(eq(assets.id, id)).returning();
@@ -385,9 +398,14 @@ export async function PATCH(request: NextRequest) {
           ...(typeof body.host === "string" ? { host: textField(body, "host", "La dirección del controlador") } : {}),
           ...(typeof body.port === "number" ? { port: body.port } : {}),
           ...(typeof body.unitId === "number" ? { unitId: body.unitId } : {}),
+          ...(typeof body.position === "string" ? { position: body.position.trim().slice(0, 80) || null } : {}),
           ...(typeof body.active === "boolean" ? { active: body.active, state: body.active ? "commissioning" : "decommissioned" } : {}),
           updatedAt: new Date(),
         }).where(eq(devices.id, id)).returning();
+        // En un sensor BLE la zona de sus canales es su posición en el punto (Puerta, Fondo…).
+        if (record && record.protocol === "ble" && typeof body.position === "string") {
+          await tx.update(channels).set({ zone: typeof record.position === "string" && record.position ? record.position : String(record.name), updatedAt: new Date() }).where(eq(channels.deviceId, id));
+        }
       }
       if (!record) throw new ApiError(404, "El elemento no existe.");
       await tx.insert(auditLogs).values({

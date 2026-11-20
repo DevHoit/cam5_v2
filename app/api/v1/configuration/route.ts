@@ -20,7 +20,9 @@ import {
   registerDefinitions,
   sites,
   userAssetScopes,
+  pointTypes,
 } from "../../../../db/schema";
+import { parsePointConfig, POINT_SYSTEMS, PointConfigError, resolvePointConfig } from "../../../../db/point-types";
 import { apiErrorResponse, ApiError, requestMetadata, requireApiSession } from "../_lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -179,6 +181,8 @@ export async function GET(request: NextRequest) {
       name: assets.name,
       area: assets.area,
       nominalVoltageKv: assets.nominalVoltageKv,
+      assetType: assets.assetType,
+      config: assets.config,
       state: assets.state,
       active: assets.active,
       siteId: sites.id,
@@ -187,6 +191,7 @@ export async function GET(request: NextRequest) {
       siteTimezone: sites.timezone,
     }).from(assets).innerJoin(sites, eq(sites.id, assets.siteId)).where(eq(assets.id, assetId)).limit(1);
     if (!asset) throw new ApiError(404, "El punto de medición no existe.");
+    const typeRows = await db.select().from(pointTypes).orderBy(pointTypes.displayOrder);
 
     const [controller] = await db.select({
       id: devices.id,
@@ -321,7 +326,15 @@ export async function GET(request: NextRequest) {
     if (controller && controller.modelCode === "CAM5-TPH-XDCW" && !mapValid) warnings.push("El catálogo Modbus no coincide con el mapa CAM5 R1.6 esperado.");
 
     return Response.json({
-      asset: { ...asset, nominalVoltageKv: asset.nominalVoltageKv === null ? null : Number(asset.nominalVoltageKv) },
+      asset: {
+        ...asset,
+        nominalVoltageKv: asset.nominalVoltageKv === null ? null : Number(asset.nominalVoltageKv),
+        effectiveConfig: (() => {
+          const type = typeRows.find((row) => row.key === asset.assetType);
+          return type ? resolvePointConfig(type, asset.config) : null;
+        })(),
+      },
+      pointTypes: typeRows.map((row) => ({ ...row, systemName: POINT_SYSTEMS[row.system] })),
       controller: controller ? {
         ...controller,
         lastReadAt: controller.lastReadAt?.toISOString() ?? null,
@@ -399,7 +412,21 @@ export async function PATCH(request: NextRequest) {
         const nominalVoltageKv = body.nominalVoltageKv === null || body.nominalVoltageKv === ""
           ? null
           : String(finiteNumber(body.nominalVoltageKv, "La tensión nominal", 0.001, 1000));
-        const [updated] = await tx.update(assets).set({ name, area, nominalVoltageKv, updatedAt: new Date() }).where(eq(assets.id, assetId)).returning();
+        // Tipo de punto y ajustes propios (rango objetivo, tolerancia, combinación de sensores).
+        let assetType = current.assetType;
+        if (typeof body.assetType === "string" && body.assetType !== current.assetType) {
+          const [type] = await tx.select({ key: pointTypes.key }).from(pointTypes).where(eq(pointTypes.key, body.assetType)).limit(1);
+          if (!type) throw new ApiError(400, "El tipo de punto no existe.");
+          assetType = type.key;
+        }
+        let config = current.config;
+        try {
+          if (body.config !== undefined) config = parsePointConfig(body.config);
+        } catch (error) {
+          if (error instanceof PointConfigError) throw new ApiError(400, error.message);
+          throw error;
+        }
+        const [updated] = await tx.update(assets).set({ name, area, nominalVoltageKv, assetType, config, updatedAt: new Date() }).where(eq(assets.id, assetId)).returning();
         after = updated;
       } else if (section === "acquisition") {
         if (!controller) throw new ApiError(409, "El punto no tiene un controlador activo para configurar.");

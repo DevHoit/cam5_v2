@@ -1,6 +1,6 @@
-import { and, asc, eq, isNotNull } from "drizzle-orm";
+import { and, asc, eq, getTableColumns, isNotNull } from "drizzle-orm";
 import type { Cam5Executor } from "./cam5-provisioning";
-import { alarmRules, channels, detectedDevices, deviceModels, devices, readingProfiles, registerDefinitions } from "./schema";
+import { alarmRules, channels, detectedDevices, deviceModels, devices, measurementQuantities, readingProfiles, registerDefinitions } from "./schema";
 
 export class MeasurementProvisioningError extends Error {
   constructor(public readonly status: number, message: string) {
@@ -28,13 +28,15 @@ export async function provisionMeasurementDevice(tx: Cam5Executor, input: {
   externalId: string;
   name: string;
   code?: string;
+  position?: string | null;
 }) {
   const [model] = await tx.select({ id: deviceModels.id, protocol: deviceModels.protocol }).from(deviceModels).where(eq(deviceModels.id, input.modelId)).limit(1);
   if (!model) throw new MeasurementProvisioningError(404, "La plantilla de equipo no existe.");
   if (model.protocol === "modbus_tcp") throw new MeasurementProvisioningError(400, "Esa plantilla es de un controlador Modbus; agrégalo desde Controladores.");
 
   // Primero las mediciones del proceso y al final las del propio equipo (batería, señal).
-  const definitions = (await tx.select().from(registerDefinitions)
+  const definitions = (await tx.select({ ...getTableColumns(registerDefinitions), defaultRole: measurementQuantities.defaultRole }).from(registerDefinitions)
+    .innerJoin(measurementQuantities, eq(measurementQuantities.key, registerDefinitions.metric))
     .where(and(eq(registerDefinitions.modelId, model.id), isNotNull(registerDefinitions.sourceKey)))
     .orderBy(asc(registerDefinitions.name)))
     .sort((a, b) => Number(a.registerGroup === "Equipo") - Number(b.registerGroup === "Equipo"));
@@ -59,6 +61,7 @@ export async function provisionMeasurementDevice(tx: Cam5Executor, input: {
     code,
     name: input.name.trim().slice(0, 160),
     externalId: input.externalId,
+    position: input.position?.trim().slice(0, 80) || null,
     protocol: model.protocol,
     // La dirección del equipo en su protocolo: para BLE, la MAC.
     host: input.externalId,
@@ -74,9 +77,11 @@ export async function provisionMeasurementDevice(tx: Cam5Executor, input: {
     // Código corto que define la plantilla (TEMP, HR, BAT…); si se repitiera, la clave de origen.
     code: (codes.get(definition.humanReference) === 1 ? definition.humanReference : definition.sourceKey!).toUpperCase().slice(0, 40),
     name: definition.name,
-    zone: input.name.trim().slice(0, 160),
+    zone: (input.position?.trim() || input.name.trim()).slice(0, 160),
     metric: definition.metric,
     unit: definition.unit,
+    // Batería y señal de un beacon son salud del sensor, no variables de la cámara.
+    role: definition.channelRole ?? (definition.defaultRole as "process" | "health" | "diagnostic"),
     enabled: true,
     displayOrder: index,
     metadata: { sourceKey: definition.sourceKey },

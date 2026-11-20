@@ -145,7 +145,8 @@ type PortalHierarchy = {
   sites: Array<PortalSiteScope & { description: string | null; timezone: string; active: boolean; pointCount: number; gatewayCount: number; controllerCount: number }>;
   points: Array<{ id: string; siteId: string; code: string; name: string; area: string | null; type: string; nominalVoltageKv: number | null; state: "normal" | "warning" | "critical" | "offline" | "maintenance"; active: boolean }>;
   gateways: Array<{ id: string; siteId: string; code: string; name: string; serialNumber: string | null; softwareVersion: string | null; state: "pending" | "online" | "degraded" | "offline"; active: boolean; lastSeenAt: string | null; ipAddress: string | null }>;
-  controllers: Array<{ id: string; pointId: string; gatewayId: string; code: string; name: string; model: string; serialNumber: string | null; state: string; active: boolean; protocol: string; host: string; port: number; unitId: number; lastReadAt: string | null }>;
+  controllers: Array<{ id: string; pointId: string; gatewayId: string; code: string; name: string; model: string; serialNumber: string | null; state: string; active: boolean; protocol: string; position: string | null; externalId: string | null; host: string; port: number; unitId: number; lastReadAt: string | null }>;
+  pointTypes?: Array<{ key: string; name: string; system: string }>;
 };
 type PortalLiveTelemetry = {
   serverTime: string;
@@ -1124,7 +1125,7 @@ function OperationalHierarchyView({
 }) {
   type Resource = "client" | "site" | "point" | "gateway" | "controller";
   type EditableResource = PortalHierarchy["clients"][number] | PortalHierarchy["sites"][number] | PortalHierarchy["points"][number] | PortalHierarchy["gateways"][number] | PortalHierarchy["controllers"][number];
-  type EditorState = { resource: Resource; id: string; code: string; name: string; active: boolean; legalName: string; taxId: string; contactEmail: string; description: string; timezone: string; area: string; voltage: string; ipAddress: string; serialNumber: string; host: string; port: string; unitId: string };
+  type EditorState = { resource: Resource; id: string; code: string; name: string; active: boolean; legalName: string; taxId: string; contactEmail: string; description: string; timezone: string; area: string; voltage: string; ipAddress: string; serialNumber: string; host: string; port: string; unitId: string; protocol: string; position: string };
   const notify = useFeedback();
   const confirm = useConfirm();
   const [tab, setTab] = useState<"structure" | "connections">("structure");
@@ -1134,7 +1135,7 @@ function OperationalHierarchyView({
   const [saving, setSaving] = useState(false);
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [editorSaving, setEditorSaving] = useState(false);
-  const [form, setForm] = useState({ code: "", name: "", clientId: "", area: "", voltage: "", ipAddress: "", pointId: "", gatewayId: "", host: "", port: "502", unitId: "1" });
+  const [form, setForm] = useState({ code: "", name: "", clientId: "", area: "", voltage: "", ipAddress: "", pointId: "", gatewayId: "", host: "", port: "502", unitId: "1", type: "switchgear_cabinet" });
 
   const canManageClients = permissions.includes("users.manage");
   const canManagePoints = permissions.includes("assets.write");
@@ -1152,7 +1153,7 @@ function OperationalHierarchyView({
   const gatewayPage = useClientPagination(filteredGateways, 6);
   const controllerPage = useClientPagination(filteredControllers, 8);
 
-  const resetForm = () => setForm({ code: "", name: "", clientId: hierarchy?.active.clientId ?? "", area: "", voltage: "", ipAddress: "", pointId: "", gatewayId: "", host: "", port: "502", unitId: "1" });
+  const resetForm = () => setForm({ code: "", name: "", clientId: hierarchy?.active.clientId ?? "", area: "", voltage: "", ipAddress: "", pointId: "", gatewayId: "", host: "", port: "502", unitId: "1", type: "switchgear_cabinet" });
   const changeResource = (value: Resource) => { setResource(value); resetForm(); };
   const openEditor = (nextResource: Resource, value: EditableResource) => {
     const item = value as unknown as Record<string, unknown>;
@@ -1175,6 +1176,8 @@ function OperationalHierarchyView({
       host: field("host"),
       port: item.port === undefined ? "502" : String(item.port),
       unitId: item.unitId === undefined ? "1" : String(item.unitId),
+      protocol: field("protocol") || "modbus_tcp",
+      position: field("position"),
     });
   };
   const createResource = async (event: React.FormEvent) => {
@@ -1184,7 +1187,7 @@ function OperationalHierarchyView({
     try {
       const payload: Record<string, unknown> = { resource, code: form.code, name: form.name };
       if (resource === "site") Object.assign(payload, { clientId: form.clientId || hierarchy.active.clientId, timezone: "America/Santiago" });
-      if (resource === "point") Object.assign(payload, { siteId: hierarchy.active.siteId, area: form.area, nominalVoltageKv: form.voltage ? Number(form.voltage) : undefined });
+      if (resource === "point") Object.assign(payload, { siteId: hierarchy.active.siteId, area: form.area, type: form.type, nominalVoltageKv: form.voltage ? Number(form.voltage) : undefined });
       if (resource === "gateway") Object.assign(payload, { siteId: hierarchy.active.siteId, ipAddress: form.ipAddress });
       if (resource === "controller") Object.assign(payload, { pointId: form.pointId, gatewayId: form.gatewayId, host: form.host, port: Number(form.port), unitId: Number(form.unitId) });
       await portalRequest("/api/v1/hierarchy", { method: "POST", body: JSON.stringify(payload) });
@@ -1209,7 +1212,7 @@ function OperationalHierarchyView({
       if (editor.resource === "site") Object.assign(payload, { description: editor.description, timezone: editor.timezone });
       if (editor.resource === "point") Object.assign(payload, { area: editor.area, nominalVoltageKv: editor.voltage ? Number(editor.voltage) : null });
       if (editor.resource === "gateway") Object.assign(payload, { ipAddress: editor.ipAddress, serialNumber: editor.serialNumber });
-      if (editor.resource === "controller") Object.assign(payload, { host: editor.host, port: Number(editor.port), unitId: Number(editor.unitId) });
+      if (editor.resource === "controller") Object.assign(payload, editor.protocol === "ble" ? { position: editor.position } : { host: editor.host, port: Number(editor.port), unitId: Number(editor.unitId), position: editor.position });
       await portalRequest("/api/v1/hierarchy", { method: "PATCH", body: JSON.stringify(payload) });
       await onReload();
       notify(`${editor.name} actualizado correctamente.`);
@@ -1279,7 +1282,7 @@ function OperationalHierarchyView({
         <label><span>Código único</span><input required value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value })} placeholder={resource === "client" ? "CLIENTE-01" : resource === "site" ? "SITIO-01" : resource === "point" ? "MCC-01" : resource === "gateway" ? "GW-01" : "CAM5-01"} /></label>
         <label><span>Nombre</span><input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Nombre operacional" /></label>
         {resource === "site" && <label><span>Cliente</span><select required value={form.clientId || hierarchy.active.clientId} onChange={(event) => setForm({ ...form, clientId: event.target.value })}>{hierarchy.clients.filter((client) => client.active).map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select></label>}
-        {resource === "point" && <><label><span>Área</span><input value={form.area} onChange={(event) => setForm({ ...form, area: event.target.value })} placeholder="Sala o área eléctrica" /></label><label><span>Tensión nominal (kV)</span><input type="number" min="0" step="0.1" value={form.voltage} onChange={(event) => setForm({ ...form, voltage: event.target.value })} /></label></>}
+        {resource === "point" && <><label><span>Tipo de punto</span><select value={form.type} onChange={(event) => setForm({ ...form, type: event.target.value })}>{(hierarchy.pointTypes ?? [{ key: "switchgear_cabinet", name: "Celda de media tensión", system: "condition" }]).map((type) => <option key={type.key} value={type.key}>{type.name}</option>)}</select></label><label><span>Área</span><input value={form.area} onChange={(event) => setForm({ ...form, area: event.target.value })} placeholder="Sala o área eléctrica" /></label><label><span>Tensión nominal (kV)</span><input type="number" min="0" step="0.1" value={form.voltage} onChange={(event) => setForm({ ...form, voltage: event.target.value })} /></label></>}
         {resource === "gateway" && <label><span>Dirección IP</span><input value={form.ipAddress} onChange={(event) => setForm({ ...form, ipAddress: event.target.value })} placeholder="10.0.0.20" /></label>}
         {resource === "controller" && <><label><span>Punto de medición</span><select required value={form.pointId} onChange={(event) => setForm({ ...form, pointId: event.target.value })}><option value="">Seleccionar…</option>{hierarchy.points.filter((point) => point.active).map((point) => <option key={point.id} value={point.id}>{point.code} · {point.name}</option>)}</select></label><label><span>Gateway</span><select required value={form.gatewayId} onChange={(event) => setForm({ ...form, gatewayId: event.target.value })}><option value="">Seleccionar…</option>{hierarchy.gateways.filter((gateway) => gateway.active).map((gateway) => <option key={gateway.id} value={gateway.id}>{gateway.code} · {gateway.name}</option>)}</select></label><label><span>IP del CAM5</span><input required value={form.host} onChange={(event) => setForm({ ...form, host: event.target.value })} placeholder="192.168.10.42" /></label><label><span>Puerto</span><input type="number" min="1" max="65535" required value={form.port} onChange={(event) => setForm({ ...form, port: event.target.value })} /></label><label><span>Unit ID</span><input type="number" min="1" max="247" required value={form.unitId} onChange={(event) => setForm({ ...form, unitId: event.target.value })} /></label></>}
         <button className="primary-button" type="submit" disabled={saving || (resource === "controller" && (!hierarchy.points.length || !hierarchy.gateways.length))}>{saving ? "Guardando…" : "Registrar"}</button>
@@ -1321,7 +1324,7 @@ function OperationalHierarchyView({
         <div className="module-table-wrap" role="region" aria-label="Conexiones Modbus" tabIndex={0}><div className="connections-table"><div className="module-table-head"><span>Controlador</span><span>Punto de medición</span><span>Gateway</span><span>Destino Modbus</span><span>Estado</span><span><span className="sr-only">Acciones</span></span></div>{controllerPage.pageItems.map((controller) => {
           const point = hierarchy.points.find((item) => item.id === controller.pointId);
           const gateway = hierarchy.gateways.find((item) => item.id === controller.gatewayId);
-          return <div className={`module-table-row ${controller.active ? "" : "inactive-resource"}`} key={controller.id}><span><strong>{controller.code}</strong><small>{controller.model}</small></span><span>{point ? `${point.code} · ${point.name}` : "Punto no disponible"}</span><span>{gateway ? gateway.code : "Gateway no disponible"}</span><span>{controller.host}:{controller.port} · Unit ID {controller.unitId}</span><span><i className={`connection-status state-${controller.state}`}>{stateLabel(controller.state, controller.active)}</i></span><span>{canManageConnections && <button className="resource-edit-button" onClick={() => openEditor("controller", controller)} aria-label={`Editar controlador ${controller.name}`}><Pencil size={15} /> Editar</button>}</span></div>;
+          return <div className={`module-table-row ${controller.active ? "" : "inactive-resource"}`} key={controller.id}><span><strong>{controller.code}</strong><small>{controller.model}</small></span><span>{point ? `${point.code} · ${point.name}` : "Punto no disponible"}</span><span>{gateway ? gateway.code : "Gateway no disponible"}</span><span>{controller.protocol === "ble" ? `BLE · ${controller.externalId ?? controller.host}${controller.position ? ` · ${controller.position}` : ""}` : `${controller.host}:${controller.port} · Unit ID ${controller.unitId}${controller.position ? ` · ${controller.position}` : ""}`}</span><span><i className={`connection-status state-${controller.state}`}>{stateLabel(controller.state, controller.active)}</i></span><span>{canManageConnections && <button className="resource-edit-button" onClick={() => openEditor("controller", controller)} aria-label={`Editar controlador ${controller.name}`}><Pencil size={15} /> Editar</button>}</span></div>;
         })}{controllerPage.pageItems.length === 0 && <TableEmptyState title="No hay conexiones Modbus" detail="Asocia un controlador CAM5 a un punto de medición y a un gateway." />}</div></div>
         {controllerPage.totalPages > 1 && <Pagination page={controllerPage.page} totalPages={controllerPage.totalPages} total={filteredControllers.length} pageSize={8} onPageChange={controllerPage.setPage} itemLabel="conexiones" />}
       </div>}
@@ -1342,7 +1345,9 @@ function OperationalHierarchyView({
             {editor.resource === "site" && <><label className="field-wide"><span>Descripción</span><input value={editor.description} onChange={(event) => setEditor({ ...editor, description: event.target.value })} /></label><label className="field-wide"><span>Zona horaria</span><select value={editor.timezone} onChange={(event) => setEditor({ ...editor, timezone: event.target.value })}><option value="America/Santiago">America/Santiago</option><option value="UTC">UTC</option></select></label></>}
             {editor.resource === "point" && <><label><span>Área o sala</span><input value={editor.area} onChange={(event) => setEditor({ ...editor, area: event.target.value })} /></label><label><span>Tensión nominal (kV)</span><input type="number" min="0" step="0.1" value={editor.voltage} onChange={(event) => setEditor({ ...editor, voltage: event.target.value })} /></label></>}
             {editor.resource === "gateway" && <><label><span>Dirección IP</span><input value={editor.ipAddress} onChange={(event) => setEditor({ ...editor, ipAddress: event.target.value })} placeholder="10.0.0.20" /></label><label><span>Número de serie</span><input value={editor.serialNumber} onChange={(event) => setEditor({ ...editor, serialNumber: event.target.value })} /></label></>}
-            {editor.resource === "controller" && <><label className="field-wide"><span>IP o host del CAM5</span><input required value={editor.host} onChange={(event) => setEditor({ ...editor, host: event.target.value })} /></label><label><span>Puerto</span><input required type="number" min="1" max="65535" value={editor.port} onChange={(event) => setEditor({ ...editor, port: event.target.value })} /></label><label><span>Unit ID</span><input required type="number" min="1" max="247" value={editor.unitId} onChange={(event) => setEditor({ ...editor, unitId: event.target.value })} /></label></>}
+            {editor.resource === "controller" && <label className="field-wide"><span>Posición en el punto</span><input maxLength={80} value={editor.position} placeholder="Puerta, fondo, evaporador…" onChange={(event) => setEditor({ ...editor, position: event.target.value })} /></label>}
+            {editor.resource === "controller" && editor.protocol === "ble" && <label className="field-wide"><span>Identificador BLE (MAC)</span><input value={editor.host} readOnly /></label>}
+            {editor.resource === "controller" && editor.protocol !== "ble" && <><label className="field-wide"><span>IP o host del CAM5</span><input required value={editor.host} onChange={(event) => setEditor({ ...editor, host: event.target.value })} /></label><label><span>Puerto</span><input required type="number" min="1" max="65535" value={editor.port} onChange={(event) => setEditor({ ...editor, port: event.target.value })} /></label><label><span>Unit ID</span><input required type="number" min="1" max="247" value={editor.unitId} onChange={(event) => setEditor({ ...editor, unitId: event.target.value })} /></label></>}
           </div>
           <label className={`resource-active-toggle ${(editor.resource === "client" && editor.id === hierarchy.active.clientId) || (editor.resource === "site" && editor.id === hierarchy.active.siteId) ? "locked" : ""}`}><input type="checkbox" checked={editor.active} disabled={(editor.resource === "client" && editor.id === hierarchy.active.clientId) || (editor.resource === "site" && editor.id === hierarchy.active.siteId)} onChange={(event) => setEditor({ ...editor, active: event.target.checked })} /><span><strong>Elemento activo</strong><small>{(editor.resource === "client" && editor.id === hierarchy.active.clientId) || (editor.resource === "site" && editor.id === hierarchy.active.siteId) ? "Cambia primero el contexto activo para poder desactivarlo." : editor.active ? "Disponible para operación y adquisición." : "Conserva el histórico, pero queda fuera de operación."}</small></span></label>
           <footer><button type="button" className="danger-button" onClick={requestDelete} disabled={editorSaving || (editor.resource === "site" && editor.id === hierarchy.active.siteId) || (editor.resource === "client" && editor.id === hierarchy.active.clientId)}><Trash size={16} /> Eliminar</button><span /><button type="button" className="secondary-button" onClick={() => setEditor(null)} disabled={editorSaving}>Cancelar</button><button type="submit" className="primary-button" disabled={editorSaving}>{editorSaving ? "Guardando…" : "Guardar cambios"}</button></footer>
