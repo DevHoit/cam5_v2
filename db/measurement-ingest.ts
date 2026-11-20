@@ -337,7 +337,9 @@ export async function ingestMeasurements(
           setWhere: sql`excluded.recorded_at >= ${latestReadings.recordedAt}`,
         });
       }
-      await tx.update(devices).set({ state: "active", lastReadAt: device.recordedAt, updatedAt: receivedAt }).where(eq(devices.id, row.id));
+      // Un reenvío de datos antiguos no debe hacer retroceder la última lectura del equipo.
+      const recordedAt = device.recordedAt.toISOString();
+      await tx.update(devices).set({ state: "active", lastReadAt: sql`greatest(coalesce(${devices.lastReadAt}, ${recordedAt}::timestamptz), ${recordedAt}::timestamptz)`, updatedAt: receivedAt }).where(eq(devices.id, row.id));
       await tx.update(assets).set({ state: "normal", updatedAt: receivedAt }).where(and(eq(assets.id, row.assetId), eq(assets.state, "offline")));
       return due.length;
     });

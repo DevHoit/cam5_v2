@@ -34,7 +34,7 @@ test("summarizes each group with its highest fresh value and worst severity", ()
 
 test("sorts points with the most serious first", () => {
   const point = (code: string, status: SitePoint["status"], openAlarms = 0, temp: number | null = 40): SitePoint => ({
-    id: code, code, name: code, area: null, type: "switchgear_cabinet", typeName: "Celda", system: "condition", condition: null, deviceCode: null, status, lastReadAt: null, openAlarms, alarmSeverity: null,
+    id: code, code, name: code, area: null, type: "switchgear_cabinet", typeName: "Celda", system: "condition", condition: null, history: null, sensorsDetail: [], electrical: null, deviceCode: null, status, lastReadAt: null, openAlarms, alarmSeverity: null,
     groups: { temperature: { value: temp, unit: "°C", channelCode: null, channelName: null, severity: "normal" }, humidity: { value: null, unit: null, channelCode: null, channelName: null, severity: "normal" }, discharge: { value: null, unit: null, channelCode: null, channelName: null, severity: "normal" } },
   });
   const sorted = sortPoints([point("A", "normal", 0, 30), point("B", "offline"), point("C", "warning"), point("D", "critical"), point("E", "normal", 0, 50)]);
