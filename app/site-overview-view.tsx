@@ -373,7 +373,9 @@ function SystemPointCard({ point, now, onOpen }: { point: SitePoint; now: number
   const offline = point.status === "offline";
   const badge = offline ? { label: point.lastReadAt ? "Sin datos" : "Nunca reportó", tone: "offline" } : point.status === "critical" ? { label: "Alarma crítica", tone: "critical" } : condition ? CONDITION_BADGE[condition.status] : { label: "Normal", tone: "normal" };
   const valueTone = offline || !condition || condition.value === null ? "muted" : point.status === "critical" ? "critical" : condition.status === "out_of_range" ? "warning" : "";
-  const sensorsNote = condition && condition.sensors > 0 ? `${condition.sensors > 1 ? `${AGGREGATION_NOTE[condition.aggregation] ?? "de"} ${condition.sensors} sensores` : "1 sensor"}${condition.decisivePosition && condition.sensors > 1 ? ` · ${condition.decisivePosition}` : ""}` : "Sin sensores asignados";
+  // En frío se cuentan sensores (beacons); en energía y respaldo, equipos (medidores, UPS).
+  const [one, many] = point.system === "cold" ? ["sensor", "sensores"] : ["equipo", "equipos"];
+  const sensorsNote = condition && condition.sensors > 0 ? `${condition.sensors > 1 ? `${AGGREGATION_NOTE[condition.aggregation] ?? "de"} ${condition.sensors} ${many}` : `1 ${one}`}${condition.decisivePosition && condition.sensors > 1 ? ` · ${condition.decisivePosition}` : ""}` : `Sin ${many} asignados`;
   return <article className={`sys-card status-${point.status}`}>
     <button type="button" className="site-card-open" onClick={onOpen} aria-label={`Abrir ${point.name}: ${badge.label}`} />
     <header>
@@ -383,9 +385,9 @@ function SystemPointCard({ point, now, onOpen }: { point: SitePoint; now: number
     <div className={`sys-card-value ${valueTone}`}>{condition && condition.value !== null && !offline ? number(condition.value, condition.decimals) : "—"}<small>{condition?.unit ?? ""}</small></div>
     <p className="sys-card-note"><span>{sensorsNote}</span>{condition && rangeText(condition) && <span>{rangeText(condition)}</span>}</p>
     <footer>
-      <span>{condition?.secondary ? `${condition.secondary.name} ${number(condition.secondary.value, condition.secondary.decimals)} ${condition.secondary.unit === "%RH" ? "%" : condition.secondary.unit}` : `Última lectura ${since(point.lastReadAt, now)}`}</span>
+      <span>{condition?.secondary ? `${condition.secondary.name} ${number(condition.secondary.value, condition.secondary.decimals)} ${condition.secondary.unit === "%RH" ? "%" : condition.secondary.unit}`.trim() : `Última lectura ${since(point.lastReadAt, now)}`}</span>
       {condition && condition.sensors > 0 && condition.reporting < condition.sensors
-        ? <span className="alarms warning">{condition.reporting}/{condition.sensors} sensores reportan</span>
+        ? <span className="alarms warning">{condition.reporting}/{condition.sensors} {point.system === "cold" ? "sensores" : "equipos"} reportan</span>
         : <span className={point.openAlarms ? `alarms ${point.alarmSeverity ?? "warning"}` : "alarms none"}>{point.openAlarms ? `${point.openAlarms} ${point.openAlarms === 1 ? "alarma" : "alarmas"}` : "Sin alarmas"}</span>}
     </footer>
   </article>;

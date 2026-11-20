@@ -279,9 +279,10 @@ function pointCondition(
     return { status: "no_data", value: null, unit: null, decimals: 1, quantityName: null, decisivePosition: null, sensors: 0, reporting: 0, rangeMin: config.rangeMin, rangeMax: config.rangeMax, aggregation: config.aggregation, secondary: null };
   }
   const result = classifyPoint(primary.map((row) => sensorReading(row, now)), config);
-  // Secundaria de una cámara: la humedad más alta vigente entre sus sensores.
-  const humidity = point.system === "cold" ? rows.filter((row) => row.metric === "humidity").map((row) => sensorReading(row, now)).filter((reading) => reading.quality === "good" && reading.value !== null) : [];
-  const humidityRow = rows.find((row) => row.metric === "humidity");
+  // Secundaria: en una cámara, la humedad más alta; en un tablero, el peor factor de potencia.
+  const secondaryMetric = point.system === "cold" ? "humidity" : point.system === "energy" ? "power_factor" : null;
+  const secondaryReadings = secondaryMetric ? rows.filter((row) => row.metric === secondaryMetric).map((row) => sensorReading(row, now)).filter((reading) => reading.quality === "good" && reading.value !== null) : [];
+  const secondaryRow = rows.find((row) => row.metric === secondaryMetric);
   return {
     status: result.status,
     value: result.value,
@@ -294,7 +295,11 @@ function pointCondition(
     rangeMin: config.rangeMin,
     rangeMax: config.rangeMax,
     aggregation: config.aggregation,
-    secondary: humidity.length && humidityRow ? { name: "Humedad", value: Math.max(...humidity.map((reading) => reading.value!)), unit: humidityRow.unit, decimals: 0 } : null,
+    secondary: secondaryReadings.length && secondaryRow
+      ? secondaryMetric === "humidity"
+        ? { name: "Humedad", value: Math.max(...secondaryReadings.map((reading) => reading.value!)), unit: secondaryRow.unit, decimals: 0 }
+        : { name: "FP", value: Math.min(...secondaryReadings.map((reading) => Math.abs(reading.value!))), unit: "", decimals: 2 }
+      : null,
   };
 }
 
