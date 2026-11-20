@@ -229,6 +229,15 @@ class PortalRequestError extends Error {
   }
 }
 
+// Solicitudes a la API que dependen de la sesión. Las de acceso (login, recuperación, cambio de clave
+// obligatorio) responden 401 por credenciales incorrectas y no significan que la sesión venció.
+function isSessionBoundRequest(input: RequestInfo | URL) {
+  const raw = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+  const url = new URL(raw, window.location.href);
+  if (url.origin !== window.location.origin || !url.pathname.startsWith("/api/v1/")) return false;
+  return !/^\/api\/v1\/auth\/(login|logout|password-reset|change-required-password)/.test(url.pathname);
+}
+
 async function portalRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     ...init,
@@ -1635,6 +1644,40 @@ export default function Home() {
     if (noticeTimer.current) window.clearTimeout(noticeTimer.current);
   }, []);
 
+  // Sesión vencida o revocada: cualquier respuesta 401 de la API (de cualquier vista) devuelve al login.
+  // Al volver a la pestaña también se comprueba, para no mostrar datos de una sesión que ya terminó.
+  const authStateRef = useRef(authState);
+  useEffect(() => { authStateRef.current = authState; }, [authState]);
+  useEffect(() => {
+    const expire = () => {
+      if (authStateRef.current !== "authenticated") return;
+      authStateRef.current = "anonymous";
+      setSessionUser(null);
+      setHierarchy(null);
+      setMenuOpen(false);
+      setLoginNotice({ title: "Sesión finalizada", message: "Tu sesión expiró. Ingresa nuevamente para continuar.", tone: "warning" });
+      setAuthState("anonymous");
+    };
+    const originalFetch = window.fetch;
+    const patchedFetch: typeof window.fetch = async (input, init) => {
+      const response = await originalFetch(input, init);
+      if (response.status === 401 && isSessionBoundRequest(input)) expire();
+      return response;
+    };
+    window.fetch = patchedFetch;
+    const check = () => {
+      if (document.visibilityState !== "visible" || authStateRef.current !== "authenticated") return;
+      void originalFetch("/api/v1/auth/session", { credentials: "include", cache: "no-store" }).then((response) => { if (response.status === 401) expire(); }).catch(() => undefined);
+    };
+    document.addEventListener("visibilitychange", check);
+    const timer = window.setInterval(check, 60_000);
+    return () => {
+      if (window.fetch === patchedFetch) window.fetch = originalFetch;
+      document.removeEventListener("visibilitychange", check);
+      window.clearInterval(timer);
+    };
+  }, []);
+
   useEffect(() => {
     const route = new URL(window.location.href);
     const resetToken = new URLSearchParams(route.hash.replace(/^#/, "")).get("token");
@@ -1810,6 +1853,8 @@ export default function Home() {
     notify("Telemetría exportada correctamente.", "info");
   };
   const logout = async () => {
+    authStateRef.current = "anonymous";
+    setMenuOpen(false);
     try { await portalRequest("/api/v1/auth/logout", { method: "POST" }); }
     finally { setSessionUser(null); setHierarchy(null); setAuthState("anonymous"); }
   };
@@ -1818,10 +1863,16 @@ export default function Home() {
     if (siteId === sessionUser?.siteId) return;
     try {
       const response = await portalRequest<{ user: PortalSessionUser }>("/api/v1/auth/context", { method: "PATCH", body: JSON.stringify({ siteId }) });
+      // Se descarta todo lo del sitio anterior antes de cargar el nuevo: sin jerarquía no se consultan
+      // puntos del otro cliente, y las vistas se vuelven a montar con el nuevo contexto (key = siteId).
+      setHierarchy(null);
       setSessionUser(response.user);
       setTelemetryState({ status: "loading", data: null });
       setSystemMode("loading");
+      setAlarmPreview([]);
+      setAlarmSummary({ critical: 0, warning: 0 });
       setActivePointId("");
+      setMenuOpen(false);
       await loadHierarchy();
       notify(`Contexto cambiado a ${response.user.siteName}.`, "info");
     } catch (requestError) {
@@ -1936,7 +1987,7 @@ export default function Home() {
         </header>
 
         <div className="content-scroll">
-          <div className="page-content">
+          <div className="page-content" key={sessionUser.siteId}>
             {/* Datos atrasados o en espera ya se ven en el estado de la barra superior y del punto; el aviso queda para fallas. */}
             {(systemMode === "offline" || systemMode === "error") && view !== "site" && <section className={`operational-banner banner-${systemMode}`} role={systemMode === "offline" || systemMode === "error" ? "alert" : "status"} aria-live="polite"><span>{systemMode === "offline" ? <PlugConnected size={19} />  : <AlertTriangle size={19} />}</span><div><strong>{systemMessage.title}</strong><p>{systemMessage.detail}</p></div>{<button onClick={() => { setTelemetryState({ status: "loading", data: null }); setSystemMode("loading"); setTelemetryRefreshKey((current) => current + 1); notify("Consultando nuevamente la telemetría.", "info"); }}><Refresh size={15} /> Reintentar</button>}</section>}
             {isPointView && activePoint ? <section className="point-heading">
