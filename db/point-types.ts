@@ -125,6 +125,16 @@ export type PointCondition = {
  */
 export function classifyPoint(readings: PointSensorReading[], config: EffectivePointConfig): PointCondition {
   const valid = readings.filter((reading) => reading.quality === "good" && reading.value !== null && Number.isFinite(reading.value));
+  // "Peor sensor" con rango: el que está más lejos del rango, hacia arriba o hacia abajo
+  // (una cámara que se congela es tan grave como una que se calienta).
+  if ((config.aggregation === "max" || config.aggregation === "min") && (config.rangeMin !== null || config.rangeMax !== null)) {
+    const deviationOf = (value: number) => config.rangeMax !== null && value > config.rangeMax ? value - config.rangeMax : config.rangeMin !== null && value < config.rangeMin ? value - config.rangeMin : 0;
+    const worstOutside = valid.filter((reading) => deviationOf(reading.value!) !== 0)
+      .sort((left, right) => Math.abs(deviationOf(right.value!)) - Math.abs(deviationOf(left.value!)))[0];
+    if (worstOutside) {
+      return { value: worstOutside.value, decisive: worstOutside, sensors: readings.length, reporting: valid.length, status: "out_of_range", deviation: deviationOf(worstOutside.value!) };
+    }
+  }
   const value = aggregateValues(valid.map((reading) => reading.value!), config.aggregation);
   const decisive = value === null ? null
     : config.aggregation === "max" || config.aggregation === "min" || config.aggregation === "last"

@@ -40,7 +40,7 @@ function numberOrNull(value: string | null) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-export async function loadBuckets(db: Cam5Database, channelIds: string[], from: Date) {
+export async function loadBuckets(db: Cam5Database, channelIds: string[], from: Date, bucketSeconds = HISTORY_BUCKET_SECONDS) {
   if (!channelIds.length) return [] as Bucket[];
   const rows = await db.select({
     channelId: readingAggregates.channelId,
@@ -52,19 +52,28 @@ export async function loadBuckets(db: Cam5Database, channelIds: string[], from: 
     last: readingAggregates.lastValue,
   }).from(readingAggregates)
     .innerJoin(channels, eq(channels.id, readingAggregates.channelId))
-    .where(and(inArray(readingAggregates.channelId, channelIds), eq(readingAggregates.bucketSeconds, HISTORY_BUCKET_SECONDS), gte(readingAggregates.bucketStart, from)))
+    .where(and(inArray(readingAggregates.channelId, channelIds), eq(readingAggregates.bucketSeconds, bucketSeconds), gte(readingAggregates.bucketStart, from)))
     .orderBy(asc(readingAggregates.bucketStart));
   return rows.map((row) => ({ channelId: row.channelId, start: row.start, avg: numberOrNull(row.avg), min: numberOrNull(row.min), max: numberOrNull(row.max), first: numberOrNull(row.first), last: numberOrNull(row.last) }));
 }
 
-export function historyStart(now: Date) {
-  const span = HISTORY_HOURS * 3600_000;
-  return new Date(Math.floor((now.getTime() - span) / (HISTORY_BUCKET_SECONDS * 1000)) * HISTORY_BUCKET_SECONDS * 1000);
+export function historyStart(now: Date, hours = HISTORY_HOURS, bucketSeconds = HISTORY_BUCKET_SECONDS) {
+  const span = hours * 3600_000;
+  return new Date(Math.floor((now.getTime() - span) / (bucketSeconds * 1000)) * bucketSeconds * 1000);
 }
 
 /** Valor de un intervalo según la regla del punto: peor sensor (máx/mín), promedio o suma de equipos. */
-function combine(buckets: Bucket[], aggregation: EffectivePointConfig["aggregation"]) {
+function combine(buckets: Bucket[], aggregation: EffectivePointConfig["aggregation"], config?: EffectivePointConfig) {
   if (!buckets.length) return null;
+  // Con rango, el intervalo toma el extremo más alejado del rango (arriba o abajo), igual que el punto.
+  if (config && (aggregation === "max" || aggregation === "min") && (config.rangeMin !== null || config.rangeMax !== null)) {
+    const high = Math.max(...buckets.map((bucket) => bucket.max ?? bucket.avg ?? -Infinity));
+    const low = Math.min(...buckets.map((bucket) => bucket.min ?? bucket.avg ?? Infinity));
+    const above = config.rangeMax !== null && high > config.rangeMax ? high - config.rangeMax : 0;
+    const below = config.rangeMin !== null && low < config.rangeMin ? config.rangeMin - low : 0;
+    if (above || below) return above >= below ? high : low;
+    return aggregation === "max" ? high : low;
+  }
   if (aggregation === "max") return Math.max(...buckets.map((bucket) => bucket.max ?? bucket.avg ?? -Infinity));
   if (aggregation === "min") return Math.min(...buckets.map((bucket) => bucket.min ?? bucket.avg ?? Infinity));
   const averages = buckets.map((bucket) => bucket.avg).filter((value): value is number => value !== null);
@@ -76,16 +85,16 @@ function combine(buckets: Bucket[], aggregation: EffectivePointConfig["aggregati
 
 const outside = (value: number, config: EffectivePointConfig) => (config.rangeMax !== null && value > config.rangeMax) || (config.rangeMin !== null && value < config.rangeMin);
 
-export function buildHistory(buckets: Bucket[], config: EffectivePointConfig, from: Date, now: Date): PointHistory {
-  const size = Math.ceil((now.getTime() - from.getTime()) / (HISTORY_BUCKET_SECONDS * 1000));
+export function buildHistory(buckets: Bucket[], config: EffectivePointConfig, from: Date, now: Date, bucketSeconds = HISTORY_BUCKET_SECONDS): PointHistory {
+  const size = Math.ceil((now.getTime() - from.getTime()) / (bucketSeconds * 1000));
   const grouped = new Map<number, Bucket[]>();
   for (const bucket of buckets) {
-    const index = Math.floor((bucket.start.getTime() - from.getTime()) / (HISTORY_BUCKET_SECONDS * 1000));
+    const index = Math.floor((bucket.start.getTime() - from.getTime()) / (bucketSeconds * 1000));
     if (index < 0 || index >= size) continue;
     grouped.set(index, [...(grouped.get(index) ?? []), bucket]);
   }
   const values = Array.from({ length: size }, (_, index) => {
-    const value = combine(grouped.get(index) ?? [], config.aggregation);
+    const value = combine(grouped.get(index) ?? [], config.aggregation, config);
     return value === null || !Number.isFinite(value) ? null : Math.round(value * 100) / 100;
   });
   const present = values.filter((value): value is number => value !== null);
@@ -102,7 +111,7 @@ export function buildHistory(buckets: Bucket[], config: EffectivePointConfig, fr
   }
   const lastIndex = values.findLastIndex((value) => value !== null);
   let outSince: string | null = null;
-  // Excursión en curso: el último intervalo medido (de los últimos 15 min) está fuera de rango.
+  // Excursión en curso: el último intervalo medido (de los últimos intervalos) está fuera de rango.
   if (hasRange && lastIndex >= values.length - TREND_BUCKETS && outside(values[lastIndex]!, config)) {
     let start = lastIndex;
     for (let index = lastIndex - 1; index >= 0; index -= 1) {
@@ -110,18 +119,18 @@ export function buildHistory(buckets: Bucket[], config: EffectivePointConfig, fr
       if (value === null) continue;
       if (outside(value, config)) start = index; else break;
     }
-    outSince = new Date(from.getTime() + start * HISTORY_BUCKET_SECONDS * 1000).toISOString();
+    outSince = new Date(from.getTime() + start * bucketSeconds * 1000).toISOString();
   }
   const reference = lastIndex >= TREND_BUCKETS ? values.slice(0, lastIndex - TREND_BUCKETS + 1).findLast((value) => value !== null) : undefined;
   return {
-    bucketSeconds: HISTORY_BUCKET_SECONDS,
+    bucketSeconds,
     from: from.toISOString(),
     values,
     min: present.length ? Math.min(...present) : null,
     max: present.length ? Math.max(...present) : null,
     inRangePct: hasRange && present.length ? Math.round(((present.length - outBuckets) / present.length) * 1000) / 10 : null,
     excursions,
-    outMinutes: outBuckets * HISTORY_BUCKET_SECONDS / 60,
+    outMinutes: outBuckets * bucketSeconds / 60,
     outSince,
     trend: lastIndex >= 0 && reference !== undefined && reference !== null ? Math.round((values[lastIndex]! - reference) * 100) / 100 : null,
   };
@@ -156,4 +165,37 @@ export function energyToday(powerBuckets: Bucket[], energyBuckets: Bucket[], mid
     peakKw: peakKw === null ? null : Math.round(peakKw * 100) / 100,
     peakAt,
   };
+}
+
+export type Excursion = { start: string; end: string | null; minutes: number; peak: number; position: string | null };
+
+/**
+ * Excursiones fuera de rango en la curva del punto, con su duración, el valor más alejado y el sensor
+ * que lo marcó. Un intervalo sin datos no corta la excursión. La última queda abierta si sigue fuera.
+ */
+export function findExcursions(values: Array<number | null>, sensors: Array<{ position: string | null; values: Array<number | null> }>, config: EffectivePointConfig, from: Date, bucketSeconds: number): Excursion[] {
+  const deviation = (value: number) => config.rangeMax !== null && value > config.rangeMax ? value - config.rangeMax : config.rangeMin !== null && value < config.rangeMin ? value - config.rangeMin : 0;
+  const lastIndex = values.findLastIndex((value) => value !== null);
+  const runs: Array<{ start: number; end: number }> = [];
+  let open: { start: number; end: number } | null = null;
+  values.forEach((value, index) => {
+    if (value === null) return;
+    if (deviation(value) !== 0) {
+      if (!open) { open = { start: index, end: index }; runs.push(open); } else open.end = index;
+    } else open = null;
+  });
+  const time = (index: number) => new Date(from.getTime() + index * bucketSeconds * 1000).toISOString();
+  return runs.map((run) => {
+    let peak = 0, position: string | null = null;
+    for (let index = run.start; index <= run.end; index += 1) {
+      for (const sensor of sensors) {
+        const value = sensor.values[index];
+        if (value === null || value === undefined) continue;
+        if (Math.abs(deviation(value)) > Math.abs(peak ? deviation(peak) : 0) || (!peak && deviation(value) !== 0)) { peak = value; position = sensor.position; }
+      }
+    }
+    if (!peak) peak = values.slice(run.start, run.end + 1).filter((value): value is number => value !== null).sort((a, b) => Math.abs(deviation(b)) - Math.abs(deviation(a)))[0];
+    const ongoing = run.end === lastIndex && lastIndex >= values.length - TREND_BUCKETS;
+    return { start: time(run.start), end: ongoing ? null : time(run.end + 1), minutes: (run.end - run.start + 1) * bucketSeconds / 60, peak, position };
+  }).reverse();
 }

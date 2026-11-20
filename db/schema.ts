@@ -767,6 +767,18 @@ export const alarmRuleStates = pgTable("alarm_rule_states", {
   check("alarm_rule_states_counts_chk", sql`${table.breachCount} >= 0 AND ${table.recoveryCount} >= 0`),
 ]);
 
+/**
+ * Estado del rango objetivo de un punto (p. ej. una cámara de frío): desde cuándo está fuera y qué
+ * alarma lo representa. La alarma se abre recién cuando la excursión supera la tolerancia del punto.
+ */
+export const pointRangeStates = pgTable("point_range_states", {
+  assetId: uuid("asset_id").primaryKey().references(() => assets.id, { onDelete: "cascade" }),
+  outSince: timestamp("out_since", { withTimezone: true }),
+  peakDeviation: numeric("peak_deviation", { precision: 18, scale: 6 }),
+  activeAlarmId: uuid("active_alarm_id").references(() => alarms.id, { onDelete: "set null" }),
+  lastEvaluatedAt: timestamp("last_evaluated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const workOrders = pgTable("work_orders", {
   id: uuid("id").defaultRandom().primaryKey(),
   siteId: uuid("site_id").notNull().references(() => sites.id, { onDelete: "restrict" }),

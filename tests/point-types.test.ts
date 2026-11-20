@@ -35,6 +35,8 @@ test("a cold room takes its worst valid sensor and ignores stale or invalid ones
   assert.equal(outside.reporting, 2);
 
   assert.equal(classifyPoint([sensor(-1.2, "Fondo")], config).status, "out_of_range");
+  const freezing = classifyPoint([sensor(3.2, "Puerta"), sensor(-1.5, "Evaporador")], config);
+  assert.deepEqual({ status: freezing.status, value: freezing.value, position: freezing.decisive?.position, deviation: freezing.deviation }, { status: "out_of_range", value: -1.5, position: "Evaporador", deviation: -1.5 }, "a freezing sensor is the worst one even if another is warmer");
   assert.equal(classifyPoint([sensor(2, "Fondo"), sensor(4, "Puerta")], resolvePointConfig(coldRoom, { aggregation: "avg" })).value, 3);
   assert.equal(classifyPoint([sensor(null, "Puerta", "bad")], config).status, "no_data");
   assert.equal(classifyPoint([sensor(48.6, "Tablero")], resolvePointConfig({ aggregation: "sum", defaultConfig: {} }, {})).status, "no_range");

@@ -148,6 +148,13 @@
       "when": 1795212014117,
       "tag": "0020_point_types",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1795215021109,
+      "tag": "0021_point_range_states",
+      "breakpoints": true
     }
   ]
 }
