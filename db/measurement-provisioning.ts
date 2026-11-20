@@ -12,6 +12,8 @@ export class MeasurementProvisioningError extends Error {
 const PROFILE_BY_PROTOCOL: Record<string, string> = { ble: "ble-beacon-v1" };
 
 export function deviceCodeFor(externalId: string, prefix = "BLE") {
+  // Un identificador que ya sirve como código (PM5330-TG, SN-77) se usa tal cual; una MAC se resume.
+  if (/^[A-Za-z][A-Za-z0-9._-]{1,59}$/.test(externalId)) return externalId.toUpperCase();
   const compact = externalId.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
   return `${prefix}-${compact.slice(-6) || compact}`.slice(0, 60);
 }

@@ -1,6 +1,8 @@
 import { and, asc, eq, gte, inArray, sql } from "drizzle-orm";
 import type { Cam5Database } from "./index";
-import { alarmRules, alarms, assets, channels, devices, latestReadings, readingAggregates, readingProfiles } from "./schema";
+import { buildHistory, energyToday, historyStart, loadBuckets, localMidnight, type EnergyToday, type PointHistory } from "./point-history";
+import { classifyPoint, POINT_SYSTEMS, resolvePointConfig, type EffectivePointConfig, type PointCondition, type PointSensorReading } from "./point-types";
+import { alarmRules, alarms, assets, channels, devices, gateways, latestReadings, measurementQuantities, pointTypes, readingAggregates, readingProfiles, sites, type PointSystem } from "./schema";
 
 /**
  * Vista del sitio: cada punto de medición resumido por grupo de variables (la temperatura más alta,
@@ -21,10 +23,37 @@ const ALL_METRICS = SITE_GROUP_KEYS.flatMap((group) => [...SITE_GROUPS[group].me
 export type Severity = "normal" | "warning" | "critical";
 export type PointStatus = Severity | "offline";
 export type GroupCell = { value: number | null; unit: string | null; channelCode: string | null; channelName: string | null; severity: Severity };
+export type PointConditionSummary = {
+  status: PointCondition["status"];
+  value: number | null;
+  /** Distancia al rango (positiva sobre el máximo, negativa bajo el mínimo). */
+  deviation: number | null;
+  unit: string | null;
+  decimals: number;
+  quantityName: string | null;
+  decisivePosition: string | null;
+  sensors: number;
+  reporting: number;
+  rangeMin: number | null;
+  rangeMax: number | null;
+  aggregation: string;
+  /** Variable secundaria del punto (p. ej. la humedad de una cámara fría). */
+  secondary: { name: string; value: number; unit: string; decimals: number } | null;
+};
+export type SensorDetail = { position: string | null; name: string; value: number | null; unit: string; decimals: number; state: "in" | "out" | "stale" };
+export type ElectricalDetail = { phases: Array<{ label: string; value: number }>; unbalancePct: number | null; voltage: number | null; powerFactor: number | null; today: EnergyToday };
 export type SitePoint = {
   id: string;
   code: string;
   name: string;
+  area: string | null;
+  type: string;
+  typeName: string;
+  system: PointSystem;
+  condition: PointConditionSummary | null;
+  history: PointHistory | null;
+  sensorsDetail: SensorDetail[];
+  electrical: ElectricalDetail | null;
   deviceCode: string | null;
   status: PointStatus;
   lastReadAt: string | null;
@@ -98,11 +127,20 @@ export async function loadSiteOverview(db: Cam5Database, siteId: string, allowed
     id: assets.id,
     code: assets.code,
     name: assets.name,
+    area: assets.area,
+    type: assets.assetType,
+    config: assets.config,
+    typeName: pointTypes.name,
+    system: pointTypes.system,
+    primaryQuantity: pointTypes.primaryQuantity,
+    aggregation: pointTypes.aggregation,
+    defaultConfig: pointTypes.defaultConfig,
     deviceCode: devices.code,
     deviceActive: devices.active,
     lastReadAt: devices.lastReadAt,
     staleAfterSeconds: readingProfiles.staleAfterSeconds,
   }).from(assets)
+    .innerJoin(pointTypes, eq(pointTypes.key, assets.assetType))
     .leftJoin(devices, and(eq(devices.assetId, assets.id), eq(devices.active, true)))
     .leftJoin(readingProfiles, eq(readingProfiles.id, devices.readingProfileId))
     .where(and(eq(assets.siteId, siteId), eq(assets.active, true), scope))
@@ -114,9 +152,9 @@ export async function loadSiteOverview(db: Cam5Database, siteId: string, allowed
     if (!current || (row.lastReadAt && (!current.lastReadAt || row.lastReadAt > current.lastReadAt))) byPoint.set(row.id, row);
   }
   const pointIds = [...byPoint.keys()];
-  if (!pointIds.length) return { serverTime: now.toISOString(), points: [] as SitePoint[], summary: emptySummary() };
+  if (!pointIds.length) return { serverTime: now.toISOString(), points: [] as SitePoint[], summary: emptySummary(), systems: [] as SystemSummary[], attention: [] as AttentionItem[], health: [] as HealthIssue[] };
 
-  const [channelRows, alarmRows] = await Promise.all([
+  const [channelRows, alarmRows, measuredRows, gatewayRows] = await Promise.all([
     db.select({
       assetId: channels.assetId,
       metric: channels.metric,
@@ -140,7 +178,45 @@ export async function loadSiteOverview(db: Cam5Database, siteId: string, allowed
     }).from(alarms)
       .where(and(inArray(alarms.assetId, pointIds), inArray(alarms.status, ["open", "acknowledged"])))
       .groupBy(alarms.assetId),
+    // Todas las variables habilitadas con su rol: las de proceso definen la condición del punto y
+    // las de salud (batería, señal) alimentan la sección de salud de sensores.
+    db.select({
+      channelId: channels.id,
+      channelCode: channels.code,
+      assetId: channels.assetId,
+      deviceId: devices.id,
+      deviceCode: devices.code,
+      deviceName: devices.name,
+      position: devices.position,
+      deviceLastReadAt: devices.lastReadAt,
+      staleAfterSeconds: readingProfiles.staleAfterSeconds,
+      metric: channels.metric,
+      role: channels.role,
+      unit: channels.unit,
+      quantityName: measurementQuantities.name,
+      decimals: measurementQuantities.decimals,
+      value: latestReadings.value,
+      quality: latestReadings.quality,
+      recordedAt: latestReadings.recordedAt,
+    }).from(channels)
+      .innerJoin(devices, and(eq(devices.id, channels.deviceId), eq(devices.active, true)))
+      .innerJoin(measurementQuantities, eq(measurementQuantities.key, channels.metric))
+      .leftJoin(readingProfiles, eq(readingProfiles.id, devices.readingProfileId))
+      .leftJoin(latestReadings, eq(latestReadings.channelId, channels.id))
+      .where(and(inArray(channels.assetId, pointIds), eq(channels.enabled, true))),
+    db.select({ id: gateways.id, code: gateways.code, name: gateways.name, lastSeenAt: gateways.lastSeenAt })
+      .from(gateways).innerJoin(devices, eq(devices.gatewayId, gateways.id)).innerJoin(assets, eq(assets.id, devices.assetId))
+      .where(and(eq(gateways.siteId, siteId), eq(gateways.active, true), eq(devices.active, true), inArray(assets.id, pointIds)))
+      .groupBy(gateways.id, gateways.code, gateways.name, gateways.lastSeenAt),
   ]);
+
+  // Curva de 24 h y consumo del día: agregados de 5 min de las variables de proceso de frío, energía y respaldo.
+  const [site] = await db.select({ timezone: sites.timezone }).from(sites).where(eq(sites.id, siteId)).limit(1);
+  const from = historyStart(now);
+  const midnight = localMidnight(now, site?.timezone ?? "America/Santiago");
+  const configs = new Map([...byPoint.values()].filter((point) => point.system !== "condition").map((point) => [point.id, resolvePointConfig({ aggregation: point.aggregation as EffectivePointConfig["aggregation"], defaultConfig: point.defaultConfig }, point.config)]));
+  const historyChannels = measuredRows.filter((row) => configs.has(row.assetId) && row.role === "process" && (row.metric === byPoint.get(row.assetId)?.primaryQuantity || row.metric === "energy"));
+  const buckets = await loadBuckets(db, historyChannels.map((row) => row.channelId), from < midnight ? from : midnight);
 
   const points: SitePoint[] = pointIds.map((id) => {
     const point = byPoint.get(id)!;
@@ -149,12 +225,30 @@ export async function loadSiteOverview(db: Cam5Database, siteId: string, allowed
     const alarm = alarmRows.find((row) => row.assetId === id);
     const alarmSeverity: Severity | null = alarm ? (alarm.critical ? "critical" : alarm.warning ? "warning" : "normal") : null;
     const fresh = Boolean(point.lastReadAt && now.getTime() - point.lastReadAt.getTime() <= staleAfter * 1000);
-    const measured = SITE_GROUP_KEYS.reduce<Severity>((acc, group) => worst(acc, groups[group].severity), "normal");
+    const ownProcess = measuredRows.filter((row) => row.assetId === id && row.role === "process");
+    const condition = point.system === "condition" ? null : pointCondition(point, ownProcess, now);
+    const config = configs.get(id);
+    const primaryIds = new Set(ownProcess.filter((row) => row.metric === point.primaryQuantity).map((row) => row.channelId));
+    const history = config ? buildHistory(buckets.filter((bucket) => primaryIds.has(bucket.channelId) && bucket.start >= from), config, from, now) : null;
+    const sensorsDetail = config ? sensorDetails(ownProcess.filter((row) => row.metric === point.primaryQuantity), config, now) : [];
+    const energyIds = new Set(ownProcess.filter((row) => row.metric === "energy").map((row) => row.channelId));
+    const electrical = point.system === "energy" ? electricalDetail(ownProcess, now, energyToday(buckets.filter((bucket) => primaryIds.has(bucket.channelId)), buckets.filter((bucket) => energyIds.has(bucket.channelId)), midnight)) : null;
+    // Celdas CAM5: severidad por umbrales de cada grupo. Otros sistemas: fuera del rango objetivo = advertencia
+    // (la alarma, con su tolerancia, la escala a crítico).
+    const measured = condition ? (condition.status === "out_of_range" ? "warning" : "normal") : SITE_GROUP_KEYS.reduce<Severity>((acc, group) => worst(acc, groups[group].severity), "normal");
     const status: PointStatus = !fresh ? "offline" : worst(measured, alarmSeverity ?? "normal");
     return {
       id,
       code: point.code,
       name: point.name,
+      area: point.area,
+      type: point.type,
+      typeName: point.typeName,
+      system: point.system,
+      condition,
+      history,
+      sensorsDetail,
+      electrical,
       deviceCode: point.deviceCode,
       status,
       lastReadAt: point.lastReadAt?.toISOString() ?? null,
@@ -164,7 +258,181 @@ export async function loadSiteOverview(db: Cam5Database, siteId: string, allowed
     };
   });
   const sorted = sortPoints(points);
-  return { serverTime: now.toISOString(), points: sorted, summary: summarize(sorted) };
+  return {
+    serverTime: now.toISOString(),
+    points: sorted,
+    summary: summarize(sorted),
+    systems: systemSummaries(sorted),
+    attention: attentionItems(sorted),
+    health: healthIssues(measuredRows, gatewayRows, sorted, now),
+  };
+}
+
+/** Valor actual de cada sensor del punto (puerta, fondo…) y si está dentro del rango. */
+function sensorDetails(rows: MeasuredRow[], config: EffectivePointConfig, now: Date): SensorDetail[] {
+  return rows.map((row) => {
+    const reading = sensorReading(row, now);
+    const value = reading.quality === "good" ? reading.value : null;
+    const out = value !== null && ((config.rangeMax !== null && value > config.rangeMax) || (config.rangeMin !== null && value < config.rangeMin));
+    return { position: row.position, name: row.deviceName, value, unit: row.unit, decimals: row.decimals, state: value === null ? "stale" : out ? "out" : "in" } as SensorDetail;
+  }).sort((left, right) => (right.value ?? -Infinity) - (left.value ?? -Infinity));
+}
+
+/** Corrientes por fase con su desbalance, voltaje promedio y el peor factor de potencia del tablero. */
+function electricalDetail(rows: MeasuredRow[], now: Date, today: EnergyToday): ElectricalDetail {
+  const valid = (metric: string) => rows.filter((row) => row.metric === metric).map((row) => ({ row, reading: sensorReading(row, now) })).filter(({ reading }) => reading.quality === "good" && reading.value !== null);
+  const currents = valid("current").map(({ row, reading }) => ({ label: row.channelCode.replace(/^I/, "") || row.channelCode, value: reading.value! }));
+  const average = currents.length ? currents.reduce((total, phase) => total + phase.value, 0) / currents.length : 0;
+  const voltages = valid("voltage").map(({ reading }) => reading.value!);
+  const factors = valid("power_factor").map(({ reading }) => Math.abs(reading.value!));
+  return {
+    phases: currents,
+    // Desbalance: mayor desviación de una fase respecto del promedio (criterio NEMA).
+    unbalancePct: currents.length >= 2 && average > 0 ? Math.round(Math.max(...currents.map((phase) => Math.abs(phase.value - average))) / average * 1000) / 10 : null,
+    voltage: voltages.length ? Math.round(voltages.reduce((total, value) => total + value, 0) / voltages.length * 10) / 10 : null,
+    powerFactor: factors.length ? Math.min(...factors) : null,
+    today,
+  };
+}
+
+type MeasuredRow = {
+  channelId: string;
+  channelCode: string;
+  assetId: string;
+  deviceId: string;
+  deviceCode: string;
+  deviceName: string;
+  position: string | null;
+  deviceLastReadAt: Date | null;
+  staleAfterSeconds: number | null;
+  metric: string;
+  role: string;
+  unit: string;
+  quantityName: string;
+  decimals: number;
+  value: string | null;
+  quality: string | null;
+  recordedAt: Date | null;
+};
+
+/** Una lectura cuenta como válida solo si es buena y está vigente según el perfil del equipo. */
+function sensorReading(row: MeasuredRow, now: Date): PointSensorReading {
+  const staleMs = (row.staleAfterSeconds ?? 180) * 1000;
+  const fresh = Boolean(row.recordedAt && now.getTime() - row.recordedAt.getTime() <= staleMs);
+  const quality = row.quality === "good" && !fresh ? "stale" : (row.quality ?? "stale") as PointSensorReading["quality"];
+  return { channelId: row.channelId, deviceId: row.deviceId, position: row.position, value: row.value === null ? null : Number(row.value), quality, recordedAt: row.recordedAt };
+}
+
+function pointCondition(
+  point: { primaryQuantity: string | null; aggregation: string; defaultConfig: Parameters<typeof resolvePointConfig>[0]["defaultConfig"]; config: Parameters<typeof resolvePointConfig>[1]; system: PointSystem },
+  rows: MeasuredRow[],
+  now: Date,
+): PointConditionSummary | null {
+  const config = resolvePointConfig({ aggregation: point.aggregation as Parameters<typeof resolvePointConfig>[0]["aggregation"], defaultConfig: point.defaultConfig }, point.config);
+  const primary = rows.filter((row) => row.metric === point.primaryQuantity);
+  if (!point.primaryQuantity || !primary.length) {
+    return { status: "no_data", value: null, deviation: null, unit: null, decimals: 1, quantityName: null, decisivePosition: null, sensors: 0, reporting: 0, rangeMin: config.rangeMin, rangeMax: config.rangeMax, aggregation: config.aggregation, secondary: null };
+  }
+  const result = classifyPoint(primary.map((row) => sensorReading(row, now)), config);
+  // Secundaria: en una cámara, la humedad más alta; en un tablero, el peor factor de potencia.
+  const secondaryMetric = point.system === "cold" ? "humidity" : point.system === "energy" ? "power_factor" : null;
+  const secondaryReadings = secondaryMetric ? rows.filter((row) => row.metric === secondaryMetric).map((row) => sensorReading(row, now)).filter((reading) => reading.quality === "good" && reading.value !== null) : [];
+  const secondaryRow = rows.find((row) => row.metric === secondaryMetric);
+  return {
+    status: result.status,
+    value: result.value,
+    deviation: result.deviation,
+    unit: primary[0].unit,
+    decimals: primary[0].decimals,
+    quantityName: primary[0].quantityName,
+    decisivePosition: result.decisive?.position ?? null,
+    sensors: new Set(primary.map((row) => row.deviceId)).size,
+    reporting: new Set(primary.map((row) => sensorReading(row, now)).filter((reading) => reading.quality === "good").map((reading) => reading.deviceId)).size,
+    rangeMin: config.rangeMin,
+    rangeMax: config.rangeMax,
+    aggregation: config.aggregation,
+    secondary: secondaryReadings.length && secondaryRow
+      ? secondaryMetric === "humidity"
+        ? { name: "Humedad", value: Math.max(...secondaryReadings.map((reading) => reading.value!)), unit: secondaryRow.unit, decimals: 0 }
+        : { name: "FP", value: Math.min(...secondaryReadings.map((reading) => Math.abs(reading.value!))), unit: "", decimals: 2 }
+      : null,
+  };
+}
+
+export type SystemSummary = { system: PointSystem; name: string; points: number; attention: number; offline: number };
+const SYSTEM_ORDER: PointSystem[] = ["cold", "energy", "backup", "condition", "other"];
+
+function systemSummaries(points: SitePoint[]): SystemSummary[] {
+  return SYSTEM_ORDER.filter((system) => points.some((point) => point.system === system)).map((system) => {
+    const own = points.filter((point) => point.system === system);
+    return { system, name: POINT_SYSTEMS[system], points: own.length, attention: own.filter((point) => point.status === "warning" || point.status === "critical").length, offline: own.filter((point) => point.status === "offline").length };
+  });
+}
+
+export type AttentionItem = { pointId: string; pointName: string; system: PointSystem; severity: Severity | "offline"; reason: "out_of_range" | "alarm" | "offline" | "low_power_factor" | "unbalance"; detail: string };
+
+/** Límites de observación para tableros: FP bajo el que la distribuidora aplica recargo y desbalance de corriente. */
+export const ELECTRICAL_LIMITS = { powerFactor: 0.93, unbalancePct: 10 } as const;
+
+function formatNumber(value: number, decimals: number) {
+  return new Intl.NumberFormat("es-CL", { maximumFractionDigits: decimals, minimumFractionDigits: decimals }).format(value);
+}
+
+/** Lo que el equipo de mantenimiento debe mirar primero: puntos fuera de rango, con alarma o sin datos. */
+export function attentionItems(points: SitePoint[]): AttentionItem[] {
+  return points.flatMap<AttentionItem>((point) => {
+    if (point.status === "offline") return [{ pointId: point.id, pointName: point.name, system: point.system, severity: "offline", reason: "offline", detail: point.lastReadAt ? "Sin datos recientes" : "Aún no reporta" }];
+    const condition = point.condition;
+    if (condition?.status === "out_of_range" && condition.value !== null) {
+      const limit = condition.rangeMax !== null && condition.value > condition.rangeMax ? `máx. ${formatNumber(condition.rangeMax, condition.decimals)}` : `mín. ${formatNumber(condition.rangeMin ?? 0, condition.decimals)}`;
+      return [{ pointId: point.id, pointName: point.name, system: point.system, severity: point.status === "critical" ? "critical" : "warning", reason: "out_of_range", detail: `${formatNumber(condition.value, condition.decimals)} ${condition.unit ?? ""} (${limit})${condition.decisivePosition ? ` · ${condition.decisivePosition}` : ""}`.replace(/ +/g, " ") }];
+    }
+    if (point.openAlarms > 0 && (point.status === "warning" || point.status === "critical")) {
+      return [{ pointId: point.id, pointName: point.name, system: point.system, severity: point.status, reason: "alarm", detail: `${point.openAlarms} ${point.openAlarms === 1 ? "alarma abierta" : "alarmas abiertas"}` }];
+    }
+    const observations: AttentionItem[] = [];
+    const electrical = point.electrical;
+    if (electrical?.powerFactor !== null && electrical?.powerFactor !== undefined && electrical.powerFactor < ELECTRICAL_LIMITS.powerFactor) {
+      observations.push({ pointId: point.id, pointName: point.name, system: point.system, severity: "warning", reason: "low_power_factor", detail: `FP ${formatNumber(electrical.powerFactor, 2)} (mín. ${formatNumber(ELECTRICAL_LIMITS.powerFactor, 2)})` });
+    }
+    if (electrical?.unbalancePct !== null && electrical?.unbalancePct !== undefined && electrical.unbalancePct > ELECTRICAL_LIMITS.unbalancePct) {
+      observations.push({ pointId: point.id, pointName: point.name, system: point.system, severity: "warning", reason: "unbalance", detail: `Desbalance de corriente ${formatNumber(electrical.unbalancePct, 1)} %` });
+    }
+    // Varias observaciones de un mismo tablero se informan en una sola fila.
+    return observations.length > 1 ? [{ ...observations[0], detail: observations.map((item) => item.detail).join(" · ") }] : observations;
+  });
+}
+
+export type HealthIssue = { kind: "sensor_stale" | "battery_low" | "weak_signal" | "gateway_offline"; severity: "warning" | "critical"; pointId: string | null; pointName: string | null; deviceName: string; position: string | null; detail: string };
+
+/** Batería bajo este porcentaje (o voltaje) y señal BLE bajo estos dBm se informan como mantenimiento. */
+export const HEALTH_LIMITS = { batteryPercent: 20, batteryVolts: 2.5, signalDbm: -90, gatewayOfflineMinutes: 10 } as const;
+
+export function healthIssues(rows: MeasuredRow[], gatewayRows: Array<{ code: string; name: string; lastSeenAt: Date | null }>, points: SitePoint[], now: Date): HealthIssue[] {
+  const pointName = new Map(points.map((point) => [point.id, point.name]));
+  const issues: HealthIssue[] = [];
+  for (const gateway of gatewayRows) {
+    const minutes = gateway.lastSeenAt ? (now.getTime() - gateway.lastSeenAt.getTime()) / 60_000 : Infinity;
+    if (minutes > HEALTH_LIMITS.gatewayOfflineMinutes) issues.push({ kind: "gateway_offline", severity: "critical", pointId: null, pointName: null, deviceName: gateway.name, position: gateway.code, detail: gateway.lastSeenAt ? `Gateway sin conexión hace ${Math.round(minutes)} min` : "Gateway nunca se ha conectado" });
+  }
+  const devicesSeen = new Map<string, MeasuredRow>();
+  for (const row of rows) if (!devicesSeen.has(row.deviceId)) devicesSeen.set(row.deviceId, row);
+  for (const row of devicesSeen.values()) {
+    const staleMs = (row.staleAfterSeconds ?? 180) * 1000;
+    if (!row.deviceLastReadAt || now.getTime() - row.deviceLastReadAt.getTime() > staleMs) {
+      issues.push({ kind: "sensor_stale", severity: "warning", pointId: row.assetId, pointName: pointName.get(row.assetId) ?? null, deviceName: row.deviceName, position: row.position, detail: row.deviceLastReadAt ? "Sensor sin reportar" : "Sensor aún no reporta" });
+    }
+  }
+  for (const row of rows) {
+    if (row.role !== "health" || row.value === null || row.quality !== "good") continue;
+    const value = Number(row.value);
+    const base = { pointId: row.assetId, pointName: pointName.get(row.assetId) ?? null, deviceName: row.deviceName, position: row.position };
+    if (row.metric === "battery" && value < HEALTH_LIMITS.batteryPercent) issues.push({ ...base, kind: "battery_low", severity: "warning", detail: `Batería ${Math.round(value)} %` });
+    if (row.metric === "battery_voltage" && value < HEALTH_LIMITS.batteryVolts) issues.push({ ...base, kind: "battery_low", severity: "warning", detail: `Batería ${formatNumber(value, 2)} V` });
+    if (row.metric === "signal_strength" && value < HEALTH_LIMITS.signalDbm) issues.push({ ...base, kind: "weak_signal", severity: "warning", detail: `Señal débil ${Math.round(value)} dBm` });
+  }
+  // Un mismo sensor con batería en % y en V se informa una vez.
+  return issues.filter((issue, index) => issue.kind !== "battery_low" || issues.findIndex((other) => other.kind === "battery_low" && other.deviceName === issue.deviceName && other.pointId === issue.pointId) === index);
 }
 
 function emptySummary() {
@@ -176,8 +444,9 @@ function summarize(points: SitePoint[]) {
   summary.total = points.length;
   summary.online = points.filter((point) => point.status !== "offline").length;
   summary.withAlarms = points.filter((point) => point.openAlarms > 0).length;
+  // Los máximos por grupo describen las celdas CAM5 (temperatura, humedad y UHF de los gabinetes).
   for (const group of SITE_GROUP_KEYS) {
-    for (const point of points) {
+    for (const point of points.filter((item) => item.system === "condition")) {
       const cell = point.groups[group];
       if (cell.value === null) continue;
       const best = summary.highest[group];
@@ -196,8 +465,10 @@ export async function loadSiteTrend(db: Cam5Database, siteId: string, allowedAss
   const from = new Date(Math.floor((now.getTime() - hours * 3600_000) / (bucketSeconds * 1000)) * bucketSeconds * 1000);
   const scope = allowedAssetIds.length ? inArray(assets.id, allowedAssetIds) : undefined;
   const metrics = [...SITE_GROUPS[group].metrics] as Metric[];
+  // La comparación por grupo (temperatura, humedad, UHF de gabinetes) es del sistema de monitoreo de condición.
   const points = await db.select({ id: assets.id, code: assets.code, name: assets.name }).from(assets)
-    .where(and(eq(assets.siteId, siteId), eq(assets.active, true), scope)).orderBy(asc(assets.code));
+    .innerJoin(pointTypes, eq(pointTypes.key, assets.assetType))
+    .where(and(eq(assets.siteId, siteId), eq(assets.active, true), eq(pointTypes.system, "condition"), scope)).orderBy(asc(assets.code));
   const pointIds = points.map((point) => point.id);
   if (!pointIds.length) return { group, hours, bucketSeconds, from: from.toISOString(), to: now.toISOString(), unit: null, warningThreshold: null, criticalThreshold: null, points: [] };
 

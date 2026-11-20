@@ -4,18 +4,30 @@ import { useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import {
   IconAlertTriangle,
+  IconBattery2,
+  IconChevronRight,
   IconCircleCheck,
   IconPlugConnectedX,
   IconRefresh,
+  IconRouterOff,
+  IconWifi1,
 } from "@tabler/icons-react";
 
 type Severity = "normal" | "warning" | "critical";
 type PointStatus = Severity | "offline";
 type Group = "temperature" | "humidity" | "discharge";
 type GroupCell = { value: number | null; unit: string | null; channelCode: string | null; channelName: string | null; severity: Severity };
-type SitePoint = { id: string; code: string; name: string; deviceCode: string | null; status: PointStatus; lastReadAt: string | null; openAlarms: number; alarmSeverity: Severity | null; groups: Record<Group, GroupCell> };
+type System = "condition" | "cold" | "energy" | "backup" | "other";
+type Condition = { status: "in_range" | "out_of_range" | "no_range" | "no_data"; value: number | null; deviation?: number | null; unit: string | null; decimals: number; quantityName: string | null; decisivePosition: string | null; sensors: number; reporting: number; rangeMin: number | null; rangeMax: number | null; aggregation: string; secondary: { name: string; value: number; unit: string; decimals: number } | null };
+type History = { bucketSeconds: number; from: string; values: Array<number | null>; min: number | null; max: number | null; inRangePct: number | null; excursions: number; outMinutes: number; outSince: string | null; trend: number | null };
+type SensorDetail = { position: string | null; name: string; value: number | null; unit: string; decimals: number; state: "in" | "out" | "stale" };
+type Electrical = { phases: Array<{ label: string; value: number }>; unbalancePct: number | null; voltage: number | null; powerFactor: number | null; today: { kwh: number | null; peakKw: number | null; peakAt: string | null } };
+type SitePoint = { id: string; code: string; name: string; area: string | null; type: string; typeName: string; system: System; condition: Condition | null; history: History | null; sensorsDetail: SensorDetail[]; electrical: Electrical | null; deviceCode: string | null; status: PointStatus; lastReadAt: string | null; openAlarms: number; alarmSeverity: Severity | null; groups: Record<Group, GroupCell> };
+type SystemSummary = { system: System; name: string; points: number; attention: number; offline: number };
+type AttentionItem = { pointId: string; pointName: string; system: System; severity: Severity | "offline"; reason: "out_of_range" | "alarm" | "offline" | "low_power_factor" | "unbalance"; detail: string };
+type HealthIssue = { kind: "sensor_stale" | "battery_low" | "weak_signal" | "gateway_offline"; severity: "warning" | "critical"; pointId: string | null; pointName: string | null; deviceName: string; position: string | null; detail: string };
 type Highest = { value: number; unit: string | null; pointCode: string; channelCode: string | null } | null;
-type Overview = { serverTime: string; points: SitePoint[]; summary: { total: number; online: number; withAlarms: number; highest: Record<Group, Highest> } };
+type Overview = { serverTime: string; points: SitePoint[]; summary: { total: number; online: number; withAlarms: number; highest: Record<Group, Highest> }; systems: SystemSummary[]; attention: AttentionItem[]; health: HealthIssue[] };
 type SiteEvent = { id: string; title: string; severity: string; status: string; openedAt: string; assetName: string | null; channelName: string | null; assignedToName: string | null };
 type Trend = { group: Group; hours: number; bucketSeconds: number; from: string; to: string; unit: string | null; warningThreshold: number | null; criticalThreshold: number | null; points: Array<{ id: string; code: string; name: string; series: Array<[string, number]> }> };
 
@@ -126,9 +138,14 @@ export function SiteOverviewView({ siteName, onOpenPoint, onDiagnose, onOpenAlar
   const { summary } = data;
   const nameByCode = new Map(data.points.map((point) => [point.code, point.name]));
   const offline = summary.total - summary.online;
-  const warn = data.points.filter((point) => point.status === "warning" || point.status === "critical").length;
   const lastRead = data.points.reduce<string | null>((latest, point) => point.lastReadAt && (!latest || point.lastReadAt > latest) ? point.lastReadAt : latest, null);
   const highest = (label: string, item: Highest) => item ? <span>{label} <b>{formatValue(item.value, item.unit)}</b> · {nameByCode.get(item.pointCode) ?? item.pointCode}</span> : null;
+  const systemName = (system: System) => data.systems.find((item) => item.system === system)?.name ?? system;
+  const hasCondition = data.systems.some((system) => system.system === "condition");
+  // Un sitio solo de celdas CAM5 (STM) conserva su vista: franja, tarjetas por celda, comparación y eventos.
+  const onlyCondition = data.systems.length > 0 && data.systems.every((system) => system.system === "condition");
+  const withIssues = data.points.filter((point) => point.status === "warning" || point.status === "critical").length;
+  const normal = summary.total - offline - withIssues;
 
   return <>
     {summary.total > 0 && offline === summary.total && <section className="site-incident critical" role="alert">
@@ -137,22 +154,44 @@ export function SiteOverviewView({ siteName, onOpenPoint, onDiagnose, onOpenAlar
       {onDiagnose && <button type="button" onClick={onDiagnose}>Diagnosticar</button>}
     </section>}
 
-    <section className="site-strip" aria-label={`Resumen de ${siteName}`}>
-      <span><i className="dot normal" /><b>{summary.total - offline - warn}</b> {summary.total - offline - warn === 1 ? "normal" : "normales"}</span>
-      <span><i className="dot warning" /><b>{warn}</b> con alarma</span>
-      <span><i className="dot offline" /><b>{offline}</b> sin datos</span>
-      <span className="site-strip-fill" />
-      {highest("Temp. máx.", summary.highest.temperature)}
-      {highest("UHF máx.", summary.highest.discharge)}
-    </section>
+    {onlyCondition
+      ? <section className="site-strip" aria-label={`Resumen de ${siteName}`}>
+        <span><i className="dot normal" /><b>{normal}</b> {normal === 1 ? "normal" : "normales"}</span>
+        <span><i className="dot warning" /><b>{withIssues}</b> con alarma</span>
+        <span><i className="dot offline" /><b>{offline}</b> sin datos</span>
+        <span className="site-strip-fill" />
+        {highest("Temp. máx.", summary.highest.temperature)}
+        {highest("UHF máx.", summary.highest.discharge)}
+      </section>
+      : <SiteStrip siteName={siteName} points={data.points} systems={data.systems} />}
+
+    {!onlyCondition && <AttentionPanel siteName={siteName} items={data.attention} systems={data.systems} systemName={systemName} onOpenPoint={onOpenPoint} />}
 
     {error && <p className="site-points-stale"><IconAlertTriangle size={14} /> {error} Se muestran los últimos datos recibidos.</p>}
-    {data.points.length === 0
-      ? <article className="panel site-overview-message"><div><strong>Sin puntos de medición</strong><p>El sitio no tiene puntos activos a los que tengas acceso.</p></div></article>
-      : <div className="site-cards">{data.points.map((point) => <PointCard key={point.id} point={point} now={now} sparks={sparks} thresholds={thresholds} onOpen={() => onOpenPoint(point.id)} onDiagnose={onDiagnose} />)}</div>}
+    {data.points.length === 0 && <article className="panel site-overview-message"><div><strong>Sin puntos de medición</strong><p>El sitio no tiene puntos activos a los que tengas acceso.</p></div></article>}
 
-    <div className="site-bottom">
-      <article className="panel site-compare" aria-label="Comparación entre puntos">
+    {data.systems.map((system) => {
+      const own = data.points.filter((point) => point.system === system.system);
+      const ok = system.points - system.attention - system.offline;
+      if (onlyCondition) return <div key={system.system} className="site-cards">{own.map((point) => <PointCard key={point.id} point={point} now={now} sparks={sparks} thresholds={thresholds} onOpen={() => onOpenPoint(point.id)} onDiagnose={onDiagnose} />)}</div>;
+      return <section key={system.system} className={`site-system system-${system.system}`} aria-label={system.name}>
+        <header>
+          <h2>{system.name}</h2>
+          <span>{ok} de {system.points} en orden{system.attention ? ` · ${system.attention} con observaciones` : ""}{system.offline ? ` · ${system.offline} sin datos` : ""}</span>
+          {system.system === "condition" && <span className="site-system-highest">{highest("Temp. máx.", summary.highest.temperature)}{highest("UHF máx.", summary.highest.discharge)}</span>}
+        </header>
+        {system.system === "condition"
+          ? <div className="site-cards">{own.map((point) => <PointCard key={point.id} point={point} now={now} sparks={sparks} thresholds={thresholds} onOpen={() => onOpenPoint(point.id)} onDiagnose={onDiagnose} />)}</div>
+          : <div className={`sys-cards ${system.system === "energy" ? "energy" : ""}`}>{own.map((point) => point.system === "energy"
+            ? <PanelCard key={point.id} point={point} now={now} onOpen={() => onOpenPoint(point.id)} />
+            : <ColdCard key={point.id} point={point} now={now} onOpen={() => onOpenPoint(point.id)} />)}</div>}
+      </section>;
+    })}
+
+    {!onlyCondition && <HealthPanel issues={data.health} onOpenPoint={onOpenPoint} onDiagnose={onDiagnose} />}
+
+    <div className={`site-bottom ${hasCondition ? "" : "events-only"}`}>
+      {hasCondition && <article className="panel site-compare" aria-label="Comparación entre puntos">
         <header>
           <h2>{GROUPS.find((item) => item.key === group)?.label} por punto</h2>
           <div className="site-compare-controls">
@@ -161,7 +200,7 @@ export function SiteOverviewView({ siteName, onOpenPoint, onDiagnose, onOpenAlar
           </div>
         </header>
         {trendError && !trend ? <p className="site-points-empty">{trendError}</p> : trend ? <CompareChart trend={trend} /> : <p className="site-points-empty"><IconRefresh className="spin" size={15} /> Cargando la comparación…</p>}
-      </article>
+      </article>}
       <article className="panel site-events" aria-label="Eventos recientes">
         <header><h2>Eventos recientes</h2>{onOpenAlarms && <button type="button" className="site-link" onClick={onOpenAlarms}>Ver alertas</button>}</header>
         {events === null ? <p className="site-points-empty"><IconRefresh className="spin" size={15} /> Cargando…</p> : events.length === 0 ? <p className="site-points-empty">Sin eventos en el sitio.</p> : <ul>{events.map((event) => <li key={event.id}>
@@ -309,4 +348,228 @@ function CompareChart({ trend }: { trend: Trend }) {
         </div>}
       </div>}
   </div>;
+}
+
+const ATTENTION_REASON: Record<AttentionItem["reason"], string> = { out_of_range: "Fuera de rango", alarm: "Con alarma", offline: "Sin datos", low_power_factor: "Factor de potencia bajo", unbalance: "Fases desbalanceadas" };
+
+/** Solo las excepciones del sitio; si no hay ninguna, una línea que confirma que todo está en orden. */
+function AttentionPanel({ siteName, items, systems, systemName, onOpenPoint }: { siteName: string; items: AttentionItem[]; systems: SystemSummary[]; systemName: (system: System) => string; onOpenPoint: (pointId: string) => void }) {
+  const total = systems.reduce((sum, system) => sum + system.points, 0);
+  if (!items.length) {
+    return <section className="site-attention ok" aria-label={`Estado de ${siteName}`}><IconCircleCheck size={18} aria-hidden="true" /><span><strong>Todo en orden</strong> · {total} {total === 1 ? "punto" : "puntos"} en {systems.map((system) => system.name.toLowerCase()).join(", ")}</span></section>;
+  }
+  return <section className="site-attention" aria-label={`Requiere atención en ${siteName}`}>
+    <header><IconAlertTriangle size={17} aria-hidden="true" /><h2>Requiere atención</h2><span>{items.length}</span></header>
+    <ul>{items.map((item) => <li key={`${item.pointId}:${item.reason}`}>
+      <button type="button" onClick={() => onOpenPoint(item.pointId)}>
+        <i className={`dot ${item.severity}`} />
+        <span className="site-attention-what"><strong>{item.pointName}</strong><small>{systemName(item.system)} · {ATTENTION_REASON[item.reason]}</small></span>
+        <span className={`site-attention-detail ${item.severity}`}>{item.detail}</span>
+        <IconChevronRight size={16} aria-hidden="true" />
+      </button>
+    </li>)}</ul>
+  </section>;
+}
+
+function rangeText(condition: Condition) {
+  const unit = condition.unit ?? "";
+  const fmt = (value: number) => number(value, condition.decimals);
+  if (condition.rangeMin !== null && condition.rangeMax !== null) return `rango ${fmt(condition.rangeMin)} a ${fmt(condition.rangeMax)} ${unit}`;
+  if (condition.rangeMax !== null) return `máx. ${fmt(condition.rangeMax)} ${unit}`;
+  if (condition.rangeMin !== null) return `mín. ${fmt(condition.rangeMin)} ${unit}`;
+  return null;
+}
+
+const signed = (value: number, digits: number) => `${value > 0 ? "+" : value < 0 ? "−" : "±"}${number(Math.abs(value), digits)}`;
+function duration(minutes: number) {
+  if (minutes < 60) return `${Math.round(minutes)} min`;
+  const hours = Math.floor(minutes / 60), rest = Math.round(minutes % 60);
+  return rest ? `${hours} h ${rest} min` : `${hours} h`;
+}
+
+/** Franja superior de un sitio con frío/energía: conteo por estado y lo más relevante de cada sistema. */
+function SiteStrip({ siteName, points, systems }: { siteName: string; points: SitePoint[]; systems: SystemSummary[] }) {
+  const attention = systems.reduce((total, system) => total + system.attention, 0);
+  const offline = systems.reduce((total, system) => total + system.offline, 0);
+  const normal = points.length - attention - offline;
+  const cold = points.filter((point) => point.system === "cold" && point.condition?.value !== null && point.condition?.value !== undefined);
+  const worstCold = cold.sort((left, right) => (right.condition!.deviation ?? -99) - (left.condition!.deviation ?? -99))[0];
+  const demand = points.filter((point) => point.system === "energy").reduce((total, point) => total + (point.condition?.value ?? 0), 0);
+  return <section className="site-strip" aria-label={`Resumen de ${siteName}`}>
+    <span><i className="dot normal" /><b>{normal}</b> en orden</span>
+    <span><i className="dot warning" /><b>{attention}</b> con observaciones</span>
+    <span><i className="dot offline" /><b>{offline}</b> sin datos</span>
+    <span className="site-strip-fill" />
+    {worstCold && <span>Cámara más exigida <b>{number(worstCold.condition!.value!, worstCold.condition!.decimals)} {worstCold.condition!.unit}</b> · {worstCold.name}</span>}
+    {systems.some((system) => system.system === "energy") && <span>Demanda actual <b>{number(demand, 1)} kW</b></span>}
+  </section>;
+}
+
+/**
+ * Curva de 24 h con la banda del rango objetivo. Lo que sale de la banda se dibuja en rojo: así se ve
+ * de un vistazo si la cámara estuvo estable toda la noche o tuvo excursiones que ya se recuperaron.
+ */
+function RangeChart({ history, rangeMin, rangeMax, unit, decimals, peakIndex }: { history: History; rangeMin: number | null; rangeMax: number | null; unit: string; decimals: number; peakIndex?: number | null }) {
+  const width = 300, height = 74, top = 4, bottom = 62;
+  const values = history.values;
+  const present = values.filter((value): value is number => value !== null);
+  if (present.length < 2) return <div className="range-chart empty">Sin historia de 24 h aún</div>;
+  let low = Math.min(...present, ...(rangeMin !== null ? [rangeMin] : []), ...(rangeMax !== null ? [rangeMax] : []));
+  let high = Math.max(...present, ...(rangeMin !== null ? [rangeMin] : []), ...(rangeMax !== null ? [rangeMax] : []));
+  const pad = (high - low || 1) * 0.12;
+  low -= pad; high += pad;
+  const x = (index: number) => (index / (values.length - 1)) * width;
+  const y = (value: number) => bottom - ((value - low) / (high - low)) * (bottom - top);
+  const isOut = (value: number) => (rangeMax !== null && value > rangeMax) || (rangeMin !== null && value < rangeMin);
+  const runs: Array<{ out: boolean; points: string[] }> = [];
+  values.forEach((value, index) => {
+    if (value === null) { runs.push({ out: false, points: [] }); return; }
+    const out = isOut(value);
+    const last = runs.at(-1);
+    const point = `${x(index).toFixed(1)},${y(value).toFixed(1)}`;
+    if (!last || last.out !== out || !last.points.length) {
+      // Une el tramo nuevo con el punto anterior para que la línea no se corte al cambiar de color.
+      const previous = last?.points.at(-1);
+      runs.push({ out, points: previous ? [previous, point] : [point] });
+    } else last.points.push(point);
+  });
+  const lastIndex = values.findLastIndex((value) => value !== null);
+  const bandTop = rangeMax !== null ? y(rangeMax) : top;
+  const bandBottom = rangeMin !== null ? y(rangeMin) : bottom;
+  const fmt = (value: number) => number(value, decimals);
+  const hasRange = rangeMin !== null || rangeMax !== null;
+  return <div className="range-chart">
+    <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label={`Últimas 24 h: entre ${fmt(Math.min(...present))} y ${fmt(Math.max(...present))} ${unit}`}>
+      {hasRange && <rect x="0" width={width} y={Math.min(bandTop, bandBottom)} height={Math.abs(bandBottom - bandTop)} className="range-band" />}
+      {rangeMax !== null && <line x1="0" x2={width} y1={bandTop} y2={bandTop} className="range-limit" />}
+      {rangeMin !== null && <line x1="0" x2={width} y1={bandBottom} y2={bandBottom} className="range-limit" />}
+      {[0.25, 0.5, 0.75].map((fraction) => <line key={fraction} x1={width * fraction} x2={width * fraction} y1={top} y2={bottom} className="range-grid" />)}
+      {runs.filter((run) => run.points.length > 1).map((run, index) => <polyline key={index} points={run.points.join(" ")} className={`range-line ${run.out ? "out" : ""}`} />)}
+      {peakIndex !== null && peakIndex !== undefined && values[peakIndex] !== null && <circle cx={x(peakIndex)} cy={y(values[peakIndex]!)} r="2.6" className="range-peak" />}
+      {lastIndex >= 0 && <circle cx={x(lastIndex)} cy={y(values[lastIndex]!)} r="3" className={`range-now ${isOut(values[lastIndex]!) ? "out" : ""}`} />}
+    </svg>
+    <div className="range-axis"><span>−24 h</span><span>−18 h</span><span>−12 h</span><span>−6 h</span><span>ahora</span></div>
+  </div>;
+}
+
+function Trend({ value, unit, decimals }: { value: number | null; unit: string; decimals: number }) {
+  if (value === null || Math.abs(value) < (unit === "kW" ? 1 : 0.2)) return <span className="trend flat" title="Estable en los últimos 15 min">estable</span>;
+  return <span className={`trend ${value > 0 ? "up" : "down"}`} title="Cambio en los últimos 15 min">{value > 0 ? "▲" : "▼"} {signed(value, decimals)} en 15 min</span>;
+}
+
+function cardBadge(point: SitePoint) {
+  const condition = point.condition;
+  if (point.status === "offline") return { label: point.lastReadAt ? "Sin datos" : "Nunca reportó", tone: "offline" };
+  if (point.status === "critical") return { label: "Alarma crítica", tone: "critical" };
+  if (condition?.status === "out_of_range") return { label: "Fuera de rango", tone: "warning" };
+  if (condition?.status === "in_range") return { label: "En rango", tone: "normal" };
+  if (point.status === "warning") return { label: "Advertencia", tone: "warning" };
+  return { label: "Normal", tone: "normal" };
+}
+
+/** Cámara de frío: peor sensor ahora, curva de 24 h con la banda objetivo, cada sensor y el resumen del día. */
+function ColdCard({ point, now, onOpen }: { point: SitePoint; now: number; onOpen: () => void }) {
+  const condition = point.condition;
+  const history = point.history;
+  const offline = point.status === "offline";
+  const badge = cardBadge(point);
+  const tone = offline || !condition || condition.value === null ? "muted" : point.status === "critical" ? "critical" : condition.status === "out_of_range" ? "warning" : "";
+  const unit = condition?.unit ?? "°C";
+  const decimals = condition?.decimals ?? 1;
+  const reporting = condition ? `${condition.reporting}/${condition.sensors}` : "0";
+  const statusNote = history?.outSince ? `fuera de rango hace ${duration((now - new Date(history.outSince).getTime()) / 60000)}` : condition && rangeText(condition) ? rangeText(condition) : "sin rango definido";
+  return <article className={`site-card sys-card cold-card status-${point.status}`}>
+    <button type="button" className="site-card-open" onClick={onOpen} aria-label={`Abrir ${point.name}: ${badge.label}`} />
+    <header>
+      <i className={`dot ${offline ? "offline" : badge.tone === "normal" ? "normal" : badge.tone}`} />
+      <span><strong>{point.name}</strong><small>{[point.area, condition ? `${condition.sensors} ${condition.sensors === 1 ? "sensor" : "sensores"}` : null].filter(Boolean).join(" · ")}</small></span>
+      <em className={`site-badge ${badge.tone}`}>{badge.label}</em>
+    </header>
+    <div className="sys-card-main">
+      <div className="sys-card-now">
+        <span className="site-metric-label">{condition && condition.sensors > 1 ? "Ahora · peor sensor" : "Ahora"}</span>
+        <span className={`site-metric-value ${tone}`}>{condition && condition.value !== null && !offline ? number(condition.value, decimals) : "—"}<small>{unit}</small></span>
+        {!offline && history && <Trend value={history.trend} unit={unit} decimals={decimals} />}
+        <span className={`sys-card-status ${history?.outSince ? "warning" : ""}`}>{condition?.decisivePosition && condition.sensors > 1 ? `${condition.decisivePosition} · ` : ""}{statusNote}</span>
+      </div>
+      {history && condition ? <RangeChart history={history} rangeMin={condition.rangeMin} rangeMax={condition.rangeMax} unit={unit} decimals={decimals} /> : <div className="range-chart empty">Sin historia</div>}
+    </div>
+    {point.sensorsDetail.length > 1 && <ul className="sensor-chips" aria-label="Sensores">{point.sensorsDetail.slice(0, 6).map((sensor, index) => <li key={`${sensor.name}:${index}`} className={sensor.state}>
+      <span>{sensor.position ?? sensor.name}</span><b>{sensor.value === null ? "—" : `${number(sensor.value, sensor.decimals)}`}</b>
+    </li>)}{point.sensorsDetail.length > 6 && <li className="more">+{point.sensorsDetail.length - 6}</li>}</ul>}
+    <dl className="sys-card-stats">
+      <div><dt>En rango 24 h</dt><dd className={history?.inRangePct !== null && history?.inRangePct !== undefined && history.inRangePct < 99 ? "warning" : ""}>{history?.inRangePct === null || history?.inRangePct === undefined ? "—" : `${number(history.inRangePct, history.inRangePct % 1 ? 1 : 0)} %`}</dd></div>
+      <div><dt>Excursiones</dt><dd className={history?.excursions ? "warning" : ""}>{history ? history.excursions ? `${history.excursions} · ${duration(history.outMinutes)}` : "Ninguna" : "—"}</dd></div>
+      <div><dt>Mín / máx</dt><dd>{history?.min !== null && history?.min !== undefined && history.max !== null ? `${number(history.min, decimals)} / ${number(history.max, decimals)}` : "—"}</dd></div>
+      <div><dt>{condition?.secondary?.name ?? "Humedad"}</dt><dd>{condition?.secondary ? `${number(condition.secondary.value, condition.secondary.decimals)} %` : "—"}</dd></div>
+    </dl>
+    <footer>
+      <span>{offline ? point.lastReadAt ? `Última lectura ${clock(point.lastReadAt, now)}` : "Sin lecturas" : `Última lectura ${since(point.lastReadAt, now)}`}{condition && condition.reporting < condition.sensors ? ` · ${reporting} sensores reportan` : ""}</span>
+      <span className={point.openAlarms ? `alarms ${point.alarmSeverity ?? "warning"}` : "alarms none"}>{point.openAlarms ? `${point.openAlarms} ${point.openAlarms === 1 ? "alarma abierta" : "alarmas abiertas"}` : "Sin alarmas"}</span>
+    </footer>
+  </article>;
+}
+
+const PF_MIN = 0.93;
+const UNBALANCE_MAX = 10;
+
+/** Tablero eléctrico: carga actual y de 24 h, demanda máxima, energía del día, fases y factor de potencia. */
+function PanelCard({ point, now, onOpen }: { point: SitePoint; now: number; onOpen: () => void }) {
+  const condition = point.condition;
+  const history = point.history;
+  const electrical = point.electrical;
+  const offline = point.status === "offline";
+  const lowPf = electrical?.powerFactor !== null && electrical?.powerFactor !== undefined && electrical.powerFactor < PF_MIN;
+  const unbalanced = electrical?.unbalancePct !== null && electrical?.unbalancePct !== undefined && electrical.unbalancePct > UNBALANCE_MAX;
+  const badge = offline || point.status === "critical" ? cardBadge(point) : lowPf || unbalanced ? { label: "Con observaciones", tone: "warning" } : cardBadge(point);
+  const peakIndex = history ? history.values.reduce<number | null>((best, value, index) => value !== null && (best === null || value > history.values[best]!) ? index : best, null) : null;
+  const maxPhase = electrical?.phases.length ? Math.max(...electrical.phases.map((phase) => phase.value)) : 0;
+  return <article className={`site-card sys-card panel-card status-${point.status}`}>
+    <button type="button" className="site-card-open" onClick={onOpen} aria-label={`Abrir ${point.name}: ${badge.label}`} />
+    <header>
+      <i className={`dot ${offline ? "offline" : badge.tone === "normal" ? "normal" : badge.tone}`} />
+      <span><strong>{point.name}</strong><small>{[point.area, point.typeName].filter(Boolean).join(" · ")}</small></span>
+      <em className={`site-badge ${badge.tone}`}>{badge.label}</em>
+    </header>
+    <div className="sys-card-main">
+      <div className="sys-card-now">
+        <span className="site-metric-label">Potencia ahora</span>
+        <span className={`site-metric-value ${offline ? "muted" : ""}`}>{condition?.value !== null && condition?.value !== undefined && !offline ? number(condition.value, 1) : "—"}<small>kW</small></span>
+        {!offline && history && <Trend value={history.trend} unit="kW" decimals={1} />}
+        <span className="sys-card-status">{electrical?.today.peakKw !== null && electrical?.today.peakKw !== undefined ? `Máx. hoy ${number(electrical.today.peakKw, 1)} kW${electrical.today.peakAt ? ` · ${clock(electrical.today.peakAt, now)}` : ""}` : "Sin demanda registrada hoy"}</span>
+      </div>
+      {history ? <RangeChart history={history} rangeMin={null} rangeMax={null} unit="kW" decimals={1} peakIndex={peakIndex} /> : <div className="range-chart empty">Sin historia</div>}
+    </div>
+    {electrical && electrical.phases.length > 0 && <div className="phase-bars" aria-label="Corriente por fase">
+      {electrical.phases.map((phase) => <div key={phase.label}><span>{phase.label}</span><i><b style={{ width: `${maxPhase ? Math.max(4, phase.value / maxPhase * 100) : 0}%` }} /></i><em>{number(phase.value, 0)} A</em></div>)}
+    </div>}
+    <dl className="sys-card-stats">
+      <div><dt>Energía hoy</dt><dd>{electrical?.today.kwh !== null && electrical?.today.kwh !== undefined ? `${number(electrical.today.kwh, 0)} kWh` : "—"}</dd></div>
+      <div><dt>Factor de potencia</dt><dd className={lowPf ? "warning" : ""}>{electrical?.powerFactor !== null && electrical?.powerFactor !== undefined ? number(electrical.powerFactor, 2) : "—"}{lowPf ? " · bajo 0,93" : ""}</dd></div>
+      <div><dt>Desbalance</dt><dd className={unbalanced ? "warning" : ""}>{electrical?.unbalancePct !== null && electrical?.unbalancePct !== undefined ? `${number(electrical.unbalancePct, 1)} %` : "—"}</dd></div>
+      <div><dt>Voltaje F-N</dt><dd>{electrical?.voltage !== null && electrical?.voltage !== undefined ? `${number(electrical.voltage, 0)} V` : "—"}</dd></div>
+    </dl>
+    <footer>
+      <span>{offline ? point.lastReadAt ? `Última lectura ${clock(point.lastReadAt, now)}` : "Sin lecturas" : `Última lectura ${since(point.lastReadAt, now)}`}</span>
+      <span className={point.openAlarms ? `alarms ${point.alarmSeverity ?? "warning"}` : "alarms none"}>{point.openAlarms ? `${point.openAlarms} ${point.openAlarms === 1 ? "alarma abierta" : "alarmas abiertas"}` : "Sin alarmas"}</span>
+    </footer>
+  </article>;
+}
+
+const HEALTH_ICON = { sensor_stale: IconPlugConnectedX, battery_low: IconBattery2, weak_signal: IconWifi1, gateway_offline: IconRouterOff } as const;
+
+/** Mantenimiento de la instrumentación: sensores sin reportar, baterías bajas, señal débil y gateways caídos. */
+function HealthPanel({ issues, onOpenPoint, onDiagnose }: { issues: HealthIssue[]; onOpenPoint: (pointId: string) => void; onDiagnose?: () => void }) {
+  if (!issues.length) return <p className="site-health-ok"><IconCircleCheck size={15} aria-hidden="true" /> Sensores y gateways sin observaciones.</p>;
+  return <section className="panel site-health" aria-label="Salud de sensores">
+    <header><h2>Salud de sensores</h2><span>{issues.length} {issues.length === 1 ? "observación" : "observaciones"}</span></header>
+    <ul>{issues.map((issue, index) => {
+      const Icon = HEALTH_ICON[issue.kind];
+      return <li key={`${issue.kind}:${issue.deviceName}:${index}`}>
+        <Icon size={16} className={issue.severity} aria-hidden="true" />
+        <span><strong>{issue.detail}</strong><small>{[issue.pointName, issue.position, issue.deviceName].filter(Boolean).join(" · ")}</small></span>
+        {issue.pointId ? <button type="button" className="site-link" onClick={() => onOpenPoint(issue.pointId!)}>Ver punto</button> : onDiagnose ? <button type="button" className="site-link" onClick={onDiagnose}>Diagnosticar</button> : <span />}
+      </li>;
+    })}</ul>
+  </section>;
 }
