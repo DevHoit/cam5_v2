@@ -23,13 +23,21 @@ import { Pagination, useClientPagination } from "./pagination";
 type NoticeTone = "success" | "info" | "warning";
 type ConfirmRequest = { title: string; detail: string; confirmLabel: string; tone?: "default" | "danger"; onConfirm: () => void };
 type SettingsTab = "asset" | "channels" | "registers" | "acquisition" | "versions";
+type PointConfig = { rangeMin?: number | null; rangeMax?: number | null; toleranceMinutes?: number; aggregation?: string };
+type PointTypeOption = { key: string; name: string; system: string; systemName: string; primaryQuantity: string | null; aggregation: string; defaultConfig: PointConfig };
+const AGGREGATION_LABELS: Record<string, string> = { max: "Valor más alto (peor sensor)", min: "Valor más bajo", avg: "Promedio de sensores", sum: "Suma de equipos", last: "Último valor" };
+const configText = (value: number | null | undefined) => value === null || value === undefined ? "" : String(value);
 type ConfigurationData = {
+  pointTypes: PointTypeOption[];
   asset: {
     id: string;
     code: string;
     name: string;
     area: string | null;
     nominalVoltageKv: number | null;
+    assetType: string;
+    config: PointConfig;
+    effectiveConfig: { rangeMin: number | null; rangeMax: number | null; toleranceMinutes: number; aggregation: string } | null;
     state: string;
     active: boolean;
     siteId: string;
@@ -223,7 +231,7 @@ export function SettingsView({
 }) {
   const [tab, setTab] = useState<SettingsTab>("asset");
   const [data, setData] = useState<ConfigurationData | null>(null);
-  const [assetForm, setAssetForm] = useState({ name: "", area: "", nominalVoltageKv: "" });
+  const [assetForm, setAssetForm] = useState({ name: "", area: "", nominalVoltageKv: "", assetType: "", rangeMin: "", rangeMax: "", toleranceMinutes: "", aggregation: "" });
   const [acquisitionForm, setAcquisitionForm] = useState<AcquisitionDraft | null>(null);
   const [drafts, setDrafts] = useState<Record<string, ChannelDraft>>({});
   const [loading, setLoading] = useState(false);
@@ -245,7 +253,16 @@ export function SettingsView({
         .then((result) => {
           if (!active) return;
           setData(result);
-          setAssetForm({ name: result.asset.name, area: result.asset.area ?? "", nominalVoltageKv: result.asset.nominalVoltageKv === null ? "" : String(result.asset.nominalVoltageKv) });
+          setAssetForm({
+            name: result.asset.name,
+            area: result.asset.area ?? "",
+            nominalVoltageKv: result.asset.nominalVoltageKv === null ? "" : String(result.asset.nominalVoltageKv),
+            assetType: result.asset.assetType,
+            rangeMin: configText(result.asset.config.rangeMin),
+            rangeMax: configText(result.asset.config.rangeMax),
+            toleranceMinutes: configText(result.asset.config.toleranceMinutes),
+            aggregation: result.asset.config.aggregation ?? "",
+          });
           setAcquisitionForm(acquisitionDraft(result));
           setDrafts(channelDrafts(result));
         })
@@ -280,7 +297,11 @@ export function SettingsView({
       || draft.recoverySamples !== String(channel.recoverySamples ?? 3)
       || draft.staleAfterSeconds !== String(channel.staleAfterSeconds ?? 180);
   }), [data, drafts]);
-  const assetDirty = Boolean(data && (assetForm.name !== data.asset.name || assetForm.area !== (data.asset.area ?? "") || assetForm.nominalVoltageKv !== String(data.asset.nominalVoltageKv ?? "")));
+  const assetDirty = Boolean(data && (assetForm.name !== data.asset.name || assetForm.area !== (data.asset.area ?? "") || assetForm.nominalVoltageKv !== String(data.asset.nominalVoltageKv ?? "")
+    || assetForm.assetType !== data.asset.assetType
+    || assetForm.rangeMin !== configText(data.asset.config.rangeMin) || assetForm.rangeMax !== configText(data.asset.config.rangeMax)
+    || assetForm.toleranceMinutes !== configText(data.asset.config.toleranceMinutes) || assetForm.aggregation !== (data.asset.config.aggregation ?? "")));
+  const selectedPointType = data?.pointTypes.find((type) => type.key === assetForm.assetType);
   const acquisitionDirty = Boolean(data && JSON.stringify(acquisitionForm) !== JSON.stringify(acquisitionDraft(data)));
   const monitoredChannelCount = Object.values(drafts).filter((channel) => channel.enabled).length;
   const estimatedReadingsPerDay = acquisitionForm ? monitoredChannelCount * Math.ceil(86_400 / Math.max(10, Number(acquisitionForm.storageIntervalSeconds) || 60)) : 0;
@@ -299,7 +320,13 @@ export function SettingsView({
   };
 
   const saveAsset = async () => {
-    await patchConfiguration({ section: "asset", name: assetForm.name, area: assetForm.area, nominalVoltageKv: assetForm.nominalVoltageKv || null }, "Identificación actualizada");
+    // Un campo vacío hereda el valor del tipo de punto; solo se guardan los ajustes propios.
+    const config: PointConfig = {};
+    if (assetForm.rangeMin.trim()) config.rangeMin = Number(assetForm.rangeMin.replace(",", "."));
+    if (assetForm.rangeMax.trim()) config.rangeMax = Number(assetForm.rangeMax.replace(",", "."));
+    if (assetForm.toleranceMinutes.trim()) config.toleranceMinutes = Number(assetForm.toleranceMinutes);
+    if (assetForm.aggregation) config.aggregation = assetForm.aggregation;
+    await patchConfiguration({ section: "asset", name: assetForm.name, area: assetForm.area, nominalVoltageKv: assetForm.nominalVoltageKv || null, assetType: assetForm.assetType, config }, "Punto actualizado");
     await onReloadHierarchy();
   };
 
@@ -365,13 +392,23 @@ export function SettingsView({
       {!data.validation.valid && <div className="validation-summary" role="alert"><IconAlertTriangle size={18} /><div><strong>Configuración pendiente de completar</strong><p>{data.validation.warnings.join(" · ")}</p></div></div>}
 
       {tab === "asset" && <div className="settings-content">
-        <div className="settings-section-head"><span className="settings-icon"><IconBuilding size={20} /></span><div><h2>Identificación del punto de medición</h2><p>Nombre operativo y datos eléctricos usados en navegación, alarmas y reportes.</p></div></div>
+        <div className="settings-section-head"><span className="settings-icon"><IconBuilding size={20} /></span><div><h2>Identificación del punto de medición</h2><p>Nombre, tipo y rango objetivo. El tipo define en qué sistema aparece (Frío, Energía, Respaldo) y cómo se combinan sus sensores; los campos vacíos usan el valor del tipo.</p></div></div>
         <div className="configuration-context-grid">
           <div className="form-grid">
             <label><span>Código estable</span><input value={data.asset.code} readOnly /></label>
             <label><span>Nombre operativo</span><input value={assetForm.name} disabled={!canWrite} onChange={(event) => setAssetForm({ ...assetForm, name: event.target.value })} /></label>
             <label><span>Área / ubicación interna</span><input value={assetForm.area} disabled={!canWrite} onChange={(event) => setAssetForm({ ...assetForm, area: event.target.value })} placeholder="Ej.: Sala eléctrica norte" /></label>
-            <label><span>Tensión nominal</span><div className="input-unit"><input type="number" min="0.001" step="0.001" value={assetForm.nominalVoltageKv} disabled={!canWrite} onChange={(event) => setAssetForm({ ...assetForm, nominalVoltageKv: event.target.value })} /><b>kV</b></div></label>
+{(selectedPointType?.system === "condition" || selectedPointType?.system === "energy") && <label><span>Tensión nominal</span><div className="input-unit"><input type="number" min="0.001" step="0.001" value={assetForm.nominalVoltageKv} disabled={!canWrite} onChange={(event) => setAssetForm({ ...assetForm, nominalVoltageKv: event.target.value })} /><b>kV</b></div></label>}
+            <label><span>Tipo de punto</span><select value={assetForm.assetType} disabled={!canWrite} onChange={(event) => setAssetForm({ ...assetForm, assetType: event.target.value })}>
+              {Object.entries(data.pointTypes.reduce<Record<string, PointTypeOption[]>>((groups, type) => ({ ...groups, [type.systemName]: [...(groups[type.systemName] ?? []), type] }), {})).map(([system, types]) => <optgroup key={system} label={system}>{types.map((type) => <option key={type.key} value={type.key}>{type.name}</option>)}</optgroup>)}
+            </select></label>
+            <label><span>Combinar sensores</span><select value={assetForm.aggregation} disabled={!canWrite} onChange={(event) => setAssetForm({ ...assetForm, aggregation: event.target.value })}>
+              <option value="">Según el tipo · {AGGREGATION_LABELS[selectedPointType?.aggregation ?? "max"]}</option>
+              {Object.entries(AGGREGATION_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+            </select></label>
+            <label><span>Rango objetivo · mínimo</span><input inputMode="decimal" value={assetForm.rangeMin} disabled={!canWrite} placeholder={selectedPointType?.defaultConfig.rangeMin !== undefined && selectedPointType.defaultConfig.rangeMin !== null ? `Por defecto ${selectedPointType.defaultConfig.rangeMin}` : "Sin mínimo"} onChange={(event) => setAssetForm({ ...assetForm, rangeMin: event.target.value })} /></label>
+            <label><span>Rango objetivo · máximo</span><input inputMode="decimal" value={assetForm.rangeMax} disabled={!canWrite} placeholder={selectedPointType?.defaultConfig.rangeMax !== undefined && selectedPointType.defaultConfig.rangeMax !== null ? `Por defecto ${selectedPointType.defaultConfig.rangeMax}` : "Sin máximo"} onChange={(event) => setAssetForm({ ...assetForm, rangeMax: event.target.value })} /></label>
+            <label><span>Tolerancia fuera de rango</span><div className="input-unit"><input type="number" min="0" max="1440" step="1" value={assetForm.toleranceMinutes} disabled={!canWrite} placeholder={String(selectedPointType?.defaultConfig.toleranceMinutes ?? 0)} onChange={(event) => setAssetForm({ ...assetForm, toleranceMinutes: event.target.value })} /><b>min</b></div></label>
             <label><span>Sitio</span><input value={`${data.asset.siteCode} · ${data.asset.siteName}`} readOnly /></label>
             <label><span>Zona horaria del sitio</span><input value={data.asset.siteTimezone} readOnly /></label>
           </div>

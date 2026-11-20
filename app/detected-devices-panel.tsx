@@ -46,7 +46,7 @@ export function DetectedDevicesPanel({ canWrite, notify, confirm }: { canWrite: 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
-  const [form, setForm] = useState({ pointId: "", modelId: "", name: "", code: "" });
+  const [form, setForm] = useState({ pointId: "", modelId: "", name: "", position: "", code: "" });
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
@@ -69,7 +69,7 @@ export function DetectedDevicesPanel({ canWrite, notify, confirm }: { canWrite: 
 
   function openAssign(item: DetectedDevice) {
     setOpenId(item.id);
-    setForm({ pointId: data?.points[0]?.id ?? "", modelId: data?.templates[0]?.id ?? "", name: "", code: "" });
+    setForm({ pointId: data?.points[0]?.id ?? "", modelId: data?.templates[0]?.id ?? "", name: "", position: "", code: "" });
   }
 
   async function assign(event: React.FormEvent, item: DetectedDevice) {
@@ -121,7 +121,8 @@ export function DetectedDevicesPanel({ canWrite, notify, confirm }: { canWrite: 
         {openId === item.id && <form className="provisioning-form detected-device-form" onSubmit={(event) => void assign(event, item)}>
           <label><span>Punto de medición</span><select required value={form.pointId} onChange={(event) => setForm({ ...form, pointId: event.target.value })}>{data?.points.map((point) => <option key={point.id} value={point.id}>{point.code} · {point.name}</option>)}</select></label>
           <label><span>Plantilla</span><select required value={form.modelId} onChange={(event) => setForm({ ...form, modelId: event.target.value })}>{data?.templates.map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}</select></label>
-          <label><span>Nombre</span><input required minLength={2} maxLength={160} placeholder="Ej.: Cámara fría casino" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label>
+          <label><span>Nombre</span><input required minLength={2} maxLength={160} placeholder="Ej.: Sensor puerta cámara 1" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label>
+          <label><span>Posición en el punto</span><input maxLength={80} placeholder="Puerta, fondo, evaporador…" value={form.position} onChange={(event) => setForm({ ...form, position: event.target.value })} /></label>
           <label><span>Código (opcional)</span><input maxLength={60} pattern="[A-Za-z0-9._\-]{2,60}" placeholder="Automático" value={form.code} onChange={(event) => setForm({ ...form, code: event.target.value })} /></label>
           <button className="primary-button" disabled={saving || !form.pointId || !form.modelId || form.name.trim().length < 2}>{saving ? <><IconRefresh className="spin" size={16} /> Asignando…</> : <><IconCheck size={16} /> Asignar equipo</>}</button>
           {template && <p className="detected-device-template">Se crearán {template.measurements.length} canales: {template.measurements.map((entry) => `${entry.name}${entry.unit ? ` (${entry.unit})` : ""}`).join(", ")}.</p>}

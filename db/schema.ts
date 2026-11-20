@@ -108,7 +108,10 @@ export const assets = pgTable("assets", {
   code: varchar("code", { length: 60 }).notNull(),
   name: varchar("name", { length: 180 }).notNull(),
   area: varchar("area", { length: 160 }),
-  assetType: varchar("asset_type", { length: 80 }).default("switchgear_cabinet").notNull(),
+  // Tipo de punto (cámara fría, tablero, UPS…): define el sistema al que pertenece y cómo se resume.
+  assetType: varchar("asset_type", { length: 80 }).default("switchgear_cabinet").notNull().references((): AnyPgColumn => pointTypes.key, { onDelete: "restrict" }),
+  // Ajustes propios del punto sobre los del tipo (rango objetivo, tolerancia, cómo combinar sensores).
+  config: jsonb("config").$type<PointConfigOverrides>().default(sql`'{}'::jsonb`).notNull(),
   nominalVoltageKv: numeric("nominal_voltage_kv", { precision: 8, scale: 3 }),
   state: assetStateEnum("state").default("offline").notNull(),
   active: boolean("active").default(true).notNull(),
@@ -118,6 +121,28 @@ export const assets = pgTable("assets", {
 }, (table) => [
   uniqueIndex("assets_site_code_uidx").on(table.siteId, table.code),
   index("assets_site_state_idx").on(table.siteId, table.state),
+]);
+
+export type PointSystem = "condition" | "cold" | "energy" | "backup" | "other";
+export type PointAggregation = "max" | "min" | "avg" | "sum" | "last";
+export type PointConfigOverrides = { rangeMin?: number | null; rangeMax?: number | null; toleranceMinutes?: number; aggregation?: PointAggregation };
+
+/**
+ * Catálogo de tipos de punto. El tipo agrupa los puntos por sistema (frío, energía, respaldo…) y define
+ * su magnitud principal y cómo combinar varios sensores (p. ej. cámara fría = temperatura del peor sensor).
+ */
+export const pointTypes = pgTable("point_types", {
+  key: varchar("key", { length: 80 }).primaryKey(),
+  name: varchar("name", { length: 120 }).notNull(),
+  system: varchar("system", { length: 24 }).$type<PointSystem>().notNull(),
+  primaryQuantity: varchar("primary_quantity", { length: 60 }).references(() => measurementQuantities.key, { onDelete: "set null" }),
+  aggregation: varchar("aggregation", { length: 8 }).$type<PointAggregation>().default("max").notNull(),
+  defaultConfig: jsonb("default_config").$type<PointConfigOverrides>().default(sql`'{}'::jsonb`).notNull(),
+  displayOrder: smallint("display_order").default(100).notNull(),
+  builtin: boolean("builtin").default(false).notNull(),
+}, (table) => [
+  check("point_types_system_chk", sql`${table.system} IN ('condition', 'cold', 'energy', 'backup', 'other')`),
+  check("point_types_aggregation_chk", sql`${table.aggregation} IN ('max', 'min', 'avg', 'sum', 'last')`),
 ]);
 
 export const gateways = pgTable("gateways", {
@@ -330,12 +355,15 @@ export const measurementQuantities = pgTable("measurement_quantities", {
   unit: varchar("unit", { length: 40 }).notNull(),
   decimals: smallint("decimals").default(1).notNull(),
   kind: varchar("kind", { length: 16 }).default("gauge").notNull(),
+  // Rol con que nace un canal de esta magnitud: proceso (lo que se opera) o salud del sensor (batería, señal).
+  defaultRole: varchar("default_role", { length: 16 }).default("process").notNull(),
   builtin: boolean("builtin").default(false).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   check("measurement_quantities_key_chk", sql`${table.key} ~ '^[a-z][a-z0-9_]{1,59}$'`),
   check("measurement_quantities_kind_chk", sql`${table.kind} IN ('gauge', 'counter', 'state')`),
   check("measurement_quantities_decimals_chk", sql`${table.decimals} BETWEEN 0 AND 6`),
+  check("measurement_quantities_role_chk", sql`${table.defaultRole} IN ('process', 'health', 'diagnostic')`),
 ]);
 
 export const readingProfiles = pgTable("reading_profiles", {
@@ -405,6 +433,8 @@ export const devices = pgTable("devices", {
   name: varchar("name", { length: 160 }).notNull(),
   // Identidad con la que el gateway reporta el equipo cuando no es Modbus (MAC de un beacon BLE, n.º de serie…).
   externalId: varchar("external_id", { length: 120 }),
+  // Dónde está el sensor dentro del punto (Puerta, Fondo, Evaporador…).
+  position: varchar("position", { length: 80 }),
   serialNumber: varchar("serial_number", { length: 120 }),
   firmwareVersion: varchar("firmware_version", { length: 80 }),
   dataVersion: integer("data_version"),
@@ -441,6 +471,8 @@ export const registerDefinitions = pgTable("register_definitions", {
   // Modbus: registro nativo + tipo de dato. Equipos que envían mediciones ya decodificadas: sourceKey.
   nativeRegister: integer("native_register"),
   sourceKey: varchar("source_key", { length: 60 }),
+  // Rol del canal que nace de esta definición; si falta, el de la magnitud (batería de un beacon = salud, de una UPS = proceso).
+  channelRole: varchar("channel_role", { length: 16 }).$type<ChannelRole>(),
   humanReference: varchar("human_reference", { length: 20 }).notNull(),
   name: varchar("name", { length: 160 }).notNull(),
   registerGroup: varchar("register_group", { length: 60 }).notNull(),
@@ -483,6 +515,8 @@ export const physicalInputs = pgTable("physical_inputs", {
   check("physical_inputs_port_positive_chk", sql`${table.portNumber} > 0`),
 ]);
 
+export type ChannelRole = "process" | "health" | "diagnostic";
+
 export const channels = pgTable("channels", {
   id: uuid("id").defaultRandom().primaryKey(),
   deviceId: uuid("device_id").notNull().references(() => devices.id, { onDelete: "cascade" }),
@@ -494,6 +528,8 @@ export const channels = pgTable("channels", {
   zone: varchar("zone", { length: 160 }),
   metric: varchar("metric", { length: 60 }).notNull().references(() => measurementQuantities.key, { onDelete: "restrict" }),
   unit: varchar("unit", { length: 40 }).notNull(),
+  // process: variable operativa (se resume y se muestra) · health: salud del sensor · diagnostic: técnico.
+  role: varchar("role", { length: 16 }).$type<ChannelRole>().default("process").notNull(),
   enabled: boolean("enabled").default(false).notNull(),
   displayOrder: integer("display_order").default(0).notNull(),
   metadata: jsonb("metadata").$type<Record<string, unknown>>().default(sql`'{}'::jsonb`).notNull(),
@@ -505,6 +541,7 @@ export const channels = pgTable("channels", {
   index("channels_asset_enabled_idx").on(table.assetId, table.enabled),
   index("channels_input_idx").on(table.physicalInputId),
   check("channels_display_order_nonnegative_chk", sql`${table.displayOrder} >= 0`),
+  check("channels_role_chk", sql`${table.role} IN ('process', 'health', 'diagnostic')`),
 ]);
 
 /** Equipos que un gateway reporta pero que nadie ha asignado aún (p. ej. beacons BLE nuevos). */

@@ -61,7 +61,7 @@ function text(body: Record<string, unknown>, field: string, label: string, maxim
   return value;
 }
 
-/** {"action":"assign","id","pointId","modelId","name","code"?} o {"action":"dismiss","id"} */
+/** {"action":"assign","id","pointId","modelId","name","code"?,"position"?} o {"action":"dismiss","id"} */
 export async function POST(request: NextRequest) {
   try {
     const { db, user } = await requireApiSession(request, "settings.read");
@@ -85,13 +85,14 @@ export async function POST(request: NextRequest) {
     const modelId = text(body, "modelId", "La plantilla", 80);
     const name = text(body, "name", "El nombre", 160);
     const code = typeof body.code === "string" && body.code.trim() ? body.code.trim() : undefined;
+    const position = typeof body.position === "string" && body.position.trim() ? body.position.trim().slice(0, 80) : null;
     if (code && !/^[A-Za-z0-9._-]{2,60}$/.test(code)) throw new ApiError(400, "El código solo admite letras, números, punto, guion y guion bajo.");
     const [point] = await db.select({ id: assets.id, siteId: assets.siteId }).from(assets).where(and(eq(assets.id, pointId), eq(assets.active, true))).limit(1);
     if (!point || point.siteId !== detected.siteId) throw new ApiError(400, "El punto de medición debe pertenecer al mismo sitio que el gateway.");
     await requireAssetInScope(db, user.id, point.id);
 
     const created = await db.transaction(async (tx) => {
-      const result = await provisionMeasurementDevice(tx, { gatewayId: detected.gatewayId, assetId: point.id, modelId, externalId: detected.externalId, name, code });
+      const result = await provisionMeasurementDevice(tx, { gatewayId: detected.gatewayId, assetId: point.id, modelId, externalId: detected.externalId, name, code, position });
       await tx.insert(auditLogs).values({
         siteId: detected.siteId,
         actorUserId: user.id,
