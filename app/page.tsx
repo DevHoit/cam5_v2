@@ -12,7 +12,7 @@ import { ReportsView as DatabaseReportsView } from "./reports-view";
 import { SiteReportsView } from "./site-reports-view";
 import { SettingsView as DatabaseSettingsView } from "./settings-view";
 import { PointDetailView } from "./point-detail-view";
-import { SiteOverviewView } from "./site-overview-view";
+import { ClientOverviewView, SiteOverviewView } from "./site-overview-view";
 import { TrendsView } from "./trends-view";
 import {
   IconActivity as Activity,
@@ -62,7 +62,7 @@ import {
   IconX as X,
 } from "@tabler/icons-react";
 
-type View = "site" | "overview" | "cabinet" | "diagnostics" | "commissioning" | "trends" | "alarms" | "history" | "assets" | "reports" | "settings" | "provisioning" | "users" | "notifications" | "account";
+type View = "client" | "site" | "overview" | "cabinet" | "diagnostics" | "commissioning" | "trends" | "alarms" | "history" | "assets" | "reports" | "settings" | "provisioning" | "users" | "notifications" | "account";
 type Severity = "critical" | "warning" | "info";
 type SensorState = "normal" | "warning" | "critical";
 type UserRole = "Administrador" | "Ingeniero" | "Operador" | "Solo lectura";
@@ -373,6 +373,7 @@ const navGroups = [
   {
     label: "Supervisión",
     items: [
+      { id: "client" as View, label: "Vista del cliente", description: "Todos los sitios del cliente en una pantalla", icon: Building2 },
       { id: "site" as View, label: "Vista del sitio", description: "Todos los puntos de medición", icon: LayoutGrid },
       { id: "overview" as View, label: "Puntos de medición", description: "Resumen, mapa, tendencias y comunicación de cada punto", icon: LayoutDashboard },
       { id: "alarms" as View, label: "Alertas", description: "Triage y seguimiento", icon: BellRing },
@@ -392,6 +393,7 @@ const navGroups = [
 ];
 
 const viewTitles: Record<View, { title: string; description: string }> = {
+  client: { title: "Vista del cliente", description: "La operación de todos los sitios del cliente: estado de cada sitio, lo que requiere atención y cada punto con su sitio." },
   site: { title: "Vista del sitio", description: "Todos los puntos de medición del sitio, lo más grave primero. Entra a uno para ver el detalle." },
   overview: { title: "Resumen del punto", description: "Condición de los activos críticos en tiempo real." },
   cabinet: { title: "Mapa de condición", description: "Ubicación, lectura y estado de cada canal instrumentado." },
@@ -1889,6 +1891,19 @@ export default function Home() {
     }
   };
 
+  // Desde la vista del cliente: cambia al sitio (si hace falta) y abre su vista o el punto.
+  const openClientSite = async (siteId: string) => {
+    await switchSite(siteId);
+    navigate("site");
+  };
+  const openClientPoint = async (siteId: string, pointId: string) => {
+    await switchSite(siteId);
+    setTelemetryState({ status: "loading", data: null });
+    setSystemMode("loading");
+    setActivePointId(pointId);
+    navigate("overview");
+  };
+
   if (passwordResetToken) return <PasswordResetScreen token={passwordResetToken} onComplete={() => {
     const url = new URL(window.location.href); url.searchParams.delete("action"); url.hash = ""; window.history.replaceState({}, "", url);
     setPasswordResetToken(""); setSessionUser(null); setAuthState("anonymous");
@@ -1951,6 +1966,8 @@ export default function Home() {
   const resolvedTrendSensorId = sensors.some((sensor) => sensor.enabled && sensor.id === trendSensorId) ? trendSensorId : sensors.find((sensor) => sensor.enabled)?.id ?? "";
 
   const clientContextSelect = <label><span>Cliente</span><select value={sessionUser.clientId} onChange={(event) => { const firstSite = hierarchy?.sites.find((site) => site.active && site.clientId === event.target.value); if (firstSite) void switchSite(firstSite.id); }} aria-label="Cliente activo">{hierarchy?.clients.filter((client) => client.active).map((client) => <option key={client.id} value={client.id}>{client.name}</option>) ?? <option value={sessionUser.clientId}>{sessionUser.clientName}</option>}</select></label>;
+  // La vista del cliente aparece cuando el cliente activo tiene más de un sitio activo.
+  const clientSiteCount = (hierarchy?.sites ?? sessionUser.sites).filter((site) => site.clientId === sessionUser.clientId && (!("active" in site) || site.active)).length;
   const siteContextSelect = <label><span>Sitio</span><select value={sessionUser.siteId} onChange={(event) => void switchSite(event.target.value)} aria-label="Sitio activo">{(hierarchy?.sites ?? sessionUser.sites).filter((site) => site.clientId === sessionUser.clientId && (!("active" in site) || site.active)).map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}</select></label>;
   return (
     <FeedbackContext.Provider value={notify}>
@@ -1973,7 +1990,7 @@ export default function Home() {
             <div className="nav-group" key={group.label}>
               <div className="nav-group-heading"><p>{group.label}</p></div>
               <div className="nav-items">
-                {group.items.map((item) => {
+                {group.items.filter((item) => item.id !== "client" || clientSiteCount > 1).map((item) => {
                   const Icon = item.icon;
                   const badgeCount = item.id === "alarms" ? alarmSummary.critical + alarmSummary.warning : null;
                   return (
@@ -2008,7 +2025,8 @@ export default function Home() {
             {isPointView && activePoint ? <section className="point-heading">
               <div className="point-heading-top"><div><div className="point-heading-title"><h1>{activePoint.name}</h1><em className={`site-badge ${pointStatus.tone}`}>{pointStatus.label}</em></div>{pointMeta && <p>{pointMeta}</p>}</div><div className="heading-actions">{isConditionPoint && (view === "overview" || view === "cabinet") && <button className="secondary-button" onClick={() => setVisibilityOpen(true)} disabled={!activePoint || !sensors.some((sensor) => sensor.enabled)} aria-label="Personalizar canales" title="Personalizar canales"><AdjustmentsHorizontal size={16} aria-hidden="true" /><span>Personalizar canales</span></button>}{view !== "site" && view !== "assets" && view !== "settings" && view !== "provisioning" && view !== "users" && view !== "notifications" && view !== "account" && view !== "reports" && view !== "diagnostics" && view !== "commissioning" && view !== "trends" && view !== "history" && <button className="secondary-button" onClick={exportCsv} aria-label="Exportar" title="Exportar"><Download size={16} aria-hidden="true" /><span>Exportar</span></button>}</div></div>
               <nav className="point-tabs" aria-label="Secciones del punto">{visiblePointTabs.map((tab) => <button key={tab.id} type="button" className={view === tab.id ? "active" : ""} aria-current={view === tab.id ? "page" : undefined} onClick={() => navigate(tab.id)}>{tab.label}</button>)}</nav>
-            </section> :             <section className="page-heading"><div><h1 title={viewTitles[view].description}>{viewTitles[view].title}</h1></div><div className="heading-actions">{isConditionPoint && (view === "overview" || view === "cabinet") && <button className="secondary-button" onClick={() => setVisibilityOpen(true)} disabled={!activePoint || !sensors.some((sensor) => sensor.enabled)} aria-label="Personalizar canales" title="Personalizar canales"><AdjustmentsHorizontal size={16} aria-hidden="true" /><span>Personalizar canales</span></button>}{view !== "site" && view !== "assets" && view !== "settings" && view !== "provisioning" && view !== "users" && view !== "notifications" && view !== "account" && view !== "reports" && view !== "diagnostics" && view !== "commissioning" && view !== "trends" && view !== "history" && <button className="secondary-button" onClick={exportCsv} aria-label="Exportar" title="Exportar"><Download size={16} aria-hidden="true" /><span>Exportar</span></button>}</div></section>}
+            </section> :             <section className="page-heading"><div><h1 title={viewTitles[view].description}>{viewTitles[view].title}</h1></div><div className="heading-actions">{isConditionPoint && (view === "overview" || view === "cabinet") && <button className="secondary-button" onClick={() => setVisibilityOpen(true)} disabled={!activePoint || !sensors.some((sensor) => sensor.enabled)} aria-label="Personalizar canales" title="Personalizar canales"><AdjustmentsHorizontal size={16} aria-hidden="true" /><span>Personalizar canales</span></button>}{view !== "client" && view !== "site" && view !== "assets" && view !== "settings" && view !== "provisioning" && view !== "users" && view !== "notifications" && view !== "account" && view !== "reports" && view !== "diagnostics" && view !== "commissioning" && view !== "trends" && view !== "history" && <button className="secondary-button" onClick={exportCsv} aria-label="Exportar" title="Exportar"><Download size={16} aria-hidden="true" /><span>Exportar</span></button>}</div></section>}
+            {view === "client" && <ClientOverviewView onOpenSite={(siteId) => void openClientSite(siteId)} onOpenPoint={(siteId, pointId) => void openClientPoint(siteId, pointId)} />}
             {view === "site" && <SiteOverviewView siteName={sessionUser.siteName} onOpenPoint={(pointId) => { if (pointId !== activePointId) { setTelemetryState({ status: "loading", data: null }); setSystemMode("loading"); setActivePointId(pointId); } navigate("overview"); }} onDiagnose={() => navigate("diagnostics")} onOpenAlarms={() => navigate("alarms")} />}
             {view === "overview" && !isConditionPoint && activePoint && <PointDetailView assetId={activePoint.id} onOpenAlarms={() => navigate("alarms")} onOpenSettings={() => navigate("settings")} />}
             {view === "overview" && isConditionPoint && <Overview onNavigate={navigate} onOpenTrend={openChannelTrend} onAcknowledge={acknowledge} activeAlarms={alarmPreview} alarmSummary={alarmSummary} point={activePoint} />}
