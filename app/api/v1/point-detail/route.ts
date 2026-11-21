@@ -91,7 +91,11 @@ export async function GET(request: NextRequest) {
       position: row.position ?? row.deviceName,
       values: buildHistory(buckets.filter((bucket) => bucket.channelId === row.channelId), { ...config, aggregation: config.aggregation === "sum" ? "avg" : config.aggregation }, from, now, bucketSeconds).values,
     }));
-    const excursions = config.rangeMin !== null || config.rangeMax !== null ? findExcursions(combined.values, sensorSeries, config, from, bucketSeconds) : [];
+    const outNow = condition.status === "out_of_range";
+    // Las excursiones salen de los promedios de 5 min, que van atrasados respecto de la lectura actual:
+    // si el punto ya volvió al rango, la última excursión está recuperada aunque su intervalo siga abierto.
+    const excursions = (config.rangeMin !== null || config.rangeMax !== null ? findExcursions(combined.values, sensorSeries, config, from, bucketSeconds) : [])
+      .map((excursion) => excursion.end === null && !outNow ? { ...excursion, end: new Date(Math.min(now.getTime(), new Date(excursion.start).getTime() + excursion.minutes * 60_000)).toISOString() } : excursion);
 
     const deviceIds = [...new Set(rows.map((row) => row.deviceId))];
     const sensors = deviceIds.map((deviceId) => {
@@ -148,7 +152,7 @@ export async function GET(request: NextRequest) {
       serverTime: now.toISOString(),
       point: { id: point.id, code: point.code, name: point.name, area: point.area, type: point.type, typeName: point.typeName, system: point.system, systemName: POINT_SYSTEMS[point.system], unit: primaryUnit, decimals: primary[0]?.decimals ?? 1, quantityName: primary[0]?.quantityName ?? null },
       config,
-      condition: { status: condition.status, value: condition.value, deviation: condition.deviation, position: condition.decisive?.position ?? null, sensors: condition.sensors, reporting: condition.reporting, outSince: [state?.outSince?.toISOString(), combined.outSince].filter((value): value is string => Boolean(value)).sort()[0] ?? null },
+      condition: { status: condition.status, value: condition.value, deviation: condition.deviation, position: condition.decisive?.position ?? null, sensors: condition.sensors, reporting: condition.reporting, outSince: outNow ? [state?.outSince?.toISOString(), combined.outSince].filter((value): value is string => Boolean(value)).sort()[0] ?? null : null },
       period: { hours, bucketSeconds, from: from.toISOString() },
       history: combined,
       series: sensorSeries,

@@ -156,6 +156,13 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(page, /<Pagination/);
   assert.match(historyView, /raw \? \(bySensor \? "Lectura" : "Envío"\) : "Intervalo"/);
   assert.match(historyView, /history-sensor-col/);
+  const [siteOverviewView, pointDetailApi] = await Promise.all([
+    readFile(new URL("../app/site-overview-view.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/v1/point-detail/route.ts", import.meta.url), "utf8"),
+  ]);
+  // "Fuera de rango hace…" sigue la lectura actual, no la curva de 5 min (que va atrasada).
+  assert.match(siteOverviewView, /const outNow = condition\?\.status === "out_of_range"/);
+  assert.match(pointDetailApi, /outSince: outNow \?/);
   assert.match(page, /requestAlarmClose/);
   assert.match(page, /Nota de cierre obligatoria/);
   // Mediciones: lecturas reales agrupadas por envío del gateway, de la más reciente a la más antigua.
