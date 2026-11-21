@@ -6,7 +6,8 @@ con datos (potencia, energía, tensiones, corrientes, factor de potencia y frecu
 está instalado el equipo.
 
 - Solo necesita Python 3 (viene con Raspberry Pi OS). No usa `pip`.
-- La curva sigue la hora de Chile: carga base de noche, climatización de día y punta de mediodía.
+- La curva sigue la hora local del equipo (deja la Raspberry en `America/Santiago`): carga base de noche,
+  climatización de día y punta de mediodía.
 - La energía (kWh) se guarda en `emulador-estado.json`: el contador no retrocede al reiniciar.
 - Sin red, guarda hasta 2 h de envíos y los reenvía en orden cuando vuelve la conexión.
 - Cada envío lleva `health.emulated = true` y `fw = emulador-pm5330-1.0`.
@@ -90,3 +91,29 @@ journalctl -u hoit-emulador -f
 ```
 
 Para detenerlo: `sudo systemctl disable --now hoit-emulador`.
+
+### Sin sudo (servicio de usuario)
+
+Si el usuario no tiene `sudo`, instala en `~/hoit-emulador` y usa un servicio de usuario. Arranca al
+encender solo si el usuario tiene *linger* (`loginctl show-user $USER -p Linger` debe decir `yes`).
+
+```bash
+mkdir -p ~/.config/systemd/user
+tee ~/.config/systemd/user/hoit-emulador.service > /dev/null <<'EOF'
+[Unit]
+Description=HoitLive emulador PM5330
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/python3 %h/hoit-emulador/pm5330_emulator.py --config %h/hoit-emulador/emulador.json
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=default.target
+EOF
+systemctl --user daemon-reload
+systemctl --user enable --now hoit-emulador
+journalctl --user -u hoit-emulador -f
+```

@@ -41,7 +41,7 @@ import urllib.error
 import urllib.request
 import uuid
 from collections import deque
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 VERSION = "emulador-pm5330-1.0"
 
@@ -57,7 +57,6 @@ PROFILES = {
 }
 
 MAX_PENDING_S = 2 * 3600  # Lo pendiente más antiguo que se reenvía (el portal acepta hasta días atrás).
-TIMEZONE_OFFSET_H = -3     # Hora de Chile continental (solo para la forma de la curva diaria).
 
 running = True
 
@@ -67,7 +66,8 @@ def log(message: str) -> None:
 
 
 def local_hour(now: datetime) -> float:
-    local = now + timedelta(hours=TIMEZONE_OFFSET_H)
+    # Hora local del equipo (la Raspberry debe estar en America/Santiago): define la forma de la curva diaria.
+    local = now.astimezone()
     return local.hour + local.minute / 60
 
 
