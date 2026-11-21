@@ -477,7 +477,11 @@ function ColdCard({ point, now, onOpen }: { point: SitePoint; now: number; onOpe
   const unit = condition?.unit ?? "°C";
   const decimals = condition?.decimals ?? 1;
   const reporting = condition ? `${condition.reporting}/${condition.sensors}` : "0";
-  const statusNote = history?.outSince ? `fuera de rango hace ${duration((now - new Date(history.outSince).getTime()) / 60000)}` : condition && rangeText(condition) ? rangeText(condition) : "sin rango definido";
+  // El aviso sigue la lectura actual: la curva de 5 min va atrasada y puede seguir "fuera" cuando ya volvió al rango.
+  const outNow = condition?.status === "out_of_range" && !offline;
+  const statusNote = outNow
+    ? history?.outSince ? `fuera de rango hace ${duration((now - new Date(history.outSince).getTime()) / 60000)}` : `fuera de rango · ${rangeText(condition!) || "sin rango definido"}`
+    : condition && rangeText(condition) ? rangeText(condition) : "sin rango definido";
   return <article className={`site-card sys-card cold-card status-${point.status}`}>
     <button type="button" className="site-card-open" onClick={onOpen} aria-label={`Abrir ${point.name}: ${badge.label}`} />
     <header>
@@ -490,7 +494,7 @@ function ColdCard({ point, now, onOpen }: { point: SitePoint; now: number; onOpe
         <span className="site-metric-label">{condition && condition.sensors > 1 ? "Ahora · peor sensor" : "Ahora"}</span>
         <span className={`site-metric-value ${tone}`}>{condition && condition.value !== null && !offline ? number(condition.value, decimals) : "—"}<small>{unit}</small></span>
         {!offline && history && <Trend value={history.trend} unit={unit} decimals={decimals} />}
-        <span className={`sys-card-status ${history?.outSince ? "warning" : ""}`}>{condition?.decisivePosition && condition.sensors > 1 ? `${condition.decisivePosition} · ` : ""}{statusNote}</span>
+        <span className={`sys-card-status ${outNow ? "warning" : ""}`}>{condition?.decisivePosition && condition.sensors > 1 ? `${condition.decisivePosition} · ` : ""}{statusNote}</span>
       </div>
       {history && condition ? <RangeChart history={history} rangeMin={condition.rangeMin} rangeMax={condition.rangeMax} unit={unit} decimals={decimals} /> : <div className="range-chart empty">Sin historia</div>}
     </div>
