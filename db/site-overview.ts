@@ -362,7 +362,7 @@ function pointCondition(
 export type SystemSummary = { system: PointSystem; name: string; points: number; attention: number; offline: number };
 const SYSTEM_ORDER: PointSystem[] = ["cold", "energy", "backup", "condition", "other"];
 
-function systemSummaries(points: SitePoint[]): SystemSummary[] {
+export function systemSummaries(points: SitePoint[]): SystemSummary[] {
   return SYSTEM_ORDER.filter((system) => points.some((point) => point.system === system)).map((system) => {
     const own = points.filter((point) => point.system === system);
     return { system, name: POINT_SYSTEMS[system], points: own.length, attention: own.filter((point) => point.status === "warning" || point.status === "critical").length, offline: own.filter((point) => point.status === "offline").length };

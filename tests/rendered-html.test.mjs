@@ -163,6 +163,10 @@ test("keeps the production portal free of starter preview code", async () => {
   // "Fuera de rango hace…" sigue la lectura actual, no la curva de 5 min (que va atrasada).
   assert.match(siteOverviewView, /const outNow = condition\?\.status === "out_of_range"/);
   assert.match(pointDetailApi, /outSince: outNow \?/);
+  // Vista del cliente: solo con más de un sitio, y abre el punto cambiando a su sitio.
+  assert.match(page, /item\.id !== "client" \|\| clientSiteCount > 1/);
+  assert.match(page, /const openClientPoint = async \(siteId: string, pointId: string\) => \{\n    await switchSite\(siteId\);/);
+  assert.match(siteOverviewView, /export function ClientOverviewView/);
   assert.match(page, /requestAlarmClose/);
   assert.match(page, /Nota de cierre obligatoria/);
   // Mediciones: lecturas reales agrupadas por envío del gateway, de la más reciente a la más antigua.

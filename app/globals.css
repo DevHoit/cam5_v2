@@ -3470,3 +3470,24 @@ button.point-row:hover { background: var(--surface-2); }
   .detail-chart-x span:nth-child(even) { display: none; }
   .detail-chart-x span { white-space: nowrap; }
 }
+
+/* Vista del cliente: un mosaico por sitio sobre las excepciones y los puntos de todos los sitios. */
+.client-sites { margin-bottom: 16px; }
+.client-sites > header { margin-bottom: 10px; display: flex; align-items: baseline; gap: 12px; }
+.client-sites > header h2 { margin: 0; color: var(--ink); font-size: 17px; font-weight: 600; }
+.client-sites > header span { color: var(--muted); font-size: var(--text-sm); }
+.client-site-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 14px; }
+.client-site.status-warning { border-color: var(--warning-line); }
+.client-site.status-critical { border-color: var(--critical-line); box-shadow: 0 0 0 1px var(--critical-line); }
+.client-site-counts { padding: 0 16px 10px; display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--ink-2); font-size: var(--text-xs); }
+.client-site-counts span { display: inline-flex; align-items: center; gap: 6px; }
+.client-site-counts b { color: var(--ink); font-weight: 600; }
+.client-site-metrics { margin: 0; padding: 10px 16px; display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px 14px; border-top: 1px solid var(--surface-3); }
+.client-site-metrics div { min-width: 0; }
+.client-site-metrics dt { color: var(--muted); font-size: var(--text-xs); }
+.client-site-metrics dd { margin: 2px 0 0; color: var(--ink); font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.client-site-metrics dd small { color: var(--ink-2); font-size: var(--text-xs); font-weight: 500; }
+.client-site-metrics dd em { display: block; overflow: hidden; color: var(--muted); font-size: var(--text-xs); font-style: normal; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.client-site-metrics dd.warning { color: var(--warning-ink); }
+.client-site-footer { margin-top: auto; padding: 9px 16px; display: flex; justify-content: space-between; align-items: center; color: var(--muted); background: var(--surface-2); border-top: 1px solid var(--surface-3); font-size: var(--text-xs); }
+.client-site-footer span:last-child { display: inline-flex; align-items: center; gap: 2px; color: var(--accent-ink); font-weight: 600; }
