@@ -262,6 +262,9 @@ export async function GET(request: NextRequest) {
       }).from(readingProfileRanges).where(eq(readingProfileRanges.profileId, controller.profileId)).orderBy(readingProfileRanges.priority)
       : [];
 
+    // CAM5: un controlador Modbus TCP con su mapa de registros. Otros equipos (medidores RS-485, beacons)
+    // envían mediciones ya decodificadas según su plantilla, y un punto puede tener varios.
+    const decoded = Boolean(controller && controller.protocol !== "modbus_tcp");
     const channelRows = controller ? await db.select({
       id: channels.id,
       code: channels.code,
@@ -272,7 +275,10 @@ export async function GET(request: NextRequest) {
       enabled: channels.enabled,
       displayOrder: channels.displayOrder,
       register: registerDefinitions.nativeRegister,
+      sourceKey: registerDefinitions.sourceKey,
       reference: registerDefinitions.humanReference,
+      deviceCode: devices.code,
+      devicePosition: devices.position,
       warningThreshold: alarmRules.warningThreshold,
       criticalThreshold: alarmRules.criticalThreshold,
       hysteresis: alarmRules.hysteresis,
@@ -282,13 +288,43 @@ export async function GET(request: NextRequest) {
       ruleId: alarmRules.id,
     }).from(channels)
       .innerJoin(registerDefinitions, eq(registerDefinitions.id, channels.registerDefinitionId))
+      .innerJoin(devices, eq(devices.id, channels.deviceId))
       .leftJoin(alarmRules, eq(alarmRules.channelId, channels.id))
-      .where(eq(channels.deviceId, controller.id))
-      .orderBy(channels.displayOrder) : [];
+      .where(decoded ? and(eq(channels.assetId, assetId), eq(devices.active, true)) : eq(channels.deviceId, controller.id))
+      .orderBy(devices.position, devices.code, channels.displayOrder) : [];
+
+    // Equipos del punto, con su gateway y perfil de lectura.
+    const pointDevices = decoded ? await db.select({
+      id: devices.id,
+      code: devices.code,
+      name: devices.name,
+      position: devices.position,
+      externalId: devices.externalId,
+      protocol: devices.protocol,
+      unitId: devices.unitId,
+      state: devices.state,
+      lastReadAt: devices.lastReadAt,
+      modelName: deviceModels.name,
+      manufacturer: deviceModels.manufacturer,
+      gatewayCode: gateways.code,
+      gatewayState: gateways.state,
+      gatewayLastSeenAt: gateways.lastSeenAt,
+      profileName: readingProfiles.name,
+      storageIntervalSeconds: readingProfiles.storageIntervalSeconds,
+      staleAfterSeconds: readingProfiles.staleAfterSeconds,
+      rawRetentionDays: readingProfiles.rawRetentionDays,
+      aggregateRetentionDays: readingProfiles.aggregateRetentionDays,
+    }).from(devices)
+      .innerJoin(deviceModels, eq(deviceModels.id, devices.modelId))
+      .innerJoin(gateways, eq(gateways.id, devices.gatewayId))
+      .leftJoin(readingProfiles, eq(readingProfiles.id, devices.readingProfileId))
+      .where(and(eq(devices.assetId, assetId), eq(devices.active, true)))
+      .orderBy(devices.position, devices.code) : [];
 
     const registers = controller ? await db.select({
       id: registerDefinitions.id,
       nativeRegister: registerDefinitions.nativeRegister,
+      sourceKey: registerDefinitions.sourceKey,
       humanReference: registerDefinitions.humanReference,
       name: registerDefinitions.name,
       group: registerDefinitions.registerGroup,
@@ -301,7 +337,7 @@ export async function GET(request: NextRequest) {
       minimumValue: registerDefinitions.minimumValue,
       maximumValue: registerDefinitions.maximumValue,
       writable: registerDefinitions.writable,
-    }).from(registerDefinitions).where(eq(registerDefinitions.modelId, controller.modelId)).orderBy(registerDefinitions.nativeRegister) : [];
+    }).from(registerDefinitions).where(eq(registerDefinitions.modelId, controller.modelId)).orderBy(registerDefinitions.nativeRegister, registerDefinitions.id) : [];
 
     const snapshots = controller ? await db.select({
       id: configurationSnapshots.id,
@@ -313,12 +349,12 @@ export async function GET(request: NextRequest) {
     }).from(configurationSnapshots).where(eq(configurationSnapshots.deviceId, controller.id)).orderBy(desc(configurationSnapshots.version)).limit(20) : [];
 
     const warnings: string[] = [];
-    if (!controller) warnings.push("El punto no tiene un controlador CAM5 activo.");
+    if (!controller) warnings.push("El punto no tiene equipos activos.");
     if (!siteGateways.length) warnings.push("El sitio no tiene un gateway activo.");
     if (controller && !controller.profileId) warnings.push("El controlador no tiene un perfil de lectura asignado.");
     if (controller && channelRows.every((channel) => !channel.enabled)) warnings.push("No hay canales habilitados para adquisición.");
     if (controller && !controller.gatewayLastSeenAt) warnings.push("El gateway todavía no ha reportado actividad.");
-    const mapValid = registers.length === 105
+    const mapValid = decoded ? registers.length > 0 : registers.length === 105
       && registers[0]?.nativeRegister === 418
       && registers.at(-1)?.nativeRegister === 522
       && new Set(registers.map((register) => register.nativeRegister)).size === registers.length;
@@ -341,6 +377,8 @@ export async function GET(request: NextRequest) {
         updatedAt: controller.updatedAt.toISOString(),
         gatewayLastSeenAt: controller.gatewayLastSeenAt?.toISOString() ?? null,
       } : null,
+      kind: decoded ? "decoded" : "cam5",
+      devices: pointDevices.map((device) => ({ ...device, lastReadAt: device.lastReadAt?.toISOString() ?? null, gatewayLastSeenAt: device.gatewayLastSeenAt?.toISOString() ?? null })),
       gateways: siteGateways.map((gateway) => ({ ...gateway, lastSeenAt: gateway.lastSeenAt?.toISOString() ?? null })),
       profile: controller?.profileId ? {
         id: controller.profileId,
@@ -393,7 +431,7 @@ export async function PATCH(request: NextRequest) {
     const asset = await assertAssetAccess(db, user, assetId);
     const metadata = requestMetadata(request);
 
-    const [controller] = await db.select({ id: devices.id, profileId: devices.readingProfileId }).from(devices)
+    const [controller] = await db.select({ id: devices.id, profileId: devices.readingProfileId, protocol: devices.protocol }).from(devices)
       .where(and(eq(devices.assetId, assetId), eq(devices.active, true)))
       .orderBy(devices.createdAt)
       .limit(1);
@@ -430,6 +468,7 @@ export async function PATCH(request: NextRequest) {
         after = updated;
       } else if (section === "acquisition") {
         if (!controller) throw new ApiError(409, "El punto no tiene un controlador activo para configurar.");
+        if (controller.protocol !== "modbus_tcp") throw new ApiError(409, "La adquisición de este equipo la define su plantilla y su gateway; no tiene parámetros Modbus TCP que editar.");
         const [current] = await tx.select().from(devices).where(eq(devices.id, controller.id)).limit(1);
         if (!current) throw new ApiError(404, "El controlador no existe.");
         const gatewayId = requiredText(body.gatewayId, "El gateway");
@@ -528,8 +567,11 @@ export async function PATCH(request: NextRequest) {
           activationSamples: alarmRules.activationSamples,
           recoverySamples: alarmRules.recoverySamples,
           staleAfterSeconds: alarmRules.staleAfterSeconds,
-        }).from(channels).leftJoin(alarmRules, eq(alarmRules.channelId, channels.id))
-          .where(and(eq(channels.deviceId, controller.id), inArray(channels.id, ids)));
+        }).from(channels).innerJoin(devices, eq(devices.id, channels.deviceId)).leftJoin(alarmRules, eq(alarmRules.channelId, channels.id))
+          .where(and(
+            controller.protocol === "modbus_tcp" ? eq(channels.deviceId, controller.id) : and(eq(channels.assetId, assetId), eq(devices.active, true)),
+            inArray(channels.id, ids),
+          ));
         if (currentRows.length !== ids.length || currentRows.some((row) => !row.ruleId)) throw new ApiError(400, "Uno o más canales no pertenecen al controlador o no tienen regla de alarma.");
         before = { channels: currentRows };
         const updatedItems: Array<Record<string, unknown>> = [];
@@ -538,20 +580,22 @@ export async function PATCH(request: NextRequest) {
           const update = item as Record<string, unknown>;
           const id = requiredText(update.id, "El canal");
           const enabled = update.enabled === true;
-          const warningThreshold = finiteNumber(update.warningThreshold, "El umbral de advertencia");
-          const criticalThreshold = finiteNumber(update.criticalThreshold, "El umbral crítico");
+          // Sin umbrales (ambos vacíos): el canal se registra y grafica, pero no genera alarmas por valor.
+          const noThresholds = (update.warningThreshold === null || update.warningThreshold === "") && (update.criticalThreshold === null || update.criticalThreshold === "");
+          const warningThreshold = noThresholds ? null : finiteNumber(update.warningThreshold, "El umbral de advertencia");
+          const criticalThreshold = noThresholds ? null : finiteNumber(update.criticalThreshold, "El umbral crítico");
           const hysteresis = finiteNumber(update.hysteresis, "La histéresis", 0);
           const activationSamples = integer(update.activationSamples, "Las muestras de activación", 1, 100);
           const recoverySamples = integer(update.recoverySamples, "Las muestras de recuperación", 1, 100);
           const staleAfterSeconds = integer(update.staleAfterSeconds, "El tiempo de dato atrasado", 1, 86_400);
-          if (warningThreshold >= criticalThreshold) throw new ApiError(400, "El umbral de advertencia debe ser menor que el crítico.");
+          if (warningThreshold !== null && criticalThreshold !== null && warningThreshold >= criticalThreshold) throw new ApiError(400, "El umbral de advertencia debe ser menor que el crítico.");
           const current = currentRows.find((row) => row.id === id)!;
           await tx.update(channels).set({ enabled, updatedAt: new Date() }).where(eq(channels.id, id));
           if (current.physicalInputId) affectedInputIds.add(current.physicalInputId);
           await tx.update(alarmRules).set({
             enabled,
-            warningThreshold: String(warningThreshold),
-            criticalThreshold: String(criticalThreshold),
+            warningThreshold: warningThreshold === null ? null : String(warningThreshold),
+            criticalThreshold: criticalThreshold === null ? null : String(criticalThreshold),
             hysteresis: String(hysteresis),
             activationSamples,
             recoverySamples,

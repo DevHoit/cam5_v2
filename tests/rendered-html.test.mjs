@@ -217,6 +217,12 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(page, /gatewayCode/);
   assert.match(settings, /Modbus TCP/);
   assert.match(settings, /Mapa oficial de registros CAM5/);
+  // Medidores RS-485 y beacons: sus equipos y su plantilla, no el mapa ni los parámetros Modbus TCP del CAM5.
+  assert.match(settings, /data\?\.kind === "decoded" \? "Mediciones" : "Mapa Modbus"/);
+  assert.match(settings, /Plantilla de mediciones/);
+  assert.match(settings, /Modbus RTU · RS-485/);
+  assert.match(configurationApi, /kind: decoded \? "decoded" : "cam5"/);
+  assert.match(configurationApi, /controller\.protocol !== "modbus_tcp"\) throw new ApiError\(409/);
   assert.match(settings, new RegExp("/api/v1/configuration"));
   assert.match(settings, /Versiones de configuración/);
   assert.match(configurationApi, /configurationSnapshots/);

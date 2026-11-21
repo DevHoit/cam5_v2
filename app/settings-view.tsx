@@ -75,6 +75,9 @@ type ConfigurationData = {
     gatewayState: string;
     gatewayLastSeenAt: string | null;
   } | null;
+  /** cam5: controlador Modbus TCP con mapa de registros. decoded: medidores y beacons que envían mediciones según su plantilla. */
+  kind: "cam5" | "decoded";
+  devices: PointDevice[];
   gateways: Array<{ id: string; code: string; name: string; state: string; active: boolean; ipAddress: string | null; lastSeenAt: string | null }>;
   profile: {
     id: string;
@@ -98,8 +101,11 @@ type ConfigurationData = {
     unit: string;
     enabled: boolean;
     displayOrder: number;
-    register: number;
+    register: number | null;
+    sourceKey: string | null;
     reference: string;
+    deviceCode: string;
+    devicePosition: string | null;
     warningThreshold: number | null;
     criticalThreshold: number | null;
     hysteresis: number;
@@ -110,7 +116,8 @@ type ConfigurationData = {
   }>;
   registers: Array<{
     id: string;
-    nativeRegister: number;
+    nativeRegister: number | null;
+    sourceKey: string | null;
     humanReference: string;
     name: string;
     group: string;
@@ -127,6 +134,32 @@ type ConfigurationData = {
   snapshots: Array<{ id: string; version: number; kind: string; checksumSha256: string; section: string; createdAt: string }>;
   validation: { valid: boolean; warnings: string[]; mapValid: boolean };
 };
+type PointDevice = {
+  id: string;
+  code: string;
+  name: string;
+  position: string | null;
+  externalId: string | null;
+  protocol: string;
+  unitId: number;
+  state: string;
+  lastReadAt: string | null;
+  modelName: string;
+  manufacturer: string;
+  gatewayCode: string;
+  gatewayState: string;
+  gatewayLastSeenAt: string | null;
+  profileName: string | null;
+  storageIntervalSeconds: number | null;
+  staleAfterSeconds: number | null;
+  rawRetentionDays: number | null;
+  aggregateRetentionDays: number | null;
+};
+const PROTOCOL_LABELS: Record<string, string> = { modbus_rtu: "Modbus RTU · RS-485", modbus_tcp: "Modbus TCP", ble: "Bluetooth LE" };
+const protocolLabel = (protocol: string) => PROTOCOL_LABELS[protocol] ?? protocol;
+/** Cómo se identifica el equipo en el bus o en el aire: dirección Modbus del esclavo o MAC del beacon. */
+const deviceAddress = (device: PointDevice) => device.protocol === "modbus_rtu" ? `Dirección Modbus ${device.unitId}` : device.protocol === "ble" ? `MAC ${device.externalId ?? "—"}` : device.externalId ?? "—";
+const intervalLabel = (seconds: number | null) => seconds === null ? "—" : seconds < 60 ? `${seconds} s` : seconds % 60 === 0 ? `${seconds / 60} min` : `${seconds} s`;
 type ChannelDraft = {
   enabled: boolean;
   warningThreshold: string;
@@ -281,7 +314,7 @@ export function SettingsView({
   const channelPage = useClientPagination(channelItems, 8);
   const registerGroups = useMemo(() => [...new Set((data?.registers ?? []).map((register) => register.group))], [data]);
   const registerItems = useMemo(() => (data?.registers ?? []).filter((register) => {
-    const matchesQuery = !registerQuery.trim() || `${register.nativeRegister} ${register.humanReference} ${register.name}`.toLowerCase().includes(registerQuery.trim().toLowerCase());
+    const matchesQuery = !registerQuery.trim() || `${register.nativeRegister ?? ""} ${register.sourceKey ?? ""} ${register.humanReference} ${register.name}`.toLowerCase().includes(registerQuery.trim().toLowerCase());
     return matchesQuery && (registerGroup === "all" || register.group === registerGroup);
   }), [data, registerGroup, registerQuery]);
   const registerPage = useClientPagination(registerItems, 10);
@@ -304,7 +337,8 @@ export function SettingsView({
   const selectedPointType = data?.pointTypes.find((type) => type.key === assetForm.assetType);
   const acquisitionDirty = Boolean(data && JSON.stringify(acquisitionForm) !== JSON.stringify(acquisitionDraft(data)));
   const monitoredChannelCount = Object.values(drafts).filter((channel) => channel.enabled).length;
-  const estimatedReadingsPerDay = acquisitionForm ? monitoredChannelCount * Math.ceil(86_400 / Math.max(10, Number(acquisitionForm.storageIntervalSeconds) || 60)) : 0;
+  const storageSeconds = data?.kind === "decoded" ? data.devices[0]?.storageIntervalSeconds ?? 60 : Number(acquisitionForm?.storageIntervalSeconds) || 60;
+  const estimatedReadingsPerDay = data?.kind === "decoded" || acquisitionForm ? monitoredChannelCount * Math.ceil(86_400 / Math.max(10, storageSeconds)) : 0;
 
   const patchConfiguration = async (payload: Record<string, unknown>, successMessage: string) => {
     setSaving(true);
@@ -350,7 +384,7 @@ export function SettingsView({
   };
 
   const saveChannels = () => {
-    const items = changedChannels.map((channel) => ({ id: channel.id, ...drafts[channel.id], warningThreshold: Number(drafts[channel.id].warningThreshold), criticalThreshold: Number(drafts[channel.id].criticalThreshold), hysteresis: Number(drafts[channel.id].hysteresis), activationSamples: Number(drafts[channel.id].activationSamples), recoverySamples: Number(drafts[channel.id].recoverySamples), staleAfterSeconds: Number(drafts[channel.id].staleAfterSeconds) }));
+    const items = changedChannels.map((channel) => ({ id: channel.id, ...drafts[channel.id], warningThreshold: drafts[channel.id].warningThreshold.trim() === "" ? null : Number(drafts[channel.id].warningThreshold), criticalThreshold: drafts[channel.id].criticalThreshold.trim() === "" ? null : Number(drafts[channel.id].criticalThreshold), hysteresis: Number(drafts[channel.id].hysteresis), activationSamples: Number(drafts[channel.id].activationSamples), recoverySamples: Number(drafts[channel.id].recoverySamples), staleAfterSeconds: Number(drafts[channel.id].staleAfterSeconds) }));
     if (!items.length) return;
     const submit = () => void patchConfiguration({ section: "channels", items }, `${items.length} canal${items.length === 1 ? "" : "es"} actualizado${items.length === 1 ? "" : "s"}`);
     if (changedChannels.some((channel) => channel.enabled && !drafts[channel.id].enabled)) {
@@ -373,15 +407,15 @@ export function SettingsView({
     <div className="module-toolbar configuration-toolbar">
       <div className="module-tabs" role="tablist" aria-label="Secciones de configuración">
         <button className={tab === "asset" ? "active" : ""} onClick={() => setTab("asset")}><IconBuilding size={16} /> Punto</button>
-        <button className={tab === "acquisition" ? "active" : ""} onClick={() => setTab("acquisition")}><IconPlugConnected size={16} /> Adquisición</button>
+        <button className={tab === "acquisition" ? "active" : ""} onClick={() => setTab("acquisition")}><IconPlugConnected size={16} /> {data?.kind === "decoded" ? "Equipos" : "Adquisición"}</button>
         <button className={tab === "channels" ? "active" : ""} onClick={() => setTab("channels")}><IconActivity size={16} /> Canales</button>
-        <button className={tab === "registers" ? "active" : ""} onClick={() => setTab("registers")}><IconDatabase size={16} /> Mapa Modbus</button>
+        <button className={tab === "registers" ? "active" : ""} onClick={() => setTab("registers")}><IconDatabase size={16} /> {data?.kind === "decoded" ? "Mediciones" : "Mapa Modbus"}</button>
         <button className={tab === "versions" ? "active" : ""} onClick={() => setTab("versions")}><IconHistory size={16} /> Versiones</button>
       </div>
       <div className="configuration-actions">
         <button className="secondary-button" onClick={refresh} disabled={loading}><IconRefresh className={loading ? "spin" : ""} size={16} /> Actualizar</button>
         {canWrite && tab === "asset" && <button className="save-config-button" onClick={() => void saveAsset()} disabled={saving || loading || !assetDirty}><IconDeviceFloppy size={16} /> {saving ? "Guardando…" : "Guardar punto"}</button>}
-        {canWrite && tab === "acquisition" && <button className="save-config-button" onClick={saveAcquisition} disabled={saving || loading || !acquisitionForm || !acquisitionDirty}><IconDeviceFloppy size={16} /> {saving ? "Guardando…" : "Guardar adquisición"}</button>}
+        {canWrite && tab === "acquisition" && data?.kind !== "decoded" && <button className="save-config-button" onClick={saveAcquisition} disabled={saving || loading || !acquisitionForm || !acquisitionDirty}><IconDeviceFloppy size={16} /> {saving ? "Guardando…" : "Guardar adquisición"}</button>}
         {canWrite && tab === "channels" && <button className="save-config-button" onClick={saveChannels} disabled={saving || loading || !tabDirty}><IconDeviceFloppy size={16} /> {saving ? "Guardando…" : `Guardar${changedChannels.length ? ` (${changedChannels.length})` : ""}`}</button>}
       </div>
     </div>
@@ -416,7 +450,22 @@ export function SettingsView({
         </div>
       </div>}
 
-      {tab === "acquisition" && <div className="settings-content acquisition-settings">
+      {tab === "acquisition" && data.kind === "decoded" && <div className="settings-content acquisition-settings">
+        <div className="settings-section-head"><span className="settings-icon"><IconPlugConnected size={20} /></span><div><h2>Equipos del punto</h2><p>Medidores y sensores que alimentan este punto. Cada gateway lee sus equipos y envía las mediciones ya decodificadas según la plantilla del modelo.</p></div></div>
+        <div className="reading-ranges point-devices"><div className="settings-subhead"><div><span className="eyebrow">Adquisición</span><h3>Equipos asignados</h3></div><span>{data.devices.length} {data.devices.length === 1 ? "equipo" : "equipos"}</span></div>
+          <div className="point-device-scroll"><div className="point-device-table"><div className="point-device-head"><span>Equipo</span><span>Conexión</span><span>Gateway</span><span>Última lectura</span><span>Perfil</span></div>{data.devices.map((device) => <div className="point-device-row" key={device.id}>
+            <span><strong>{device.position || device.name}</strong><small>{device.code} · {device.manufacturer} {device.modelName}</small></span>
+            <span><strong>{protocolLabel(device.protocol)}</strong><small>{deviceAddress(device)}</small></span>
+            <span><strong>{device.gatewayCode}</strong><small className={device.gatewayState === "online" ? "is-online" : ""}>{device.gatewayState === "online" ? "En línea" : device.gatewayState} · {age(device.gatewayLastSeenAt)}</small></span>
+            <span><strong>{age(device.lastReadAt)}</strong><small>{formatDateTime(device.lastReadAt)}</small></span>
+            <span><strong>{device.profileName ?? "Sin perfil"}</strong><small>Guarda cada {intervalLabel(device.storageIntervalSeconds)} · atrasado a los {intervalLabel(device.staleAfterSeconds)}</small></span>
+          </div>)}</div></div>
+        </div>
+        {data.devices.some((device) => device.protocol === "modbus_rtu") && <div className="configuration-note"><IconServer size={17} /><p><strong>Modbus RTU por RS-485.</strong> El gateway consulta cada medidor en el bus serie por su dirección Modbus y envía los valores ya convertidos (kW, kWh, V, A, FP, Hz). La velocidad y la paridad del bus se configuran en el gateway; el portal no abre conexiones hacia el medidor.</p></div>}
+        {data.devices.some((device) => device.protocol === "ble") && <div className="configuration-note"><IconServer size={17} /><p><strong>Bluetooth LE.</strong> El gateway escucha los anuncios de cada beacon por su MAC y envía temperatura, humedad y batería. Para mover un beacon a otra posición, cámbialo en Gateways › Equipos.</p></div>}
+      </div>}
+
+      {tab === "acquisition" && data.kind !== "decoded" && <div className="settings-content acquisition-settings">
         <div className="settings-section-head"><span className="settings-icon"><IconPlugConnected size={20} /></span><div><h2>Gateway, controlador y perfil de lectura</h2><p>Parámetros que el gateway obtiene desde la API antes de consultar el CAM5.</p></div></div>
         {!data.controller || !acquisitionForm || !data.profile ? <div className="configuration-empty-inline"><IconAlertTriangle size={21} /><div><strong>Falta el controlador CAM5</strong><p>Créalo y asígnalo al punto desde Estructura operacional antes de definir la adquisición.</p></div></div> : <>
           <div className="acquisition-overview">
@@ -451,15 +500,24 @@ export function SettingsView({
 
       {tab === "channels" && <div className="settings-content channels-settings database-channel-settings">
         <div className="settings-section-head"><span className="settings-icon"><IconActivity size={20} /></span><div><h2>Canales y política de condición</h2><p>Señales habilitadas, umbrales, histéresis y persistencia antes de activar una alarma.</p></div></div>
-        <div className="channel-monitoring-summary"><article><span>Monitoreados</span><strong>{monitoredChannelCount}</strong><small>Con histórico y alarmas</small></article><article><span>Disponibles</span><strong>{data.channels.length}</strong><small>Canales definidos en CAM5</small></article><article><span>Volumen operativo estimado</span><strong>{estimatedReadingsPerDay.toLocaleString("es-CL")}</strong><small>Lecturas por día</small></article></div>
+        <div className="channel-monitoring-summary"><article><span>Monitoreados</span><strong>{monitoredChannelCount}</strong><small>Con histórico y alarmas</small></article><article><span>Disponibles</span><strong>{data.channels.length}</strong><small>{data.kind === "decoded" ? `Canales de ${data.devices.length} ${data.devices.length === 1 ? "equipo" : "equipos"}` : "Canales definidos en CAM5"}</small></article><article><span>Volumen operativo estimado</span><strong>{estimatedReadingsPerDay.toLocaleString("es-CL")}</strong><small>Lecturas por día</small></article></div>
         <div className="configuration-note channel-monitoring-note"><IconDatabase size={17} /><p><strong>Monitorear y mostrar son decisiones distintas.</strong> Desactivar un canal detiene sus nuevas lecturas, histórico y alarmas. Cada usuario elige cuáles de los canales monitoreados quiere ver en Resumen y Mapa de condición.</p></div>
         <div className="configuration-list-toolbar"><label className="search-field"><IconSearch size={17} /><input value={channelQuery} onChange={(event) => { setChannelQuery(event.target.value); channelPage.setPage(1); }} placeholder="Buscar canal, zona o registro…" /></label><label className="status-filter"><span>Canales</span><select value={channelState} onChange={(event) => { setChannelState(event.target.value); channelPage.setPage(1); }}><option value="all">Todos</option><option value="enabled">Activos</option><option value="disabled">Inactivos</option></select></label></div>
-        <div className="channel-config-scroll"><div className="database-channel-table"><div className="database-channel-head"><span>Canal</span><span>Registro</span><span>Advertencia</span><span>Crítico</span><span>Histéresis</span><span>Activación</span><span>Recuperación</span><span>Atrasado</span><span>Monitoreo</span></div>{channelPage.pageItems.map((channel) => { const draft = drafts[channel.id]; if (!draft) return null; return <div className={`database-channel-row ${changedChannels.some((item) => item.id === channel.id) ? "changed" : ""}`} key={channel.id}><span className="history-channel"><b className="sensor-code">{channel.code}</b><span><strong>{channel.name}</strong><small>{channel.zone ?? channel.metric}</small></span></span><span className="mono-cell">{channel.register}<small>{channel.reference}</small></span><label className="compact-input"><input type="number" step="0.1" value={draft.warningThreshold} disabled={!canWrite} onChange={(event) => updateChannel(channel.id, "warningThreshold", event.target.value)} /><b>{channel.unit}</b></label><label className="compact-input"><input type="number" step="0.1" value={draft.criticalThreshold} disabled={!canWrite} onChange={(event) => updateChannel(channel.id, "criticalThreshold", event.target.value)} /><b>{channel.unit}</b></label><label className="compact-input"><input type="number" min="0" step="0.1" value={draft.hysteresis} disabled={!canWrite} onChange={(event) => updateChannel(channel.id, "hysteresis", event.target.value)} /></label><label className="compact-input"><input type="number" min="1" max="100" value={draft.activationSamples} disabled={!canWrite} onChange={(event) => updateChannel(channel.id, "activationSamples", event.target.value)} /></label><label className="compact-input"><input type="number" min="1" max="100" value={draft.recoverySamples} disabled={!canWrite} onChange={(event) => updateChannel(channel.id, "recoverySamples", event.target.value)} /></label><label className="compact-input"><input type="number" min="1" value={draft.staleAfterSeconds} disabled={!canWrite} onChange={(event) => updateChannel(channel.id, "staleAfterSeconds", event.target.value)} /><b>s</b></label><button className={`channel-toggle ${draft.enabled ? "on" : ""}`} disabled={!canWrite} onClick={() => updateChannel(channel.id, "enabled", !draft.enabled)}><i />{draft.enabled ? "Monitoreado" : "Sin monitoreo"}</button></div>})}</div></div>
+        <div className="channel-config-scroll"><div className="database-channel-table"><div className="database-channel-head"><span>Canal</span><span>{data.kind === "decoded" ? "Medición" : "Registro"}</span><span>Advertencia</span><span>Crítico</span><span>Histéresis</span><span>Activación</span><span>Recuperación</span><span>Atrasado</span><span>Monitoreo</span></div>{channelPage.pageItems.map((channel) => { const draft = drafts[channel.id]; if (!draft) return null; return <div className={`database-channel-row ${changedChannels.some((item) => item.id === channel.id) ? "changed" : ""}`} key={channel.id}><span className="history-channel"><b className="sensor-code">{channel.code}</b><span><strong>{channel.name}</strong><small>{channel.zone ?? channel.metric}</small></span></span><span className="mono-cell">{channel.register ?? channel.sourceKey ?? "—"}<small>{data.kind === "decoded" ? channel.devicePosition || channel.deviceCode : channel.reference}</small></span><label className="compact-input"><input type="number" step="0.1" value={draft.warningThreshold} disabled={!canWrite} onChange={(event) => updateChannel(channel.id, "warningThreshold", event.target.value)} /><b>{channel.unit}</b></label><label className="compact-input"><input type="number" step="0.1" value={draft.criticalThreshold} disabled={!canWrite} onChange={(event) => updateChannel(channel.id, "criticalThreshold", event.target.value)} /><b>{channel.unit}</b></label><label className="compact-input"><input type="number" min="0" step="0.1" value={draft.hysteresis} disabled={!canWrite} onChange={(event) => updateChannel(channel.id, "hysteresis", event.target.value)} /></label><label className="compact-input"><input type="number" min="1" max="100" value={draft.activationSamples} disabled={!canWrite} onChange={(event) => updateChannel(channel.id, "activationSamples", event.target.value)} /></label><label className="compact-input"><input type="number" min="1" max="100" value={draft.recoverySamples} disabled={!canWrite} onChange={(event) => updateChannel(channel.id, "recoverySamples", event.target.value)} /></label><label className="compact-input"><input type="number" min="1" value={draft.staleAfterSeconds} disabled={!canWrite} onChange={(event) => updateChannel(channel.id, "staleAfterSeconds", event.target.value)} /><b>s</b></label><button className={`channel-toggle ${draft.enabled ? "on" : ""}`} disabled={!canWrite} onClick={() => updateChannel(channel.id, "enabled", !draft.enabled)}><i />{draft.enabled ? "Monitoreado" : "Sin monitoreo"}</button></div>})}</div></div>
         {!channelPage.pageItems.length && <div className="configuration-empty-inline"><IconSearch size={21} /><div><strong>No hay canales con estos filtros</strong><p>Cambia el texto o el estado seleccionado.</p></div></div>}
         <Pagination page={channelPage.page} totalPages={channelPage.totalPages} total={channelPage.total} pageSize={channelPage.pageSize} onPageChange={channelPage.setPage} itemLabel="canales" />
       </div>}
 
-      {tab === "registers" && <div className="settings-content register-settings database-register-settings">
+      {tab === "registers" && data.kind === "decoded" && <div className="settings-content register-settings database-register-settings">
+        <div className="register-settings-head"><div className="settings-section-head"><span className="settings-icon"><IconBook2 size={20} /></span><div><h2>Plantilla de mediciones · {data.controller?.modelName ?? "—"}</h2><p>Variables que el gateway envía por cada equipo de este modelo, con su unidad y el rango que el portal acepta como válido.</p></div></div><span className={`map-integrity ${data.validation.mapValid ? "valid" : "invalid"}`}>{data.validation.mapValid ? <IconCircleCheck size={16} /> : <IconAlertTriangle size={16} />}{data.validation.mapValid ? "Plantilla lista" : "Plantilla sin mediciones"}</span></div>
+        <div className="register-map-summary"><article><small>Mediciones</small><strong>{data.registers.length}</strong><span>Definidas en la plantilla</span></article><article><small>Modelo</small><strong>{data.controller?.modelCode ?? "—"}</strong><span>{data.controller?.modelName ?? "Sin equipo"}</span></article><article className="is-valid"><small>Protocolo</small><strong>{data.controller ? protocolLabel(data.controller.protocol) : "—"}</strong><span>Plantilla {data.controller?.registerMapVersion ?? "—"}</span></article></div>
+        <div className="configuration-list-toolbar"><label className="search-field"><IconSearch size={17} /><input value={registerQuery} onChange={(event) => { setRegisterQuery(event.target.value); registerPage.setPage(1); }} placeholder="Buscar medición o variable…" /></label><label className="status-filter"><span>Grupo</span><select value={registerGroup} onChange={(event) => { setRegisterGroup(event.target.value); registerPage.setPage(1); }}><option value="all">Todos</option>{registerGroups.map((group) => <option key={group}>{group}</option>)}</select></label></div>
+        <div className="register-map-scroll"><div className="template-register-table"><div className="template-register-head"><span>Clave</span><span>Variable</span><span>Grupo</span><span>Unidad</span><span>Escala</span><span>Rango válido</span></div>{registerPage.pageItems.map((register) => <div className="template-register-row" key={register.id}><span><strong className="mono-cell">{register.sourceKey ?? register.nativeRegister ?? "—"}</strong><small>{register.humanReference}</small></span><span><strong>{register.name}</strong><small>{register.metric}</small></span><span>{register.group}</span><span>{register.unit || "—"}</span><span className="mono-cell">{register.scaleNote ?? register.scaleFactor}</span><span className="mono-cell">{register.minimumValue ?? "—"} → {register.maximumValue ?? "—"}</span></div>)}</div></div>
+        <Pagination page={registerPage.page} totalPages={registerPage.totalPages} total={registerPage.total} pageSize={registerPage.pageSize} onPageChange={registerPage.setPage} itemLabel="mediciones" />
+        <div className="configuration-note"><IconShieldCheck size={17} /><p><strong>El gateway decodifica, el portal valida.</strong> {data.controller?.protocol === "modbus_rtu" ? "El gateway lee los registros del medidor por RS-485, aplica las escalas del fabricante y envía cada valor con su clave." : "El gateway envía cada valor con su clave."} Un valor fuera del rango válido se marca como lectura inválida y genera un aviso de calidad de dato.</p></div>
+      </div>}
+
+      {tab === "registers" && data.kind !== "decoded" && <div className="settings-content register-settings database-register-settings">
         <div className="register-settings-head"><div className="settings-section-head"><span className="settings-icon"><IconBook2 size={20} /></span><div><h2>Mapa oficial de registros CAM5</h2><p>Catálogo de decodificación entregado al gateway; protegido contra modificaciones accidentales.</p></div></div><span className={`map-integrity ${data.validation.mapValid ? "valid" : "invalid"}`}>{data.validation.mapValid ? <IconCircleCheck size={16} /> : <IconAlertTriangle size={16} />}{data.validation.mapValid ? "Mapa íntegro" : "Revisar catálogo"}</span></div>
         <div className="register-map-summary"><article><small>Registros documentados</small><strong>{data.registers.length}</strong><span>Rango esperado 418–522</span></article><article><small>Modelo</small><strong>{data.controller?.modelCode ?? "—"}</strong><span>{data.controller?.modelName ?? "Sin controlador"}</span></article><article className={data.validation.mapValid ? "is-valid" : "has-issues"}><small>Versión documental</small><strong>{data.controller?.registerMapVersion ?? "—"}</strong><span>{data.validation.mapValid ? "Referencias validadas" : "Catálogo incompleto"}</span></article></div>
         <div className="configuration-list-toolbar"><label className="search-field"><IconSearch size={17} /><input value={registerQuery} onChange={(event) => { setRegisterQuery(event.target.value); registerPage.setPage(1); }} placeholder="Buscar registro o variable…" /></label><label className="status-filter"><span>Grupo</span><select value={registerGroup} onChange={(event) => { setRegisterGroup(event.target.value); registerPage.setPage(1); }}><option value="all">Todos</option>{registerGroups.map((group) => <option key={group}>{group}</option>)}</select></label></div>
