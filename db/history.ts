@@ -1,7 +1,7 @@
-import { and, asc, eq, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { DEFAULT_AGGREGATE_RETENTION_DAYS, resolutionCovers } from "./aggregate-retention";
 import type { Cam5Database } from "./index";
-import { alarmRules, channels, devices, readingProfiles, userChannelPreferences } from "./schema";
+import { alarmRules, channels, devices, readingProfiles, userChannelPreferences, type ChannelRole } from "./schema";
 
 /** Resoluciones del histórico de mediciones: por envío del gateway o promedios guardados. */
 export const HISTORY_RESOLUTIONS = ["auto", "raw", "300", "3600", "86400"] as const;
@@ -63,7 +63,13 @@ export type HistoryColumn = {
   warning: number | null;
   critical: number | null;
   visible: boolean;
+  /** Equipo que mide el canal: en puntos con varios sensores identifica la fila. */
+  deviceId: string;
+  role: ChannelRole;
 };
+
+/** Sensor (equipo) de un punto, tal como se muestra en el histórico. */
+export type HistorySensor = { id: string; code: string; name: string; position: string | null; label: string };
 
 export async function listHistoryColumns(db: Cam5Database, assetId: string, userId: string, group: HistoryChannelGroup): Promise<HistoryColumn[]> {
   const rows = await db.select({
@@ -76,6 +82,8 @@ export async function listHistoryColumns(db: Cam5Database, assetId: string, user
     warning: alarmRules.warningThreshold,
     critical: alarmRules.criticalThreshold,
     visible: userChannelPreferences.visible,
+    deviceId: channels.deviceId,
+    role: channels.role,
   }).from(channels)
     .leftJoin(alarmRules, eq(alarmRules.channelId, channels.id))
     .leftJoin(userChannelPreferences, and(eq(userChannelPreferences.channelId, channels.id), eq(userChannelPreferences.userId, userId)))
@@ -87,10 +95,45 @@ export async function listHistoryColumns(db: Cam5Database, assetId: string, user
     warning: row.warning === null ? null : Number(row.warning),
     critical: row.critical === null ? null : Number(row.critical),
     visible: row.visible ?? true,
+    role: row.role as ChannelRole,
   }));
   if (group === "all") return columns;
   if (group === "visible") return columns.filter((column) => column.visible);
   return columns.filter((column) => GROUP_METRICS[group].includes(column.metric));
+}
+
+/** Sensores del punto (en el orden de su posición), a partir de los canales que se consultan. */
+export async function listHistorySensors(db: Cam5Database, deviceIds: string[]): Promise<HistorySensor[]> {
+  const unique = [...new Set(deviceIds)];
+  if (!unique.length) return [];
+  const rows = await db.select({ id: devices.id, code: devices.code, name: devices.name, position: devices.position })
+    .from(devices).where(inArray(devices.id, unique)).orderBy(asc(devices.position), asc(devices.code));
+  return rows.map((row) => ({ ...row, label: row.position || row.name || row.code }));
+}
+
+const ROLE_ORDER: Record<ChannelRole, number> = { process: 0, health: 1, diagnostic: 2 };
+
+/**
+ * Con varios sensores en un punto, cada uno trae los mismos canales (TEMP, HR…). Se muestra una
+ * columna por variable y una fila por lectura de cada sensor, en vez de repetir columnas por equipo.
+ */
+export function mergeColumnsBySensor(columns: HistoryColumn[], primaryMetric?: string | null): { columns: HistoryColumn[]; columnOf: Map<string, string> } {
+  const merged = new Map<string, HistoryColumn>();
+  const columnOf = new Map<string, string>();
+  for (const column of columns) {
+    const id = `var:${column.code}`;
+    if (!merged.has(id)) merged.set(id, { ...column, id, zone: null });
+    columnOf.set(column.id, id);
+  }
+  // Primero la magnitud principal del punto (la temperatura en una cámara), luego proceso, salud y diagnóstico.
+  const rank = (column: HistoryColumn) => (column.metric === primaryMetric ? -1 : ROLE_ORDER[column.role] ?? 3);
+  const ordered = [...merged.values()].sort((left, right) => rank(left) - rank(right));
+  return { columns: ordered, columnOf };
+}
+
+/** Reasigna las celdas de cada fila (por canal) a la columna de su variable. */
+export function remapRowCells(rows: HistoryRow[], columnOf: Map<string, string>): HistoryRow[] {
+  return rows.map((row) => ({ ...row, cells: Object.fromEntries(Object.entries(row.cells).flatMap(([channelId, cell]) => columnOf.has(channelId) ? [[columnOf.get(channelId)!, cell]] : [])) }));
 }
 
 export async function historyRetention(db: Cam5Database, assetId: string) {
@@ -120,6 +163,8 @@ export type HistoryRow = {
   receivedAt: string | null;
   latencyMs: number | null;
   success: boolean | null;
+  /** Sensor de la fila, cuando el histórico se agrupa por sensor. */
+  sensorId?: string;
   cells: Record<string, HistoryCell>;
 };
 
@@ -163,16 +208,18 @@ function cellsJson(value: unknown): Array<Record<string, unknown>> {
  */
 export async function listHistoryRows(
   db: Cam5Database,
-  options: { channelIds: string[]; from: Date; to: Date; resolution: HistoryResolution; limit: number; offset: number },
+  options: { channelIds: string[]; from: Date; to: Date; resolution: HistoryResolution; limit: number; offset: number; bySensor?: boolean },
 ): Promise<{ rows: HistoryRow[]; total: number }> {
-  const { channelIds, from, to, resolution, limit, offset } = options;
+  const { channelIds, from, to, resolution, limit, offset, bySensor = false } = options;
   if (!channelIds.length) return { rows: [], total: 0 };
   const ids = sql.join(channelIds.map((id) => sql`${id}::uuid`), sql`, `);
   const fromIso = from.toISOString();
   const toIso = to.toISOString();
 
   if (resolution.key === "raw") {
-    const rowKey = sql`coalesce(r.batch_id::text, 'ts:' || to_char(r.recorded_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS'))`;
+    const batchKey = sql`coalesce(r.batch_id::text, 'ts:' || to_char(r.recorded_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS'))`;
+    // Por sensor: una fila por envío y equipo (un mismo lote puede traer varios sensores).
+    const rowKey = bySensor ? sql`${batchKey} || '|' || c.device_id::text` : batchKey;
     const where = sql`r.channel_id in (${ids}) and r.recorded_at >= ${fromIso}::timestamptz and r.recorded_at <= ${toIso}::timestamptz`;
     const [rows, totals] = await Promise.all([
       run(db, sql`
@@ -181,14 +228,16 @@ export async function listHistoryRows(
                max(r.received_at) as received_at,
                max(b.latency_ms) as latency_ms,
                bool_and(coalesce(b.success, true)) as success,
+               min(c.device_id::text) as sensor_id,
                json_agg(json_build_object('channelId', r.channel_id, 'value', r.value, 'raw', r.raw_value, 'quality', r.quality, 'flags', r.quality_flags, 'sequence', r.sequence)) as cells
         from readings r
+        join channels c on c.id = r.channel_id
         left join ingestion_batches b on b.id = r.batch_id
         where ${where}
         group by 1
         order by min(r.recorded_at) desc, 1 desc
         limit ${limit} offset ${offset}`),
-      run(db, sql`select count(*)::int as total from (select 1 from readings r where ${where} group by ${rowKey}) grouped`),
+      run(db, sql`select count(*)::int as total from (select 1 from readings r join channels c on c.id = r.channel_id where ${where} group by ${rowKey}) grouped`),
     ]);
     return {
       total: Number(totals[0]?.total ?? 0),
@@ -198,6 +247,7 @@ export async function listHistoryRows(
         receivedAt: iso(row.received_at),
         latencyMs: numberOrNull(row.latency_ms),
         success: row.success === null || row.success === undefined ? null : Boolean(row.success),
+        ...(bySensor ? { sensorId: String(row.sensor_id) } : {}),
         cells: Object.fromEntries(cellsJson(row.cells).map((cell) => [String(cell.channelId), {
           value: numberOrNull(cell.value),
           raw: numberOrNull(cell.raw),
@@ -210,27 +260,31 @@ export async function listHistoryRows(
   }
 
   const where = sql`a.channel_id in (${ids}) and a.bucket_seconds = ${resolution.bucketSeconds} and a.bucket_start >= ${fromIso}::timestamptz and a.bucket_start <= ${toIso}::timestamptz`;
+  const sensorColumn = bySensor ? sql`, c.device_id` : sql``;
   const [rows, totals] = await Promise.all([
     run(db, sql`
       select a.bucket_start as recorded_at,
+             ${bySensor ? sql`c.device_id::text` : sql`null`} as sensor_id,
              json_agg(json_build_object('channelId', a.channel_id, 'value', a.average_value, 'minimum', a.minimum_value, 'maximum', a.maximum_value, 'samples', a.sample_count, 'invalid', a.invalid_sample_count)) as cells
       from reading_aggregates a
+      join channels c on c.id = a.channel_id
       where ${where}
-      group by a.bucket_start
-      order by a.bucket_start desc
+      group by a.bucket_start${sensorColumn}
+      order by a.bucket_start desc${sensorColumn}
       limit ${limit} offset ${offset}`),
-    run(db, sql`select count(distinct a.bucket_start)::int as total from reading_aggregates a where ${where}`),
+    run(db, sql`select count(*)::int as total from (select 1 from reading_aggregates a join channels c on c.id = a.channel_id where ${where} group by a.bucket_start${sensorColumn}) grouped`),
   ]);
   return {
     total: Number(totals[0]?.total ?? 0),
     rows: rows.map((row) => {
       const recordedAt = iso(row.recorded_at) ?? "";
       return {
-        key: `bucket:${recordedAt}`,
+        key: bySensor ? `bucket:${recordedAt}|${row.sensor_id}` : `bucket:${recordedAt}`,
         recordedAt,
         receivedAt: null,
         latencyMs: null,
         success: null,
+        ...(bySensor ? { sensorId: String(row.sensor_id) } : {}),
         cells: Object.fromEntries(cellsJson(row.cells).map((cell) => [String(cell.channelId), {
           value: numberOrNull(cell.value),
           minimum: numberOrNull(cell.minimum),
@@ -245,14 +299,19 @@ export async function listHistoryRows(
 
 const QUALITY_LABELS: Record<NonNullable<HistoryCell["quality"]>, string> = { good: "válida", stale: "atrasada", bad: "inválida" };
 
-/** CSV ancho: una fila por envío (o intervalo) y una columna por canal. */
-export function historyCsvRows(columns: HistoryColumn[], rows: HistoryRow[], resolution: HistoryResolution): unknown[][] {
+/**
+ * CSV ancho: una fila por envío (o intervalo) y una columna por canal. Con varios sensores,
+ * una fila por lectura de cada sensor, identificado en las columnas sensor y codigo_sensor.
+ */
+export function historyCsvRows(columns: HistoryColumn[], rows: HistoryRow[], resolution: HistoryResolution, sensors?: HistorySensor[]): unknown[][] {
   const valueHeaders = columns.map((column) => `${column.code} ${resolution.key === "raw" ? "" : "promedio "}(${column.unit})`.replace("  ", " "));
-  const header = ["fecha_utc", ...valueHeaders, resolution.key === "raw" ? "observaciones_calidad" : "muestras_invalidas"];
+  const sensorById = new Map((sensors ?? []).map((sensor) => [sensor.id, sensor]));
+  const header = ["fecha_utc", ...(sensors ? ["sensor", "codigo_sensor"] : []), ...valueHeaders, resolution.key === "raw" ? "observaciones_calidad" : "muestras_invalidas"];
   return [header, ...rows.map((row) => {
     const notes = resolution.key === "raw"
       ? columns.flatMap((column) => { const cell = row.cells[column.id]; return cell?.quality && cell.quality !== "good" ? [`${column.code}: ${QUALITY_LABELS[cell.quality]}`] : []; }).join("; ")
       : columns.reduce((sum, column) => sum + (row.cells[column.id]?.invalid ?? 0), 0);
-    return [row.recordedAt, ...columns.map((column) => row.cells[column.id]?.value ?? ""), notes];
+    const sensor = row.sensorId ? sensorById.get(row.sensorId) : undefined;
+    return [row.recordedAt, ...(sensors ? [sensor?.label ?? "", sensor?.code ?? ""] : []), ...columns.map((column) => row.cells[column.id]?.value ?? ""), notes];
   })];
 }

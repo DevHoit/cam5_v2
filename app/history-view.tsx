@@ -24,10 +24,14 @@ type ChannelGroup = "visible" | "all" | "temperature" | "discharge" | "environme
 
 type HistoryColumn = { id: string; code: string; name: string; zone: string | null; unit: string; metric: string; warning: number | null; critical: number | null; visible: boolean };
 type HistoryCell = { value: number | null; raw?: number | null; quality?: "good" | "stale" | "bad"; flags?: string[]; sequence?: number | null; minimum?: number | null; maximum?: number | null; samples?: number; invalid?: number };
-type HistoryRow = { key: string; recordedAt: string; receivedAt: string | null; latencyMs: number | null; success: boolean | null; cells: Record<string, HistoryCell> };
+type HistoryRow = { key: string; recordedAt: string; receivedAt: string | null; latencyMs: number | null; success: boolean | null; sensorId?: string; cells: Record<string, HistoryCell> };
+type HistorySensor = { id: string; code: string; name: string; position: string | null; label: string };
 type MeasurementResult = {
   resolution: { key: Exclude<Resolution, "auto">; bucketSeconds: number; label: string };
   columns: HistoryColumn[];
+  /** Sensores del punto cuando tiene más de uno: el histórico se lista por sensor. */
+  sensors: HistorySensor[];
+  sensor: string | null;
   rows: HistoryRow[];
   page: number; pageSize: number; total: number; totalPages: number;
   from: string; to: string;
@@ -130,12 +134,16 @@ function formatLag(row: HistoryRow) {
 
 function MeasurementsTable({ data, expanded, onToggle, onOpenTrend }: { data: MeasurementResult; expanded: string | null; onToggle: (key: string) => void; onOpenTrend: (code: string) => void }) {
   const raw = data.resolution.key === "raw";
-  const columnCount = data.columns.length + (raw ? 2 : 1);
+  const sensors = data.sensors ?? [];
+  const bySensor = sensors.length > 1;
+  const sensorById = new Map(sensors.map((sensor) => [sensor.id, sensor]));
+  const columnCount = data.columns.length + (raw ? 2 : 1) + (bySensor ? 1 : 0);
   return <div className="history-grid-wrap" role="region" aria-label="Mediciones" tabIndex={0}>
     <table className="history-grid">
       <thead>
         <tr>
-          <th scope="col" className="history-time-col">{raw ? "Envío" : "Intervalo"}</th>
+          <th scope="col" className="history-time-col">{raw ? (bySensor ? "Lectura" : "Envío") : "Intervalo"}</th>
+          {bySensor && <th scope="col" className="history-sensor-col">Sensor</th>}
           {data.columns.map((column) => <th scope="col" key={column.id}>
             <button type="button" className="history-col-head" onClick={() => onOpenTrend(column.code)} title={`${column.name}${column.zone ? ` · ${column.zone}` : ""}. Ver tendencia`}>
               <b>{column.code}</b><small>{column.unit}</small>
@@ -147,6 +155,7 @@ function MeasurementsTable({ data, expanded, onToggle, onOpenTrend }: { data: Me
       <tbody>
         {data.rows.map((row) => {
           const isOpen = expanded === row.key;
+          const sensor = row.sensorId ? sensorById.get(row.sensorId) : undefined;
           const issues = raw ? data.columns.filter((column) => { const quality = row.cells[column.id]?.quality; return quality && quality !== "good"; }).length : 0;
           return <Fragment key={row.key}>
             <tr className={isOpen ? "is-open" : ""}>
@@ -155,6 +164,7 @@ function MeasurementsTable({ data, expanded, onToggle, onOpenTrend }: { data: Me
                   ? <button type="button" className="history-row-toggle" aria-expanded={isOpen} onClick={() => onToggle(row.key)}>{isOpen ? <IconChevronDown size={14} aria-hidden="true" /> : <IconChevronRight size={14} aria-hidden="true" />}<span>{formatRowTime(row.recordedAt, 0)}</span></button>
                   : <span className="history-row-time">{formatRowTime(row.recordedAt, data.resolution.bucketSeconds)}</span>}
               </th>
+              {bySensor && <td className="history-sensor-col"><span className="history-sensor"><b>{sensor?.label ?? "—"}</b>{sensor && sensor.code !== sensor.label && <small>{sensor.code}</small>}</span></td>}
               {data.columns.map((column) => {
                 const cell = row.cells[column.id];
                 if (!cell) return <td key={column.id} className="cell-empty">—</td>;
@@ -173,6 +183,7 @@ function MeasurementsTable({ data, expanded, onToggle, onOpenTrend }: { data: Me
               <td colSpan={columnCount}>
                 <div className="history-detail">
                   <dl className="history-detail-batch">
+                    {bySensor && <div><dt>Sensor</dt><dd>{sensor ? `${sensor.label} · ${sensor.code}` : "—"}</dd></div>}
                     <div><dt>Medido</dt><dd>{formatDateTime(row.recordedAt)} · {new Date(row.recordedAt).toISOString().slice(11, 19)} UTC</dd></div>
                     <div><dt>Recibido en Core</dt><dd>{row.receivedAt ? `${formatLag(row)} después` : "—"}</dd></div>
                     <div><dt>Lectura Modbus</dt><dd>{row.latencyMs === null ? "—" : `${row.latencyMs} ms`}</dd></div>
@@ -204,6 +215,10 @@ export function HistoryView({ assetId, canExport, notify, onOpenTrend }: { asset
   const [range, setRange] = useState(() => presetRange("24h"));
   const [resolution, setResolution] = useState<Resolution>("auto");
   const [group, setGroup] = useState<ChannelGroup>("visible");
+  // El filtro de sensor pertenece al punto: al cambiar de punto se vuelve a todos los sensores.
+  const [sensorFilter, setSensorFilter] = useState({ assetId, id: "" });
+  const sensor = sensorFilter.assetId === assetId ? sensorFilter.id : "";
+  const setSensor = (id: string) => setSensorFilter({ assetId, id });
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -216,10 +231,10 @@ export function HistoryView({ assetId, canExport, notify, onOpenTrend }: { asset
   const params = useMemo(() => {
     const search = new URLSearchParams({ tab, from: range.from, to: range.to, page: String(page) });
     if (assetId) search.set("assetId", assetId);
-    if (tab === "measurements") { search.set("resolution", resolution); search.set("group", group); search.set("pageSize", "50"); }
+    if (tab === "measurements") { search.set("resolution", resolution); search.set("group", group); search.set("pageSize", "50"); if (sensor) search.set("sensor", sensor); }
     else { search.set("pageSize", "20"); if (query.trim()) search.set("q", query.trim()); }
     return search;
-  }, [assetId, tab, range, page, resolution, group, query]);
+  }, [assetId, tab, range, page, resolution, group, query, sensor]);
 
   useEffect(() => {
     if (tab === "measurements" && !assetId) return;
@@ -291,6 +306,7 @@ export function HistoryView({ assetId, canExport, notify, onOpenTrend }: { asset
       {tab === "measurements"
         ? <>
           <label className="history-field"><span>Canales</span><select value={group} onChange={(event) => { setGroup(event.target.value as ChannelGroup); setPage(1); }}>{GROUP_OPTIONS.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}</select></label>
+          {(measurements?.sensors?.length ?? 0) > 1 && <label className="history-field"><span>Sensor</span><select value={sensor} onChange={(event) => { setSensor(event.target.value); setPage(1); setExpanded(null); }}><option value="">Todos ({measurements!.sensors.length})</option>{measurements!.sensors.map((item) => <option key={item.id} value={item.id}>{item.label}{item.code !== item.label ? ` · ${item.code}` : ""}</option>)}</select></label>}
           <label className="history-field"><span>Resolución</span><select value={resolution} onChange={(event) => { setResolution(event.target.value as Resolution); setPage(1); setExpanded(null); }}>{RESOLUTION_OPTIONS.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}</select></label>
         </>
         : <label className="history-field history-search"><span>Buscar</span><span className="history-search-input"><IconSearch size={15} aria-hidden="true" /><input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder={tab === "audit" ? "Acción o recurso" : "Canal, código o evento"} /></span></label>}
@@ -301,8 +317,9 @@ export function HistoryView({ assetId, canExport, notify, onOpenTrend }: { asset
 
     {tab === "measurements" && measurements && !error && assetId && <>
       <div className="history-summary" aria-live="polite">
-        <span><strong>{measurements.total.toLocaleString("es-CL")}</strong> {measurements.resolution.key === "raw" ? (measurements.total === 1 ? "envío" : "envíos") : (measurements.total === 1 ? "intervalo" : "intervalos")}</span>
-        <span><strong>{measurements.columns.length}</strong> canales</span>
+        <span><strong>{measurements.total.toLocaleString("es-CL")}</strong> {measurements.resolution.key === "raw" ? ((measurements.sensors?.length ?? 0) > 1 ? (measurements.total === 1 ? "lectura" : "lecturas") : (measurements.total === 1 ? "envío" : "envíos")) : (measurements.total === 1 ? "intervalo" : "intervalos")}</span>
+        {(measurements.sensors?.length ?? 0) > 1 && <span><strong>{measurements.sensor ? 1 : measurements.sensors.length}</strong> {measurements.sensor ? "sensor" : "sensores"}</span>}
+        <span><strong>{measurements.columns.length}</strong> {(measurements.sensors?.length ?? 0) > 1 ? "variables" : "canales"}</span>
         <span>{resolution === "auto" ? `Resolución automática: ${measurements.resolution.label.toLowerCase()}` : measurements.resolution.label}</span>
         {loading && <span className="history-loading"><IconRefresh size={14} className="spin" aria-hidden="true" /> Actualizando…</span>}
       </div>
@@ -315,7 +332,7 @@ export function HistoryView({ assetId, canExport, notify, onOpenTrend }: { asset
             <MeasurementsTable data={measurements} expanded={expanded} onToggle={(key) => setExpanded((current) => current === key ? null : key)} onOpenTrend={openTrend} />
             <div className="history-legend"><span><i className="legend-warning" />Advertencia</span><span><i className="legend-critical" />Crítico</span><span><IconAlertTriangle size={12} aria-hidden="true" />Lectura no válida</span><small>{measurements.resolution.key === "raw" ? "Toca una fila para ver el detalle del envío · toca un canal para ver su tendencia" : "Pasa el cursor sobre un valor para ver mínimo, máximo y muestras · toca un canal para ver su tendencia"}</small></div>
           </>}
-      <Pagination page={measurements.page} totalPages={measurements.totalPages} total={measurements.total} pageSize={measurements.pageSize} onPageChange={(next) => { setPage(next); setExpanded(null); }} itemLabel={measurements.resolution.key === "raw" ? "envíos" : "intervalos"} />
+      <Pagination page={measurements.page} totalPages={measurements.totalPages} total={measurements.total} pageSize={measurements.pageSize} onPageChange={(next) => { setPage(next); setExpanded(null); }} itemLabel={measurements.resolution.key === "raw" ? ((measurements.sensors?.length ?? 0) > 1 ? "lecturas" : "envíos") : "intervalos"} />
       <div className="module-footer"><span><IconClock size={14} aria-hidden="true" /> Lecturas por envío: {measurements.retention.rawDays} días · Promedios: {Math.round(measurements.retention.aggregateDays / 365)} años</span><small>Horas en tu zona horaria local.</small></div>
     </>}
 

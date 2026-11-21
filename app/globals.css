@@ -2357,6 +2357,11 @@ html body :is(a, button, summary, [tabindex]):not(input, select, textarea):focus
 .history-grid td.cell-invalid svg { margin-right: 3px; color: var(--warning-ink); vertical-align: -1px; }
 .history-grid td.cell-empty { color: var(--muted); }
 .history-grid .history-meta-col { text-align: left; font-size: var(--text-xs); }
+.history-grid .history-sensor-col { text-align: left; border-right: 1px solid var(--surface-3); }
+.history-grid thead .history-sensor-col { padding: 8px 12px; color: var(--ink-2); font-size: var(--text-xs); font-weight: 600; letter-spacing: 0; }
+.history-sensor { display: inline-flex; align-items: baseline; gap: 6px; }
+.history-sensor b { color: var(--ink); font-weight: 600; }
+.history-sensor small { color: var(--muted); font-family: var(--font-plex-mono), ui-monospace, monospace; font-size: 11px; }
 .history-grid thead .history-meta-col { padding: 8px 12px; color: var(--ink-2); font-weight: 600; letter-spacing: 0; }
 .history-issues, .history-ok { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; }
 .history-issues { color: var(--warning-ink); }

@@ -154,7 +154,8 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(historyView, /export function HistoryView/);
   assert.match(historyView, /type="datetime-local"/);
   assert.match(page, /<Pagination/);
-  assert.match(historyView, /raw \? "Envío" : "Intervalo"/);
+  assert.match(historyView, /raw \? \(bySensor \? "Lectura" : "Envío"\) : "Intervalo"/);
+  assert.match(historyView, /history-sensor-col/);
   assert.match(page, /requestAlarmClose/);
   assert.match(page, /Nota de cierre obligatoria/);
   // Mediciones: lecturas reales agrupadas por envío del gateway, de la más reciente a la más antigua.

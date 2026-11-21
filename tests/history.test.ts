@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { and, eq } from "drizzle-orm";
-import { historyCsvRows, listHistoryColumns, listHistoryRows, resolveHistoryResolution, HistoryRangeError } from "../db/history";
+import { historyCsvRows, listHistoryColumns, listHistoryRows, listHistorySensors, mergeColumnsBySensor, remapRowCells, resolveHistoryResolution, HistoryRangeError } from "../db/history";
+import { ingestMeasurements, parseMeasurementPayload } from "../db/measurement-ingest";
+import { provisionMeasurementDevice } from "../db/measurement-provisioning";
 import { seedCam5Database } from "../db/seed";
 import * as schema from "../db/schema";
 import { createMigratedTestDatabase } from "./helpers/database";
@@ -111,6 +113,59 @@ test("returns one row per aggregation bucket", async () => {
     assert.equal(Object.keys(result.rows[0].cells).length, 2);
     assert.equal(result.rows[0].cells[enabled[0].id].value, 21);
     assert.equal(result.rows[0].cells[enabled[0].id].maximum, 30);
+  } finally {
+    await client.close();
+  }
+});
+
+test("lists a point with several beacons by sensor: one row per reading and one column per variable", async () => {
+  const { client, db } = await createMigratedTestDatabase();
+  try {
+    await seedCam5Database(db, { adminEmail: "admin@example.test", adminName: "Administrador", adminPassword: "Temporal-2026", log: false });
+    const [admin] = await db.select().from(schema.users).limit(1);
+    const [site] = await db.select().from(schema.sites).limit(1);
+    const [point] = await db.insert(schema.assets).values({ siteId: site.id, code: "CC-01", name: "Congelados", assetType: "freezer", state: "normal" }).returning();
+    const [gateway] = await db.insert(schema.gateways).values({ siteId: site.id, code: "HOIT-BLE-7BBF74", name: "Gateway casino" }).returning();
+    const [model] = await db.select().from(schema.deviceModels).where(eq(schema.deviceModels.code, "BLE-KKM-TH"));
+    const macs = { "BC:57:29:04:01:54": "Dentro", "BC:57:29:04:01:61": "Puerta" } as const;
+    for (const [externalId, position] of Object.entries(macs)) {
+      await db.transaction((tx) => provisionMeasurementDevice(tx, { gatewayId: gateway.id, assetId: point.id, modelId: model.id, externalId, name: `Sensor ${position}`, position }));
+    }
+    const context = { gatewayId: gateway.id, gatewayCode: gateway.code, siteId: site.id };
+    const base = new Date("2026-11-20T15:00:00Z");
+    for (let index = 0; index < 3; index += 1) {
+      const at = new Date(base.getTime() + index * 120_000);
+      const beacons = [
+        { mac: "BC:57:29:04:01:54", temperature: -19 + index, humidity: 50, battery_percent: 98, rssi: -76, age_ms: 0 },
+        { mac: "BC:57:29:04:01:61", temperature: -12 + index, humidity: 48, battery_percent: 100, rssi: -66, age_ms: 0 },
+      ];
+      // Un solo envío del ESP32 con ambos beacons.
+      await ingestMeasurements(db, context, parseMeasurementPayload({ gateway: gateway.code, sequence: index + 1, uptime_ms: 1000 + index, beacons }, at), at);
+    }
+
+    const channelColumns = await listHistoryColumns(db, point.id, admin.id, "all");
+    const sensors = await listHistorySensors(db, channelColumns.map((column) => column.deviceId));
+    assert.deepEqual(sensors.map((sensor) => sensor.label), ["Dentro", "Puerta"]);
+    const merged = mergeColumnsBySensor(channelColumns, "temperature");
+    // Una columna por variable, la temperatura primero y la salud del sensor al final.
+    assert.deepEqual(merged.columns.slice(0, 2).map((column) => column.code), ["TEMP", "HR"]);
+    assert.ok(merged.columns.slice(2).every((column) => column.role === "health"));
+    assert.equal(new Set(merged.columns.map((column) => column.code)).size, merged.columns.length);
+    assert.equal(merged.columnOf.size, channelColumns.length);
+
+    const range = { from: new Date(base.getTime() - 60_000), to: new Date(base.getTime() + 600_000) };
+    const raw = await listHistoryRows(db, { channelIds: channelColumns.map((column) => column.id), ...range, resolution: { key: "raw", bucketSeconds: 0, label: "Por envío" }, limit: 50, offset: 0, bySensor: true });
+    assert.equal(raw.total, 6);
+    const rows = remapRowCells(raw.rows, merged.columnOf);
+    const dentro = sensors.find((sensor) => sensor.label === "Dentro")!;
+    const latestDentro = rows.find((row) => row.sensorId === dentro.id)!;
+    assert.equal(latestDentro.cells["var:TEMP"].value, -17);
+    assert.equal(rows.filter((row) => row.sensorId === dentro.id).length, 3);
+
+
+    const csv = historyCsvRows(merged.columns, rows, { key: "raw", bucketSeconds: 0, label: "Por envío" }, sensors);
+    assert.deepEqual(csv[0].slice(0, 4), ["fecha_utc", "sensor", "codigo_sensor", "TEMP (°C)"]);
+    assert.equal(csv.length, 7);
   } finally {
     await client.close();
   }
