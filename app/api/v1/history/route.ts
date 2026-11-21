@@ -5,6 +5,7 @@ import {
   assets,
   auditLogs,
   channels,
+  pointTypes,
   userAssetScopes,
   users,
 } from "../../../../db/schema";
@@ -17,6 +18,9 @@ import {
   historyRetention,
   listHistoryColumns,
   listHistoryRows,
+  listHistorySensors,
+  mergeColumnsBySensor,
+  remapRowCells,
   resolveHistoryResolution,
   type HistoryChannelGroup,
   type HistoryResolutionRequest,
@@ -70,7 +74,9 @@ export async function GET(request: NextRequest) {
     if (tab === "measurements") {
       if (!assetId) throw new ApiError(400, "Selecciona un punto de medición.");
       if (allowedAssetIds.length && !allowedAssetIds.includes(assetId)) throw new ApiError(403, "No tienes acceso al punto de medición indicado.");
-      const [asset] = await db.select({ id: assets.id }).from(assets).where(and(eq(assets.id, assetId), eq(assets.siteId, user.siteId))).limit(1);
+      const [asset] = await db.select({ id: assets.id, primaryMetric: pointTypes.primaryQuantity }).from(assets)
+        .leftJoin(pointTypes, eq(pointTypes.key, assets.assetType))
+        .where(and(eq(assets.id, assetId), eq(assets.siteId, user.siteId))).limit(1);
       if (!asset) throw new ApiError(404, "El punto de medición no pertenece al sitio activo.");
       const requestedResolution = request.nextUrl.searchParams.get("resolution") || "auto";
       if (!HISTORY_RESOLUTIONS.includes(requestedResolution as HistoryResolutionRequest)) throw new ApiError(400, "La resolución no es válida.");
@@ -84,20 +90,33 @@ export async function GET(request: NextRequest) {
         if (resolutionError instanceof HistoryRangeError) throw new ApiError(400, resolutionError.message);
         throw resolutionError;
       }
-      const columns = await listHistoryColumns(db, assetId, user.id, group as HistoryChannelGroup);
+      const channelColumns = await listHistoryColumns(db, assetId, user.id, group as HistoryChannelGroup);
+      // Un punto con varios sensores (beacons de una cámara, medidores de un tablero) se lista por sensor.
+      const sensors = await listHistorySensors(db, channelColumns.map((column) => column.deviceId));
+      const bySensor = sensors.length > 1;
+      const sensorId = request.nextUrl.searchParams.get("sensor") || "";
+      if (sensorId && !sensors.some((sensor) => sensor.id === sensorId)) throw new ApiError(400, "El sensor no pertenece al punto de medición.");
+      const queried = sensorId ? channelColumns.filter((column) => column.deviceId === sensorId) : channelColumns;
+      const merged = bySensor ? mergeColumnsBySensor(queried, asset.primaryMetric) : null;
+      const columns = merged?.columns ?? queried;
       const rowsPageSize = Math.min(100, Math.max(10, Number.parseInt(request.nextUrl.searchParams.get("pageSize") || "50", 10) || 50));
-      const { rows, total } = await listHistoryRows(db, {
-        channelIds: columns.map((column) => column.id),
+      const result = await listHistoryRows(db, {
+        channelIds: queried.map((column) => column.id),
         from,
         to,
         resolution,
         limit: exporting ? 20_000 : rowsPageSize,
         offset: exporting ? 0 : (page - 1) * rowsPageSize,
+        bySensor,
       });
-      if (exporting) return csvResponse(`hoitlive-historico-mediciones-${resolution.key === "raw" ? "por-envio" : resolution.key + "s"}.csv`, historyCsvRows(columns, rows, resolution));
+      const rows = merged ? remapRowCells(result.rows, merged.columnOf) : result.rows;
+      const total = result.total;
+      if (exporting) return csvResponse(`hoitlive-historico-mediciones-${resolution.key === "raw" ? "por-envio" : resolution.key + "s"}.csv`, historyCsvRows(columns, rows, resolution, bySensor ? sensors : undefined));
       return Response.json({
         resolution,
         columns,
+        sensors: bySensor ? sensors : [],
+        sensor: sensorId || null,
         rows,
         page,
         pageSize: rowsPageSize,
