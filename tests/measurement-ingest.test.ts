@@ -106,3 +106,40 @@ test("queues unknown beacons, then stores readings and alarms once the beacon is
     await client.close();
   }
 });
+
+test("stores PM5330 readings sent decoded by a gateway (or the emulator) once the meter is assigned", async () => {
+  const { client, db } = await createMigratedTestDatabase();
+  try {
+    await seedCam5Database(db, { adminEmail: "admin@example.test", adminName: "Administrador", adminPassword: "Temporal-2026", log: false });
+    const [site] = await db.select().from(schema.sites).limit(1);
+    const [point] = await db.insert(schema.assets).values({ siteId: site.id, code: "EMP-INF", name: "Empalme Infante", assetType: "electrical_panel", state: "normal" }).returning();
+    const [gateway] = await db.insert(schema.gateways).values({ siteId: site.id, code: "HOIT-EMU-INF01", name: "Emulador empalme" }).returning();
+    const context = { gatewayId: gateway.id, gatewayCode: gateway.code, siteId: site.id };
+    const reading = (sequence: number, at: Date, pKw: number) => ({
+      gateway: gateway.code, sequence, bootId: "emu-1", health: { fw: "emulador-pm5330-1.0", emulated: true },
+      devices: [{ id: "PM5330-INF", ts: at.toISOString(), m: { p_kw: pKw, q_kvar: 70.2, s_kva: 257.6, e_kwh: 2418560.4, v_l1: 220.7, v_l2: 219.8, v_l3: 221.2, i_l1: 401.2, i_l2: 389.5, i_l3: 378.2, pf: 0.96, hz: 50.01 } }],
+    });
+
+    const unknown = await ingestMeasurements(db, context, parseMeasurementPayload(reading(1, NOW, 247.3), NOW), NOW);
+    assert.deepEqual(unknown.unknown, ["PM5330-INF"]);
+
+    const [model] = await db.select().from(schema.deviceModels).where(eq(schema.deviceModels.code, "PM5330"));
+    assert.equal(model.protocol, "modbus_rtu");
+    const { device, channels } = await db.transaction((tx) => provisionMeasurementDevice(tx, { gatewayId: gateway.id, assetId: point.id, modelId: model.id, externalId: "PM5330-INF", name: "PM5330 empalme Infante", position: "Acometida" }));
+    assert.equal(device.code, "PM5330-INF");
+    assert.equal(channels, 12);
+    const [profile] = await db.select().from(schema.readingProfiles).where(eq(schema.readingProfiles.id, device.readingProfileId!));
+    assert.equal(profile.key, "energy-meter-v1");
+
+    const at = new Date(NOW.getTime() + 60_000);
+    const stored = await ingestMeasurements(db, context, parseMeasurementPayload(reading(2, at, 251.8), at), at);
+    assert.equal(stored.stored, 12);
+    assert.deepEqual(stored.unknown, []);
+    const [power] = await db.select({ value: schema.latestReadings.value }).from(schema.latestReadings)
+      .innerJoin(schema.channels, eq(schema.channels.id, schema.latestReadings.channelId))
+      .where(and(eq(schema.channels.deviceId, device.id), eq(schema.channels.code, "P")));
+    assert.equal(Number(power.value), 251.8);
+  } finally {
+    await client.close();
+  }
+});

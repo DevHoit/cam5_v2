@@ -9,7 +9,7 @@ export class MeasurementProvisioningError extends Error {
 }
 
 /** Perfil de lectura por protocolo: define cada cuánto se guarda y cuándo se alarma por falta de datos. */
-const PROFILE_BY_PROTOCOL: Record<string, string> = { ble: "ble-beacon-v1" };
+const PROFILE_BY_PROTOCOL: Record<string, string> = { ble: "ble-beacon-v1", modbus_rtu: "energy-meter-v1" };
 
 export function deviceCodeFor(externalId: string, prefix = "BLE") {
   // Un identificador que ya sirve como código (PM5330-TG, SN-77) se usa tal cual; una MAC se resume.
