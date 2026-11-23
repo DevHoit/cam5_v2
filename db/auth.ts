@@ -18,6 +18,12 @@ import {
 const scrypt = promisify(nodeScrypt);
 const PASSWORD_KEY_LENGTH = 64;
 const SESSION_HOURS = 12;
+
+/** Cuenta con fecha de término (prueba de HOIT, contratista): después de esa fecha no entra ni mantiene su sesión. */
+function accessNotExpired(now: Date) {
+  return or(isNull(users.accessExpiresAt), gt(users.accessExpiresAt, now))!;
+}
+
 export const PASSWORD_RESET_MINUTES = 30;
 /** Intentos fallidos permitidos dentro de la ventana antes de bloquear la cuenta. */
 export const MAX_FAILED_LOGIN_ATTEMPTS = 5;
@@ -127,7 +133,7 @@ export async function createPasswordResetToken(
     displayName: users.displayName,
   }).from(users)
     .innerJoin(authIdentities, and(eq(authIdentities.userId, users.id), eq(authIdentities.provider, "local")))
-    .where(and(eq(authIdentities.providerSubject, normalizedEmail), eq(users.status, "active")))
+    .where(and(eq(authIdentities.providerSubject, normalizedEmail), eq(users.status, "active"), accessNotExpired(now)))
     .limit(1);
   if (!target) return null;
 
@@ -172,6 +178,7 @@ export async function consumePasswordResetToken(
       isNull(passwordResetTokens.usedAt),
       gt(passwordResetTokens.expiresAt, now),
       eq(users.status, "active"),
+      accessNotExpired(now),
     ))
     .limit(1);
   if (!candidate?.passwordHash) return null;
@@ -237,6 +244,7 @@ export async function attemptLocalLogin(db: Cam5Database, email: string, passwor
       identityId: authIdentities.id,
       userId: users.id,
       status: users.status,
+      accessExpiresAt: users.accessExpiresAt,
       passwordHash: authIdentities.passwordHash,
       lockedUntil: authIdentities.lockedUntil,
     })
@@ -257,7 +265,7 @@ export async function attemptLocalLogin(db: Cam5Database, email: string, passwor
   }
 
   const validPassword = await verifyPassword(password, identity.passwordHash);
-  if (validPassword && identity.status === "active") {
+  if (validPassword && identity.status === "active" && (!identity.accessExpiresAt || identity.accessExpiresAt > now)) {
     await db.update(authIdentities).set({ failedLoginCount: 0, lastFailedLoginAt: null, lockedUntil: null }).where(eq(authIdentities.id, identity.identityId));
     await db.update(users).set({ lastLoginAt: now, updatedAt: now }).where(eq(users.id, identity.userId));
     return { status: "authenticated", userId: identity.userId };
@@ -347,6 +355,7 @@ export async function resolvePortalSession(db: Cam5Database, token: string): Pro
       isNull(authSessions.revokedAt),
       gt(authSessions.expiresAt, now),
       eq(users.status, "active"),
+      accessNotExpired(now),
     ))
     .limit(1);
 

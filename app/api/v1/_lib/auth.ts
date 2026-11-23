@@ -116,6 +116,15 @@ export async function wholeClientSites(db: Cam5Database, actor: AuthenticatedPor
   return rows;
 }
 
+/** Fecha de término del acceso: vacío = sin término; debe ser futura. */
+export function parseAccessExpiry(value: unknown): Date | null {
+  if (value === undefined || value === null || value === "") return null;
+  const date = new Date(typeof value === "string" ? value : NaN);
+  if (!Number.isFinite(date.getTime())) throw new ApiError(400, "La fecha de término no es válida.");
+  if (date.getTime() <= Date.now()) throw new ApiError(400, "La fecha de término debe ser futura.");
+  return date;
+}
+
 export function apiErrorResponse(error: unknown) {
   if (error instanceof ApiError) {
     return Response.json({ error: error.message }, { status: error.status, headers: { "Cache-Control": "no-store" } });

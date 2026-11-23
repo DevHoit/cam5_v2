@@ -12,7 +12,7 @@ import {
   userRoleAssignments,
   users,
 } from "../../../../../db/schema";
-import { apiErrorResponse, ApiError, assertSitesOfClient, requestMetadata, requireApiSession, userHasAccessOutsideAdministration, wholeClientSites } from "../../_lib/auth";
+import { apiErrorResponse, ApiError, assertSitesOfClient, parseAccessExpiry, requestMetadata, requireApiSession, userHasAccessOutsideAdministration, wholeClientSites } from "../../_lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -90,11 +90,18 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     if (requestedLicenseKind !== null && !isLicenseKind(requestedLicenseKind)) throw new ApiError(400, "El tipo de licencia no es válido.");
     // Marca de personal de HOIT: solo la cambia otro miembro del personal (nunca la propia). Quitarla hace
     // que el usuario pase a ocupar licencia y pierda el acceso a clientes suspendidos.
-    const [targetFlags] = await db.select({ platformStaff: users.platformStaff }).from(users).where(eq(users.id, id)).limit(1);
+    const [targetFlags] = await db.select({ platformStaff: users.platformStaff, testAccount: users.testAccount, accessExpiresAt: users.accessExpiresAt }).from(users).where(eq(users.id, id)).limit(1);
     const currentStaff = Boolean(targetFlags?.platformStaff);
-    // El personal de HOIT no es usuario del cliente: un administrador del cliente no puede verlo ni editarlo.
-    if (currentStaff && !actor.platformStaff) throw new ApiError(404, "El usuario no existe.");
+    const currentTest = Boolean(targetFlags?.testAccount);
+    // El personal de HOIT y sus cuentas de prueba no son usuarios del cliente: su administrador no puede verlos ni editarlos.
+    if ((currentStaff || currentTest) && !actor.platformStaff) throw new ApiError(404, "El usuario no existe.");
+    // Cuenta de prueba y fecha de término: solo las define el personal de HOIT.
+    const testAccount = actor.platformStaff && typeof body.testAccount === "boolean" ? body.testAccount : currentTest;
+    const accessExpiresAt = actor.platformStaff && body.accessExpiresAt !== undefined
+      ? (body.accessExpiresAt === null || body.accessExpiresAt === "" ? null : (targetFlags?.accessExpiresAt && body.accessExpiresAt === targetFlags.accessExpiresAt.toISOString() ? targetFlags.accessExpiresAt : parseAccessExpiry(body.accessExpiresAt)))
+      : targetFlags?.accessExpiresAt ?? null;
     const platformStaff = typeof body.platformStaff === "boolean" ? body.platformStaff : currentStaff;
+    if (platformStaff && testAccount) throw new ApiError(400, "Una cuenta es del personal de HOIT o de prueba, no ambas.");
     if (platformStaff !== currentStaff) {
       if (!actor.platformStaff) throw new ApiError(403, "Solo el personal de HOIT puede cambiar esta marca.");
       if (actor.id === id) throw new ApiError(409, "No puedes cambiar tu propia marca de personal de HOIT.");
@@ -133,7 +140,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     // usuario. Solo se pueden cambiar si todo su acceso está bajo la administración del actor;
     // de lo contrario un administrador de un sitio podría tomar la cuenta de alguien con
     // acceso a otros clientes.
-    const identityChanged = email !== normalizeEmail(target.email) ||displayName !== target.displayName || status !== target.status || platformStaff !== currentStaff || Boolean(password);
+    const identityChanged = email !== normalizeEmail(target.email) ||displayName !== target.displayName || status !== target.status || platformStaff !== currentStaff || testAccount !== currentTest || Boolean(password);
     if (identityChanged && actor.id !== id && await userHasAccessOutsideAdministration(db, actor, id)) {
       throw new ApiError(403, "Este usuario también tiene acceso a sitios fuera de tu administración: solo puedes cambiar su perfil y sus sitios dentro de tu alcance.");
     }
@@ -149,7 +156,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       if (duplicate && duplicate.id !== id) throw new ApiError(409, "Ya existe un usuario con ese correo.");
       const [role] = await tx.select().from(roles).where(eq(roles.key, roleKey)).limit(1);
       if (!role) throw new ApiError(400, "El perfil seleccionado no existe.");
-      const [record] = await tx.update(users).set({ displayName, email, status: status as typeof VALID_STATUSES[number], platformStaff, updatedAt: new Date() }).where(eq(users.id, id)).returning();
+      const [record] = await tx.update(users).set({ displayName, email, status: status as typeof VALID_STATUSES[number], platformStaff, testAccount, accessExpiresAt, updatedAt: new Date() }).where(eq(users.id, id)).returning();
       await tx.update(authIdentities).set({ providerSubject: email, ...(passwordHash ? { passwordHash, mustChangePassword: true, failedLoginCount: 0, lastFailedLoginAt: null, lockedUntil: null } : {}), updatedAt: new Date() }).where(and(eq(authIdentities.userId, id), eq(authIdentities.provider, "local")));
       if (passwordHash) await tx.update(authSessions).set({ revokedAt: new Date() }).where(and(eq(authSessions.userId, id), isNull(authSessions.revokedAt)));
       // Se reemplaza el acceso en los sitios que el actor administra (y, con todo el cliente, en todos sus sitios).
@@ -169,10 +176,10 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       if (requestedLicenseKind && !actor.platformStaff && selectedClientIds.some((clientId) => kindFor(clientId) !== requestedLicenseKind)) {
         throw new ApiError(403, "Solo el personal de HOIT puede cambiar el tipo de licencia.");
       }
-      if (!platformStaff && statusUsesLicense(status)) {
+      if (!platformStaff && !testAccount && statusUsesLicense(status)) {
         const newlyCounted = selectedClientIds.filter((clientId) => {
           const current = currentAssignments.find((item) => item.clientId === clientId);
-          return !(!currentStaff && statusUsesLicense(target.status) && current && current.licenseKind === kindFor(clientId));
+          return !(!currentStaff && !currentTest && statusUsesLicense(target.status) && current && current.licenseKind === kindFor(clientId));
         });
         await assertLicensesAvailable(tx, newlyCounted.map((clientId) => ({ clientId, kind: kindFor(clientId) })), id);
       }
@@ -200,7 +207,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         ipAddress: metadata.ipAddress,
         userAgent: metadata.userAgent,
         before: { email: target.email, displayName: target.displayName, status: target.status, role: target.roleKey },
-        after: { email, displayName, status, role: roleKey, siteIds: requestedSiteIds, allSites, ...(requestedLicenseKind ? { licenseKind: requestedLicenseKind } : {}), ...(platformStaff !== currentStaff ? { platformStaff } : {}), passwordChanged: Boolean(passwordHash), passwordChangeRequired: passwordHash ? true : target.mustChangePassword },
+        after: { email, displayName, status, role: roleKey, siteIds: requestedSiteIds, allSites, ...(requestedLicenseKind ? { licenseKind: requestedLicenseKind } : {}), ...(platformStaff !== currentStaff ? { platformStaff } : {}), ...(testAccount !== currentTest ? { testAccount } : {}), accessExpiresAt, passwordChanged: Boolean(passwordHash), passwordChangeRequired: passwordHash ? true : target.mustChangePassword },
       });
       return { ...record, role: { key: role.key, name: role.name } };
     });
@@ -215,6 +222,8 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       mustChangePassword: passwordHash ? true : target.mustChangePassword ?? false,
       role: updated.role,
       siteIds: requestedSiteIds,
+      testAccount,
+      accessExpiresAt: accessExpiresAt?.toISOString() ?? null,
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return apiErrorResponse(error);
@@ -227,6 +236,8 @@ export async function DELETE(request: NextRequest, context: { params: Promise<{ 
     const { id } = await context.params;
     if (actor.id === id) throw new ApiError(409, "No puedes eliminar tu propia cuenta.");
     const target = await getTarget(db, id, actor.siteId);
+    const [flags] = await db.select({ platformStaff: users.platformStaff, testAccount: users.testAccount }).from(users).where(eq(users.id, id)).limit(1);
+    if ((flags?.platformStaff || flags?.testAccount) && !actor.platformStaff) throw new ApiError(404, "El usuario no existe.");
     await assertAdministratorRemains(db, actor.siteId, target.roleKey);
     const metadata = requestMetadata(request);
     await db.transaction(async (tx) => {

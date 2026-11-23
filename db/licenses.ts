@@ -8,7 +8,7 @@ import { clients, userClientAssignments, users } from "./schema";
  * - "client": usuarios del propio cliente (p. ej. 5 para SAESA STM).
  * - "partner": usuarios del integrador que administra al cliente (p. ej. 1 administrador de Babcock Briones).
  *
- * Ocupan licencia los usuarios activos o invitados que no son personal de HOIT. Un usuario suspendido la libera.
+ * Ocupan licencia los usuarios activos o invitados que no son personal de HOIT ni cuentas de prueba de HOIT. Un usuario suspendido la libera.
  * Un límite null significa sin límite. Si un cliente ya está sobre el límite (p. ej. se bajó después), los
  * usuarios existentes siguen funcionando; solo se impide sumar nuevos.
  */
@@ -44,6 +44,8 @@ async function countUsage(db: Executor, clientIds: string[], excludeUserId?: str
     inArray(userClientAssignments.clientId, clientIds),
     inArray(users.status, ["active", "invited"]),
     eq(users.platformStaff, false),
+    // Las cuentas de prueba de HOIT tampoco ocupan licencia del cliente.
+    eq(users.testAccount, false),
   ];
   if (excludeUserId) filters.push(ne(users.id, excludeUserId));
   return db.select({ clientId: userClientAssignments.clientId, kind: userClientAssignments.licenseKind, used: countDistinct(users.id) })
