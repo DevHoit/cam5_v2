@@ -415,3 +415,15 @@ test("HOIT test accounts: no license, hidden from the client, optional end date"
   assert.match(page, /<option value="test">Cuenta de prueba HOIT<\/option>/);
   assert.match(page, /<span>Acceso hasta<\/span>/);
 });
+
+test("users can be invited by email to create their own password", async () => {
+  const [page, list] = await Promise.all([
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/v1/users/route.ts", import.meta.url), "utf8"),
+  ]);
+  assert.match(page, /<strong>Enviar invitación por correo<\/strong>/);
+  assert.match(page, /action === "accept-invite"/);
+  assert.match(page, /\/api\/v1\/users\/\$\{user\.id\}\/invitation/);
+  assert.match(list, /const invite = body\?\.accessMode === "invite";/);
+  assert.match(list, /deliverInvitation\(db, actor, created\.id, requestMetadata\(request\)\)/);
+});

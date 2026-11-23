@@ -25,6 +25,8 @@ function accessNotExpired(now: Date) {
 }
 
 export const PASSWORD_RESET_MINUTES = 30;
+/** Vigencia de una invitación para crear la primera contraseña. */
+export const INVITATION_DAYS = 7;
 /** Intentos fallidos permitidos dentro de la ventana antes de bloquear la cuenta. */
 export const MAX_FAILED_LOGIN_ATTEMPTS = 5;
 /** Ventana de conteo de intentos fallidos y duración del bloqueo temporal. */
@@ -151,12 +153,61 @@ export async function createPasswordResetToken(
     await tx.insert(passwordResetTokens).values({
       userId: target.userId,
       tokenHash: hashSessionToken(token),
+      purpose: "reset",
       requestedIp: requestedIp || null,
       expiresAt,
       createdAt: now,
     });
   });
   return { ...target, token, expiresAt };
+}
+
+/**
+ * Invitación: enlace de un solo uso para que un usuario invitado cree su primera contraseña. Anula las
+ * invitaciones anteriores del mismo usuario. Solo para cuentas en estado "invitado".
+ */
+export async function createInvitationToken(db: Cam5Database, userId: string, requestedIp?: string | null, now = new Date()) {
+  const [target] = await db.select({ userId: users.id, email: users.email, displayName: users.displayName, status: users.status })
+    .from(users).where(eq(users.id, userId)).limit(1);
+  if (!target || target.status !== "invited") return null;
+  const token = randomBytes(32).toString("base64url");
+  const expiresAt = new Date(now.getTime() + INVITATION_DAYS * 86_400_000);
+  await db.transaction(async (tx) => {
+    await tx.update(passwordResetTokens).set({ usedAt: now })
+      .where(and(eq(passwordResetTokens.userId, userId), isNull(passwordResetTokens.usedAt)));
+    await tx.insert(passwordResetTokens).values({ userId, tokenHash: hashSessionToken(token), purpose: "invite", requestedIp: requestedIp || null, expiresAt, createdAt: now });
+  });
+  return { userId: target.userId, email: target.email, displayName: target.displayName, token, expiresAt };
+}
+
+/** Acepta una invitación: guarda la contraseña elegida por el usuario y activa la cuenta. */
+export async function acceptInvitationToken(db: Cam5Database, token: string, newPassword: string, now = new Date()) {
+  const [candidate] = await db.select({ id: passwordResetTokens.id, userId: passwordResetTokens.userId })
+    .from(passwordResetTokens)
+    .innerJoin(users, eq(users.id, passwordResetTokens.userId))
+    .where(and(
+      eq(passwordResetTokens.tokenHash, hashSessionToken(token)),
+      eq(passwordResetTokens.purpose, "invite"),
+      isNull(passwordResetTokens.usedAt),
+      gt(passwordResetTokens.expiresAt, now),
+      eq(users.status, "invited"),
+      accessNotExpired(now),
+    ))
+    .limit(1);
+  if (!candidate) return null;
+  const passwordHash = await hashPassword(newPassword);
+  return db.transaction(async (tx) => {
+    const [claimed] = await tx.update(passwordResetTokens).set({ usedAt: now })
+      .where(and(eq(passwordResetTokens.id, candidate.id), isNull(passwordResetTokens.usedAt), gt(passwordResetTokens.expiresAt, now)))
+      .returning({ id: passwordResetTokens.id });
+    if (!claimed) return null;
+    await tx.update(authIdentities).set({ passwordHash, mustChangePassword: false, failedLoginCount: 0, lastFailedLoginAt: null, lockedUntil: null, updatedAt: now })
+      .where(and(eq(authIdentities.userId, candidate.userId), eq(authIdentities.provider, "local")));
+    await tx.update(users).set({ status: "active", updatedAt: now }).where(eq(users.id, candidate.userId));
+    await tx.update(passwordResetTokens).set({ usedAt: now })
+      .where(and(eq(passwordResetTokens.userId, candidate.userId), isNull(passwordResetTokens.usedAt)));
+    return { userId: candidate.userId };
+  });
 }
 
 export async function consumePasswordResetToken(
@@ -175,6 +226,7 @@ export async function consumePasswordResetToken(
     .innerJoin(authIdentities, and(eq(authIdentities.userId, users.id), eq(authIdentities.provider, "local")))
     .where(and(
       eq(passwordResetTokens.tokenHash, tokenHash),
+      eq(passwordResetTokens.purpose, "reset"),
       isNull(passwordResetTokens.usedAt),
       gt(passwordResetTokens.expiresAt, now),
       eq(users.status, "active"),

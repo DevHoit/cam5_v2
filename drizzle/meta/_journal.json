@@ -176,6 +176,13 @@
       "when": 1795471057579,
       "tag": "0024_hoit_test_accounts",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1795471747510,
+      "tag": "0025_user_invitations",
+      "breakpoints": true
     }
   ]
 }
