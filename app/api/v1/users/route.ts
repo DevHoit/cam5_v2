@@ -12,7 +12,7 @@ import {
   userRoleAssignments,
   users,
 } from "../../../../db/schema";
-import { apiErrorResponse, ApiError, parsePage, requestMetadata, requireApiSession } from "../_lib/auth";
+import { apiErrorResponse, ApiError, assertSitesOfClient, parsePage, requestMetadata, requireApiSession } from "../_lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -125,7 +125,11 @@ export async function GET(request: NextRequest) {
       canAssignPartnerLicense: user.platformStaff,
       scope: platformScope ? "platform" : "client",
       clientFilter: platformScope ? clientId : user.clientId,
-      clients: platformScope ? await db.select({ id: clients.id, name: clients.name }).from(clients).orderBy(asc(clients.name)) : [],
+      // Clientes con sus licencias: el personal de HOIT elige a cuál pertenece cada usuario y qué licencia ocupa.
+      clients: platformScope
+        ? (await loadClientLicenses(db, (await db.select({ id: clients.id }).from(clients)).map((row) => row.id)))
+          .map((item) => ({ id: item.clientId, name: item.clientName, ...item })).sort((left, right) => left.name.localeCompare(right.name, "es"))
+        : licenses ? [{ id: licenses.clientId, name: licenses.clientName, ...licenses }] : [],
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return apiErrorResponse(error);
@@ -154,6 +158,7 @@ export async function POST(request: NextRequest) {
     if (!requestedSiteIds.length) throw new ApiError(400, "Selecciona al menos un sitio para el usuario.");
     const selectedSites = actor.sites.filter((site) => site.roleKey === "administrator" && requestedSiteIds.includes(site.id));
     if (selectedSites.length !== requestedSiteIds.length) throw new ApiError(403, "Uno o más sitios seleccionados están fuera de tu alcance.");
+    assertSitesOfClient(selectedSites, body?.clientId);
     const passwordHash = await hashPassword(password).catch((error: unknown) => { throw new ApiError(400, error instanceof Error ? error.message : "Contraseña inválida."); });
 
     const created = await db.transaction(async (tx) => {

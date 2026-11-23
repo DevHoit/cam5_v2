@@ -12,7 +12,7 @@ import {
   userRoleAssignments,
   users,
 } from "../../../../../db/schema";
-import { apiErrorResponse, ApiError, requestMetadata, requireApiSession, userHasAccessOutsideAdministration } from "../../_lib/auth";
+import { apiErrorResponse, ApiError, assertSitesOfClient, requestMetadata, requireApiSession, userHasAccessOutsideAdministration } from "../../_lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -114,6 +114,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     if (!requestedSiteIds.length) throw new ApiError(400, "Selecciona al menos un sitio para el usuario.");
     const selectedSites = actor.sites.filter((site) => site.roleKey === "administrator" && requestedSiteIds.includes(site.id));
     if (selectedSites.length !== requestedSiteIds.length) throw new ApiError(403, "Uno o más sitios seleccionados están fuera de tu alcance.");
+    if (!platformStaff) assertSitesOfClient(selectedSites, body.clientId);
     if (actor.id === id && status !== "active") throw new ApiError(409, "No puedes suspender tu propia cuenta.");
     if (actor.id === id && !requestedSiteIds.includes(actor.siteId)) throw new ApiError(409, "No puedes retirar tu propio acceso al sitio activo.");
     if (actor.id === id && password) throw new ApiError(409, "Cambia tu propia contraseña desde Mi cuenta.");

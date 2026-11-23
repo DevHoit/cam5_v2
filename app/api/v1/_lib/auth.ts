@@ -95,6 +95,12 @@ export async function userHasAccessOutsideAdministration(db: Cam5Database, actor
     || clientScopes.some((scope) => !clientIds.has(scope.clientId));
 }
 
+/** Un usuario de cliente pertenece a una compañía: si se indica el cliente, todos sus sitios deben ser de él. */
+export function assertSitesOfClient(selectedSites: Array<{ clientId: string }>, clientId: unknown) {
+  if (typeof clientId !== "string" || !clientId) return;
+  if (selectedSites.some((site) => site.clientId !== clientId)) throw new ApiError(400, "Los sitios seleccionados deben pertenecer al cliente elegido.");
+}
+
 export function apiErrorResponse(error: unknown) {
   if (error instanceof ApiError) {
     return Response.json({ error: error.message }, { status: error.status, headers: { "Cache-Control": "no-store" } });

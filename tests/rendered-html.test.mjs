@@ -362,4 +362,10 @@ test("users: HOIT staff sees the whole platform, a client only its own company",
   assert.match(single, /if \(currentStaff && !actor\.platformStaff\) throw new ApiError\(404/);
   assert.match(single, /const target = await getEditableTarget\(db, actor, id\)/);
   assert.match(page, /result\?\.scope === "platform" && <label className="status-filter"><span>Cliente<\/span>/);
+  // El usuario de cliente se asigna a un cliente con su licencia; sus sitios salen de ese cliente.
+  assert.match(page, /manageableClients\.length > 1 && <label><span>Cliente<\/span>/);
+  assert.match(page, /isStaffActor && !form\.platformStaff && <label><span>Licencia<\/span>/);
+  assert.match(page, /const formSites = form\.platformStaff \? manageableSites : manageableSites\.filter\(\(site\) => site\.clientId === form\.clientId\)/);
+  assert.match(list, /assertSitesOfClient\(selectedSites, body\?\.clientId\)/);
+  assert.match(single, /if \(!platformStaff\) assertSitesOfClient\(selectedSites, body\.clientId\)/);
 });
