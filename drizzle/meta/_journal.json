@@ -162,6 +162,13 @@
       "when": 1795229643844,
       "tag": "0022_pm5330_template",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1795470404311,
+      "tag": "0023_client_all_sites",
+      "breakpoints": true
     }
   ]
 }
