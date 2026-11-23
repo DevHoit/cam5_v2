@@ -205,9 +205,13 @@ export async function POST(request: NextRequest) {
       let record: Record<string, unknown>;
       if (resource === "client") {
         requirePermission(user.permissions, "users.manage");
+        // Solo el personal de HOIT crea clientes. Parten sin licencias: HOIT define cuántas antes de crear usuarios.
+        if (!user.platformStaff) throw new ApiError(403, "Solo el personal de HOIT puede crear clientes.");
         const [row] = await tx.insert(clients).values({
           code,
           name,
+          userLicenseLimit: 0,
+          partnerLicenseLimit: 0,
           legalName: optionalText(body, "legalName"),
           taxId: optionalText(body, "taxId"),
           contactEmail: optionalText(body, "contactEmail"),
