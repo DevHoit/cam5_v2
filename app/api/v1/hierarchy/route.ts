@@ -238,6 +238,13 @@ export async function POST(request: NextRequest) {
         const [role] = await tx.select({ id: roles.id }).from(roles).where(eq(roles.key, user.roleKey)).limit(1);
         if (!role) throw new ApiError(409, "No fue posible asignar el acceso al nuevo sitio.");
         await tx.insert(userRoleAssignments).values({ userId: user.id, roleId: role.id, siteId: row.id, grantedBy: user.id });
+        // Quienes tienen acceso a todo el cliente (p. ej. su administrador) reciben el sitio nuevo con su rol del cliente.
+        const wholeClient = await tx.select({ userId: userClientAssignments.userId, roleId: userClientAssignments.roleId }).from(userClientAssignments)
+          .where(and(eq(userClientAssignments.clientId, clientId), eq(userClientAssignments.allSites, true)));
+        const inherited = wholeClient.filter((assignment) => assignment.userId !== user.id);
+        if (inherited.length) {
+          await tx.insert(userRoleAssignments).values(inherited.map((assignment) => ({ userId: assignment.userId, roleId: assignment.roleId, siteId: row.id, grantedBy: user.id }))).onConflictDoNothing();
+        }
         record = row;
       } else if (resource === "point") {
         const siteId = typeof body.siteId === "string" ? body.siteId : user.siteId;

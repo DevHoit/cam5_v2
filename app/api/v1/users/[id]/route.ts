@@ -12,7 +12,7 @@ import {
   userRoleAssignments,
   users,
 } from "../../../../../db/schema";
-import { apiErrorResponse, ApiError, assertSitesOfClient, requestMetadata, requireApiSession, userHasAccessOutsideAdministration } from "../../_lib/auth";
+import { apiErrorResponse, ApiError, assertSitesOfClient, requestMetadata, requireApiSession, userHasAccessOutsideAdministration, wholeClientSites } from "../../_lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -105,14 +105,25 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       .innerJoin(roles, eq(roles.id, userRoleAssignments.roleId))
       .where(and(eq(userRoleAssignments.userId, id), inArray(userRoleAssignments.siteId, actorSiteIds)));
     const currentSiteIds = [...new Set(currentScopeRows.map((scope) => scope.siteId).filter((siteId): siteId is string => Boolean(siteId)))];
-    const requestedSiteIds = Array.isArray(body.siteIds)
+    // Acceso a todo el cliente (no aplica al personal de HOIT, que no pertenece a un cliente).
+    const allSites = !platformStaff && body.allSites === true;
+    const wholeClient = allSites ? await wholeClientSites(db, actor, body.clientId) : null;
+    const requestedSiteIds = wholeClient ? wholeClient.map((site) => site.id) : Array.isArray(body.siteIds)
       ? [...new Set(body.siteIds.filter((siteId): siteId is string => typeof siteId === "string"))]
       : currentSiteIds;
     if (displayName.length < 3 || !email.includes("@")) throw new ApiError(400, "Nombre y correo válido son obligatorios.");
     if (!VALID_ROLES.includes(roleKey as typeof VALID_ROLES[number])) throw new ApiError(400, "El perfil seleccionado no es válido.");
     if (!VALID_STATUSES.includes(status as typeof VALID_STATUSES[number])) throw new ApiError(400, "El estado seleccionado no es válido.");
     if (!requestedSiteIds.length) throw new ApiError(400, "Selecciona al menos un sitio para el usuario.");
-    const selectedSites = actor.sites.filter((site) => site.roleKey === "administrator" && requestedSiteIds.includes(site.id));
+    // Quitar o cambiar el acceso a todo el cliente es de quien administra todo ese cliente (o de HOIT).
+    const actorAdminClientIds = new Set(actor.sites.filter((site) => site.roleKey === "administrator").map((site) => site.clientId));
+    const wholeClientNow = await db.select({ clientId: userClientAssignments.clientId }).from(userClientAssignments)
+      .where(and(eq(userClientAssignments.userId, id), eq(userClientAssignments.allSites, true)));
+    for (const assignment of wholeClientNow) {
+      if (!actorAdminClientIds.has(assignment.clientId) || (allSites && assignment.clientId === body.clientId)) continue;
+      await wholeClientSites(db, actor, assignment.clientId).catch(() => { throw new ApiError(403, "Este usuario tiene acceso a todo el cliente: solo su administrador de cliente o HOIT pueden cambiarlo."); });
+    }
+    const selectedSites = wholeClient ?? actor.sites.filter((site) => site.roleKey === "administrator" && requestedSiteIds.includes(site.id));
     if (selectedSites.length !== requestedSiteIds.length) throw new ApiError(403, "Uno o más sitios seleccionados están fuera de tu alcance.");
     if (!platformStaff) assertSitesOfClient(selectedSites, body.clientId);
     if (actor.id === id && status !== "active") throw new ApiError(409, "No puedes suspender tu propia cuenta.");
@@ -141,9 +152,10 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       const [record] = await tx.update(users).set({ displayName, email, status: status as typeof VALID_STATUSES[number], platformStaff, updatedAt: new Date() }).where(eq(users.id, id)).returning();
       await tx.update(authIdentities).set({ providerSubject: email, ...(passwordHash ? { passwordHash, mustChangePassword: true, failedLoginCount: 0, lastFailedLoginAt: null, lockedUntil: null } : {}), updatedAt: new Date() }).where(and(eq(authIdentities.userId, id), eq(authIdentities.provider, "local")));
       if (passwordHash) await tx.update(authSessions).set({ revokedAt: new Date() }).where(and(eq(authSessions.userId, id), isNull(authSessions.revokedAt)));
-      await tx.delete(userRoleAssignments).where(and(eq(userRoleAssignments.userId, id), inArray(userRoleAssignments.siteId, actorSiteIds)));
-      await tx.insert(userRoleAssignments).values(requestedSiteIds.map((siteId) => ({ userId: id, roleId: role.id, siteId, grantedBy: actor.id })));
-      const actorClientIds = [...new Set(actor.sites.filter((site) => site.roleKey === "administrator").map((site) => site.clientId))];
+      // Se reemplaza el acceso en los sitios que el actor administra (y, con todo el cliente, en todos sus sitios).
+      await tx.delete(userRoleAssignments).where(and(eq(userRoleAssignments.userId, id), inArray(userRoleAssignments.siteId, [...new Set([...actorSiteIds, ...requestedSiteIds])])));
+      await tx.insert(userRoleAssignments).values(requestedSiteIds.map((siteId) => ({ userId: id, roleId: role.id, siteId, grantedBy: actor.id }))).onConflictDoNothing();
+      const actorClientIds = [...new Set([...actor.sites.filter((site) => site.roleKey === "administrator").map((site) => site.clientId), ...selectedSites.map((site) => site.clientId)])];
       const selectedClientIds = [...new Set(selectedSites.map((site) => site.clientId))];
       // Licencias: el usuario pasa a ocupar una en cada cliente donde antes no la ocupaba (reactivado,
       // agregado a un cliente nuevo o cambiado de tipo de licencia). El personal de HOIT no ocupa licencia.
@@ -167,8 +179,8 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       for (const clientId of actorClientIds) {
         if (selectedClientIds.includes(clientId)) {
           const licenseKind = kindFor(clientId);
-          await tx.insert(userClientAssignments).values({ userId: id, clientId, roleId: role.id, grantedBy: actor.id, licenseKind })
-            .onConflictDoUpdate({ target: [userClientAssignments.userId, userClientAssignments.clientId], set: { roleId: role.id, grantedBy: actor.id, grantedAt: new Date(), licenseKind } });
+          await tx.insert(userClientAssignments).values({ userId: id, clientId, roleId: role.id, grantedBy: actor.id, licenseKind, allSites })
+            .onConflictDoUpdate({ target: [userClientAssignments.userId, userClientAssignments.clientId], set: { roleId: role.id, grantedBy: actor.id, grantedAt: new Date(), licenseKind, allSites } });
         } else {
           const [remainingInClient] = await tx.select({ value: count() }).from(userRoleAssignments)
             .innerJoin(sites, eq(sites.id, userRoleAssignments.siteId))
@@ -188,7 +200,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         ipAddress: metadata.ipAddress,
         userAgent: metadata.userAgent,
         before: { email: target.email, displayName: target.displayName, status: target.status, role: target.roleKey },
-        after: { email, displayName, status, role: roleKey, siteIds: requestedSiteIds, ...(requestedLicenseKind ? { licenseKind: requestedLicenseKind } : {}), ...(platformStaff !== currentStaff ? { platformStaff } : {}), passwordChanged: Boolean(passwordHash), passwordChangeRequired: passwordHash ? true : target.mustChangePassword },
+        after: { email, displayName, status, role: roleKey, siteIds: requestedSiteIds, allSites, ...(requestedLicenseKind ? { licenseKind: requestedLicenseKind } : {}), ...(platformStaff !== currentStaff ? { platformStaff } : {}), passwordChanged: Boolean(passwordHash), passwordChangeRequired: passwordHash ? true : target.mustChangePassword },
       });
       return { ...record, role: { key: role.key, name: role.name } };
     });

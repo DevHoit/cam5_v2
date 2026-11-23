@@ -285,6 +285,9 @@ export const userClientAssignments = pgTable("user_client_assignments", {
   grantedAt: timestamp("granted_at", { withTimezone: true }).defaultNow().notNull(),
   // Licencia que ocupa en el cliente: "client" (del propio cliente) o "partner" (del integrador).
   licenseKind: varchar("license_kind", { length: 20 }).default("client").notNull(),
+  // Acceso a todo el cliente: el usuario tiene su rol en todos los sitios del cliente, también los que se
+  // creen después (se asignan al crear el sitio). Con rol de administrador es el "administrador de cliente".
+  allSites: boolean("all_sites").default(false).notNull(),
 }, (table) => [
   uniqueIndex("user_client_assignments_scope_uidx").on(table.userId, table.clientId),
   check("user_client_assignments_license_kind_chk", sql`${table.licenseKind} IN ('client', 'partner')`),

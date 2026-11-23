@@ -4,7 +4,7 @@ import { getDb, type Cam5Database } from "../../../../db/index";
 import { isBlockedBySuspendedClient, portalSessionUserId, resolvePortalSession, SESSION_COOKIE_NAME, type AuthenticatedPortalUser } from "../../../../db/auth";
 import type { PortalPermission } from "../../../../db/access-control";
 import { LicenseLimitError } from "../../../../db/licenses";
-import { permissions, rolePermissions, userAssetScopes, userClientAssignments, userRoleAssignments } from "../../../../db/schema";
+import { permissions, rolePermissions, sites, userAssetScopes, userClientAssignments, userRoleAssignments } from "../../../../db/schema";
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -99,6 +99,21 @@ export async function userHasAccessOutsideAdministration(db: Cam5Database, actor
 export function assertSitesOfClient(selectedSites: Array<{ clientId: string }>, clientId: unknown) {
   if (typeof clientId !== "string" || !clientId) return;
   if (selectedSites.some((site) => site.clientId !== clientId)) throw new ApiError(400, "Los sitios seleccionados deben pertenecer al cliente elegido.");
+}
+
+/**
+ * Sitios de un cliente para dar acceso a todo el cliente (incluidos los sitios futuros). Solo lo puede dar el
+ * personal de HOIT o quien administra todos los sitios de ese cliente (su administrador de cliente).
+ */
+export async function wholeClientSites(db: Cam5Database, actor: AuthenticatedPortalUser, clientId: unknown) {
+  if (typeof clientId !== "string" || !clientId) throw new ApiError(400, "Elige el cliente al que tendrá acceso completo.");
+  const rows = await db.select({ id: sites.id, clientId: sites.clientId }).from(sites).where(eq(sites.clientId, clientId));
+  if (!rows.length) throw new ApiError(400, "El cliente no tiene sitios todavía.");
+  if (!actor.platformStaff) {
+    const administered = new Set(actor.sites.filter((site) => site.roleKey === "administrator").map((site) => site.id));
+    if (rows.some((row) => !administered.has(row.id))) throw new ApiError(403, "Para dar acceso a todo el cliente debes administrar todos sus sitios.");
+  }
+  return rows;
 }
 
 export function apiErrorResponse(error: unknown) {

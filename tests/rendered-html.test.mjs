@@ -379,3 +379,22 @@ test("only HOIT staff creates clients, and new clients start with no licenses", 
   assert.match(hierarchy, /userLicenseLimit: 0,\n\s+partnerLicenseLimit: 0,/);
   assert.match(page, /canManageClients && platformStaff \? \[\{ value: "client" as const, label: "Cliente" \}\]/);
 });
+
+test("whole-client access: client administrators get every current and future site", async () => {
+  const [hierarchy, auth, list, single, page, migration] = await Promise.all([
+    readFile(new URL("../app/api/v1/hierarchy/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/v1/_lib/auth.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/v1/users/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/v1/users/[id]/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../drizzle/0023_client_all_sites.sql", import.meta.url), "utf8"),
+  ]);
+  assert.match(hierarchy, /eq\(userClientAssignments\.allSites, true\)/);
+  assert.match(auth, /export async function wholeClientSites/);
+  assert.match(auth, /Para dar acceso a todo el cliente debes administrar todos sus sitios\./);
+  assert.match(list, /const wholeClient = allSites \? await wholeClientSites\(db, actor, body\?\.clientId\) : null;/);
+  assert.match(single, /solo su administrador de cliente o HOIT pueden cambiarlo/);
+  assert.match(page, /<strong>Todo el cliente<\/strong>/);
+  assert.match(page, /user\.allSites && user\.role\.key === "administrator" \? "Administrador de cliente"/);
+  assert.match(migration, /WHERE "key" = 'client_admin'/);
+});

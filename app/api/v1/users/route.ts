@@ -12,7 +12,7 @@ import {
   userRoleAssignments,
   users,
 } from "../../../../db/schema";
-import { apiErrorResponse, ApiError, assertSitesOfClient, parsePage, requestMetadata, requireApiSession } from "../_lib/auth";
+import { apiErrorResponse, ApiError, assertSitesOfClient, parsePage, requestMetadata, requireApiSession, wholeClientSites } from "../_lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -68,7 +68,7 @@ export async function GET(request: NextRequest) {
     const recordIds = records.map((record) => record.id);
     const assignmentIds = [...new Set([...summaryIds, ...recordIds])];
     const [clientRows, siteRoleRows] = assignmentIds.length ? await Promise.all([
-      db.select({ userId: userClientAssignments.userId, clientId: clients.id, clientName: clients.name, roleKey: roles.key, roleName: roles.name, licenseKind: userClientAssignments.licenseKind })
+      db.select({ userId: userClientAssignments.userId, clientId: clients.id, clientName: clients.name, roleKey: roles.key, roleName: roles.name, licenseKind: userClientAssignments.licenseKind, allSites: userClientAssignments.allSites })
         .from(userClientAssignments)
         .innerJoin(clients, eq(clients.id, userClientAssignments.clientId))
         .innerJoin(roles, eq(roles.id, userClientAssignments.roleId))
@@ -87,9 +87,15 @@ export async function GET(request: NextRequest) {
       // Licencia: la del cliente en contexto; en la vista de toda la plataforma, la del cliente del usuario.
       // Solo queda sin licencia quien no tiene asignación a ningún cliente (o al cliente filtrado).
       const licensed = inContext ?? (clientId ? undefined : own[0]);
-      return { key: (chosen?.roleKey ?? "viewer") as typeof VALID_ROLES[number], name: chosen?.roleName ?? "Solo lectura", licenseKind: licensed?.licenseKind ?? null };
+      return { key: (chosen?.roleKey ?? "viewer") as typeof VALID_ROLES[number], name: chosen?.roleName ?? "Solo lectura", licenseKind: licensed?.licenseKind ?? null, allSites: Boolean(licensed?.allSites) };
     };
 
+    // Clientes donde quien consulta puede dar acceso a todo el cliente: HOIT en cualquiera con sitios; los demás,
+    // solo si administran todos los sitios de ese cliente.
+    const siteRows = await db.select({ id: sites.id, clientId: sites.clientId }).from(sites);
+    const administeredSiteIds = new Set(user.sites.filter((site) => site.roleKey === "administrator").map((site) => site.id));
+    const wholeClientIds = [...new Set(siteRows.map((site) => site.clientId))]
+      .filter((id) => user.platformStaff || siteRows.filter((site) => site.clientId === id).every((site) => administeredSiteIds.has(site.id)));
     const total = Number(countRows[0]?.total ?? 0);
     const [licenses] = await loadClientLicenses(db, [contextClientId]);
     const manageableSiteIds = new Set(user.sites.filter((site) => site.roleKey === "administrator").map((site) => site.id));
@@ -107,6 +113,7 @@ export async function GET(request: NextRequest) {
           role: { key: role.key, name: role.name },
           platformStaff: record.platformStaff,
           licenseKind: role.licenseKind,
+          allSites: role.allSites,
           clients: clientRows.filter((row) => row.userId === record.id).map((row) => ({ id: row.clientId, name: row.clientName })),
           siteIds: [...new Set(siteRoleRows.filter((row) => row.userId === record.id && row.siteId && manageableSiteIds.has(row.siteId)).map((row) => row.siteId!))],
         };
@@ -123,6 +130,7 @@ export async function GET(request: NextRequest) {
       },
       licenses: licenses ?? null,
       canAssignPartnerLicense: user.platformStaff,
+      wholeClientIds,
       scope: platformScope ? "platform" : "client",
       clientFilter: platformScope ? clientId : user.clientId,
       // Clientes con sus licencias: el personal de HOIT elige a cuál pertenece cada usuario y qué licencia ocupa.
@@ -149,14 +157,17 @@ export async function POST(request: NextRequest) {
     const licenseKind = body?.licenseKind === undefined ? "client" : body.licenseKind;
     if (!isLicenseKind(licenseKind)) throw new ApiError(400, "El tipo de licencia no es válido.");
     if (licenseKind === "partner" && !actor.platformStaff) throw new ApiError(403, "Solo el personal de HOIT puede asignar licencias de integrador.");
-    const requestedSiteIds = Array.isArray(body?.siteIds)
+    // Acceso a todo el cliente: todos sus sitios, también los que se creen después.
+    const allSites = body?.allSites === true;
+    const wholeClient = allSites ? await wholeClientSites(db, actor, body?.clientId) : null;
+    const requestedSiteIds = wholeClient ? wholeClient.map((site) => site.id) : Array.isArray(body?.siteIds)
       ? [...new Set(body.siteIds.filter((siteId): siteId is string => typeof siteId === "string"))]
       : [actor.siteId];
     if (displayName.length < 3 || !email.includes("@")) throw new ApiError(400, "Nombre y correo válido son obligatorios.");
     if (!VALID_ROLES.includes(roleKey as typeof VALID_ROLES[number])) throw new ApiError(400, "El perfil seleccionado no es válido.");
     if (!VALID_STATUSES.includes(status as typeof VALID_STATUSES[number])) throw new ApiError(400, "El estado seleccionado no es válido.");
     if (!requestedSiteIds.length) throw new ApiError(400, "Selecciona al menos un sitio para el usuario.");
-    const selectedSites = actor.sites.filter((site) => site.roleKey === "administrator" && requestedSiteIds.includes(site.id));
+    const selectedSites = wholeClient ?? actor.sites.filter((site) => site.roleKey === "administrator" && requestedSiteIds.includes(site.id));
     if (selectedSites.length !== requestedSiteIds.length) throw new ApiError(403, "Uno o más sitios seleccionados están fuera de tu alcance.");
     assertSitesOfClient(selectedSites, body?.clientId);
     const passwordHash = await hashPassword(password).catch((error: unknown) => { throw new ApiError(400, error instanceof Error ? error.message : "Contraseña inválida."); });
@@ -170,8 +181,8 @@ export async function POST(request: NextRequest) {
       await tx.insert(authIdentities).values({ userId: newUser.id, provider: "local", providerSubject: email, passwordHash, mustChangePassword: true });
       const selectedClientIds = [...new Set(selectedSites.map((site) => site.clientId))];
       if (statusUsesLicense(status)) await assertLicensesAvailable(tx, selectedClientIds.map((clientId) => ({ clientId, kind: licenseKind })));
-      await tx.insert(userClientAssignments).values(selectedClientIds.map((clientId) => ({ userId: newUser.id, clientId, roleId: role.id, grantedBy: actor.id, licenseKind })));
-      await tx.insert(userRoleAssignments).values(requestedSiteIds.map((siteId) => ({ userId: newUser.id, roleId: role.id, siteId, grantedBy: actor.id })));
+      await tx.insert(userClientAssignments).values(selectedClientIds.map((clientId) => ({ userId: newUser.id, clientId, roleId: role.id, grantedBy: actor.id, licenseKind, allSites })));
+      await tx.insert(userRoleAssignments).values(requestedSiteIds.map((siteId) => ({ userId: newUser.id, roleId: role.id, siteId, grantedBy: actor.id }))).onConflictDoNothing();
       const metadata = requestMetadata(request);
       await tx.insert(auditLogs).values({
         siteId: actor.siteId,
@@ -181,7 +192,7 @@ export async function POST(request: NextRequest) {
         resourceId: newUser.id,
         ipAddress: metadata.ipAddress,
         userAgent: metadata.userAgent,
-        after: { email, displayName, status, role: roleKey, siteIds: requestedSiteIds, licenseKind },
+        after: { email, displayName, status, role: roleKey, siteIds: requestedSiteIds, licenseKind, allSites },
       });
       return { ...newUser, role: { key: role.key, name: role.name } };
     });
