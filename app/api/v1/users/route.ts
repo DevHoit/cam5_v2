@@ -23,7 +23,9 @@ export async function GET(request: NextRequest) {
     const { page, pageSize, offset } = parsePage(request);
     const q = request.nextUrl.searchParams.get("q")?.trim() || "";
     const requestedStatus = request.nextUrl.searchParams.get("status") || "all";
-    const filters: SQL[] = [eq(userRoleAssignments.siteId, user.siteId)];
+    // Solo usuarios de la compañía: el personal de HOIT tiene acceso a todos los sitios, pero no es
+    // usuario del cliente (tampoco ocupa licencia), así que no aparece en su lista.
+    const filters: SQL[] = [eq(userRoleAssignments.siteId, user.siteId), eq(users.platformStaff, false)];
     if (q) filters.push(or(ilike(users.displayName, `%${q}%`), ilike(users.email, `%${q}%`))!);
     if (VALID_STATUSES.includes(requestedStatus as typeof VALID_STATUSES[number])) filters.push(eq(users.status, requestedStatus as typeof VALID_STATUSES[number]));
     const where = filters.length ? and(...filters) : undefined;
@@ -56,7 +58,7 @@ export async function GET(request: NextRequest) {
         .from(users)
         .innerJoin(userRoleAssignments, eq(userRoleAssignments.userId, users.id))
         .innerJoin(roles, eq(roles.id, userRoleAssignments.roleId))
-        .where(eq(userRoleAssignments.siteId, user.siteId)),
+        .where(and(eq(userRoleAssignments.siteId, user.siteId), eq(users.platformStaff, false))),
     ]);
 
     const total = Number(countRows[0]?.total ?? 0);

@@ -65,6 +65,8 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     // que el usuario pase a ocupar licencia y pierda el acceso a clientes suspendidos.
     const [targetFlags] = await db.select({ platformStaff: users.platformStaff }).from(users).where(eq(users.id, id)).limit(1);
     const currentStaff = Boolean(targetFlags?.platformStaff);
+    // El personal de HOIT no es usuario del cliente: un administrador del cliente no puede verlo ni editarlo.
+    if (currentStaff && !actor.platformStaff) throw new ApiError(404, "El usuario no existe.");
     const platformStaff = typeof body.platformStaff === "boolean" ? body.platformStaff : currentStaff;
     if (platformStaff !== currentStaff) {
       if (!actor.platformStaff) throw new ApiError(403, "Solo el personal de HOIT puede cambiar esta marca.");
