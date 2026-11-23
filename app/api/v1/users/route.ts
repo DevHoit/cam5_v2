@@ -1,11 +1,13 @@
 import type { NextRequest } from "next/server";
-import { and, countDistinct, desc, eq, ilike, inArray, or, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, exists, ilike, inArray, or, type SQL } from "drizzle-orm";
 import { hashPassword, normalizeEmail } from "../../../../db/auth";
 import { assertLicensesAvailable, isLicenseKind, loadClientLicenses, statusUsesLicense } from "../../../../db/licenses";
 import {
   auditLogs,
   authIdentities,
+  clients,
   roles,
+  sites,
   userClientAssignments,
   userRoleAssignments,
   users,
@@ -23,14 +25,23 @@ export async function GET(request: NextRequest) {
     const { page, pageSize, offset } = parsePage(request);
     const q = request.nextUrl.searchParams.get("q")?.trim() || "";
     const requestedStatus = request.nextUrl.searchParams.get("status") || "all";
-    // Solo usuarios de la compañía: el personal de HOIT tiene acceso a todos los sitios, pero no es
-    // usuario del cliente (tampoco ocupa licencia), así que no aparece en su lista.
-    const filters: SQL[] = [eq(userRoleAssignments.siteId, user.siteId), eq(users.platformStaff, false)];
+    // Alcance: el personal de HOIT ve todos los usuarios de la plataforma (y puede filtrar por cliente);
+    // un usuario de un cliente ve solo los de su compañía, en todos sus sitios, sin el personal de HOIT.
+    const platformScope = user.platformStaff;
+    const requestedClientId = request.nextUrl.searchParams.get("clientId") || "";
+    const clientId = platformScope ? (requestedClientId && requestedClientId !== "all" ? requestedClientId : null) : user.clientId;
+    const belongsToClient = (id: string) => or(
+      exists(db.select({ id: userClientAssignments.id }).from(userClientAssignments).where(and(eq(userClientAssignments.userId, users.id), eq(userClientAssignments.clientId, id)))),
+      exists(db.select({ id: userRoleAssignments.id }).from(userRoleAssignments).innerJoin(sites, eq(sites.id, userRoleAssignments.siteId)).where(and(eq(userRoleAssignments.userId, users.id), eq(sites.clientId, id)))),
+    )!;
+    const scope: SQL[] = [];
+    if (clientId) scope.push(belongsToClient(clientId));
+    if (!platformScope) scope.push(eq(users.platformStaff, false));
+    const filters: SQL[] = [...scope];
     if (q) filters.push(or(ilike(users.displayName, `%${q}%`), ilike(users.email, `%${q}%`))!);
     if (VALID_STATUSES.includes(requestedStatus as typeof VALID_STATUSES[number])) filters.push(eq(users.status, requestedStatus as typeof VALID_STATUSES[number]));
-    const where = filters.length ? and(...filters) : undefined;
 
-    const [records, countRows, summaryRows] = await Promise.all([
+    const [records, countRows, scopedUsers] = await Promise.all([
       db.select({
         id: users.id,
         displayName: users.displayName,
@@ -39,65 +50,79 @@ export async function GET(request: NextRequest) {
         lastLoginAt: users.lastLoginAt,
         createdAt: users.createdAt,
         mustChangePassword: authIdentities.mustChangePassword,
-        roleKey: roles.key,
-        roleName: roles.name,
         platformStaff: users.platformStaff,
-        licenseKind: userClientAssignments.licenseKind,
       })
         .from(users)
-        .innerJoin(userRoleAssignments, eq(userRoleAssignments.userId, users.id))
-        .innerJoin(roles, eq(roles.id, userRoleAssignments.roleId))
         .leftJoin(authIdentities, and(eq(authIdentities.userId, users.id), eq(authIdentities.provider, "local")))
-        .leftJoin(userClientAssignments, and(eq(userClientAssignments.userId, users.id), eq(userClientAssignments.clientId, user.clientId)))
-        .where(where)
-        .orderBy(desc(users.createdAt))
+        .where(filters.length ? and(...filters) : undefined)
+        .orderBy(desc(users.createdAt), asc(users.id))
         .limit(pageSize)
         .offset(offset),
-      db.select({ total: countDistinct(users.id) }).from(users).innerJoin(userRoleAssignments, eq(userRoleAssignments.userId, users.id)).where(where),
-      db.select({ id: users.id, status: users.status, roleKey: roles.key })
-        .from(users)
-        .innerJoin(userRoleAssignments, eq(userRoleAssignments.userId, users.id))
-        .innerJoin(roles, eq(roles.id, userRoleAssignments.roleId))
-        .where(and(eq(userRoleAssignments.siteId, user.siteId), eq(users.platformStaff, false))),
+      db.select({ total: count() }).from(users).where(filters.length ? and(...filters) : undefined),
+      db.select({ id: users.id, status: users.status }).from(users).where(scope.length ? and(...scope) : undefined),
     ]);
 
-    const total = Number(countRows[0]?.total ?? 0);
-    const [licenses] = await loadClientLicenses(db, [user.clientId]);
-    const uniqueSummary = [...new Map(summaryRows.map((row) => [row.id, row])).values()];
+    // Rol y licencia de cada usuario en su(s) cliente(s): se muestra el del cliente en contexto.
+    const contextClientId = clientId ?? user.clientId;
+    const summaryIds = scopedUsers.map((row) => row.id);
     const recordIds = records.map((record) => record.id);
-    const manageableSiteIds = user.sites.filter((site) => site.roleKey === "administrator").map((site) => site.id);
-    const scopeRows = recordIds.length && manageableSiteIds.length ? await db.select({ userId: userRoleAssignments.userId, siteId: userRoleAssignments.siteId })
-      .from(userRoleAssignments)
-      .where(and(
-        inArray(userRoleAssignments.userId, recordIds),
-        inArray(userRoleAssignments.siteId, manageableSiteIds),
-      )) : [];
+    const assignmentIds = [...new Set([...summaryIds, ...recordIds])];
+    const [clientRows, siteRoleRows] = assignmentIds.length ? await Promise.all([
+      db.select({ userId: userClientAssignments.userId, clientId: clients.id, clientName: clients.name, roleKey: roles.key, roleName: roles.name, licenseKind: userClientAssignments.licenseKind })
+        .from(userClientAssignments)
+        .innerJoin(clients, eq(clients.id, userClientAssignments.clientId))
+        .innerJoin(roles, eq(roles.id, userClientAssignments.roleId))
+        .where(inArray(userClientAssignments.userId, assignmentIds))
+        .orderBy(asc(clients.name)),
+      db.select({ userId: userRoleAssignments.userId, siteId: userRoleAssignments.siteId, roleKey: roles.key, roleName: roles.name })
+        .from(userRoleAssignments)
+        .innerJoin(roles, eq(roles.id, userRoleAssignments.roleId))
+        .where(inArray(userRoleAssignments.userId, assignmentIds)),
+    ]) : [[], []];
+    const roleOf = (userId: string) => {
+      const own = clientRows.filter((row) => row.userId === userId);
+      const inContext = own.find((row) => row.clientId === contextClientId);
+      const siteRole = siteRoleRows.find((row) => row.userId === userId && row.siteId === user.siteId) ?? siteRoleRows.find((row) => row.userId === userId);
+      const chosen = inContext ?? own[0] ?? siteRole;
+      return { key: (chosen?.roleKey ?? "viewer") as typeof VALID_ROLES[number], name: chosen?.roleName ?? "Solo lectura", licenseKind: inContext?.licenseKind ?? null };
+    };
+
+    const total = Number(countRows[0]?.total ?? 0);
+    const [licenses] = await loadClientLicenses(db, [contextClientId]);
+    const manageableSiteIds = new Set(user.sites.filter((site) => site.roleKey === "administrator").map((site) => site.id));
     return Response.json({
-      items: records.map((record) => ({
-        id: record.id,
-        displayName: record.displayName,
-        email: record.email,
-        status: record.status,
-        lastLoginAt: record.lastLoginAt?.toISOString() ?? null,
-        createdAt: record.createdAt.toISOString(),
-        mustChangePassword: record.mustChangePassword ?? false,
-        role: { key: record.roleKey ?? "viewer", name: record.roleName ?? "Solo lectura" },
-        platformStaff: record.platformStaff,
-        licenseKind: record.licenseKind ?? null,
-        siteIds: [...new Set(scopeRows.filter((scope) => scope.userId === record.id).map((scope) => scope.siteId).filter((siteId): siteId is string => Boolean(siteId)))],
-      })),
+      items: records.map((record) => {
+        const role = roleOf(record.id);
+        return {
+          id: record.id,
+          displayName: record.displayName,
+          email: record.email,
+          status: record.status,
+          lastLoginAt: record.lastLoginAt?.toISOString() ?? null,
+          createdAt: record.createdAt.toISOString(),
+          mustChangePassword: record.mustChangePassword ?? false,
+          role: { key: role.key, name: role.name },
+          platformStaff: record.platformStaff,
+          licenseKind: role.licenseKind,
+          clients: clientRows.filter((row) => row.userId === record.id).map((row) => ({ id: row.clientId, name: row.clientName })),
+          siteIds: [...new Set(siteRoleRows.filter((row) => row.userId === record.id && row.siteId && manageableSiteIds.has(row.siteId)).map((row) => row.siteId!))],
+        };
+      }),
       page,
       pageSize,
       total,
       totalPages: Math.max(1, Math.ceil(total / pageSize)),
       summary: {
-        total: uniqueSummary.length,
-        active: uniqueSummary.filter((row) => row.status === "active").length,
-        administrators: uniqueSummary.filter((row) => row.roleKey === "administrator").length,
-        invited: uniqueSummary.filter((row) => row.status === "invited").length,
+        total: scopedUsers.length,
+        active: scopedUsers.filter((row) => row.status === "active").length,
+        administrators: scopedUsers.filter((row) => roleOf(row.id).key === "administrator").length,
+        invited: scopedUsers.filter((row) => row.status === "invited").length,
       },
       licenses: licenses ?? null,
       canAssignPartnerLicense: user.platformStaff,
+      scope: platformScope ? "platform" : "client",
+      clientFilter: platformScope ? clientId : user.clientId,
+      clients: platformScope ? await db.select({ id: clients.id, name: clients.name }).from(clients).orderBy(asc(clients.name)) : [],
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return apiErrorResponse(error);
