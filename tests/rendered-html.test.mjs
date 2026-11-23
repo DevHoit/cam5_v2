@@ -350,12 +350,16 @@ test("includes the backend handoff contract", async () => {
   assert.match(handoff, /cam5\.front\.channel-config/);
 });
 
-test("client user lists leave out HOIT platform staff", async () => {
-  const [list, single] = await Promise.all([
+test("users: HOIT staff sees the whole platform, a client only its own company", async () => {
+  const [list, single, page] = await Promise.all([
     readFile(new URL("../app/api/v1/users/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/v1/users/[id]/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
   ]);
-  assert.match(list, /eq\(userRoleAssignments\.siteId, user\.siteId\), eq\(users\.platformStaff, false\)\]/);
-  assert.match(list, /\.where\(and\(eq\(userRoleAssignments\.siteId, user\.siteId\), eq\(users\.platformStaff, false\)\)\)/);
+  assert.match(list, /const platformScope = user\.platformStaff;/);
+  assert.match(list, /platformScope \? \(requestedClientId && requestedClientId !== "all" \? requestedClientId : null\) : user\.clientId/);
+  assert.match(list, /if \(!platformScope\) scope\.push\(eq\(users\.platformStaff, false\)\)/);
   assert.match(single, /if \(currentStaff && !actor\.platformStaff\) throw new ApiError\(404/);
+  assert.match(single, /const target = await getEditableTarget\(db, actor, id\)/);
+  assert.match(page, /result\?\.scope === "platform" && <label className="status-filter"><span>Cliente<\/span>/);
 });

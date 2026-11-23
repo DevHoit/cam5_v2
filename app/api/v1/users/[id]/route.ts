@@ -38,6 +38,33 @@ async function getTarget(db: Awaited<ReturnType<typeof requireApiSession>>["db"]
   return target;
 }
 
+/**
+ * Usuario editable por el actor: con acceso a algún sitio que el actor administra (de cualquier sitio de
+ * la compañía, no solo el activo). El personal de HOIT puede editar a cualquier usuario de la plataforma.
+ */
+async function getEditableTarget(db: Awaited<ReturnType<typeof requireApiSession>>["db"], actor: Awaited<ReturnType<typeof requireApiSession>>["user"], id: string) {
+  const administered = actor.sites.filter((site) => site.roleKey === "administrator").map((site) => site.id);
+  const [person] = await db.select({
+    id: users.id,
+    displayName: users.displayName,
+    email: users.email,
+    status: users.status,
+    mustChangePassword: authIdentities.mustChangePassword,
+  }).from(users)
+    .leftJoin(authIdentities, and(eq(authIdentities.userId, users.id), eq(authIdentities.provider, "local")))
+    .where(eq(users.id, id))
+    .limit(1);
+  if (!person) throw new ApiError(404, "El usuario no existe.");
+  const scopes = await db.select({ siteId: userRoleAssignments.siteId, roleKey: roles.key, roleName: roles.name })
+    .from(userRoleAssignments)
+    .innerJoin(roles, eq(roles.id, userRoleAssignments.roleId))
+    .where(eq(userRoleAssignments.userId, id));
+  const inScope = scopes.filter((scope) => scope.siteId && administered.includes(scope.siteId));
+  if (!inScope.length && !actor.platformStaff) throw new ApiError(404, "El usuario no existe.");
+  const role = inScope.find((scope) => scope.siteId === actor.siteId) ?? inScope[0] ?? scopes[0];
+  return { ...person, roleKey: role?.roleKey ?? null, roleName: role?.roleName ?? null };
+}
+
 async function assertAdministratorRemains(db: Awaited<ReturnType<typeof requireApiSession>>["db"], siteId: string, targetRole?: string | null) {
   if (targetRole !== "administrator") return;
   const [result] = await db.select({ value: count() }).from(users)
@@ -51,7 +78,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   try {
     const { db, user: actor } = await requireApiSession(request, "users.manage");
     const { id } = await context.params;
-    const target = await getTarget(db, id, actor.siteId);
+    const target = await getEditableTarget(db, actor, id);
     const body = await request.json().catch(() => null) as Record<string, unknown> | null;
     if (!body) throw new ApiError(400, "No se recibieron cambios.");
     const displayName = typeof body.displayName === "string" ? body.displayName.trim() : target.displayName;
