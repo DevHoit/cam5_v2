@@ -369,3 +369,13 @@ test("users: HOIT staff sees the whole platform, a client only its own company",
   assert.match(list, /assertSitesOfClient\(selectedSites, body\?\.clientId\)/);
   assert.match(single, /if \(!platformStaff\) assertSitesOfClient\(selectedSites, body\.clientId\)/);
 });
+
+test("only HOIT staff creates clients, and new clients start with no licenses", async () => {
+  const [hierarchy, page] = await Promise.all([
+    readFile(new URL("../app/api/v1/hierarchy/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+  ]);
+  assert.match(hierarchy, /if \(!user\.platformStaff\) throw new ApiError\(403, "Solo el personal de HOIT puede crear clientes\."\)/);
+  assert.match(hierarchy, /userLicenseLimit: 0,\n\s+partnerLicenseLimit: 0,/);
+  assert.match(page, /canManageClients && platformStaff \? \[\{ value: "client" as const, label: "Cliente" \}\]/);
+});

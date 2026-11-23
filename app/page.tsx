@@ -1144,7 +1144,9 @@ function OperationalHierarchyView({
   const canManagePoints = permissions.includes("assets.write");
   const canManageConnections = permissions.includes("settings.write");
   const availableResources: Array<{ value: Resource; label: string }> = [
-    ...(canManageClients ? [{ value: "client" as const, label: "Cliente" }, { value: "site" as const, label: "Sitio" }] : []),
+    // Crear clientes es de HOIT (define licencias y facturación); un administrador puede crear sitios de su cliente.
+    ...(canManageClients && platformStaff ? [{ value: "client" as const, label: "Cliente" }] : []),
+    ...(canManageClients ? [{ value: "site" as const, label: "Sitio" }] : []),
     ...(canManagePoints ? [{ value: "point" as const, label: "Punto de medición" }] : []),
     ...(canManageConnections ? [{ value: "gateway" as const, label: "Gateway" }, { value: "controller" as const, label: "Controlador CAM5" }] : []),
   ];
