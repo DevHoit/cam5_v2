@@ -1633,15 +1633,20 @@ export default function Home() {
   const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null);
   const [visibilityOpen, setVisibilityOpen] = useState(false);
   const noticeTimer = useRef<number | null>(null);
-  // Si se entró sin ?view=, un sitio con varios puntos abre la vista del sitio en vez del primer punto.
+  // Vista de partida al entrar sin ?view=, al iniciar sesión o al cambiar de cliente: un cliente con
+  // varios sitios parte por la vista del cliente; un sitio con varios puntos, por la vista del sitio.
   const routeHadView = useRef<boolean | null>(null);
-  const applyDefaultView = (points: PortalHierarchy["points"]) => {
+  const applyDefaultView = (data: PortalHierarchy) => {
     if (routeHadView.current !== false) return;
     routeHadView.current = true;
-    if (points.filter((point) => point.active).length < 2) return;
-    setView("site");
+    const clientSites = data.sites.filter((site) => site.active && site.clientId === data.active.clientId).length;
+    const next: View | null = clientSites > 1 ? "client" : data.points.filter((point) => point.active).length > 1 ? "site" : null;
+    // Sin vista propia (un sitio, un punto): no se queda en la vista del cliente, que ya no aparece en el menú.
+    const target = next ?? (new URLSearchParams(window.location.search).get("view") === "client" ? "overview" : null);
+    if (!target) return;
+    setView(target);
     const url = new URL(window.location.href);
-    url.searchParams.set("view", "site");
+    url.searchParams.set("view", target);
     window.history.replaceState({}, "", url);
   };
 
@@ -1709,7 +1714,7 @@ export default function Home() {
           if (active) {
             setHierarchy(data);
             setActivePointId(data.points.find((point) => point.active)?.id ?? "");
-            applyDefaultView(data.points);
+            applyDefaultView(data);
           }
         } catch {
           if (active) setHierarchy(null);
@@ -1775,7 +1780,7 @@ export default function Home() {
       const data = await portalRequest<PortalHierarchy>("/api/v1/hierarchy");
       setHierarchy(data);
       setActivePointId((current) => data.points.some((point) => point.id === current && point.active) ? current : data.points.find((point) => point.active)?.id ?? "");
-      applyDefaultView(data.points);
+      applyDefaultView(data);
     } catch (requestError) {
       notify(requestError instanceof Error ? requestError.message : "No fue posible cargar la estructura operacional.", "warning");
     } finally {
@@ -1909,7 +1914,10 @@ export default function Home() {
     setPasswordResetToken(""); setSessionUser(null); setAuthState("anonymous");
   }} />;
   if (authState !== "authenticated" || !sessionUser) return <LoginScreen checking={authState === "checking"} notice={loginNotice} onAuthenticated={(user) => {
-    setLoginNotice(null); setHierarchy(null); setSessionUser(user); setAuthState("authenticated"); if (!user.mustChangePassword) void loadHierarchy();
+    setLoginNotice(null); setHierarchy(null); setSessionUser(user); setAuthState("authenticated");
+    // Cada inicio de sesión parte por la vista de partida, aunque la URL traiga la vista de la sesión anterior.
+    routeHadView.current = false;
+    if (!user.mustChangePassword) void loadHierarchy();
   }} />;
   if (sessionUser.mustChangePassword) return <RequiredPasswordChangeScreen
     user={sessionUser}
@@ -1965,7 +1973,7 @@ export default function Home() {
           : { title: "Las lecturas están atrasadas", detail: "Los últimos datos superan el tiempo de frescura configurado. Revisa el enlace antes de tomar una decisión." };
   const resolvedTrendSensorId = sensors.some((sensor) => sensor.enabled && sensor.id === trendSensorId) ? trendSensorId : sensors.find((sensor) => sensor.enabled)?.id ?? "";
 
-  const clientContextSelect = <label><span>Cliente</span><select value={sessionUser.clientId} onChange={(event) => { const firstSite = hierarchy?.sites.find((site) => site.active && site.clientId === event.target.value); if (firstSite) void switchSite(firstSite.id); }} aria-label="Cliente activo">{hierarchy?.clients.filter((client) => client.active).map((client) => <option key={client.id} value={client.id}>{client.name}</option>) ?? <option value={sessionUser.clientId}>{sessionUser.clientName}</option>}</select></label>;
+  const clientContextSelect = <label><span>Cliente</span><select value={sessionUser.clientId} onChange={(event) => { const firstSite = hierarchy?.sites.find((site) => site.active && site.clientId === event.target.value); if (firstSite) { routeHadView.current = false; void switchSite(firstSite.id); } }} aria-label="Cliente activo">{hierarchy?.clients.filter((client) => client.active).map((client) => <option key={client.id} value={client.id}>{client.name}</option>) ?? <option value={sessionUser.clientId}>{sessionUser.clientName}</option>}</select></label>;
   // La vista del cliente aparece cuando el cliente activo tiene más de un sitio activo.
   const clientSiteCount = (hierarchy?.sites ?? sessionUser.sites).filter((site) => site.clientId === sessionUser.clientId && (!("active" in site) || site.active)).length;
   const siteContextSelect = <label><span>Sitio</span><select value={sessionUser.siteId} onChange={(event) => void switchSite(event.target.value)} aria-label="Sitio activo">{(hierarchy?.sites ?? sessionUser.sites).filter((site) => site.clientId === sessionUser.clientId && (!("active" in site) || site.active)).map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}</select></label>;

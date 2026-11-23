@@ -165,6 +165,10 @@ test("keeps the production portal free of starter preview code", async () => {
   assert.match(pointDetailApi, /outSince: outNow \?/);
   // Vista del cliente: solo con más de un sitio, y abre el punto cambiando a su sitio.
   assert.match(page, /item\.id !== "client" \|\| clientSiteCount > 1/);
+  // Un cliente con varios sitios parte por la vista del cliente al iniciar sesión y al cambiar de cliente.
+  assert.match(page, /clientSites > 1 \? "client"/);
+  assert.match(page, /routeHadView\.current = false;\n    if \(!user\.mustChangePassword\)/);
+  assert.match(page, /routeHadView\.current = false; void switchSite\(firstSite\.id\)/);
   assert.match(page, /const openClientPoint = async \(siteId: string, pointId: string\) => \{\n    await switchSite\(siteId\);/);
   assert.match(siteOverviewView, /export function ClientOverviewView/);
   assert.match(page, /requestAlarmClose/);
