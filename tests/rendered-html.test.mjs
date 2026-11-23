@@ -349,3 +349,13 @@ test("includes the backend handoff contract", async () => {
   assert.match(openapi, /\/assets\/\{assetId\}\/readings\/latest/);
   assert.match(handoff, /cam5\.front\.channel-config/);
 });
+
+test("client user lists leave out HOIT platform staff", async () => {
+  const [list, single] = await Promise.all([
+    readFile(new URL("../app/api/v1/users/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/v1/users/[id]/route.ts", import.meta.url), "utf8"),
+  ]);
+  assert.match(list, /eq\(userRoleAssignments\.siteId, user\.siteId\), eq\(users\.platformStaff, false\)\]/);
+  assert.match(list, /\.where\(and\(eq\(userRoleAssignments\.siteId, user\.siteId\), eq\(users\.platformStaff, false\)\)\)/);
+  assert.match(single, /if \(currentStaff && !actor\.platformStaff\) throw new ApiError\(404/);
+});
