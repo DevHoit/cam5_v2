@@ -177,6 +177,10 @@ export const users = pgTable("users", {
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
   // Personal de la plataforma (HOIT): entra a clientes suspendidos y es el único que puede suspender o reactivar.
   platformStaff: boolean("platform_staff").default(false).notNull(),
+  // Cuenta de prueba de HOIT: se comporta como un usuario del cliente, pero no ocupa licencia y el cliente no la ve.
+  testAccount: boolean("test_account").default(false).notNull(),
+  // Fin del acceso: después de esta fecha la cuenta no puede iniciar sesión (cuentas de prueba, contratistas).
+  accessExpiresAt: timestamp("access_expires_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [

@@ -358,13 +358,13 @@ test("users: HOIT staff sees the whole platform, a client only its own company",
   ]);
   assert.match(list, /const platformScope = user\.platformStaff;/);
   assert.match(list, /platformScope \? \(requestedClientId && requestedClientId !== "all" \? requestedClientId : null\) : user\.clientId/);
-  assert.match(list, /if \(!platformScope\) scope\.push\(eq\(users\.platformStaff, false\)\)/);
-  assert.match(single, /if \(currentStaff && !actor\.platformStaff\) throw new ApiError\(404/);
+  assert.match(list, /if \(!platformScope\) scope\.push\(eq\(users\.platformStaff, false\)/);
+  assert.match(single, /if \(\(currentStaff \|\| currentTest\) && !actor\.platformStaff\) throw new ApiError\(404/);
   assert.match(single, /const target = await getEditableTarget\(db, actor, id\)/);
   assert.match(page, /result\?\.scope === "platform" && <label className="status-filter"><span>Cliente<\/span>/);
   // El usuario de cliente se asigna a un cliente con su licencia; sus sitios salen de ese cliente.
   assert.match(page, /manageableClients\.length > 1 && <label><span>Cliente<\/span>/);
-  assert.match(page, /isStaffActor && !form\.platformStaff && <label><span>Licencia<\/span>/);
+  assert.match(page, /isStaffActor && !form\.platformStaff && !form\.testAccount && <label><span>Licencia<\/span>/);
   assert.match(page, /const formSites = form\.platformStaff \? manageableSites : manageableSites\.filter\(\(site\) => site\.clientId === form\.clientId\)/);
   assert.match(list, /assertSitesOfClient\(selectedSites, body\?\.clientId\)/);
   assert.match(single, /if \(!platformStaff\) assertSitesOfClient\(selectedSites, body\.clientId\)/);
@@ -397,4 +397,21 @@ test("whole-client access: client administrators get every current and future si
   assert.match(page, /<strong>Todo el cliente<\/strong>/);
   assert.match(page, /user\.allSites && user\.role\.key === "administrator" \? "Administrador de cliente"/);
   assert.match(migration, /WHERE "key" = 'client_admin'/);
+});
+
+test("HOIT test accounts: no license, hidden from the client, optional end date", async () => {
+  const [auth, licenses, list, single, page] = await Promise.all([
+    readFile(new URL("../db/auth.ts", import.meta.url), "utf8"),
+    readFile(new URL("../db/licenses.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/v1/users/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/v1/users/[id]/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
+  ]);
+  assert.match(auth, /function accessNotExpired\(now: Date\)/);
+  assert.match(auth, /identity\.status === "active" && \(!identity\.accessExpiresAt \|\| identity\.accessExpiresAt > now\)/);
+  assert.match(licenses, /eq\(users\.testAccount, false\)/);
+  assert.match(list, /scope\.push\(eq\(users\.platformStaff, false\), eq\(users\.testAccount, false\)\)/);
+  assert.match(single, /if \(\(currentStaff \|\| currentTest\) && !actor\.platformStaff\) throw new ApiError\(404/);
+  assert.match(page, /<option value="test">Cuenta de prueba HOIT<\/option>/);
+  assert.match(page, /<span>Acceso hasta<\/span>/);
 });

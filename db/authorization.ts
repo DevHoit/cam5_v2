@@ -19,12 +19,12 @@ export async function resolvePortalAccess(
   assetId?: string,
 ): Promise<PortalAccess> {
   const [user] = await db
-    .select({ status: users.status })
+    .select({ status: users.status, accessExpiresAt: users.accessExpiresAt })
     .from(users)
     .where(eq(users.id, userId))
     .limit(1);
 
-  if (!user || user.status !== "active") {
+  if (!user || user.status !== "active" || (user.accessExpiresAt && user.accessExpiresAt <= new Date())) {
     return { allowed: false, roles: [], permissions: [], assetRestricted: false, assetAllowed: false };
   }
 

@@ -12,7 +12,7 @@ import {
   userRoleAssignments,
   users,
 } from "../../../../db/schema";
-import { apiErrorResponse, ApiError, assertSitesOfClient, parsePage, requestMetadata, requireApiSession, wholeClientSites } from "../_lib/auth";
+import { apiErrorResponse, ApiError, assertSitesOfClient, parsePage, requestMetadata, parseAccessExpiry, requireApiSession, wholeClientSites } from "../_lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +36,8 @@ export async function GET(request: NextRequest) {
     )!;
     const scope: SQL[] = [];
     if (clientId) scope.push(belongsToClient(clientId));
-    if (!platformScope) scope.push(eq(users.platformStaff, false));
+    // El cliente no ve al personal de HOIT ni sus cuentas de prueba.
+    if (!platformScope) scope.push(eq(users.platformStaff, false), eq(users.testAccount, false));
     const filters: SQL[] = [...scope];
     if (q) filters.push(or(ilike(users.displayName, `%${q}%`), ilike(users.email, `%${q}%`))!);
     if (VALID_STATUSES.includes(requestedStatus as typeof VALID_STATUSES[number])) filters.push(eq(users.status, requestedStatus as typeof VALID_STATUSES[number]));
@@ -51,6 +52,8 @@ export async function GET(request: NextRequest) {
         createdAt: users.createdAt,
         mustChangePassword: authIdentities.mustChangePassword,
         platformStaff: users.platformStaff,
+        testAccount: users.testAccount,
+        accessExpiresAt: users.accessExpiresAt,
       })
         .from(users)
         .leftJoin(authIdentities, and(eq(authIdentities.userId, users.id), eq(authIdentities.provider, "local")))
@@ -112,6 +115,8 @@ export async function GET(request: NextRequest) {
           mustChangePassword: record.mustChangePassword ?? false,
           role: { key: role.key, name: role.name },
           platformStaff: record.platformStaff,
+          testAccount: record.testAccount,
+          accessExpiresAt: record.accessExpiresAt?.toISOString() ?? null,
           licenseKind: role.licenseKind,
           allSites: role.allSites,
           clients: clientRows.filter((row) => row.userId === record.id).map((row) => ({ id: row.clientId, name: row.clientName })),
@@ -157,8 +162,15 @@ export async function POST(request: NextRequest) {
     const licenseKind = body?.licenseKind === undefined ? "client" : body.licenseKind;
     if (!isLicenseKind(licenseKind)) throw new ApiError(400, "El tipo de licencia no es válido.");
     if (licenseKind === "partner" && !actor.platformStaff) throw new ApiError(403, "Solo el personal de HOIT puede asignar licencias de integrador.");
+    // Cuenta de prueba de HOIT: no ocupa licencia, el cliente no la ve y puede tener fecha de término.
+    const testAccount = body?.testAccount === true;
+    const platformStaff = body?.platformStaff === true;
+    if (platformStaff && !actor.platformStaff) throw new ApiError(403, "Solo el personal de HOIT puede crear cuentas del personal de HOIT.");
+    if (platformStaff && testAccount) throw new ApiError(400, "Una cuenta es del personal de HOIT o de prueba, no ambas.");
+    const accessExpiresAt = parseAccessExpiry(body?.accessExpiresAt);
+    if ((testAccount || accessExpiresAt) && !actor.platformStaff) throw new ApiError(403, "Solo el personal de HOIT puede crear cuentas de prueba o con fecha de término.");
     // Acceso a todo el cliente: todos sus sitios, también los que se creen después.
-    const allSites = body?.allSites === true;
+    const allSites = !platformStaff && body?.allSites === true;
     const wholeClient = allSites ? await wholeClientSites(db, actor, body?.clientId) : null;
     const requestedSiteIds = wholeClient ? wholeClient.map((site) => site.id) : Array.isArray(body?.siteIds)
       ? [...new Set(body.siteIds.filter((siteId): siteId is string => typeof siteId === "string"))]
@@ -169,7 +181,7 @@ export async function POST(request: NextRequest) {
     if (!requestedSiteIds.length) throw new ApiError(400, "Selecciona al menos un sitio para el usuario.");
     const selectedSites = wholeClient ?? actor.sites.filter((site) => site.roleKey === "administrator" && requestedSiteIds.includes(site.id));
     if (selectedSites.length !== requestedSiteIds.length) throw new ApiError(403, "Uno o más sitios seleccionados están fuera de tu alcance.");
-    assertSitesOfClient(selectedSites, body?.clientId);
+    if (!platformStaff) assertSitesOfClient(selectedSites, body?.clientId);
     const passwordHash = await hashPassword(password).catch((error: unknown) => { throw new ApiError(400, error instanceof Error ? error.message : "Contraseña inválida."); });
 
     const created = await db.transaction(async (tx) => {
@@ -177,10 +189,10 @@ export async function POST(request: NextRequest) {
       if (existing) throw new ApiError(409, "Ya existe un usuario con ese correo.");
       const [role] = await tx.select().from(roles).where(eq(roles.key, roleKey)).limit(1);
       if (!role) throw new ApiError(400, "El perfil seleccionado no existe en la base.");
-      const [newUser] = await tx.insert(users).values({ email, displayName, status: status as typeof VALID_STATUSES[number] }).returning();
+      const [newUser] = await tx.insert(users).values({ email, displayName, status: status as typeof VALID_STATUSES[number], platformStaff, testAccount, accessExpiresAt }).returning();
       await tx.insert(authIdentities).values({ userId: newUser.id, provider: "local", providerSubject: email, passwordHash, mustChangePassword: true });
       const selectedClientIds = [...new Set(selectedSites.map((site) => site.clientId))];
-      if (statusUsesLicense(status)) await assertLicensesAvailable(tx, selectedClientIds.map((clientId) => ({ clientId, kind: licenseKind })));
+      if (!testAccount && !platformStaff && statusUsesLicense(status)) await assertLicensesAvailable(tx, selectedClientIds.map((clientId) => ({ clientId, kind: licenseKind })));
       await tx.insert(userClientAssignments).values(selectedClientIds.map((clientId) => ({ userId: newUser.id, clientId, roleId: role.id, grantedBy: actor.id, licenseKind, allSites })));
       await tx.insert(userRoleAssignments).values(requestedSiteIds.map((siteId) => ({ userId: newUser.id, roleId: role.id, siteId, grantedBy: actor.id }))).onConflictDoNothing();
       const metadata = requestMetadata(request);
@@ -192,7 +204,7 @@ export async function POST(request: NextRequest) {
         resourceId: newUser.id,
         ipAddress: metadata.ipAddress,
         userAgent: metadata.userAgent,
-        after: { email, displayName, status, role: roleKey, siteIds: requestedSiteIds, licenseKind, allSites },
+        after: { email, displayName, status, role: roleKey, siteIds: requestedSiteIds, licenseKind, allSites, platformStaff, testAccount, accessExpiresAt },
       });
       return { ...newUser, role: { key: role.key, name: role.name } };
     });
@@ -208,7 +220,9 @@ export async function POST(request: NextRequest) {
       role: created.role,
       siteIds: requestedSiteIds,
       licenseKind,
-      platformStaff: false,
+      platformStaff,
+      testAccount,
+      accessExpiresAt: accessExpiresAt?.toISOString() ?? null,
     }, { status: 201, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return apiErrorResponse(error);

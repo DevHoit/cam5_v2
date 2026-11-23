@@ -169,6 +169,13 @@
       "when": 1795470404311,
       "tag": "0023_client_all_sites",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1795471057579,
+      "tag": "0024_hoit_test_accounts",
+      "breakpoints": true
     }
   ]
 }
