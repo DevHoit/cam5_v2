@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { eq } from "drizzle-orm";
-import { passwordResetEmailHtml, sendPasswordResetEmail } from "../db/auth-email";
+import { invitationEmailHtml, passwordResetEmailHtml, sendInvitationEmail, sendPasswordResetEmail } from "../db/auth-email";
 import {
+  acceptInvitationToken,
   authenticateLocalUser,
   consumePasswordResetToken,
+  createInvitationToken,
+  hashPassword,
   createPasswordResetToken,
   createPortalSession,
   hashSessionToken,
@@ -64,4 +67,48 @@ test("builds and sends a branded password recovery email", async () => {
   assert.equal((body.to as string[])[0], input.to);
   assert.match(String(body.text), /30 minutos/);
   assert.match(String(body.html), /Seguridad de la cuenta/);
+});
+
+
+test("invitations let an invited user create a password once and activate the account", async () => {
+  const { client, db: database } = await createMigratedTestDatabase();
+  try {
+    const [user] = await database.insert(schema.users).values({ email: "invitado@example.test", displayName: "Invitado", status: "invited" }).returning();
+    await database.insert(schema.authIdentities).values({ userId: user.id, provider: "local", providerSubject: "invitado@example.test", passwordHash: await hashPassword("Desconocida-Aleatoria-2026"), mustChangePassword: false });
+    assert.equal(await authenticateLocalUser(database, "invitado@example.test", "Cualquier-2026"), null);
+
+    const now = new Date();
+    const invitation = await createInvitationToken(database, user.id, "127.0.0.1", now);
+    assert.ok(invitation);
+    assert.ok(invitation.expiresAt.getTime() - now.getTime() >= 6 * 86_400_000);
+    // Un enlace de invitación no sirve para recuperar contraseña.
+    assert.equal(await consumePasswordResetToken(database, invitation.token, "Nueva-Clave-2026", now), null);
+
+    const accepted = await acceptInvitationToken(database, invitation.token, "Mi-Clave-Propia-2026", new Date(now.getTime() + 60_000));
+    assert.equal(accepted?.userId, user.id);
+    const [activated] = await database.select().from(schema.users).where(eq(schema.users.id, user.id));
+    assert.equal(activated.status, "active");
+    assert.ok(await authenticateLocalUser(database, "invitado@example.test", "Mi-Clave-Propia-2026"));
+    assert.equal(await acceptInvitationToken(database, invitation.token, "Otra-Clave-2026", new Date(now.getTime() + 120_000)), null);
+    // Una cuenta ya activa no recibe invitaciones.
+    assert.equal(await createInvitationToken(database, user.id, null, new Date(now.getTime() + 180_000)), null);
+  } finally {
+    await client.close();
+  }
+});
+
+test("invitation email escapes names and is sent through the provider", async () => {
+  const input = { to: "ana@example.test", displayName: "Ana <Op>", inviteUrl: "https://core.example.test/?action=accept-invite#token=abc", invitedBy: "Soporte HOIT", clientName: "FALP" };
+  const html = invitationEmailHtml(input);
+  assert.match(html, /Crear mi contraseña/);
+  assert.match(html, /Ana &lt;Op&gt;/);
+  assert.match(html, /de FALP/);
+  let body: Record<string, unknown> = {};
+  const result = await sendInvitationEmail(input, {
+    environment: { RESEND_API_KEY: "re_test", AUTH_FROM_EMAIL: "HoitLive <no-reply@example.test>" } as unknown as NodeJS.ProcessEnv,
+    fetchImpl: (async (_url: unknown, init?: RequestInit) => { body = JSON.parse(String(init?.body)); return new Response(JSON.stringify({ id: "msg_1" }), { status: 200 }); }) as typeof fetch,
+  });
+  assert.equal(result.providerMessageId, "msg_1");
+  assert.equal(body.subject, "Tu acceso a HoitLive Core");
+  assert.match(String(body.text), /7 días/);
 });

@@ -210,6 +210,8 @@ export const passwordResetTokens = pgTable("password_reset_tokens", {
   id: uuid("id").defaultRandom().primaryKey(),
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   tokenHash: varchar("token_hash", { length: 64 }).notNull(),
+  // "reset": recuperar contraseña (30 min). "invite": invitación para crear la primera contraseña (7 días).
+  purpose: varchar("purpose", { length: 20 }).default("reset").notNull(),
   requestedIp: varchar("requested_ip", { length: 64 }),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   usedAt: timestamp("used_at", { withTimezone: true }),

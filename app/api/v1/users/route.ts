@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { and, asc, count, desc, eq, exists, ilike, inArray, or, type SQL } from "drizzle-orm";
 import { hashPassword, normalizeEmail } from "../../../../db/auth";
@@ -12,6 +13,7 @@ import {
   userRoleAssignments,
   users,
 } from "../../../../db/schema";
+import { deliverInvitation } from "../_lib/invitations";
 import { apiErrorResponse, ApiError, assertSitesOfClient, parsePage, requestMetadata, parseAccessExpiry, requireApiSession, wholeClientSites } from "../_lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -157,7 +159,9 @@ export async function POST(request: NextRequest) {
     const email = typeof body?.email === "string" ? normalizeEmail(body.email) : "";
     const password = typeof body?.password === "string" ? body.password : "";
     const roleKey = typeof body?.role === "string" ? body.role : "viewer";
-    const status = typeof body?.status === "string" ? body.status : "active";
+    // Acceso inicial: invitación por correo (el usuario crea su contraseña) o contraseña temporal definida por el admin.
+    const invite = body?.accessMode === "invite";
+    const status = invite ? "invited" : typeof body?.status === "string" ? body.status : "active";
     // Solo el personal de HOIT asigna licencias de integrador; el resto crea usuarios del propio cliente.
     const licenseKind = body?.licenseKind === undefined ? "client" : body.licenseKind;
     if (!isLicenseKind(licenseKind)) throw new ApiError(400, "El tipo de licencia no es válido.");
@@ -182,7 +186,8 @@ export async function POST(request: NextRequest) {
     const selectedSites = wholeClient ?? actor.sites.filter((site) => site.roleKey === "administrator" && requestedSiteIds.includes(site.id));
     if (selectedSites.length !== requestedSiteIds.length) throw new ApiError(403, "Uno o más sitios seleccionados están fuera de tu alcance.");
     if (!platformStaff) assertSitesOfClient(selectedSites, body?.clientId);
-    const passwordHash = await hashPassword(password).catch((error: unknown) => { throw new ApiError(400, error instanceof Error ? error.message : "Contraseña inválida."); });
+    // Invitado: contraseña aleatoria que nadie conoce (la cuenta no entra hasta crear la suya con el enlace).
+    const passwordHash = invite ? await hashPassword(randomBytes(24).toString("base64url")) : await hashPassword(password).catch((error: unknown) => { throw new ApiError(400, error instanceof Error ? error.message : "Contraseña inválida."); });
 
     const created = await db.transaction(async (tx) => {
       const [existing] = await tx.select({ id: users.id }).from(users).where(ilike(users.email, email)).limit(1);
@@ -190,7 +195,7 @@ export async function POST(request: NextRequest) {
       const [role] = await tx.select().from(roles).where(eq(roles.key, roleKey)).limit(1);
       if (!role) throw new ApiError(400, "El perfil seleccionado no existe en la base.");
       const [newUser] = await tx.insert(users).values({ email, displayName, status: status as typeof VALID_STATUSES[number], platformStaff, testAccount, accessExpiresAt }).returning();
-      await tx.insert(authIdentities).values({ userId: newUser.id, provider: "local", providerSubject: email, passwordHash, mustChangePassword: true });
+      await tx.insert(authIdentities).values({ userId: newUser.id, provider: "local", providerSubject: email, passwordHash, mustChangePassword: !invite });
       const selectedClientIds = [...new Set(selectedSites.map((site) => site.clientId))];
       if (!testAccount && !platformStaff && statusUsesLicense(status)) await assertLicensesAvailable(tx, selectedClientIds.map((clientId) => ({ clientId, kind: licenseKind })));
       await tx.insert(userClientAssignments).values(selectedClientIds.map((clientId) => ({ userId: newUser.id, clientId, roleId: role.id, grantedBy: actor.id, licenseKind, allSites })));
@@ -209,14 +214,16 @@ export async function POST(request: NextRequest) {
       return { ...newUser, role: { key: role.key, name: role.name } };
     });
 
+    const invitation = invite ? await deliverInvitation(db, actor, created.id, requestMetadata(request)) : null;
     return Response.json({
+      invitation,
       id: created.id,
       displayName: created.displayName,
       email: created.email,
       status: created.status,
       lastLoginAt: created.lastLoginAt?.toISOString() ?? null,
       createdAt: created.createdAt.toISOString(),
-      mustChangePassword: true,
+      mustChangePassword: !invite,
       role: created.role,
       siteIds: requestedSiteIds,
       licenseKind,
