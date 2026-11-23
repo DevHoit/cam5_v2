@@ -84,7 +84,10 @@ export async function GET(request: NextRequest) {
       const inContext = own.find((row) => row.clientId === contextClientId);
       const siteRole = siteRoleRows.find((row) => row.userId === userId && row.siteId === user.siteId) ?? siteRoleRows.find((row) => row.userId === userId);
       const chosen = inContext ?? own[0] ?? siteRole;
-      return { key: (chosen?.roleKey ?? "viewer") as typeof VALID_ROLES[number], name: chosen?.roleName ?? "Solo lectura", licenseKind: inContext?.licenseKind ?? null };
+      // Licencia: la del cliente en contexto; en la vista de toda la plataforma, la del cliente del usuario.
+      // Solo queda sin licencia quien no tiene asignación a ningún cliente (o al cliente filtrado).
+      const licensed = inContext ?? (clientId ? undefined : own[0]);
+      return { key: (chosen?.roleKey ?? "viewer") as typeof VALID_ROLES[number], name: chosen?.roleName ?? "Solo lectura", licenseKind: licensed?.licenseKind ?? null };
     };
 
     const total = Number(countRows[0]?.total ?? 0);
