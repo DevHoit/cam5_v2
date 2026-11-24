@@ -2900,8 +2900,8 @@ button.site-points-row:focus-visible { outline: 2px solid #0ea5e9; outline-offse
 .brand-name b { color: var(--muted-2); font-size: 15px; }
 .brand-copy small { display: none; }
 .client-brand { gap: 6px; }
-.client-logo-frame { height: 40px; padding: 0; justify-content: flex-start; background: transparent; border-radius: 0; box-shadow: none; }
-.client-logo-frame img { width: auto; max-width: 100%; object-position: left center; }
+.client-logo-frame { height: 40px; padding: 0; justify-content: center; background: transparent; border-radius: 0; box-shadow: none; }
+.client-logo-frame img { width: auto; max-width: 100%; object-position: center; }
 .client-brand-powered { padding-left: 0; color: var(--muted-2); font-weight: 500; }
 .client-brand-powered svg { color: #0284c7; }
 .client-brand-powered strong { color: var(--muted); font-weight: 600; }
@@ -3152,7 +3152,6 @@ button.point-row:hover { background: var(--surface-2); }
 
 /* Logo del cliente en tema oscuro: placa clara para que los logos oscuros se lean (en tema claro va sin fondo). */
 :root[data-theme="dark"] .client-logo-frame { height: 48px; padding: 6px 10px; justify-content: center; background: #ffffff; border-radius: 8px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.06); }
-:root[data-theme="dark"] .client-logo-frame img { object-position: center; }
 :root[data-theme="dark"] .mobile-brand.mobile-client-logo { background: #ffffff; }
 
 /* Reportes de subestación (informes, informe en línea y programaciones). */
