@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { IconAlertTriangle, IconBattery2, IconCircleCheck, IconRefresh, IconSettings, IconWifi1 } from "@tabler/icons-react";
+import { pollWhileVisible } from "./poll-while-visible";
 
 type Config = { rangeMin: number | null; rangeMax: number | null; toleranceMinutes: number; aggregation: string };
 type Excursion = { start: string; end: string | null; minutes: number; peak: number; position: string | null };
@@ -126,8 +127,8 @@ export function PointDetailView({ assetId, onOpenAlarms, onOpenSettings }: { ass
       })
       .catch((reason: unknown) => { if (active) setError(reason instanceof Error ? reason.message : "No fue posible cargar el detalle del punto."); });
     void load();
-    const timer = window.setInterval(() => void load(), 30_000);
-    return () => { active = false; window.clearInterval(timer); };
+    const stop = pollWhileVisible(() => void load(), 30_000);
+    return () => { active = false; stop(); };
   }, [assetId, hours]);
 
   const now = detail ? new Date(detail.serverTime).getTime() : 0;

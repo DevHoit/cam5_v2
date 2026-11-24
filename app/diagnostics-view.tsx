@@ -12,6 +12,7 @@ import {
   IconRouter,
 } from "@tabler/icons-react";
 import { Pagination } from "./pagination";
+import { pollWhileVisible } from "./poll-while-visible";
 
 type DiagnosticState = "healthy" | "warning" | "offline";
 type DiagnosticStage = { key: "controller" | "modbus" | "gateway" | "core"; label: string; state: DiagnosticState; detail: string; evidence: string };
@@ -92,8 +93,8 @@ export function DiagnosticsView({ assetId, canExecute, notify }: { assetId: stri
       }
     };
     void load();
-    const timer = window.setInterval(() => void load(true), 30_000);
-    return () => { active = false; window.clearInterval(timer); };
+    const stop = pollWhileVisible(() => void load(true), 30_000);
+    return () => { active = false; stop(); };
   }, [assetId, page, reload]);
 
   useEffect(() => {

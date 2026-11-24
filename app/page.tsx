@@ -61,6 +61,7 @@ import {
   IconWifi as Wifi,
   IconX as X,
 } from "@tabler/icons-react";
+import { pollWhileVisible } from "./poll-while-visible";
 
 type View = "client" | "site" | "overview" | "cabinet" | "diagnostics" | "commissioning" | "trends" | "alarms" | "history" | "assets" | "reports" | "settings" | "provisioning" | "users" | "notifications" | "account";
 type Severity = "critical" | "warning" | "info";
@@ -574,8 +575,8 @@ function Overview({ onNavigate, onOpenTrend, onAcknowledge, activeAlarms, alarmS
       .catch(() => [])))
       .then((results) => { if (active) setSeries(Object.fromEntries(results.flat().map((item) => [item.code, item.points.map((entry) => entry.value).filter((value): value is number => value !== null)]))); });
     void load();
-    const timer = window.setInterval(() => { void load(); }, 300_000);
-    return () => { active = false; window.clearInterval(timer); };
+    const stop = pollWhileVisible(() => { void load(); }, 300_000);
+    return () => { active = false; stop(); };
   }, [pointId, channelCodes]);
   if (!telemetry && telemetryState.status !== "ready") return <div className="operational-overview" aria-live="polite" aria-busy={telemetryState.status === "loading"}><section className={`panel telemetry-state-panel telemetry-state-${telemetryState.status}`}><span><Refresh className={telemetryState.status === "loading" ? "spin" : ""} size={26} /></span><div><span className="eyebrow">{point ? point.name : "Contexto operacional"}</span><h2>{telemetryState.status === "loading" ? "Cargando estado operativo" : "Estado operativo no disponible"}</h2><p>{telemetryState.status === "loading" ? "Estamos verificando el gateway, el controlador CAM-5, las lecturas vigentes y las alertas. No mostraremos indicadores hasta contar con una respuesta confiable." : "La consulta no pudo completarse. Esto no significa que el gateway esté desconectado; su estado permanece sin verificar hasta una nueva consulta."}</p><div className="telemetry-check-list"><span><Server size={16} /> Gateway <b>Verificando</b></span><span><CircuitBoard size={16} /> CAM-5 <b>Verificando</b></span><span><Database size={16} /> Canales <b>Verificando</b></span></div></div></section></div>;
   const activeSensors = sensors.filter((sensor) => sensor.enabled);
@@ -783,8 +784,8 @@ function AlarmsView({ assetId, permissions, onSummaryChange, onOpenTrend }: { as
 
   useEffect(() => {
     const timeout = window.setTimeout(() => void loadAlarms(), 250);
-    const polling = window.setInterval(() => void loadAlarms(true), 30_000);
-    return () => { window.clearTimeout(timeout); window.clearInterval(polling); };
+    const stop = pollWhileVisible(() => void loadAlarms(true), 30_000);
+    return () => { window.clearTimeout(timeout); stop(); };
     // La recarga depende únicamente de los filtros visibles y del punto activo.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [assetId, page, query, severity, workflowStatus]);
@@ -1799,8 +1800,9 @@ export default function Home() {
       }
     };
     void refresh();
-    const timer = window.setInterval(() => void refresh(), 2_000);
-    return () => { active = false; window.clearInterval(timer); };
+    // Las variables llegan cada minuto: 10 s basta para verlas al día sin cargar la base.
+    const stop = pollWhileVisible(() => void refresh(), 10_000);
+    return () => { active = false; stop(); };
   }, [activePointId, authState, hierarchy, telemetryRefreshKey]);
 
   useEffect(() => {
@@ -1820,8 +1822,8 @@ export default function Home() {
       }
     };
     void refresh();
-    const timer = window.setInterval(() => void refresh(), 30_000);
-    return () => { active = false; window.clearInterval(timer); };
+    const stop = pollWhileVisible(() => void refresh(), 30_000);
+    return () => { active = false; stop(); };
   }, [activePointId, authState, hierarchy]);
 
   const loadHierarchy = async () => {

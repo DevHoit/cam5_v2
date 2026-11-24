@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { IconBluetooth, IconCheck, IconEyeOff, IconPlus, IconRefresh } from "@tabler/icons-react";
+import { pollWhileVisible } from "./poll-while-visible";
 
 type NoticeTone = "success" | "info" | "warning";
 type ConfirmRequest = { title: string; detail: string; confirmLabel: string; tone?: "default" | "danger"; onConfirm: () => void };
@@ -63,8 +64,8 @@ export function DetectedDevicesPanel({ canWrite, notify, confirm }: { canWrite: 
 
   useEffect(() => {
     const first = window.setTimeout(() => void load(), 0);
-    const timer = window.setInterval(() => void load(), 30_000);
-    return () => { window.clearTimeout(first); window.clearInterval(timer); };
+    const stop = pollWhileVisible(() => void load(), 30_000);
+    return () => { window.clearTimeout(first); stop(); };
   }, [load]);
 
   function openAssign(item: DetectedDevice) {
