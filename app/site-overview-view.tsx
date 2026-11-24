@@ -12,6 +12,7 @@ import {
   IconRouterOff,
   IconWifi1,
 } from "@tabler/icons-react";
+import { pollWhileVisible } from "./poll-while-visible";
 
 type Severity = "normal" | "warning" | "critical";
 type PointStatus = Severity | "offline";
@@ -90,8 +91,8 @@ export function SiteOverviewView({ siteName, onOpenPoint, onDiagnose, onOpenAlar
       .then((result) => { if (active) { setData(result); setError(""); } })
       .catch((loadError: unknown) => { if (active) setError(loadError instanceof Error ? loadError.message : "No fue posible cargar la vista del sitio."); });
     void load();
-    const timer = window.setInterval(() => { void load(); setTick((value) => value + 1); }, REFRESH_MS);
-    return () => { active = false; window.clearInterval(timer); };
+    const stop = pollWhileVisible(() => { void load(); setTick((value) => value + 1); }, REFRESH_MS);
+    return () => { active = false; stop(); };
   }, []);
 
   useEffect(() => {
@@ -636,8 +637,8 @@ export function ClientOverviewView({ onOpenPoint, onOpenSite }: { onOpenPoint: (
       .then((result) => { if (active) { setData(result); setError(""); } })
       .catch((loadError: unknown) => { if (active) setError(loadError instanceof Error ? loadError.message : "No fue posible cargar la vista del cliente."); });
     void load();
-    const timer = window.setInterval(() => { void load(); }, REFRESH_MS);
-    return () => { active = false; window.clearInterval(timer); };
+    const stop = pollWhileVisible(() => { void load(); }, REFRESH_MS);
+    return () => { active = false; stop(); };
   }, []);
 
   if (!data) {
