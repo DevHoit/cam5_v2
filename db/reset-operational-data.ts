@@ -5,7 +5,7 @@ import { closeDb, getDb, type Cam5Database } from "./index";
 import { loadDatabaseEnvironment } from "./load-env";
 import {
   alarmEvents, alarmRuleStates, alarmRules, alarms, assets, auditLogs, channels, clients, detectedDevices, deviceRegisterSamples,
-  devices, gateways, ingestionBatches, latestReadings, notificationDeliveries, physicalInputs, pointRangeStates, readingAggregates,
+  devices, gateways, ingestionBatches, latestReadings, notificationDeliveries, physicalInputs, pointDeltaStates, pointRangeStates, readingAggregates,
   readings, reportRuns, sites, workOrderAlarms, workOrders,
 } from "./schema";
 
@@ -35,6 +35,7 @@ export async function resetOperationalData(db: Cam5Database, siteIds: string[], 
     { label: "Órdenes de trabajo", table: workOrders, where: inArray(workOrders.siteId, siteIds) },
     { label: "Estado de reglas de alerta", table: alarmRuleStates, where: inArray(alarmRuleStates.ruleId, siteRules) },
     { label: "Estado de rangos por punto", table: pointRangeStates, where: inArray(pointRangeStates.assetId, siteAssets) },
+    { label: "Estado de diferencia de temperatura", table: pointDeltaStates, where: inArray(pointDeltaStates.assetId, siteAssets) },
     { label: "Eventos de alertas", table: alarmEvents, where: inArray(alarmEvents.alarmId, siteAlarms) },
     { label: "Alertas", table: alarms, where: inArray(alarms.siteId, siteIds) },
     { label: "Últimas lecturas", table: latestReadings, where: inArray(latestReadings.channelId, siteChannels) },

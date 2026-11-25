@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { and, eq, inArray, max, sql } from "drizzle-orm";
 import { evaluateAlarmReadings, evaluateStaleCommunications } from "../../../../../db/alarm-engine";
+import { evaluateTemperatureDelta } from "../../../../../db/temperature-delta-alarm";
 import {
   assets,
   channels,
@@ -410,6 +411,8 @@ async function ingestOne({ db, credential }: GatewayContext, value: unknown, rec
           quality: entry.definition.channelEnabled ? entry.quality : "disabled",
           qualityFlags: entry.flags,
         })), receivedAt);
+      const delta = await evaluateTemperatureDelta(db, device.assetId, receivedAt);
+      alarmEvaluation = { ...alarmEvaluation, opened: alarmEvaluation.opened + delta.opened, updated: alarmEvaluation.updated + delta.escalated, resolved: alarmEvaluation.resolved + delta.resolved };
       await evaluateStaleCommunications(db, credential.siteId, receivedAt);
     } catch (alarmError) {
       console.error("No fue posible evaluar las alarmas del lote", alarmError);

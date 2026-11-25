@@ -183,6 +183,13 @@
       "when": 1795471747510,
       "tag": "0025_user_invitations",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1795617145677,
+      "tag": "0026_point_delta_states",
+      "breakpoints": true
     }
   ]
 }
