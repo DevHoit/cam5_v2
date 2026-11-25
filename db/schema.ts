@@ -125,7 +125,7 @@ export const assets = pgTable("assets", {
 
 export type PointSystem = "condition" | "cold" | "energy" | "backup" | "other";
 export type PointAggregation = "max" | "min" | "avg" | "sum" | "last";
-export type PointConfigOverrides = { rangeMin?: number | null; rangeMax?: number | null; toleranceMinutes?: number; aggregation?: PointAggregation };
+export type PointConfigOverrides = { rangeMin?: number | null; rangeMax?: number | null; toleranceMinutes?: number; aggregation?: PointAggregation; temperatureDeltaWarning?: number | null; temperatureDeltaCritical?: number | null };
 
 /**
  * Catálogo de tipos de punto. El tipo agrupa los puntos por sistema (frío, energía, respaldo…) y define
@@ -784,6 +784,20 @@ export const pointRangeStates = pgTable("point_range_states", {
   assetId: uuid("asset_id").primaryKey().references(() => assets.id, { onDelete: "cascade" }),
   outSince: timestamp("out_since", { withTimezone: true }),
   peakDeviation: numeric("peak_deviation", { precision: 18, scale: 6 }),
+  activeAlarmId: uuid("active_alarm_id").references(() => alarms.id, { onDelete: "set null" }),
+  lastEvaluatedAt: timestamp("last_evaluated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+/**
+ * Estado de la alarma por diferencia de temperatura entre sensores de un punto (CAM5): cuántas
+ * evaluaciones seguidas supera o vuelve bajo el umbral y la alarma activa, si la hay.
+ */
+export const pointDeltaStates = pgTable("point_delta_states", {
+  assetId: uuid("asset_id").primaryKey().references(() => assets.id, { onDelete: "cascade" }),
+  currentSeverity: varchar("current_severity", { length: 16 }).default("normal").notNull(),
+  breachCount: integer("breach_count").default(0).notNull(),
+  recoveryCount: integer("recovery_count").default(0).notNull(),
+  lastDelta: numeric("last_delta", { precision: 18, scale: 6 }),
   activeAlarmId: uuid("active_alarm_id").references(() => alarms.id, { onDelete: "set null" }),
   lastEvaluatedAt: timestamp("last_evaluated_at", { withTimezone: true }).defaultNow().notNull(),
 });

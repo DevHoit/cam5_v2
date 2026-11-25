@@ -117,8 +117,9 @@ const humidityChannels: Cam5OperationalChannel[] = Array.from({ length: 8 }, (_,
     zone: channel === 1 ? "Compartimiento de cables" : "Sin asignar",
     unit: "%RH",
     metric: "humidity",
-    warningDefault: 75,
-    criticalDefault: 85,
+    // Sobre 65 %HR hay riesgo de condensación en equipos eléctricos; sobre 80 %HR es crítico.
+    warningDefault: 65,
+    criticalDefault: 80,
     nativeRegister: 429 + channel * 2,
     configured,
   };

@@ -70,6 +70,16 @@ export function parsePointConfig(value: unknown): PointConfigOverrides {
     if (!Number.isInteger(minutes) || minutes < 0 || minutes > MAX_TOLERANCE_MINUTES) throw new PointConfigError("La tolerancia debe ser un número entero de minutos entre 0 y 1440.");
     config.toleranceMinutes = minutes;
   }
+  const deltaWarning = optionalLimit(input.temperatureDeltaWarning, "La diferencia de temperatura de advertencia");
+  const deltaCritical = optionalLimit(input.temperatureDeltaCritical, "La diferencia de temperatura crítica");
+  for (const value of [deltaWarning, deltaCritical]) {
+    if (typeof value === "number" && (value <= 0 || value > 500)) throw new PointConfigError("La diferencia de temperatura debe estar entre 0 y 500 °C.");
+  }
+  if (typeof deltaWarning === "number" && typeof deltaCritical === "number" && deltaWarning >= deltaCritical) {
+    throw new PointConfigError("La diferencia de advertencia debe ser menor que la crítica.");
+  }
+  if (deltaWarning !== undefined) config.temperatureDeltaWarning = deltaWarning;
+  if (deltaCritical !== undefined) config.temperatureDeltaCritical = deltaCritical;
   if (input.aggregation !== undefined && input.aggregation !== null && input.aggregation !== "") {
     if (!(typeof input.aggregation === "string" && input.aggregation in POINT_AGGREGATIONS)) throw new PointConfigError("La forma de combinar sensores no es válida.");
     config.aggregation = input.aggregation as PointAggregation;

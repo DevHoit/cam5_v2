@@ -23,7 +23,7 @@ import { Pagination, useClientPagination } from "./pagination";
 type NoticeTone = "success" | "info" | "warning";
 type ConfirmRequest = { title: string; detail: string; confirmLabel: string; tone?: "default" | "danger"; onConfirm: () => void };
 type SettingsTab = "asset" | "channels" | "registers" | "acquisition" | "versions";
-type PointConfig = { rangeMin?: number | null; rangeMax?: number | null; toleranceMinutes?: number; aggregation?: string };
+type PointConfig = { rangeMin?: number | null; rangeMax?: number | null; toleranceMinutes?: number; aggregation?: string; temperatureDeltaWarning?: number | null; temperatureDeltaCritical?: number | null };
 type PointTypeOption = { key: string; name: string; system: string; systemName: string; primaryQuantity: string | null; aggregation: string; defaultConfig: PointConfig };
 const AGGREGATION_LABELS: Record<string, string> = { max: "Valor más alto (peor sensor)", min: "Valor más bajo", avg: "Promedio de sensores", sum: "Suma de equipos", last: "Último valor" };
 const configText = (value: number | null | undefined) => value === null || value === undefined ? "" : String(value);
@@ -264,7 +264,7 @@ export function SettingsView({
 }) {
   const [tab, setTab] = useState<SettingsTab>("asset");
   const [data, setData] = useState<ConfigurationData | null>(null);
-  const [assetForm, setAssetForm] = useState({ name: "", area: "", nominalVoltageKv: "", assetType: "", rangeMin: "", rangeMax: "", toleranceMinutes: "", aggregation: "" });
+  const [assetForm, setAssetForm] = useState({ name: "", area: "", nominalVoltageKv: "", assetType: "", rangeMin: "", rangeMax: "", toleranceMinutes: "", aggregation: "", deltaWarning: "", deltaCritical: "" });
   const [acquisitionForm, setAcquisitionForm] = useState<AcquisitionDraft | null>(null);
   const [drafts, setDrafts] = useState<Record<string, ChannelDraft>>({});
   const [loading, setLoading] = useState(false);
@@ -295,6 +295,8 @@ export function SettingsView({
             rangeMax: configText(result.asset.config.rangeMax),
             toleranceMinutes: configText(result.asset.config.toleranceMinutes),
             aggregation: result.asset.config.aggregation ?? "",
+            deltaWarning: configText(result.asset.config.temperatureDeltaWarning),
+            deltaCritical: configText(result.asset.config.temperatureDeltaCritical),
           });
           setAcquisitionForm(acquisitionDraft(result));
           setDrafts(channelDrafts(result));
@@ -333,7 +335,8 @@ export function SettingsView({
   const assetDirty = Boolean(data && (assetForm.name !== data.asset.name || assetForm.area !== (data.asset.area ?? "") || assetForm.nominalVoltageKv !== String(data.asset.nominalVoltageKv ?? "")
     || assetForm.assetType !== data.asset.assetType
     || assetForm.rangeMin !== configText(data.asset.config.rangeMin) || assetForm.rangeMax !== configText(data.asset.config.rangeMax)
-    || assetForm.toleranceMinutes !== configText(data.asset.config.toleranceMinutes) || assetForm.aggregation !== (data.asset.config.aggregation ?? "")));
+    || assetForm.toleranceMinutes !== configText(data.asset.config.toleranceMinutes) || assetForm.aggregation !== (data.asset.config.aggregation ?? "")
+    || assetForm.deltaWarning !== configText(data.asset.config.temperatureDeltaWarning) || assetForm.deltaCritical !== configText(data.asset.config.temperatureDeltaCritical)));
   const selectedPointType = data?.pointTypes.find((type) => type.key === assetForm.assetType);
   const acquisitionDirty = Boolean(data && JSON.stringify(acquisitionForm) !== JSON.stringify(acquisitionDraft(data)));
   const monitoredChannelCount = Object.values(drafts).filter((channel) => channel.enabled).length;
@@ -360,6 +363,8 @@ export function SettingsView({
     if (assetForm.rangeMax.trim()) config.rangeMax = Number(assetForm.rangeMax.replace(",", "."));
     if (assetForm.toleranceMinutes.trim()) config.toleranceMinutes = Number(assetForm.toleranceMinutes);
     if (assetForm.aggregation) config.aggregation = assetForm.aggregation;
+    if (assetForm.deltaWarning.trim()) config.temperatureDeltaWarning = Number(assetForm.deltaWarning.replace(",", "."));
+    if (assetForm.deltaCritical.trim()) config.temperatureDeltaCritical = Number(assetForm.deltaCritical.replace(",", "."));
     await patchConfiguration({ section: "asset", name: assetForm.name, area: assetForm.area, nominalVoltageKv: assetForm.nominalVoltageKv || null, assetType: assetForm.assetType, config }, "Punto actualizado");
     await onReloadHierarchy();
   };
@@ -443,6 +448,10 @@ export function SettingsView({
             <label><span>Rango objetivo · mínimo</span><input inputMode="decimal" value={assetForm.rangeMin} disabled={!canWrite} placeholder={selectedPointType?.defaultConfig.rangeMin !== undefined && selectedPointType.defaultConfig.rangeMin !== null ? `Por defecto ${selectedPointType.defaultConfig.rangeMin}` : "Sin mínimo"} onChange={(event) => setAssetForm({ ...assetForm, rangeMin: event.target.value })} /></label>
             <label><span>Rango objetivo · máximo</span><input inputMode="decimal" value={assetForm.rangeMax} disabled={!canWrite} placeholder={selectedPointType?.defaultConfig.rangeMax !== undefined && selectedPointType.defaultConfig.rangeMax !== null ? `Por defecto ${selectedPointType.defaultConfig.rangeMax}` : "Sin máximo"} onChange={(event) => setAssetForm({ ...assetForm, rangeMax: event.target.value })} /></label>
             <label><span>Tolerancia fuera de rango</span><div className="input-unit"><input type="number" min="0" max="1440" step="1" value={assetForm.toleranceMinutes} disabled={!canWrite} placeholder={String(selectedPointType?.defaultConfig.toleranceMinutes ?? 0)} onChange={(event) => setAssetForm({ ...assetForm, toleranceMinutes: event.target.value })} /><b>min</b></div></label>
+            {data.kind === "cam5" && <>
+              <label><span>Diferencia entre sensores · advertencia</span><div className="input-unit"><input inputMode="decimal" value={assetForm.deltaWarning} disabled={!canWrite} placeholder="Por defecto 35" onChange={(event) => setAssetForm({ ...assetForm, deltaWarning: event.target.value })} /><b>°C</b></div></label>
+              <label><span>Diferencia entre sensores · crítica</span><div className="input-unit"><input inputMode="decimal" value={assetForm.deltaCritical} disabled={!canWrite} placeholder="Por defecto 60" onChange={(event) => setAssetForm({ ...assetForm, deltaCritical: event.target.value })} /><b>°C</b></div></label>
+            </>}
             <label><span>Sitio</span><input value={`${data.asset.siteCode} · ${data.asset.siteName}`} readOnly /></label>
             <label><span>Zona horaria del sitio</span><input value={data.asset.siteTimezone} readOnly /></label>
           </div>
